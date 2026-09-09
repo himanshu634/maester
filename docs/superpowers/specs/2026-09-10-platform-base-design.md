@@ -66,7 +66,7 @@ packages/
   financial-engine/       Frozen Python engine (uv member, unchanged)
 infra/                    gcloud bootstrap scripts, Cloud Run service YAML
 docs/
-  decisions/0002-typescript-backend.md
+  decisions/0003-typescript-backend.md
   superpowers/specs/      This document
 .github/workflows/        check.yml (existing, Python) + ts.yml (new)
 docker-compose.yml        Local Postgres
