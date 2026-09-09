@@ -8,6 +8,12 @@ import tomllib
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
+IGNORED_PARTS = {"node_modules", ".svelte-kit", "build", "dist"}
+
+
+def _tracked(path: Path) -> bool:
+    """Skip generated and vendored trees (Node dependencies, build output)."""
+    return not IGNORED_PARTS.intersection(path.relative_to(ROOT).parts)
 
 
 def main() -> int:
@@ -33,7 +39,7 @@ def main() -> int:
 
     python_files = []
     for folder in ("apps", "packages", "tests", "scripts"):
-        python_files.extend((ROOT / folder).rglob("*.py"))
+        python_files.extend(p for p in (ROOT / folder).rglob("*.py") if _tracked(p))
     for path in python_files:
         try:
             tree = ast.parse(path.read_text(), filename=str(path))
@@ -52,7 +58,7 @@ def main() -> int:
 
     markdown_files = [ROOT / "README.md"]
     for folder in ("docs", "apps", "packages"):
-        markdown_files.extend((ROOT / folder).rglob("*.md"))
+        markdown_files.extend(p for p in (ROOT / folder).rglob("*.md") if _tracked(p))
     for path in markdown_files:
         content = re.sub(r"```.*?```", "", path.read_text(), flags=re.DOTALL)
         for target in re.findall(r"\[[^\]\n]+\]\(([^)\n]+)\)", content):

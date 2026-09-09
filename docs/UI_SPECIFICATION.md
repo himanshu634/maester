@@ -33,7 +33,7 @@ Global search returns companies, securities, documents and saved notes in named 
 
 ## 3. Visual system
 
-These are proposed implementation tokens and dimensions; validate them in a clickable prototype.
+Superseded for visual tokens (colour, typography, radius, shadow) by [DESIGN.md](DESIGN.md) under [ADR 0002](decisions/0002-web-sveltekit-brutalist-design-system.md). The table below is kept for traceability. Layout dimensions, semantic-state rules and accessibility requirements in this section still apply.
 
 | Token | Light appearance | Dark appearance | Usage |
 | --- | --- | --- | --- |

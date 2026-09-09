@@ -1,115 +1,136 @@
+<div align="center">
+
 # Maester
 
-Maester is evolving into an investor platform for understanding portfolios, researching companies, and tracing financial conclusions back to evidence.
+**The open-source portfolio management platform that tracks your portfolio autonomously and tells you what to do next.**
 
-The repository is a Python monorepo with a working financial-document engine and CLI. The web application, hosted API, ingestion workers, and portfolio accounting are specified in the product documentation and are **not implemented yet**.
+Connect your holdings. Let Maester watch the filings, the prices, the dividends, the global cues and your own thesis. When something needs your attention, it hands you a suggested action with the evidence behind it. When nothing does, it tells you to stay put.
 
-## Product direction
+[![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange.svg)](#where-we-are-today)
+[![Open source](https://img.shields.io/badge/open%20source-yes-brightgreen.svg)](#join-the-build)
+[![Contributing guide](https://img.shields.io/badge/contributing-guide-blue.svg)](CONTRIBUTING.md)
 
-The proposed first audience is self-directed, long-term equity investors, with India-first imports and identifiers and foundations for other markets. This is a planning assumption pending investor interviews and market confirmation.
+[The opportunity](#the-opportunity) · [Autonomous mode](#autonomous-mode) · [How Maester is different](#how-maester-is-different) · [Roadmap](#roadmap) · [Join the build](#join-the-build)
 
-The product will connect four activities: track holdings and performance, investigate companies, verify financial facts, and record investment decisions. The first web release prioritizes a research workspace and a clearly labeled holdings snapshot; transaction-based performance follows after the accounting foundation is tested.
+</div>
 
-Read the [documentation index](docs/README.md), [product requirements](docs/PRD.md), [UI specification](docs/UI_SPECIFICATION.md), and [prioritized roadmap](docs/FEATURE_ROADMAP.md). The [research report](docs/RESEARCH.md) explains the evidence behind the choices.
+---
 
-## What works today
+## The opportunity
 
-- Extract a financial-statement PDF with Gemini on Vertex AI.
-- Store structured statement data and an LLM-produced text rendition in local JSON.
-- Check some subtotals and the balance-sheet identity with heuristic arithmetic checks.
-- Reuse cached extractions when asking questions about one document.
-- Run the original `pdf-financial-qa` command or the new `maester` alias.
+Managing a portfolio well is a full-time job that almost nobody has time for. Holdings sit across broker dashboards. Annual reports pile up unread. Dividends land unnoticed. A position quietly grows to a third of the portfolio. The thesis that justified a purchase two years ago lives in a forgotten spreadsheet, and nobody checks whether it still holds.
 
-These checks do not establish complete extraction accuracy. The current schema does not store page/cell provenance; answers do not yet have verified source citations or a deterministic calculation engine. Missing subtotals can mean a check was skipped. See [known limitations](docs/DEVELOPMENT.md).
+The tools on the market are passive. Portfolio trackers show you a number and wait. Research terminals show you a filing and wait. Robo-advisers act, but on a generic model portfolio with no idea why you own what you own. Every serious investor ends up doing the monitoring by hand, late, or not at all.
 
-## Repository layout
+**The gap is an autonomous layer that does the watching, does the reconciling, and turns what it finds into concrete, evidence-backed suggestions.** Not a chatbot that summarizes. Not a black box that trades. A tireless analyst that knows your portfolio, reads what the companies publish, and tells you exactly which decision is now due and why.
+
+### Why now
+
+- **Document extraction finally works.** Multimodal models can turn an annual report into structured financial statements in one pass. Maester already does this today.
+- **The raw inputs for autonomy exist.** Brokers export complete tradebooks. The SEC publishes filing and XBRL data with no key required. End-of-day prices and corporate actions are available to license. The pieces to keep a ledger current without manual entry are all there.
+- **Trust is the unmet need.** Investors are drowning in AI-generated opinions with no citations. The scarce thing is a suggestion you can click through to the fact, the page and the calculation that produced it.
+
+### The wedge
+
+Start India-first with long-term equity investors. Import holdings once, let Maester keep them reconciled, and let it read the filings for the companies you own. The first autonomous loop is small and honest: watch, detect a meaningful change, suggest a review, show the evidence. Then widen it to performance, income, concentration and rebalancing as the accounting foundation earns trust.
+
+> **Honest framing.** The commercial hypothesis is that investors will pay for a system that does the monitoring and reconciliation they currently skip, and that surfaces decisions early enough to matter. It is unvalidated. The [research report](docs/RESEARCH.md) lays out the evidence, the comparable products, and the interviews still needed. We would rather publish the reasoning than the hype.
+
+## Autonomous mode
+
+Autonomous mode is the product. You set the scope; Maester runs the loop.
 
 ```text
-apps/
-  cli/                      Working Typer application: maester and pdf-financial-qa
-  web/                      Planned web application boundary; documentation only
-  api/                      Planned HTTP API boundary; documentation only
-  worker/                   Planned background worker boundary; documentation only
-packages/
-  financial-engine/         Working Python library; imports remain pdf_financial_qa
-docs/                       PRD, UI, priorities, research, architecture, delivery
-scripts/                    Workspace and local documentation checks
-tests/                      Offline regression tests for the package migration
-.github/workflows/          CI definition, ready for a GitHub repository
-data/cache/                 Existing local extraction cache, ignored by version control
-pyproject.toml              uv workspace and local package dependencies
-uv.lock                     Shared Python dependency resolution
-Makefile                    Root development commands
+Watch ──► Detect ──► Verify against evidence ──► Suggest an action ──► You decide ──► Record the outcome ──► Watch
 ```
 
-Only `apps/cli` and `packages/financial-engine` are active workspace members. Planned application directories have no runtime or installable package. The future TypeScript workspace is described in [architecture](docs/ARCHITECTURE.md); Node.js is not required today.
+**What Maester watches on its own**
 
-## Quick start
+- Your ledger: imports, duplicates, unexplained cash differences, positions that no longer reconcile to a statement.
+- The companies you own: new filings, restated numbers, changes in revenue, margins, cash flow and debt against your saved thesis.
+- Your exposure: concentration by security and sector, drawdowns, drift from the allocation you set.
+- Your income: declared versus received dividends, upcoming distributions, reinvestment gaps.
+- Global cues: rate decisions, currency moves, commodity swings, index and sector shifts, and macro events in the markets your holdings depend on, checked against whether your portfolio actually needs to move or not.
+- Your own deadlines: the review date you attached to every thesis.
 
-Use Python 3.11 or newer and [uv](https://docs.astral.sh/uv/getting-started/installation/). Run commands from the repository root:
+**What a suggestion looks like**
 
-```bash
-uv sync --locked
-uv run --locked maester --help
-uv run --locked maester list-docs
-```
+Every suggestion names the action, the trigger, and the evidence. A few examples of the kind of thing Maester is built to say:
 
-Help, local cache listing, and offline tests do not require cloud credentials. Ingestion and Q&A require a GCP project with Vertex AI enabled, billing, and appropriate credentials.
+- *Review your thesis on this holding.* The latest annual report shows operating cash flow down year over year, against a thesis that depended on cash generation. Here is the page.
+- *Trim this position or confirm you accept the concentration.* It has grown from 12% to 31% of the portfolio since your last review.
+- *Reconcile this account.* Three trades in the imported tradebook have no matching cash movement.
+- *Record this dividend.* A distribution was declared for a company you hold and no receipt appears in your ledger.
+- *Re-check this number.* The extraction for this cell failed a subtotal check; the answer you saved last quarter depends on it.
+- *No movement needed.* Crude is up 18% this quarter, but none of your holdings has meaningful input exposure to it. Here is the coverage that check was based on.
 
-If you do not already have `.env`, copy `.env.example` to `.env` and set `GOOGLE_CLOUD_PROJECT`. Keep an existing `.env` when upgrading. The example lists region and model overrides.
+**What Maester will never do on its own**
 
-```bash
-gcloud auth application-default login
-uv run --locked maester ingest path/to/statement.pdf
-uv run --locked maester list-docs
-uv run --locked maester ask "How did operating cash flow change year over year?"
-uv run --locked maester ask "What were total assets?" --doc DOCUMENT_HASH
-```
+- Place an order or move money. Execution stays with you and your broker.
+- Change your ledger, your facts or your thesis silently. Every correction carries a reason and a revision.
+- Present a guess as a fact. When the evidence is missing, the suggestion says so and asks for the input instead.
+- Push you to trade more. Suggestions are ranked by relevance to your stated thesis and risk, not by activity.
 
-`ingest --force` re-extracts a document and overwrites that document's cached JSON. Model calls use your configured cloud project and can incur charges. The inherited default model ID is `gemini-2.5-pro`; verify availability in your project and override `GEMINI_MODEL` as needed. This refactor does not select or validate a new cloud model.
+Every suggestion is traceable: from the action, to the trigger, to the financial fact, to the page it came from, to the calculation, to the thesis it affects. That traceability is what makes autonomy trustworthy, and it compounds. Every verified fact, corrected extraction and recorded decision makes the next suggestion sharper.
 
-For a pip-only installation:
+## How Maester is different
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -e ./packages/financial-engine -e ./apps/cli
-maester --help
-```
+| Most tools | Maester |
+| --- | --- |
+| Show a dashboard and wait | Watches continuously and tells you which decision is due |
+| Generic model portfolios | Suggestions grounded in your own holdings, thesis and risk tolerance |
+| AI chat that summarizes | An Analyst that can only cite stored evidence and explain deterministic calculations. It abstains when the evidence is missing |
+| A number on a screen | The number, the page it came from, the unit, the period and the reporting basis |
+| Treat missing data as zero | Treats unknown as unknown. Coverage shrinks; risk and value are never silently understated |
+| Infer performance from today's holdings | Refuses to fabricate return history. Snapshot mode and ledger mode are separate, labelled inputs |
+| One blended return figure | Time-weighted and money-weighted returns with the method, interval and cash-flow boundary disclosed |
+| Black-box automation that trades | Suggests, explains, and records. Never executes |
+| Lock your data in | Exports raw inputs, extracted values, notes, methods and every suggestion with full precision |
+| Closed SaaS | Open source, self-hostable, built in public |
 
-The pip path resolves package constraints independently; use uv for the shared locked environment. Root-level `pip install -e .` is replaced by installation of the two packages.
+These are design principles, not marketing lines. The [product requirements](docs/PRD.md) spell out the full list.
 
-## Development
+## Where we are today
 
-```bash
-make sync
-make check
-make test
-make cli
-```
+Maester is pre-alpha. A working document engine can already extract a financial-statement PDF into structured statements, run arithmetic sanity checks, and answer questions about it from the command line. A static web index page in `apps/web` explains the workflow and the accuracy approach and carries the design system every later screen follows ([DESIGN.md](docs/DESIGN.md)). The autonomous loop, the ledger, the web application's investor journeys and the hosted runtime are fully specified and not yet built.
 
-Equivalent checks without Make:
+We say this plainly because trust is the whole product. The [contributing guide](CONTRIBUTING.md) lists exactly what works, what does not, and how to run it.
 
-```bash
-uv run --locked python scripts/check_workspace.py
-uv run --locked python -m unittest discover -s tests -v
-```
+## Roadmap
 
-The checks validate package boundaries, local documentation links, imports, CLI behavior, cache compatibility, and arithmetic regression cases without sending financial data to a model. See [development and migration](docs/DEVELOPMENT.md).
+Priorities are ordered by investor value and dependency, not by calendar. Each release has an explicit exit gate in the [delivery plan](docs/DELIVERY_PLAN.md).
 
-## Delivery priorities
-
-| Priority | Investor outcome | Planned scope |
+| Priority | Investor outcome | Scope |
 | --- | --- | --- |
-| P0 | Understand a company and inspect the evidence | Research workspace, upload/review, source-linked facts, grounded Q&A, notes/watchlist, holdings snapshot |
-| P1 | Know what the portfolio actually earned | Transaction imports, reconciliation, cash/dividends/actions, return methods, comparison, monitoring |
-| P2 | Evaluate alternatives and work with others | Valuation scenarios, screening, broader assets/currencies, broker connections, sharing and reports |
-| P3 | Support specialist operating models | Adviser workflows, advanced attribution, tax modules, execution only as a separate initiative |
+| **P0 · R1** | Know what you own and inspect the evidence behind it | Identity, holdings snapshot, durable uploads, versioned facts with page provenance, source reader, financial tables, deterministic calculations, evidence-backed Analyst, thesis notes and watchlists |
+| **P1 · R2** | Know what the portfolio actually earned, kept current without manual entry | Decimal ledger, tradebook import, reconciliation, dividends and corporate actions, TWR and XIRR, benchmarks |
+| **P1 · R3** | Autonomous monitoring and suggested actions | Filing and fact-change detection, thesis review triggers, alerts and digests, portfolio-scoped Analyst, income calendar, concentration and drawdown, exports |
+| **P2 · R4** | Broader decision support | Rebalancing simulation, valuation scenarios, peer comparison, screener, broker connections, multi-currency, funds and ETFs, US filings, sharing, reports, paid plans |
+| **P3** | Specialist operating models | Adviser workflows, tax reporting, factor attribution, backtesting, and execution only as a separately scoped initiative |
 
-Priority is not a delivery promise. The [roadmap](docs/FEATURE_ROADMAP.md) contains feature IDs, dependencies, acceptance criteria, and release gates.
+The [feature roadmap](docs/FEATURE_ROADMAP.md) lists every feature with acceptance criteria and dependencies.
 
-## Contributing and data handling
+## Join the build
 
-Keep domain logic in reusable packages and presentation/transport code in applications. Update the relevant PRD feature ID and tests when behavior changes. Keep private PDFs, caches, credentials, and account exports out of source control. Use synthetic data in tests and examples.
+Maester is open source because software that suggests what to do with your money should be inspectable, and because the best investors are also the best product critics. There is real, well-specified work at every level.
 
-No license has been selected. Hosting, market-data contracts, and production integrations remain future work. This local project folder currently has no Git metadata or configured remote; the monorepo layout and CI files are ready for version control when it is configured.
+- **Builders** who want to ship the first loop: import holdings, read a filing, detect a change, suggest a review with the page attached.
+- **Investors** who keep a spreadsheet, hold a research subscription, or use more than one broker. Your last unexplained portfolio difference is the research we need.
+- **Accounting and finance minds** who enjoy tearing apart return conventions, corporate-action edge cases and what counts as a meaningful change.
+- **Data partners** with permissioned sample filings and broker exports.
+
+Everything you need to get started, from setup to engineering rules, is in the **[contributing guide](CONTRIBUTING.md)**. The [documentation index](docs/README.md) covers the product and engineering specifications.
+
+## License
+
+A license has not been selected yet. It will be an OSI-approved open-source license, chosen before the first hosted release.
+
+---
+
+<div align="center">
+
+**Your portfolio, watched around the clock. Every suggestion backed by evidence. Every decision still yours.**
+
+Star the repo to follow along. Open an issue to tell us where we are wrong.
+
+</div>

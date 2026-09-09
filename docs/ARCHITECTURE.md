@@ -6,13 +6,13 @@ Maester is now a uv workspace with two installable Python packages. `apps/cli` i
 
 The root project coordinates dependencies and is not a distributable library. `uv.lock` resolves the workspace together. This follows uv's documented workspace model.[^1] The split makes application and reusable-library ownership explicit; it does not yet separate provider adapters from domain objects inside the engine.
 
-`apps/web`, `apps/api` and `apps/worker` currently contain boundary documentation only. They do not start servers. There is no production database, queue, authentication service, market-data adapter or portfolio engine. The following sections specify their future implementation.
+`apps/web` contains a static SvelteKit index page with `/terminal` and `/login` entry points; its investor journeys are not built. `apps/api` and `apps/worker` contain boundary documentation only. None of them start a hosted server. There is no production database, queue, authentication service, market-data adapter or portfolio engine. The following sections specify their future implementation.
 
 ## 2. Target boundaries
 
 ```text
 apps/
-  web/                   Next.js / React / TypeScript investor UI (planned)
+  web/                   SvelteKit / Svelte 5 / TypeScript investor UI (static index page implemented; journeys planned)
   api/                   Python HTTP API and authorization (planned)
   worker/                Python durable-job consumers (planned)
   cli/                   Local workflows and future operational commands
@@ -20,7 +20,7 @@ packages/
   financial-engine/      Existing document engine; evolve behind interfaces
   portfolio-engine/      Planned decimal ledger, valuations and returns
   contracts/             Planned generated TypeScript API client/schema artifacts
-  ui/                    Planned shared React components and tokens
+  ui/                    Planned shared Svelte components and tokens
   integrations/          Planned Python filing, price and broker adapters
 infra/                   Add when deployment resources are implemented
 docs/                    Product, semantics, architecture and operating decisions
@@ -28,7 +28,7 @@ tests/                   Cross-package regressions; domain tests grow with packa
 scripts/                 Repository checks and generation entry points
 ```
 
-Create future directories as real packages when there is implemented behavior to own. Explicit uv members prevent planning directories from breaking installation. When the web client is built, add a pnpm workspace for `apps/web`, `packages/ui` and `packages/contracts`, with a separate `pnpm-lock.yaml`. Pin Node/pnpm then; do not add empty JavaScript packages just to make the tree appear complete.
+Create future directories as real packages when there is implemented behavior to own. Explicit uv members prevent planning directories from breaking installation. `apps/web` is a standalone pnpm project with its own `pnpm-lock.yaml`; Node and pnpm are pinned in its `package.json` and `.nvmrc`. Add a root pnpm workspace file only when a second TypeScript package (`packages/ui` or `packages/contracts`) exists; do not add empty JavaScript packages just to make the tree appear complete. See [ADR 0002](decisions/0002-web-sveltekit-brutalist-design-system.md) and [DESIGN.md](DESIGN.md).
 
 Use uv for Python and pnpm for TypeScript. Keep root Make commands as a small common entry point. Introduce a build-task orchestrator only when parallel builds and caching have measurable value. Language-specific lockfiles are intentional, not duplicate dependency authorities.
 
@@ -69,7 +69,7 @@ flowchart LR
 
 The existing CLI continues using local JSON by default. Hosted API/worker paths use repository/storage interfaces as they are introduced. A future remote CLI mode must be explicit; switching application scope must not silently upload a local cache.
 
-Suggested hosted stack: Next.js web client, FastAPI API, PostgreSQL, GCS private objects and Cloud Tasks for durable ingestion dispatch to worker handlers. This builds on the existing GCP dependency. Record a queue ADR before implementation if a different provider or multi-cloud requirement emerges. In-process HTTP background tasks are insufficient for durable extraction. No infrastructure is provisioned by this refactor.
+Suggested hosted stack: SvelteKit web client (static today, adapter swap when server rendering is needed), FastAPI API, PostgreSQL, GCS private objects and Cloud Tasks for durable ingestion dispatch to worker handlers. This builds on the existing GCP dependency. Record a queue ADR before implementation if a different provider or multi-cloud requirement emerges. In-process HTTP background tasks are insufficient for durable extraction. No infrastructure is provisioned by this refactor.
 
 ## 5. Document pipeline
 

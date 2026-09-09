@@ -102,4 +102,4 @@ These are implementation/product decisions; the current documentation task does 
 
 Review the backlog after each milestone and after ten interviews, five prototype sessions and twenty activated users. Compare repeated investor problems, observed usage, support time, data availability and marginal service cost. A higher-priority request displaces another item rather than quietly expanding release scope.
 
-Maintain a decision record for changes to financial semantics, data vendors, permissions or package boundaries. Update the capability table in the root README when a feature becomes runnable. Keep planned features marked planned until their acceptance evidence exists.
+Maintain a decision record for changes to financial semantics, data vendors, permissions or package boundaries. Update the "What exists today" section in [CONTRIBUTING.md](../CONTRIBUTING.md) when a feature becomes runnable. Keep planned features marked planned until their acceptance evidence exists.

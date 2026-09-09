@@ -7,10 +7,11 @@
 | CLI distribution `maester-cli` | `apps/cli` | Runnable; Typer commands |
 | Library `maester-financial-engine` | `packages/financial-engine` | Runnable; `pdf_financial_qa` imports |
 | Workspace `maester-platform` | Root `pyproject.toml` | Dependency coordinator, not an installable library |
-| Web/API/worker | `apps/web`, `apps/api`, `apps/worker` | Boundary documentation only |
+| Web | `apps/web` | Static SvelteKit index page, `/terminal` and `/login`; journeys planned |
+| API/worker | `apps/api`, `apps/worker` | Boundary documentation only |
 | Portfolio accounting / shared UI / contracts | Described in architecture | Planned; no package yet |
 
-This is an actual multi-package Python workspace. Planned TypeScript applications will share the repository but use their own language workspace and lockfile. No Node.js, database or queue installation is needed to run the existing CLI.
+This is an actual multi-package Python workspace. Planned TypeScript applications will share the repository but use their own language workspace and lockfile. No Node.js, database or queue installation is needed to run the existing CLI. Node 22 and pnpm 11 are required only for `apps/web`, which is driven with pnpm scripts (`pnpm install`, `pnpm verify`, `pnpm dev` in that directory); see the [web README](../apps/web/README.md).
 
 ## 2. Environment and installation
 
@@ -110,4 +111,4 @@ These limitations are recorded rather than being mixed into the package migratio
 
 Create a Python package under the correct app/library boundary with its own `pyproject.toml` and source namespace. Add its explicit path to root workspace members, declare only the dependencies it uses, and use a root workspace source mapping for internal dependencies. Keep app imports out of libraries. Run `uv lock`, `uv sync --locked`, `make check` and an appropriate package build.
 
-For the future web client, follow the TypeScript workspace plan in [ARCHITECTURE.md](ARCHITECTURE.md). Define the API contract before manually duplicating types. Do not add a placeholder runtime or claim readiness in the root README until its primary journey is implemented and tested.
+For the web client, follow [ADR 0002](decisions/0002-web-sveltekit-brutalist-design-system.md) and the design contract in [DESIGN.md](DESIGN.md). Define the API contract before manually duplicating types. Do not add a placeholder runtime or claim readiness in the root README until its primary journey is implemented and tested.
