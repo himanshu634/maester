@@ -73,7 +73,7 @@ docker-compose.yml        Local Postgres
 package.json, pnpm-workspace.yaml, turbo.json, .nvmrc, .npmrc
 ```
 
-Root `package.json` is private and declares `engines` (node >=22, pnpm >=10). `pnpm-workspace.yaml` lists `apps/*` and `packages/*`; the Python directories contain no `package.json` so pnpm ignores them. `apps/web` becomes a workspace member automatically when the owner adds a `package.json` there.
+Root `package.json` is private and declares `engines` (node >=22, pnpm >=10). `pnpm-workspace.yaml` lists `apps/api`, `apps/worker` and `packages/*` explicitly. `apps/web` is the owner's standalone SvelteKit project (ADR 0002) with its own lockfile and is not a member until the owner adds it.
 
 Python remains installable via `uv sync --locked`; the Makefile gains `ts-install`, `ts-check`, `ts-test`, `ts-dev` targets.
 
@@ -262,9 +262,9 @@ pino JSON logs with `severity` mapped for Cloud Logging, `traceId`, `workspaceId
 
 ## 13. Documentation changes
 
-- `docs/decisions/0002-typescript-backend.md`: TypeScript on Cloud Run replaces the Python API/worker proposal; SvelteKit replaces Next.js; Better Auth; Cloud Tasks; SSE; contracts package replaces OpenAPI codegen as the type authority; Python engine frozen as reference behaviour.
+- `docs/decisions/0003-typescript-backend.md`: TypeScript on Cloud Run replaces the Python API/worker proposal; SvelteKit replaces Next.js; Better Auth; Cloud Tasks; SSE; contracts package replaces OpenAPI codegen as the type authority; Python engine frozen as reference behaviour.
 - `docs/ARCHITECTURE.md`: sections 1–4 and 10 updated to the new stack; pipeline sections 5–9 unchanged in intent, language references corrected.
-- `README.md`, `apps/api/README.md`, `apps/worker/README.md`, `apps/web/README.md`: status and commands.
+- `README.md`, `apps/api/README.md`, `apps/worker/README.md`: status and commands. `apps/web/**` is not edited (owner's parallel work).
 - `docs/DEVELOPMENT.md`: TypeScript workflow.
 
 ## 14. Non-goals and deferred items

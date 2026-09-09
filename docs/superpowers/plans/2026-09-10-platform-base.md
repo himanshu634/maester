@@ -6,7 +6,7 @@
 
 **Architecture:** A pnpm/Turborepo workspace with two Hono services (`apps/api`, `apps/worker`) and shared packages (`contracts` for Zod schemas, `db` for Drizzle schema and scoped queries, `storage` for a GCS object-store abstraction). The API owns auth (Better Auth), authorization (workspace membership), job creation and Cloud Tasks dispatch, and SSE. The worker leases jobs from Postgres and runs handlers; the only handler in the base is `document.verify`, which hashes an uploaded PDF in GCS.
 
-**Tech Stack:** Node 22, TypeScript 5, pnpm 11, Turborepo, Hono 4, Better Auth 1.7, Drizzle ORM + drizzle-kit, PostgreSQL 16, Zod 4, `@google-cloud/storage`, `@google-cloud/tasks`, `google-auth-library`, pino, Vitest, tsup, Docker, Cloud Run, GitHub Actions.
+**Tech Stack:** Node 22, TypeScript 5.9, pnpm 11, Turborepo, Hono 4, Better Auth 1.7, Drizzle ORM + drizzle-kit, PostgreSQL 16, Zod 4, `@google-cloud/storage`, `@google-cloud/tasks`, `google-auth-library`, pino 10, ESLint 10, Vitest 4, tsup, Docker, Cloud Run, GitHub Actions.
 
 **Spec:** `docs/superpowers/specs/2026-09-10-platform-base-design.md`
 
@@ -34,7 +34,7 @@
 
 ```text
 package.json                      root, private, scripts, packageManager
-pnpm-workspace.yaml               apps/*, packages/*
+pnpm-workspace.yaml               apps/api, apps/worker, packages/* (apps/web excluded)
 turbo.json                        lint / typecheck / test / build pipeline
 .nvmrc, .npmrc                    node 22, strict peer deps off
 docker-compose.yml                postgres:16 on 5433 with init script creating maester + maester_test
@@ -94,7 +94,7 @@ apps/api/Dockerfile, apps/worker/Dockerfile
 infra/bootstrap.sh, infra/deploy.sh
 .github/workflows/ts.yml
 scripts/smoke-upload.ts
-docs/decisions/0002-typescript-backend.md (+ doc edits)
+docs/decisions/0003-typescript-backend.md (+ doc edits)
 ```
 
 ---
@@ -136,10 +136,11 @@ docs/decisions/0002-typescript-backend.md (+ doc edits)
 }
 ```
 
-`pnpm-workspace.yaml`:
+`pnpm-workspace.yaml` (explicit members; `apps/web` is the owner's standalone SvelteKit project with its own lockfile and is deliberately NOT a member):
 ```yaml
 packages:
-  - "apps/*"
+  - "apps/api"
+  - "apps/worker"
   - "packages/*"
 ```
 
@@ -175,9 +176,9 @@ strict-peer-dependencies=false
   "type": "module",
   "files": ["tsconfig.base.json", "eslint.config.js"],
   "dependencies": {
-    "@eslint/js": "^9.30.0",
-    "eslint": "^9.30.0",
-    "typescript-eslint": "^8.40.0"
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.4.1",
+    "typescript-eslint": "^8.60.1"
   }
 }
 ```
@@ -346,9 +347,9 @@ git commit -m "chore: pnpm/turbo workspace, shared config, local postgres"
   "devDependencies": {
     "@maester/config": "workspace:*",
     "@types/node": "^22.0.0",
-    "eslint": "^9.30.0",
+    "eslint": "^10.4.1",
     "typescript": "^5.9.0",
-    "vitest": "^3.2.0"
+    "vitest": "^4.1.8"
   }
 }
 ```
@@ -709,10 +710,10 @@ git commit -m "feat(contracts): zod schemas for errors, workspaces, documents, j
     "@types/node": "^22.0.0",
     "@types/pg": "^8.15.0",
     "drizzle-kit": "^0.31.0",
-    "eslint": "^9.30.0",
+    "eslint": "^10.4.1",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
-    "vitest": "^3.2.0"
+    "vitest": "^4.1.8"
   }
 }
 ```
@@ -1312,9 +1313,9 @@ export class GcsObjectStore implements ObjectStore { constructor(bucketName: str
   "devDependencies": {
     "@maester/config": "workspace:*",
     "@types/node": "^22.0.0",
-    "eslint": "^9.30.0",
+    "eslint": "^10.4.1",
     "typescript": "^5.9.0",
-    "vitest": "^3.2.0"
+    "vitest": "^4.1.8"
   }
 }
 ```
@@ -1542,11 +1543,11 @@ git commit -m "feat(storage): ObjectStore interface with GCS and in-memory imple
   "devDependencies": {
     "@maester/config": "workspace:*",
     "@types/node": "^22.0.0",
-    "eslint": "^9.30.0",
+    "eslint": "^10.4.1",
     "tsup": "^8.5.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
-    "vitest": "^3.2.0"
+    "vitest": "^4.1.8"
   }
 }
 ```
@@ -3005,11 +3006,11 @@ git commit -m "feat(api): server-sent events for job progress"
   "devDependencies": {
     "@maester/config": "workspace:*",
     "@types/node": "^22.0.0",
-    "eslint": "^9.30.0",
+    "eslint": "^10.4.1",
     "tsup": "^8.5.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
-    "vitest": "^3.2.0"
+    "vitest": "^4.1.8"
   }
 }
 ```
@@ -4217,21 +4218,21 @@ git commit -m "chore: dockerfiles, gcp bootstrap and deploy scripts, typescript 
 
 ---
 
-### Task 14: Documentation and ADR 0002
+### Task 14: Documentation and ADR 0003
 
 **Files:**
-- Create: `docs/decisions/0002-typescript-backend.md`, `packages/contracts/README.md`, `packages/financial-engine-ts/package.json`, `packages/financial-engine-ts/README.md`
-- Modify: `docs/ARCHITECTURE.md`, `docs/DEVELOPMENT.md`, `README.md`, `apps/api/README.md`, `apps/worker/README.md`, `apps/web/README.md`, `docs/README.md` (link the ADR)
+- Create: `docs/decisions/0003-typescript-backend.md`, `packages/contracts/README.md`, `packages/financial-engine-ts/package.json`, `packages/financial-engine-ts/README.md`
+- Modify: `docs/ARCHITECTURE.md`, `docs/DEVELOPMENT.md`, `README.md`, `apps/api/README.md`, `apps/worker/README.md`, `docs/README.md` (link the ADR). Do NOT touch `apps/web/**` — the owner is editing it in parallel.
 
 - [ ] **Step 1: ADR 0002**
 
-`docs/decisions/0002-typescript-backend.md`:
+`docs/decisions/0003-typescript-backend.md`:
 ```markdown
-# ADR 0002: TypeScript backend on Cloud Run
+# ADR 0003: TypeScript backend on Cloud Run
 
 ## Status
 
-Accepted on 10 September 2026. Supersedes the Python API/worker and Next.js proposals in ADR 0001 and `ARCHITECTURE.md` sections 2–4.
+Accepted on 10 September 2026. Supersedes the Python API/worker proposal in ADR 0001 and `ARCHITECTURE.md` sections 2–4. ADR 0002 (SvelteKit web client) already records the frontend choice.
 
 ## Context
 
@@ -4243,7 +4244,7 @@ The Python engine is small (about 250 lines: one Gemini call, a subtotal checker
 - `packages/contracts` (Zod) is the single authority for API types. There is no OpenAPI code generation. The Svelte frontend imports contracts directly.
 - Authentication is Better Auth with email/password, sessions in Postgres, cookies first-party to the API origin.
 - PostgreSQL on Cloud SQL via Drizzle; private objects in GCS; durable job dispatch via Cloud Tasks with Postgres leasing; real-time delivery via Server-Sent Events.
-- The frontend is SvelteKit/Svelte, owned separately; it may join the pnpm workspace as `apps/web`.
+- The frontend is the SvelteKit app in `apps/web` (ADR 0002), owned separately with its own lockfile; it can join the root pnpm workspace later by being added to `pnpm-workspace.yaml`.
 - The Python CLI and engine are frozen as reference behaviour until the TypeScript extraction pipeline reproduces them, then retired.
 
 ## Alternatives considered
@@ -4301,7 +4302,7 @@ describe("README examples", () => {
   "type": "module",
   "exports": { ".": "./src/index.ts" },
   "scripts": { "lint": "eslint .", "typecheck": "tsc -p tsconfig.json" },
-  "devDependencies": { "@maester/config": "workspace:*", "@types/node": "^22.0.0", "eslint": "^9.30.0", "typescript": "^5.9.0" }
+  "devDependencies": { "@maester/config": "workspace:*", "@types/node": "^22.0.0", "eslint": "^10.4.1", "typescript": "^5.9.0" }
 }
 ```
 `src/index.ts`: `export const ENGINE_VERSION = "0.0.0";` plus `tsconfig.json`/`eslint.config.js` as in contracts. `README.md`: two sentences stating the extraction pipeline will live here and that the Python package at `packages/financial-engine` is the frozen reference.
@@ -4312,8 +4313,7 @@ describe("README examples", () => {
 - `docs/DEVELOPMENT.md`: add a "TypeScript workflow" section: `pnpm install`, `pnpm db:up`, `pnpm --filter @maester/db migrate`, `PORT=8787 pnpm dev:api`, `PORT=8788 pnpm dev:worker`, `/dev/upload`, `pnpm smoke`, `pnpm lint/typecheck/test`, migrations via `pnpm --filter @maester/db generate` after schema edits.
 - `README.md`: "What works today" gains bullets for sign-in/workspaces, private uploads with verification, durable jobs with SSE progress; repository layout updated; quick start gains the pnpm commands; "not implemented yet" text no longer claims there is no API or worker.
 - `apps/api/README.md`, `apps/worker/README.md`: status "implemented (base)", the routes/handlers they own, env vars, and how to run.
-- `apps/web/README.md`: state that the Svelte app is owned by the project owner, consumes `@maester/contracts`, and joins the workspace by adding a `package.json` here.
-- `docs/README.md`: link ADR 0002 and the spec/plan under `docs/superpowers/`.
+- `docs/README.md`: link ADR 0003 and the spec/plan under `docs/superpowers/`.
 
 - [ ] **Step 5: Verify**
 
@@ -4323,8 +4323,8 @@ Expected: all PASS, including the README example test and the existing Python do
 - [ ] **Step 6: Commit**
 
 ```bash
-git add docs README.md apps/api/README.md apps/worker/README.md apps/web/README.md packages/contracts/README.md packages/contracts/test packages/financial-engine-ts pnpm-lock.yaml
-git commit -m "docs: ADR 0002 typescript backend, frontend integration guide, updated architecture"
+git add docs README.md apps/api/README.md apps/worker/README.md packages/contracts/README.md packages/contracts/test packages/financial-engine-ts pnpm-lock.yaml
+git commit -m "docs: ADR 0003 typescript backend, frontend integration guide, updated architecture"
 ```
 
 ---
