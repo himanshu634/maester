@@ -1,0 +1,30 @@
+name: Workspace checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.17"
+      - name: Install Python
+        run: uv python install "${{ matrix.python-version }}"
+      - name: Install locked workspace
+        run: uv sync --locked --python "${{ matrix.python-version }}"
+      - name: Check workspace and local docs
+        run: uv run --locked python scripts/check_workspace.py
+      - name: Run offline regressions
+        run: uv run --locked python -m unittest discover -s tests -v
+      - name: Build both distributions
+        run: uv build --all-packages

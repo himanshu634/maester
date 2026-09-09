@@ -1,0 +1,17 @@
+[project]
+name = "maester-platform"
+version = "0.1.0"
+description = "Maester investor platform monorepo: portfolio management and financial research."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["maester-cli==0.1.0"]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["apps/cli", "packages/financial-engine"]
+
+[tool.uv.sources]
+maester-cli = { workspace = true }
+maester-financial-engine = { workspace = true }
