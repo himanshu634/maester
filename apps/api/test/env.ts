@@ -3,7 +3,7 @@ import { loadEnv, type Env } from "../src/env.js";
 export function testEnv(overrides: Partial<NodeJS.ProcessEnv> = {}): Env {
   return loadEnv({
     NODE_ENV: "test",
-    DATABASE_URL: process.env.DATABASE_URL_TEST ?? "postgres://maester:maester@localhost:5433/maester_test",
+    DATABASE_URL: process.env.DATABASE_URL_TEST_API ?? "postgres://maester:maester@localhost:5433/maester_test_api",
     BETTER_AUTH_SECRET: "test-secret-test-secret-test-secret-1234",
     BETTER_AUTH_URL: "http://localhost",
     ALLOWED_ORIGINS: "http://localhost,http://localhost:5173",

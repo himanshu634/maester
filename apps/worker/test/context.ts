@@ -9,7 +9,7 @@ import type { WorkerDeps } from "../src/run.js";
 export function workerTestEnv(overrides: Partial<NodeJS.ProcessEnv> = {}) {
   return loadWorkerEnv({
     NODE_ENV: "test",
-    DATABASE_URL: process.env.DATABASE_URL_TEST ?? "postgres://maester:maester@localhost:5433/maester_test",
+    DATABASE_URL: process.env.DATABASE_URL_TEST_WORKER ?? "postgres://maester:maester@localhost:5433/maester_test_worker",
     GCS_BUCKET: "test-bucket",
     DISPATCH_MODE: "local",
     DISPATCH_SECRET: "local-dispatch-secret",
