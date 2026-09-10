@@ -53,19 +53,31 @@ describe("jobs", () => {
   it("retry re-enqueues a failed job with extended max attempts and rejects a running one", async () => {
     const a = await ctx.signUp("j4@example.com");
     const job = await createJob(ctx.db, ctx.dispatcher, { workspaceId: a.workspaceId, type: JobTypes.DOCUMENT_VERIFY, subjectType: "document", subjectId: crypto.randomUUID() });
-    await ctx.db.update(schema.job).set({ state: "failed", attempt: 5, lastErrorCode: "BOOM" }).where(eq(schema.job.id, job.id));
+    await ctx.db
+      .update(schema.job)
+      .set({ state: "failed", attempt: 5, lastErrorCode: "BOOM", finishedAt: new Date(), progress: { stage: "x" } })
+      .where(eq(schema.job.id, job.id));
     const before = ctx.dispatcher.enqueued.length;
     const res = await ctx.app.request(`/v1/workspaces/${a.workspaceId}/jobs/${job.id}/retry`, { method: "POST", headers: { cookie: a.cookie, origin: "http://localhost" } });
     expect(res.status).toBe(200);
     const body = Job.parse(await res.json());
     expect(body.state).toBe("queued");
     expect(body.maxAttempts).toBe(10);
+    expect(body.finishedAt).toBeNull();
+    expect(body.progress).toEqual({});
     expect(ctx.dispatcher.enqueued.length).toBe(before + 1);
 
     await ctx.db.update(schema.job).set({ state: "running" }).where(eq(schema.job.id, job.id));
     const bad = await ctx.app.request(`/v1/workspaces/${a.workspaceId}/jobs/${job.id}/retry`, { method: "POST", headers: { cookie: a.cookie, origin: "http://localhost" } });
     expect(bad.status).toBe(409);
     expect(((await bad.json()) as { error: { code: string } }).error.code).toBe("INVALID_STATE");
+  });
+
+  it("malformed :id returns 404, not 500", async () => {
+    const a = await ctx.signUp("j6@example.com");
+    const res = await ctx.app.request(`/v1/workspaces/${a.workspaceId}/jobs/not-a-uuid`, { headers: { cookie: a.cookie } });
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("NOT_FOUND");
   });
 
   it("rejects retrying a freshly queued job but allows it once it has been queued for a while (stuck)", async () => {

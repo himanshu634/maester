@@ -42,7 +42,7 @@ The platform base is the backend foundation that the PDF extraction pipeline, re
 | Job dispatch | Cloud Tasks (`@google-cloud/tasks`) HTTP target → worker, OIDC-authenticated |
 | Real-time | Server-Sent Events from the API (`hono/streaming`) |
 | Logging | pino, JSON to stdout, Cloud Logging severity mapping |
-| Validation / contracts | Zod 3 in `packages/contracts` |
+| Validation / contracts | Zod 4 in `packages/contracts` |
 | Tests | Vitest; integration tests against Postgres from Docker Compose |
 | Hosting | Cloud Run services `maester-api`, `maester-worker` |
 | CI/CD | GitHub Actions, Workload Identity Federation, no stored keys |
@@ -79,7 +79,7 @@ Python remains installable via `uv sync --locked`; the Makefile gains `ts-instal
 
 ## 4. Authentication and workspaces
 
-Better Auth is mounted in the API at `/api/auth/*` with the Drizzle adapter. Email + password only in the base. Sessions are cookie-based: `SameSite=Lax`, `Secure` in production, `HttpOnly`.
+Better Auth is mounted in the API at `/api/auth/*` with the Drizzle adapter. Email + password only in the base. Sessions are cookie-based: `SameSite=Lax`, `Secure` in production, `HttpOnly`. Because the cookie is `SameSite=Lax`, in production the frontend must reach the API same-site — either the SvelteKit server proxies `/api/auth/*` and `/v1/*` to the API, or the two share a custom domain; a cross-site call to the raw Cloud Run URL will not carry the cookie.
 
 - `trustedOrigins` and CORS `origin` come from `ALLOWED_ORIGINS` (comma-separated). CORS uses `credentials: true`.
 - A `databaseHooks.user.create.after` hook runs after the user row commits and calls an idempotent `ensurePersonalWorkspace` that creates the personal workspace (`name = "<user name>'s workspace"`, `owner_user_id`) and an owner membership in one transaction.
@@ -221,11 +221,11 @@ Routes in the base:
 
 `packages/contracts` (`@maester/contracts`) exports Zod schemas and inferred types:
 
-- `auth`: `User`, `Session` (shape mirrors Better Auth output).
+- `auth`: user fields are inline in `Me`.
 - `workspace`: `Workspace`, `Membership`, `Me`.
 - `document`: `DocumentState`, `Document`, `CreateUploadRequest`, `CreateUploadResponse`, `FinalizeResponse`, `DownloadResponse`.
-- `job`: `JobState`, `JobProgress`, `Job`, `JobEvent` (SSE payload).
-- `common`: `ApiError`, `ErrorCode`, `Paginated(schema)`, `Cursor`, `DecimalString`, `IsoTimestamp`.
+- `job`: `JobState`, `JobProgress`, `Job` (the SSE payload is `Job`).
+- `common`: `ApiError`, `ErrorCode`, `Paginated(schema)`, `DecimalString`, `IsoTimestamp`.
 - `jobs/payloads`: `DocumentVerifyPayload`, `DocumentVerifyResult` (shared by API and worker).
 
 The README documents: auth flow (sign-up, sign-in, sign-out, session check with cookies and CORS), every route with request/response examples, the error envelope, the upload sequence, the SSE format, and local dev origins. This README is the deliverable the frontend builds against.
@@ -233,7 +233,7 @@ The README documents: auth flow (sign-up, sign-in, sign-out, session check with 
 ## 10. Deployment and local development
 
 **GCP resources** (one project, region `asia-south1` default, overridable):
-- Cloud SQL Postgres 16 instance, database `maester`, IAM DB auth for services; local dev uses password auth through Docker.
+- Cloud SQL Postgres 16 instance, database `maester`, password auth via the `DATABASE_URL` secret (IAM DB auth deferred); local dev uses password auth through Docker.
 - GCS bucket `maester-private-{project}`: uniform bucket-level access, no public access, versioning on, CORS configured for `ALLOWED_ORIGINS` on `PUT`.
 - Cloud Tasks queue `maester-jobs`.
 - Service accounts: `maester-api` (Cloud SQL client, `storage.objects.create/get` on the bucket, `roles/iam.serviceAccountTokenCreator` on itself so V4 URLs can be signed via IAM `signBlob`, `cloudtasks.enqueuer`, `iam.serviceAccountUser` on the worker SA so tasks carry an OIDC token), `maester-worker` (Cloud SQL client, `storage.objects.get`), `maester-migrate` (Cloud SQL client).

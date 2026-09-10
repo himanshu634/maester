@@ -3,7 +3,7 @@
   "tasks": {
     "lint": {},
     "typecheck": { "dependsOn": ["^typecheck"] },
-    "test": { "dependsOn": ["^typecheck"], "env": ["DATABASE_URL_TEST_DB", "DATABASE_URL_TEST_API", "DATABASE_URL_TEST_WORKER"] },
+    "test": { "dependsOn": ["^typecheck"], "env": ["DATABASE_URL_TEST_DB", "DATABASE_URL_TEST_API", "DATABASE_URL_TEST_WORKER"], "cache": false },
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] }
   }
 }

@@ -51,6 +51,8 @@ export async function retryJob(db: Db, dispatcher: Dispatcher, workspaceId: stri
       leaseToken: null,
       leaseExpiresAt: null,
       maxAttempts: sql`${schema.job.attempt} + ${DEFAULT_MAX_ATTEMPTS}`,
+      finishedAt: null,
+      progress: {},
       updatedAt: sql`now()`,
     })
     .where(

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Me, Workspace } from "@maester/contracts";
+import { Me, Workspace, paginated } from "@maester/contracts";
 import { createTestContext, type TestContext } from "./context.js";
 
 let ctx: TestContext;
@@ -34,7 +34,7 @@ describe("auth and workspaces", () => {
     expect(((await denied.json()) as { error: { code: string } }).error.code).toBe("NOT_FOUND");
   });
 
-  it("sign-in with the wrong password fails and sign-out clears the session", async () => {
+  it("sign-in with the wrong password fails", async () => {
     await ctx.signUp("c@example.com");
     const bad = await ctx.app.request("/api/auth/sign-in/email", {
       method: "POST",
@@ -42,5 +42,26 @@ describe("auth and workspaces", () => {
       body: JSON.stringify({ email: "c@example.com", password: "wrong" }),
     });
     expect(bad.status).toBe(401);
+  });
+
+  it("sign-out invalidates the session", async () => {
+    const { cookie } = await ctx.signUp("d@example.com");
+    const signOut = await ctx.app.request("/api/auth/sign-out", {
+      method: "POST",
+      headers: { cookie, origin: "http://localhost" },
+    });
+    expect(signOut.status).toBe(200);
+    const me = await ctx.app.request("/v1/me", { headers: { cookie } });
+    expect(me.status).toBe(401);
+  });
+
+  it("GET /v1/workspaces returns the caller's workspaces", async () => {
+    const { cookie, workspaceId } = await ctx.signUp("e@example.com");
+    const res = await ctx.app.request("/v1/workspaces", { headers: { cookie } });
+    expect(res.status).toBe(200);
+    const page = paginated(Workspace).parse(await res.json());
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]!.id).toBe(workspaceId);
+    expect(page.nextCursor).toBeNull();
   });
 });

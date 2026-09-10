@@ -12,4 +12,12 @@ const db = createDb(env.DATABASE_URL);
 const store = new GcsObjectStore(env.GCS_BUCKET);
 const app = createWorkerApp({ db, store, logger, env, handlers });
 
-serve({ fetch: app.fetch, port: env.PORT }, (info) => logger.info({ port: info.port }, "worker listening"));
+const server = serve({ fetch: app.fetch, port: env.PORT }, (info) =>
+  logger.info({ port: info.port }, "worker listening"),
+);
+
+process.on("SIGTERM", () => {
+  logger.info("SIGTERM received; closing");
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 10_000).unref();
+});

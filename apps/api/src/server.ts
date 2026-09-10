@@ -16,6 +16,12 @@ const dispatcher = createDispatcher(env, logger);
 
 const app = createApp({ env, logger, db, store, auth, dispatcher });
 
-serve({ fetch: app.fetch, port: env.PORT }, (info) => {
+const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
   logger.info({ port: info.port }, "api listening");
+});
+
+process.on("SIGTERM", () => {
+  logger.info("SIGTERM received; closing");
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 10_000).unref();
 });

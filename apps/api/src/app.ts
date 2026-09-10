@@ -57,7 +57,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}) {
 
   app.get("/healthz", (c) => c.json({ status: "ok" }));
 
-  if (deps.env.NODE_ENV !== "production") app.route("/dev", devRoutes());
+  if (deps.env.NODE_ENV === "development" || deps.env.NODE_ENV === "test") app.route("/dev", devRoutes());
 
   app.on(["GET", "POST"], "/api/auth/*", (c) => deps.auth.handler(c.req.raw));
 

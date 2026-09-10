@@ -137,7 +137,7 @@ pnpm typecheck
 pnpm test
 ```
 
-These fan out per package via Turborepo (`turbo.json`); `pnpm test` needs the per-package test databases from `scripts/db/init.sql` (`maester_test_db`, `maester_test_api`, `maester_test_worker`) reachable at `DATABASE_URL_TEST_DB`, `DATABASE_URL_TEST_API`, `DATABASE_URL_TEST_WORKER`.
+These fan out per package via Turborepo (`turbo.json`); `pnpm test` needs the per-package test databases from `scripts/db/init.sql` (`maester_test_db`, `maester_test_api`, `maester_test_worker`) reachable at `DATABASE_URL_TEST_DB`, `DATABASE_URL_TEST_API`, `DATABASE_URL_TEST_WORKER`. If you started Postgres before these per-package databases existed, `docker compose down -v && docker compose up -d postgres` to reinitialize the volume from `scripts/db/init.sql`, or create the three databases (`maester_test_db`, `maester_test_api`, `maester_test_worker`) manually.
 
 After editing `packages/db`'s Drizzle schema, regenerate migrations before committing:
 

@@ -7,7 +7,7 @@ QUEUE="${QUEUE:-maester-jobs}"
 SQL_INSTANCE="${SQL_INSTANCE:-maester-pg}"
 DB_NAME="${DB_NAME:-maester}"
 REPO="${REPO:-maester}"
-ALLOWED_ORIGINS="${ALLOWED_ORIGINS:-http://localhost:5173}"
+: "${ALLOWED_ORIGINS:?set ALLOWED_ORIGINS}"
 
 gcloud config set project "$PROJECT" >/dev/null
 gcloud services enable run.googleapis.com sqladmin.googleapis.com storage.googleapis.com \
@@ -46,7 +46,8 @@ cat > /tmp/cors.json <<EOF_CORS
 [{"origin":[${ORIGINS_JSON}],"method":["PUT"],"responseHeader":["Content-Type","Content-Length"],"maxAgeSeconds":3600}]
 EOF_CORS
 gcloud storage buckets update "gs://$BUCKET" --cors-file=/tmp/cors.json
-gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member="serviceAccount:$API_SA" --role="roles/storage.objectUser" >/dev/null
+gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member="serviceAccount:$API_SA" --role="roles/storage.objectCreator" >/dev/null
+gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member="serviceAccount:$API_SA" --role="roles/storage.objectViewer" >/dev/null
 gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member="serviceAccount:$WORKER_SA" --role="roles/storage.objectViewer" >/dev/null
 # API signs V4 URLs via IAM signBlob on its own identity
 gcloud iam service-accounts add-iam-policy-binding "$API_SA" --member="serviceAccount:$API_SA" --role="roles/iam.serviceAccountTokenCreator" >/dev/null
@@ -54,7 +55,7 @@ gcloud iam service-accounts add-iam-policy-binding "$API_SA" --member="serviceAc
 # Cloud Tasks queue
 gcloud tasks queues describe "$QUEUE" --location="$REGION" >/dev/null 2>&1 || \
   gcloud tasks queues create "$QUEUE" --location="$REGION"
-gcloud tasks queues update "$QUEUE" --location="$REGION" --max-attempts=5 --min-backoff=10s --max-backoff=300s --max-concurrent-dispatches=20
+gcloud tasks queues update "$QUEUE" --location="$REGION" --max-attempts=unlimited --max-retry-duration=86400s --min-backoff=10s --max-backoff=300s --max-concurrent-dispatches=20
 gcloud projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:$API_SA" --role="roles/cloudtasks.enqueuer" --condition=None >/dev/null
 # API may mint OIDC tokens as the worker invoker (itself) when creating tasks
 gcloud iam service-accounts add-iam-policy-binding "$API_SA" --member="serviceAccount:$API_SA" --role="roles/iam.serviceAccountUser" >/dev/null

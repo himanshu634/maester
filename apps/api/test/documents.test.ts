@@ -14,8 +14,8 @@ const post = (cookie: string, body: unknown) => ({
   body: JSON.stringify(body),
 });
 
-async function createUpload(ws: string, cookie: string, size = 1234) {
-  const res = await ctx.app.request(`/v1/workspaces/${ws}/documents/uploads`, post(cookie, { originalName: "fy24.pdf", size, mimeType: "application/pdf" }));
+async function createUpload(ws: string, cookie: string, size = 1234, originalName = "fy24.pdf") {
+  const res = await ctx.app.request(`/v1/workspaces/${ws}/documents/uploads`, post(cookie, { originalName, size, mimeType: "application/pdf" }));
   return { status: res.status, body: await res.json() };
 }
 
@@ -80,6 +80,20 @@ describe("documents", () => {
 
     const foreign = await ctx.app.request(`/v1/workspaces/${b.workspaceId}/documents/${page.items[0]!.id}`, { headers: { cookie: b.cookie } });
     expect(foreign.status).toBe(404);
+  });
+
+  it("malformed :id returns 404, not 500", async () => {
+    const a = await ctx.signUp("d7@example.com");
+    const res = await ctx.app.request(`/v1/workspaces/${a.workspaceId}/documents/not-a-uuid`, { headers: { cookie: a.cookie } });
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("NOT_FOUND");
+  });
+
+  it("sanitises the original name but keeps unicode", async () => {
+    const a = await ctx.signUp("d8@example.com");
+    const { body } = await createUpload(a.workspaceId, a.cookie, 1234, "वार्षिक-रिपोर्ट/2024.pdf");
+    const parsed = CreateUploadResponse.parse(body);
+    expect(parsed.document.originalName).toBe("वार्षिक-रिपोर्ट_2024.pdf");
   });
 
   it("download is only available once stored", async () => {

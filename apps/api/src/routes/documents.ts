@@ -12,6 +12,7 @@ import { getDocument, getLatestJobForSubject, listDocuments, schema, type Docume
 import type { AppDeps, AppEnv } from "../app.js";
 import { HttpError } from "../errors.js";
 import { createJob } from "../jobs/create.js";
+import { uuidParam } from "../middleware/params.js";
 import { toDocument, toJob } from "../serialize.js";
 import { validate } from "../validation.js";
 
@@ -20,7 +21,8 @@ export function storageKeyFor(workspaceId: string, documentId: string): string {
 }
 
 function sanitiseName(name: string): string {
-  return name.replace(/[\\/]/g, "_").replace(/[^\x20-\x7E]/g, "_").slice(0, 255);
+  // eslint-disable-next-line no-control-regex
+  return name.replace(/[\x00-\x1f\x7f/\\]/g, "_").slice(0, 255);
 }
 
 export function documentRoutes(deps: AppDeps) {
@@ -61,7 +63,7 @@ export function documentRoutes(deps: AppDeps) {
 
   r.post("/:id/finalize", async (c) => {
     const workspace = c.get("workspace");
-    const doc = await getDocument(deps.db, workspace.id, c.req.param("id"));
+    const doc = await getDocument(deps.db, workspace.id, uuidParam(c, "id"));
     if (!doc) throw new HttpError("NOT_FOUND", "document not found");
     if (doc.state === "rejected") throw new HttpError("INVALID_STATE", "document was rejected; create a new upload");
 
@@ -100,7 +102,7 @@ export function documentRoutes(deps: AppDeps) {
 
   r.get("/:id", async (c) => {
     const workspace = c.get("workspace");
-    const doc = await getDocument(deps.db, workspace.id, c.req.param("id"));
+    const doc = await getDocument(deps.db, workspace.id, uuidParam(c, "id"));
     if (!doc) throw new HttpError("NOT_FOUND", "document not found");
     const job = await getLatestJobForSubject(deps.db, workspace.id, "document", doc.id);
     return c.json(toDocument(doc, job));
@@ -108,7 +110,7 @@ export function documentRoutes(deps: AppDeps) {
 
   r.get("/:id/download", async (c) => {
     const workspace = c.get("workspace");
-    const doc = await getDocument(deps.db, workspace.id, c.req.param("id"));
+    const doc = await getDocument(deps.db, workspace.id, uuidParam(c, "id"));
     if (!doc) throw new HttpError("NOT_FOUND", "document not found");
     if (doc.state !== "stored") throw new HttpError("INVALID_STATE", `document is ${doc.state}`);
     const signed = await deps.store.signDownload(doc.storageKey, { expiresInSeconds: deps.env.DOWNLOAD_URL_TTL_SECONDS });

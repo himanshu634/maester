@@ -2,8 +2,7 @@ import { createMiddleware } from "hono/factory";
 import { getWorkspaceForUser, type Db } from "@maester/db";
 import type { AppEnv } from "../app.js";
 import { HttpError } from "../errors.js";
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { UUID } from "./params.js";
 
 export function requireWorkspace(db: Db) {
   return createMiddleware<AppEnv>(async (c, next) => {

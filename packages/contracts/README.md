@@ -16,6 +16,15 @@ Any browser client must:
 - Be served from an origin listed in the API's `ALLOWED_ORIGINS` environment variable. The API only reflects `Access-Control-Allow-Origin` for origins in that list, and always sends `Access-Control-Allow-Credentials: true` for them.
 - `http://localhost:5173` (the default Vite dev server origin) is included in `ALLOWED_ORIGINS` by default in `.env.example`, so a local SvelteKit dev server works against a local API with no extra configuration.
 
+**Cookie scope in production.** The session cookie Better Auth sets is `SameSite=Lax`, so the browser only attaches it to requests that are same-site with the page that set it. In production this means the browser must reach the API on the same site as the frontend — there are two ways to arrange that:
+
+1. **The SvelteKit server proxies `/api/auth/*` and `/v1/*` to the API (recommended).** The browser only ever talks to the frontend's own origin; the SvelteKit server forwards those paths to the API over a trusted, server-to-server connection. `credentials: "include"` is not needed for this path, since the request never leaves the app's origin from the browser's point of view.
+2. **The frontend and the API share a custom domain** (e.g. `app.example.com` and `api.example.com`, both under `example.com` with matching `SameSite=Lax` eligibility), so the cookie set by the API is still sent on requests the browser makes to the frontend's origin family.
+
+A cross-site call straight to the raw `*.run.app` Cloud Run URL (a different site from the frontend's origin) will not carry the cookie, regardless of `credentials: "include"` or CORS configuration — `SameSite=Lax` blocks it at the browser level before CORS is even evaluated.
+
+Local development (`http://localhost:5173` calling `http://localhost:8787`) is same-site (same registrable domain, different port), so `credentials: "include"` works there with no proxy needed.
+
 ```http
 GET /v1/me HTTP/1.1
 Host: localhost:8787
@@ -48,7 +57,7 @@ POST /api/auth/sign-out
 GET /api/auth/get-session
 ```
 
-`sign-up` and `sign-in` set the `maester.session_token` cookie on a successful response; `sign-out` clears it. `get-session` returns the current session (or `null`) using whatever cookie is attached to the request. After sign-up, the API creates a personal workspace for the new user asynchronously — call `GET /v1/me` to read it once the session is established.
+`sign-up` and `sign-in` set the `maester.session_token` cookie on a successful response; `sign-out` clears it. `get-session` returns the current session (or `null`) using whatever cookie is attached to the request. The API creates a personal workspace for the new user during sign-up itself — call `GET /v1/me` after the session is established to read it.
 
 These four are the only endpoints the frontend calls directly on `/api/auth/*`; everything else in this guide is under `/v1`.
 
@@ -171,7 +180,7 @@ Response (`201 Created`):
   "upload": {
     "method": "PUT",
     "url": "https://storage.googleapis.com/maester-private-dev/workspaces/3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f/documents/7c9e6679-7425-40de-944b-e07fc1f90ae7/original.pdf?X-Goog-Signature=abcd1234",
-    "headers": { "content-type": "application/pdf", "content-length": "245678" },
+    "headers": { "Content-Type": "application/pdf", "Content-Length": "245678" },
     "expiresAt": "2026-09-10T08:30:30Z"
   }
 }
@@ -203,7 +212,7 @@ No request body. Response:
       "subjectType": "document",
       "subjectId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
       "state": "queued",
-      "attempt": 1,
+      "attempt": 0,
       "maxAttempts": 5,
       "progress": {},
       "result": null,
@@ -261,9 +270,9 @@ A document once verification has finished, with its terminal job attached:
     "subjectType": "document",
     "subjectId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
     "state": "succeeded",
-    "attempt": 1,
+    "attempt": 0,
     "maxAttempts": 5,
-    "progress": { "stage": "verified", "percent": 100, "message": "Checksum recorded" },
+    "progress": { "stage": "stored", "percent": 100 },
     "result": { "outcome": "stored", "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "sizeBytes": 245678 },
     "lastErrorCode": null,
     "lastErrorMessage": null,
@@ -304,10 +313,10 @@ Both return a `Job`:
   "state": "failed",
   "attempt": 2,
   "maxAttempts": 5,
-  "progress": { "stage": "downloading", "percent": 10 },
+  "progress": { "stage": "hashing", "percent": 0 },
   "result": null,
-  "lastErrorCode": "OBJECT_MISSING",
-  "lastErrorMessage": "object not found in storage",
+  "lastErrorCode": "HANDLER_ERROR",
+  "lastErrorMessage": "unexpected error while verifying the document",
   "createdAt": "2026-09-10T08:16:00Z",
   "startedAt": "2026-09-10T08:16:01Z",
   "finishedAt": "2026-09-10T08:16:03Z",
@@ -315,14 +324,16 @@ Both return a `Job`:
 }
 ```
 
-`retry` only succeeds when the job is `failed` or a `queued` job stuck without a dispatched task; any other state returns `409 INVALID_STATE`.
+`lastErrorCode` on a job is one of the worker's own error codes — `HANDLER_ERROR` (the handler threw) or `UNKNOWN_JOB_TYPE` (no handler registered for `job.type`) — not to be confused with a document's `rejectionCode` (`NOT_A_PDF`, `TOO_LARGE`, `OBJECT_MISSING`), which describes why a *document* was rejected, not why a job failed; a rejected document's verify job still `succeeds`, with `result.outcome === "rejected"`.
+
+`retry` only succeeds when the job is `failed` or a `queued` job stuck without a dispatched task; any other state returns `409 INVALID_STATE`. On success it raises `maxAttempts` by 5 (relative to the job's current `attempt`) and resets `finishedAt` and `progress` back to their initial values (`null` and `{}`).
 
 ## 5. Upload sequence
 
 Uploading and verifying a PDF is a five-step round trip:
 
 1. **Create the upload.** `POST /v1/workspaces/{ws}/documents/uploads` with `CreateUploadRequest` (`originalName`, `size`, `mimeType: "application/pdf"`). The response's `document` is `pending_upload`; `upload` carries a signed `PUT` URL, the exact headers required, and an expiry.
-2. **PUT the bytes.** `fetch(upload.url, { method: "PUT", headers: upload.headers, body: file })` — send *exactly* the headers in `upload.headers` (typically `content-type` and `content-length`) and nothing else; a mismatched header invalidates the signature. Do not send the session cookie or `credentials: "include"` on this request — it goes straight to object storage, not the API.
+2. **PUT the bytes.** `fetch(upload.url, { method: "PUT", headers: upload.headers, body: file })` — send *exactly* the headers in `upload.headers` (`Content-Type` and `Content-Length`, in that exact casing — the API returns them as-is) and nothing else; a mismatched header invalidates the signature. Do not send the session cookie or `credentials: "include"` on this request — it goes straight to object storage, not the API.
 3. **Finalize.** `POST /v1/workspaces/{ws}/documents/{id}/finalize` with no body. This confirms the object landed, flips the document to `uploaded`, and enqueues a `document.verify` job. The response is `FinalizeResponse` (`document`, `job`).
 4. **Subscribe to progress.** Open `GET /v1/workspaces/{ws}/jobs/{job.id}/events` (see §6) to watch the job move through `queued` → `running` → `succeeded`/`failed`.
 5. **Read the document.** Once the stream sends `event: done`, `GET /v1/workspaces/{ws}/documents/{id}` returns the final state: `stored` (with `contentSha256` and `sizeBytes` populated) or `rejected` (with `rejectionCode` set). `GET .../download` is only valid once `stored`.
@@ -334,13 +345,13 @@ Uploading and verifying a PDF is a five-step round trip:
 ```text
 event: job
 id: 0
-data: {"id":"9b2e2f0a-1d3c-4e5f-8a6b-7c8d9e0f1a2b","workspaceId":"3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f","type":"document.verify","subjectType":"document","subjectId":"7c9e6679-7425-40de-944b-e07fc1f90ae7","state":"running","attempt":1,"maxAttempts":5,"progress":{"stage":"downloading","percent":10},"result":null,"lastErrorCode":null,"lastErrorMessage":null,"createdAt":"2026-09-10T08:16:00Z","startedAt":"2026-09-10T08:16:01Z","finishedAt":null,"updatedAt":"2026-09-10T08:16:01Z"}
+data: {"id":"9b2e2f0a-1d3c-4e5f-8a6b-7c8d9e0f1a2b","workspaceId":"3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f","type":"document.verify","subjectType":"document","subjectId":"7c9e6679-7425-40de-944b-e07fc1f90ae7","state":"running","attempt":0,"maxAttempts":5,"progress":{"stage":"hashing","percent":0},"result":null,"lastErrorCode":null,"lastErrorMessage":null,"createdAt":"2026-09-10T08:16:00Z","startedAt":"2026-09-10T08:16:01Z","finishedAt":null,"updatedAt":"2026-09-10T08:16:01Z"}
 
 : ping
 
 event: job
 id: 1
-data: {"id":"9b2e2f0a-1d3c-4e5f-8a6b-7c8d9e0f1a2b","workspaceId":"3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f","type":"document.verify","subjectType":"document","subjectId":"7c9e6679-7425-40de-944b-e07fc1f90ae7","state":"succeeded","attempt":1,"maxAttempts":5,"progress":{"stage":"verified","percent":100},"result":{"outcome":"stored","sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","sizeBytes":245678},"lastErrorCode":null,"lastErrorMessage":null,"createdAt":"2026-09-10T08:16:00Z","startedAt":"2026-09-10T08:16:01Z","finishedAt":"2026-09-10T08:16:05Z","updatedAt":"2026-09-10T08:16:05Z"}
+data: {"id":"9b2e2f0a-1d3c-4e5f-8a6b-7c8d9e0f1a2b","workspaceId":"3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f","type":"document.verify","subjectType":"document","subjectId":"7c9e6679-7425-40de-944b-e07fc1f90ae7","state":"succeeded","attempt":0,"maxAttempts":5,"progress":{"stage":"stored","percent":100},"result":{"outcome":"stored","sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","sizeBytes":245678},"lastErrorCode":null,"lastErrorMessage":null,"createdAt":"2026-09-10T08:16:00Z","startedAt":"2026-09-10T08:16:01Z","finishedAt":"2026-09-10T08:16:05Z","updatedAt":"2026-09-10T08:16:05Z"}
 
 event: done
 data:

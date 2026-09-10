@@ -3,6 +3,7 @@ import { streamSSE } from "hono/streaming";
 import { getJob, type JobRow } from "@maester/db";
 import type { AppDeps, AppEnv } from "../app.js";
 import { HttpError } from "../errors.js";
+import { uuidParam } from "../middleware/params.js";
 import { toJob } from "../serialize.js";
 
 export interface SseOptions { pollMs: number; heartbeatMs: number; maxLifetimeMs: number }
@@ -16,7 +17,7 @@ export function jobEventsRoute(deps: AppDeps, opts: SseOptions = DEFAULT_SSE) {
 
   r.get("/:id/events", async (c) => {
     const workspaceId = c.get("workspace").id;
-    const jobId = c.req.param("id");
+    const jobId = uuidParam(c, "id");
     const initial = await getJob(deps.db, workspaceId, jobId);
     if (!initial) throw new HttpError("NOT_FOUND", "job not found");
 

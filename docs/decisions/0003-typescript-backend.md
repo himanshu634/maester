@@ -13,6 +13,7 @@ The Python engine is small (about 250 lines: one Gemini call, a subtotal checker
 - The hosted backend is TypeScript on Node 22: `apps/api` (Hono) and `apps/worker` (Hono, Cloud Tasks target), deployed as Cloud Run services on GCP. Vercel is not used for hosting anywhere.
 - `packages/contracts` (Zod) is the single authority for API types. There is no OpenAPI code generation. The Svelte frontend imports contracts directly.
 - Authentication is Better Auth with email/password, sessions in Postgres, cookies first-party to the API origin.
+- The session cookie is `SameSite=Lax`; in production the frontend must reach the API same-site, either via a SvelteKit server-side proxy of `/api/auth/*` and `/v1/*` or by sharing a custom domain with the API — a cross-site call to the raw Cloud Run URL will not carry the cookie.
 - PostgreSQL on Cloud SQL via Drizzle; private objects in GCS; durable job dispatch via Cloud Tasks with Postgres leasing; real-time delivery via Server-Sent Events.
 - The frontend is the SvelteKit app in `apps/web` (ADR 0002), owned separately with its own lockfile; it can join the root pnpm workspace later by being added to `pnpm-workspace.yaml`.
 - The Python CLI and engine are frozen as reference behaviour until the TypeScript extraction pipeline reproduces them, then retired.
