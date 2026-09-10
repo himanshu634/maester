@@ -16,6 +16,9 @@ Maester's product plan connects portfolio tracking with company research and ver
 | [Delivery plan](DELIVERY_PLAN.md) | Milestones, initial build sequence, dependencies and decisions | Delivery team |
 | [Development](DEVELOPMENT.md) | Working commands, migration and current limitations | Contributors |
 | [Monorepo decision](decisions/0001-platform-monorepo.md) | Rationale and consequences of the package split | Engineering |
+| [TypeScript backend decision](decisions/0003-typescript-backend.md) | Rationale for the hosted API/worker base on Cloud Run | Engineering |
+| [Platform base design spec](superpowers/specs/2026-09-10-platform-base-design.md) | Detailed design for the TypeScript base: routes, schemas, jobs, SSE | Engineering |
+| [Platform base plan](superpowers/plans/2026-09-10-platform-base.md) | Task breakdown that implemented the TypeScript base | Engineering |
 
 ## Document status
 
