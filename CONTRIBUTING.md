@@ -144,7 +144,10 @@ These rules come from the [product requirements](docs/PRD.md) and [architecture]
 - [ ] New behavior has offline tests that do not call a model.
 - [ ] Documentation under `docs/` is updated where semantics changed.
 - [ ] No private data, credentials or generated caches are included.
+- [ ] Commits are signed off with `git commit -s`, and if this is your first pull request, you have added yourself to [CONTRIBUTORS.md](CONTRIBUTORS.md) and agreed to the [CLA](CLA.md) in the description.
 
 ## License
 
-A license has not been selected yet. It will be an OSI-approved open-source license, chosen before the first hosted release. Contributions are accepted on the understanding that the project will be released under such a license.
+Maester is licensed under the [GNU Affero General Public License, version 3 or later](LICENSE). Anyone who runs a modified copy as a network service must make their source available to its users.
+
+Contributions are accepted under the [Contributor Licence Agreement](CLA.md). You keep ownership of your work and grant the maintainer a licence broad enough to relicense the project, which is what makes a commercial licence possible for organisations that cannot use the Affero terms. Sign once by adding yourself to [CONTRIBUTORS.md](CONTRIBUTORS.md) in your first pull request and agreeing to the CLA in its description. Sign your commits off with `git commit -s`.

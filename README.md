@@ -7,10 +7,11 @@
 Connect your holdings. Let Maester watch the filings, the prices, the dividends, the global cues and your own thesis. When something needs your attention, it hands you a suggested action with the evidence behind it. When nothing does, it tells you to stay put.
 
 [![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange.svg)](#where-we-are-today)
-[![Open source](https://img.shields.io/badge/open%20source-yes-brightgreen.svg)](#join-the-build)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0--or--later-brightgreen.svg)](LICENSE)
 [![Contributing guide](https://img.shields.io/badge/contributing-guide-blue.svg)](CONTRIBUTING.md)
+[![X](https://img.shields.io/badge/X-@himanshu__btw-black.svg)](https://x.com/himanshu_btw)
 
-[The opportunity](#the-opportunity) · [Autonomous mode](#autonomous-mode) · [How Maester is different](#how-maester-is-different) · [Roadmap](#roadmap) · [Join the build](#join-the-build)
+[The opportunity](#the-opportunity) · [Autonomous mode](#autonomous-mode) · [How Maester is different](#how-maester-is-different) · [Roadmap](#roadmap) · [Join the build](#join-the-build) · [Talk to me](#talk-to-me)
 
 </div>
 
@@ -121,9 +122,19 @@ Maester is open source because software that suggests what to do with your money
 
 Everything you need to get started, from setup to engineering rules, is in the **[contributing guide](CONTRIBUTING.md)**. The [documentation index](docs/README.md) covers the product and engineering specifications.
 
+### Talk to me
+
+Maester is built by Himanshu Mendapara. Ideas, criticism, data partnerships and commercial licensing all reach me the same way.
+
+[GitHub @himanshu634](https://github.com/himanshu634) · [X @himanshu_btw](https://x.com/himanshu_btw) · [himanshumendapra@gmail.com](mailto:himanshumendapra@gmail.com)
+
 ## License
 
-A license has not been selected yet. It will be an OSI-approved open-source license, chosen before the first hosted release.
+Copyright © 2026 Himanshu Mendapara.
+
+Maester is licensed under the [GNU Affero General Public License, version 3 or later](LICENSE). You are free to use, study, modify and share it. If you run a modified copy as a network service, you must offer its source to the people using it.
+
+Contributions are accepted under the [Contributor Licence Agreement](CLA.md). If your organisation cannot use the Affero terms, a commercial licence can be arranged. Get in touch.
 
 ---
 

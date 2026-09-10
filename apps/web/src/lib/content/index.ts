@@ -16,6 +16,12 @@ export interface Link {
 	href: Href;
 }
 
+/** Off-site destinations: profiles and email. Never routed through the router. */
+export interface ExternalLink {
+	label: string;
+	href: `https://${string}` | `mailto:${string}`;
+}
+
 export interface LedgerRow {
 	title: string;
 	first: string;
@@ -62,7 +68,7 @@ export interface SiteContent {
 	week: { heading: string; intro: string; columns: [string, string]; rows: ComparisonRow[] };
 	trust: { heading: string; intro: string; principles: Principle[]; measured: string };
 	status: { heading: string; paragraphs: string[]; cta: Link };
-	footer: { note: string };
+	footer: { note: string; links: ExternalLink[] };
 	login: { heading: string; lede: string; notConnected: string };
 	terminal: { heading: string; checking: string; noScript: string; placeholder: string };
 }
@@ -290,7 +296,12 @@ export const content = {
 		cta: { label: 'Enter the terminal', href: '/terminal' }
 	},
 	footer: {
-		note: 'Maester is a working name. Open source, built in public. Every company, figure and event on this page is synthetic. No license has been selected yet.'
+		note: 'Maester is a working name. Every company, figure and event on this page is synthetic. Maester is free and open source under the GNU Affero General Public License, version 3 or later. Built in public by Himanshu Mendapara.',
+		links: [
+			{ label: 'GitHub', href: 'https://github.com/himanshu634' },
+			{ label: 'X', href: 'https://x.com/himanshu_btw' },
+			{ label: 'Email', href: 'mailto:himanshumendapra@gmail.com' }
+		]
 	},
 	login: {
 		heading: 'Sign in to the terminal',

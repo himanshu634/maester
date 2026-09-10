@@ -65,7 +65,7 @@ Product owns scope and release acceptance; Design owns task flows and interactio
 | Accounting conventions | Proposed trade-date treatment, FIFO display, daily TWR, XIRR | F17–F23 fixtures | Backend + financial reviewer |
 | Retention, backups and deletion | Product policy required; proposed recovery targets in PRD | Public beta | Platform + Product |
 | Pricing | Unvalidated tier hypotheses | Paid launch | Product |
-| Repository license and remote | Not selected/configured | External distribution/contribution | Project owner |
+| Repository remote | Not configured | External distribution/contribution | Project owner |
 
 These are implementation/product decisions; the current documentation task does not require resolving them to create the monorepo. Do not silently assume that a competitor's data source or user subscription grants Maester integration rights.
 
