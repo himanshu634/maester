@@ -6,32 +6,29 @@ Maester is now two workspaces side by side: a uv workspace for Python and a pnpm
 
 The hosted backend is TypeScript on Node 22 (ADR 0003): `apps/api` is a Hono HTTP API mounting Better Auth at `/api/auth/*` and the `/v1` routes (health, current user, workspaces, document uploads and verification, jobs and Server-Sent Events progress). `apps/worker` is a Hono service that receives Cloud Tasks HTTP callbacks and runs the `document.verify` job. `packages/contracts` is the shared Zod schema package both apps and any frontend import; `packages/db` holds the Drizzle schema and Postgres access helpers; `packages/storage` holds the `ObjectStore` interface with a GCS implementation and an in-memory one for tests. `packages/financial-engine-ts` is a placeholder for the future TypeScript extraction pipeline (see §13 of the design spec and ADR 0003) — it exports nothing beyond a version constant today. These share one `pnpm-lock.yaml` and root `package.json`, orchestrated with Turborepo (`turbo.json`).
 
-The frontend (`apps/web`, a SvelteKit app, ADR 0002) is owned separately with its own lockfile and is not yet part of the pnpm workspace; it imports `@maester/contracts` directly once joined. There is still no portfolio engine, market-data adapter or production deployment beyond what `infra/` provisions for the API and worker.
+`apps/web` contains a static SvelteKit index page with `/terminal` and `/login` entry points; its investor journeys are not built. `apps/api` and `apps/worker` contain boundary documentation only. None of them start a hosted server. There is no production database, queue, authentication service, market-data adapter or portfolio engine. The following sections specify their future implementation.
 
 ## 2. Target boundaries
 
 ```text
 apps/
-  api/                    Hono API service
-  worker/                 Hono worker service (Cloud Tasks target)
-  cli/                    Frozen Python CLI (uv member, unchanged)
-  web/                    Owner's Svelte app; SvelteKit, ADR 0002
+  web/                   SvelteKit / Svelte 5 / TypeScript investor UI (static index page implemented; journeys planned)
+  api/                   Python HTTP API and authorization (planned)
+  worker/                Python durable-job consumers (planned)
+  cli/                   Local workflows and future operational commands
 packages/
-  contracts/              Zod schemas, types, frontend integration README
-  db/                     Drizzle schema, migrations, client, scoped helpers
-  config/                 tsconfig base, eslint config
-  storage/                ObjectStore interface; GcsObjectStore, MemoryObjectStore
-  financial-engine-ts/    Placeholder for the extraction pipeline
-  financial-engine/       Frozen Python engine (uv member, unchanged)
-  portfolio-engine/       Planned decimal ledger, valuations and returns
-  integrations/           Planned Python filing, price and broker adapters
-infra/                    gcloud bootstrap and deploy scripts
-docs/                     Product, semantics, architecture and operating decisions
-tests/                    Cross-package regressions; domain tests grow with packages
-scripts/                  Repository checks and generation entry points
+  financial-engine/      Existing document engine; evolve behind interfaces
+  portfolio-engine/      Planned decimal ledger, valuations and returns
+  contracts/             Planned generated TypeScript API client/schema artifacts
+  ui/                    Planned shared Svelte components and tokens
+  integrations/          Planned Python filing, price and broker adapters
+infra/                   Add when deployment resources are implemented
+docs/                    Product, semantics, architecture and operating decisions
+tests/                   Cross-package regressions; domain tests grow with packages
+scripts/                 Repository checks and generation entry points
 ```
 
-`apps/cli` and `packages/financial-engine` remain the frozen uv members described in ADR 0001; explicit uv members prevent planning directories from breaking installation. `apps/api`, `apps/worker` and `packages/{contracts,db,config,storage,financial-engine-ts}` are the pnpm workspace introduced by ADR 0003 (`pnpm-workspace.yaml` lists `apps/api`, `apps/worker` and `packages/*`). `apps/web` is the owner's standalone SvelteKit project (ADR 0002) with its own lockfile; it can join `pnpm-workspace.yaml` later. `portfolio-engine/` and `integrations/` remain planned; do not add empty packages to make the tree appear complete.
+Create future directories as real packages when there is implemented behavior to own. Explicit uv members prevent planning directories from breaking installation. `apps/web` is a standalone pnpm project with its own `pnpm-lock.yaml`; Node and pnpm are pinned in its `package.json` and `.nvmrc`. Add a root pnpm workspace file only when a second TypeScript package (`packages/ui` or `packages/contracts`) exists; do not add empty JavaScript packages just to make the tree appear complete. See [ADR 0002](decisions/0002-web-sveltekit-brutalist-design-system.md) and [DESIGN.md](DESIGN.md).
 
 Use uv for Python and pnpm for TypeScript. Keep root Make commands as a small common entry point. Introduce a build-task orchestrator only when parallel builds and caching have measurable value. Language-specific lockfiles are intentional, not duplicate dependency authorities.
 
@@ -72,7 +69,7 @@ flowchart LR
 
 The existing CLI continues using local JSON by default. Hosted API/worker paths use repository/storage interfaces as they are introduced. A future remote CLI mode must be explicit; switching application scope must not silently upload a local cache.
 
-Suggested hosted stack: Next.js web client, Hono API on Cloud Run,[^2] PostgreSQL, GCS private objects and Cloud Tasks for durable ingestion dispatch to worker handlers. This builds on the existing GCP dependency. Record a queue ADR before implementation if a different provider or multi-cloud requirement emerges. In-process HTTP background tasks are insufficient for durable extraction. No infrastructure is provisioned by this refactor.
+Suggested hosted stack: SvelteKit web client (static today, adapter swap when server rendering is needed), FastAPI API, PostgreSQL, GCS private objects and Cloud Tasks for durable ingestion dispatch to worker handlers. This builds on the existing GCP dependency. Record a queue ADR before implementation if a different provider or multi-cloud requirement emerges. In-process HTTP background tasks are insufficient for durable extraction. No infrastructure is provisioned by this refactor.
 
 ## 5. Document pipeline
 

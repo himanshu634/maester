@@ -7,10 +7,11 @@
 | CLI distribution `maester-cli` | `apps/cli` | Runnable; Typer commands |
 | Library `maester-financial-engine` | `packages/financial-engine` | Runnable; `pdf_financial_qa` imports |
 | Workspace `maester-platform` | Root `pyproject.toml` | Dependency coordinator, not an installable library |
-| Web/API/worker | `apps/web`, `apps/api`, `apps/worker` | Boundary documentation only |
+| Web | `apps/web` | Static SvelteKit index page, `/terminal` and `/login`; journeys planned |
+| API/worker | `apps/api`, `apps/worker` | Boundary documentation only |
 | Portfolio accounting / shared UI / contracts | Described in architecture | Planned; no package yet |
 
-This is an actual multi-package Python workspace. Planned TypeScript applications will share the repository but use their own language workspace and lockfile. No Node.js, database or queue installation is needed to run the existing CLI.
+This is an actual multi-package Python workspace. Planned TypeScript applications will share the repository but use their own language workspace and lockfile. No Node.js, database or queue installation is needed to run the existing CLI. Node 22 and pnpm 11 are required only for `apps/web`, which is driven with pnpm scripts (`pnpm install`, `pnpm verify`, `pnpm dev` in that directory); see the [web README](../apps/web/README.md).
 
 ## 2. Environment and installation
 
@@ -110,37 +111,4 @@ These limitations are recorded rather than being mixed into the package migratio
 
 Create a Python package under the correct app/library boundary with its own `pyproject.toml` and source namespace. Add its explicit path to root workspace members, declare only the dependencies it uses, and use a root workspace source mapping for internal dependencies. Keep app imports out of libraries. Run `uv lock`, `uv sync --locked`, `make check` and an appropriate package build.
 
-For the future web client, follow the TypeScript workspace plan in [ARCHITECTURE.md](ARCHITECTURE.md). Define the API contract before manually duplicating types. Do not add a placeholder runtime or claim readiness in the root README until its primary journey is implemented and tested.
-
-## 8. TypeScript workflow
-
-The TypeScript side (`apps/api`, `apps/worker`, `packages/{contracts,db,storage,config,financial-engine-ts}`) is a separate pnpm workspace with its own lockfile (`pnpm-lock.yaml`). Node 22 and pnpm are required; see `engines` in the root `package.json`.
-
-```bash
-pnpm install
-pnpm db:up                                  # starts Postgres via docker-compose
-pnpm --filter @maester/db migrate           # applies Drizzle migrations
-PORT=8787 pnpm dev:api                      # http://localhost:8787
-PORT=8788 pnpm dev:worker                   # http://localhost:8788
-```
-
-Both dev servers load the root `.env` (`tsx watch --env-file=../../.env`); copy `.env.example` and fill in the TypeScript section (`DATABASE_URL`, `BETTER_AUTH_SECRET`, `ALLOWED_ORIGINS`, `GCS_BUCKET`, `DISPATCH_*`, `WORKER_URL`, …) first. With both servers running:
-
-- `GET http://localhost:8787/dev/upload` (outside `NODE_ENV=production`) serves a small static page that signs in, uploads a PDF, finalizes it, and renders Server-Sent Events progress — the fastest way to exercise the whole flow by hand.
-- `pnpm smoke path/to/file.pdf` (`scripts/smoke-upload.ts`) drives the same flow from the command line against a running API.
-
-Checks, run from the repository root:
-
-```bash
-pnpm lint
-pnpm typecheck
-pnpm test
-```
-
-These fan out per package via Turborepo (`turbo.json`); `pnpm test` needs the per-package test databases from `scripts/db/init.sql` (`maester_test_db`, `maester_test_api`, `maester_test_worker`) reachable at `DATABASE_URL_TEST_DB`, `DATABASE_URL_TEST_API`, `DATABASE_URL_TEST_WORKER`. If you started Postgres before these per-package databases existed, `docker compose down -v && docker compose up -d postgres` to reinitialize the volume from `scripts/db/init.sql`, or create the three databases (`maester_test_db`, `maester_test_api`, `maester_test_worker`) manually.
-
-After editing `packages/db`'s Drizzle schema, regenerate migrations before committing:
-
-```bash
-pnpm --filter @maester/db generate
-```
+For the web client, follow [ADR 0002](decisions/0002-web-sveltekit-brutalist-design-system.md) and the design contract in [DESIGN.md](DESIGN.md). Define the API contract before manually duplicating types. Do not add a placeholder runtime or claim readiness in the root README until its primary journey is implemented and tested.

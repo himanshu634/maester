@@ -1,0 +1,45 @@
+{
+	"name": "@maester/web",
+	"private": true,
+	"version": "0.0.1",
+	"type": "module",
+	"license": "AGPL-3.0-or-later",
+	"packageManager": "pnpm@11.2.2",
+	"engines": {
+		"node": ">=22.12 <23"
+	},
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync || echo ''",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"lint": "prettier --check . && eslint .",
+		"format": "prettier --write .",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"verify": "pnpm check && pnpm lint && pnpm test && pnpm build"
+	},
+	"devDependencies": {
+		"@eslint/js": "^10.0.1",
+		"@fontsource-variable/archivo": "^5.3.0",
+		"@fontsource-variable/caveat": "^5.3.0",
+		"@sveltejs/adapter-static": "^3.0.10",
+		"@sveltejs/kit": "^2.63.0",
+		"@sveltejs/vite-plugin-svelte": "^7.1.2",
+		"@types/node": "^22",
+		"eslint": "^10.4.1",
+		"eslint-config-prettier": "^10.1.8",
+		"eslint-plugin-svelte": "^3.19.0",
+		"globals": "^17.6.0",
+		"prettier": "^3.8.3",
+		"prettier-plugin-svelte": "^4.1.0",
+		"svelte": "^5.56.1",
+		"svelte-check": "^4.6.0",
+		"typescript": "^6.0.3",
+		"typescript-eslint": "^8.60.1",
+		"vite": "^8.0.16",
+		"vitest": "^4.1.8"
+	}
+}

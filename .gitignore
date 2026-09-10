@@ -21,4 +21,6 @@ coverage/
 playwright-report/
 test-results/
 .DS_Store
+.svelte-kit/
+.vite/
 *.tsbuildinfo

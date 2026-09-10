@@ -3,6 +3,8 @@ name = "maester-platform"
 version = "0.1.0"
 description = "Maester investor platform monorepo: portfolio management and financial research."
 readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = ["maester-cli==0.1.0"]
 

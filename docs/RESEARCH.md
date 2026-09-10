@@ -77,7 +77,7 @@ Product implication: F04–F06 are substantial work. Do not promise “verified 
 
 WCAG 2.2 provides an accessibility baseline for keyboard operation, focus, contrast and target sizes.[^15] The precise Maester geometry and palette are design proposals. Dense financial tables still need semantic structure, understandable mobile behavior and a non-color signal for gains, missing data and review status.
 
-The existing Python implementation can be shared by new applications. uv documents workspaces with separate package metadata and a shared dependency lockfile.[^16] FastAPI's official documentation describes OpenAPI/JSON Schema support, which can support generated client contracts.[^17] Next.js provides an established React application structure for a future web client.[^18] These capabilities inform a proposed stack; they do not establish that any web/API app is implemented here.
+The existing Python implementation can be shared by new applications. uv documents workspaces with separate package metadata and a shared dependency lockfile.[^16] FastAPI's official documentation describes OpenAPI/JSON Schema support, which can support generated client contracts.[^17] SvelteKit provides an established application structure for the web client, including static prerendering.[^18] These capabilities inform a proposed stack; they do not establish that any web/API app is implemented here.
 
 PostgreSQL distinguishes exact numeric types from inexact floating types, and documents row-security policies and their bypass conditions.[^19][^20] The recommended new monetary domain uses Decimal/numeric and explicit workspace authorization. OWASP describes indirect prompt injection through external content; model input separation alone is insufficient as an access boundary.[^21] Apply authorization before retrieval and expose only constrained calculations to the Analyst.
 
@@ -118,7 +118,7 @@ Dates below are publication/update dates only where visibly stated; otherwise th
 [^15]: W3C. [Web Content Accessibility Guidelines 2.2](https://www.w3.org/TR/WCAG22/). Current recommendation accessed on research date. Used as the UI accessibility reference.
 [^16]: Astral. [Using workspaces](https://docs.astral.sh/uv/concepts/projects/workspaces/). Living documentation. Used for package/workspace/lockfile behavior.
 [^17]: FastAPI. [Features](https://fastapi.tiangolo.com/features/). Living documentation. Used for OpenAPI and JSON Schema contracts.
-[^18]: Vercel. [Next.js documentation](https://nextjs.org/docs). Living documentation. Used for the proposed React web application boundary.
+[^18]: Svelte. [SvelteKit documentation](https://svelte.dev/docs/kit). Living documentation, accessed 10 September 2026. Used for the web application boundary.
 [^19]: PostgreSQL Global Development Group. [Numeric Types, PostgreSQL 18](https://www.postgresql.org/docs/18/datatype-numeric.html). Versioned documentation. Used for exact numerical storage.
 [^20]: PostgreSQL Global Development Group. [Row Security Policies, PostgreSQL 18](https://www.postgresql.org/docs/18/ddl-rowsecurity.html). Versioned documentation. Used for row-policy capabilities and bypass caveats.
 [^21]: OWASP. [LLM Prompt Injection Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/LLM_Prompt_Injection_Prevention_Cheat_Sheet.html). Living guidance. Used for untrusted source-content handling.

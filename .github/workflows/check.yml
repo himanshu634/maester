@@ -28,3 +28,27 @@ jobs:
         run: uv run --locked python -m unittest discover -s tests -v
       - name: Build both distributions
         run: uv build --all-packages
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: apps/web/.nvmrc
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - name: Install locked web dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Type, accessibility and lint checks
+        run: pnpm check && pnpm lint
+      - name: Design-system guard and unit tests
+        run: pnpm test
+      - name: Build static site
+        run: pnpm build && test -f build/index.html
