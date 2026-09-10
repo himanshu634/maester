@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import { Readable } from "node:stream";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { JobTypes } from "@maester/contracts";
 import { schema } from "@maester/db";
 import { documentVerify } from "../src/jobs/document-verify.js";
@@ -82,5 +83,114 @@ describe("document.verify", () => {
     expect(res.status).toBe(200);
     const [job] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, jobId));
     expect(job!.state).toBe("failed");
+  });
+});
+
+describe("document.verify idempotent short-circuit", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("short-circuits an already-stored document without reading storage", async () => {
+    const { workspaceId, userId } = await seedWorkspace(ctx.db);
+    const id = crypto.randomUUID();
+    const storageKey = `workspaces/${workspaceId}/documents/${id}/original.pdf`;
+    const sha256 = "a".repeat(64);
+    await ctx.db.insert(schema.document).values({
+      id,
+      workspaceId,
+      originalName: "x.pdf",
+      declaredSize: 42,
+      declaredMime: "application/pdf",
+      storageKey,
+      state: "stored",
+      createdByUserId: userId,
+      contentSha256: sha256,
+      sizeBytes: 42,
+      storedAt: new Date(),
+    });
+    const spy = vi.spyOn(ctx.store, "readStream");
+
+    const { res, job, doc } = await verify(workspaceId, id);
+
+    expect(res.status).toBe(200);
+    expect(job.state).toBe("succeeded");
+    expect(job.result).toEqual({ outcome: "stored", sha256, sizeBytes: 42 });
+    expect(doc.state).toBe("stored");
+    expect(doc.contentSha256).toBe(sha256);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("short-circuits an already-rejected document without reading storage", async () => {
+    const { workspaceId, userId } = await seedWorkspace(ctx.db);
+    const id = crypto.randomUUID();
+    const storageKey = `workspaces/${workspaceId}/documents/${id}/original.pdf`;
+    await ctx.db.insert(schema.document).values({
+      id,
+      workspaceId,
+      originalName: "x.pdf",
+      declaredSize: 42,
+      declaredMime: "application/pdf",
+      storageKey,
+      state: "rejected",
+      createdByUserId: userId,
+      rejectionCode: "NOT_A_PDF",
+    });
+    const spy = vi.spyOn(ctx.store, "readStream");
+
+    const { res, job, doc } = await verify(workspaceId, id);
+
+    expect(res.status).toBe(200);
+    expect(job.state).toBe("succeeded");
+    expect(job.result).toEqual({ outcome: "rejected", code: "NOT_A_PDF" });
+    expect(doc.state).toBe("rejected");
+    expect(doc.rejectionCode).toBe("NOT_A_PDF");
+    expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe("document.verify storage error handling and streaming", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("propagates a transient storage error for retry, leaving the document verifying", async () => {
+    const { workspaceId, userId } = await seedWorkspace(ctx.db);
+    const { id } = await seedDocument(workspaceId, userId);
+    vi.spyOn(ctx.store, "readStream").mockRejectedValueOnce(new Error("gcs 503"));
+    const jobId = await seedJob(ctx.db, workspaceId, {
+      type: JobTypes.DOCUMENT_VERIFY,
+      subjectType: "document",
+      subjectId: id,
+      maxAttempts: 3,
+    });
+
+    const res = await runJob(ctx, JobTypes.DOCUMENT_VERIFY, jobId);
+
+    expect(res.status).toBe(500);
+    const [job] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, jobId));
+    expect(job!.state).toBe("queued");
+    expect(job!.attempt).toBe(1);
+    expect(job!.lastErrorCode).toBe("HANDLER_ERROR");
+    expect(job!.lastErrorMessage).toContain("gcs 503");
+    const [doc] = await ctx.db.select().from(schema.document).where(eq(schema.document.id, id));
+    expect(doc!.state).toBe("verifying");
+  });
+
+  it("hashes and sizes correctly when the PDF magic header spans chunk boundaries", async () => {
+    const { workspaceId, userId } = await seedWorkspace(ctx.db);
+    const { id, storageKey } = await seedDocument(workspaceId, userId);
+    const chunks = [Buffer.from("%PD"), Buffer.from("F-1.7\n"), Buffer.from("rest of file %%EOF")];
+    const full = Buffer.concat(chunks);
+    await ctx.store.put(storageKey, full, "application/pdf");
+    vi.spyOn(ctx.store, "readStream").mockResolvedValueOnce(Readable.from(chunks));
+
+    const { res, job, doc } = await verify(workspaceId, id);
+
+    expect(res.status).toBe(200);
+    expect(job.state).toBe("succeeded");
+    expect(doc.state).toBe("stored");
+    expect(doc.sizeBytes).toBe(full.length);
+    expect(doc.contentSha256).toBe(createHash("sha256").update(full).digest("hex"));
   });
 });
