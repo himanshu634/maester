@@ -2,10 +2,14 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Db, MembershipRow, WorkspaceRow } from "@maester/db";
 import type { ObjectStore } from "@maester/storage";
+import type { Auth } from "./auth.js";
 import type { Env } from "./env.js";
 import { errorBody, HttpError } from "./errors.js";
 import type { Logger } from "./logger.js";
+import { requireSession } from "./middleware/session.js";
 import { requestId } from "./middleware/request-id.js";
+import { meRoutes } from "./routes/me.js";
+import { workspaceRoutes } from "./routes/workspaces.js";
 
 export type AppEnv = {
   Variables: {
@@ -21,7 +25,7 @@ export interface AppDeps {
   env: Env;
   logger: Logger;
   db: Db;
-  auth: unknown;
+  auth: Auth;
   store: ObjectStore;
   dispatcher: unknown;
 }
@@ -42,6 +46,14 @@ export function createApp(deps: AppDeps) {
   );
 
   app.get("/healthz", (c) => c.json({ status: "ok" }));
+
+  app.on(["GET", "POST"], "/api/auth/*", (c) => deps.auth.handler(c.req.raw));
+
+  const v1 = new Hono<AppEnv>();
+  v1.use("*", requireSession(deps.auth));
+  v1.route("/me", meRoutes(deps));
+  v1.route("/workspaces", workspaceRoutes(deps));
+  app.route("/v1", v1);
 
   app.notFound((c) => c.json(errorBody("NOT_FOUND", "route not found", c.get("traceId")), 404));
 
