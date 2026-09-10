@@ -15,7 +15,7 @@ export async function createTestContext() {
   const store = new MemoryObjectStore();
   const dispatcher = new RecordingDispatcher();
   const auth = createAuth({ db, env });
-  const app = createApp({ env, logger: silentLogger, db, auth, store, dispatcher });
+  const app = createApp({ env, logger: silentLogger, db, auth, store, dispatcher }, { sse: { pollMs: 50, heartbeatMs: 1000, maxLifetimeMs: 10000 } });
 
   async function signUp(email: string) {
     const res = await app.request("/api/auth/sign-up/email", {
