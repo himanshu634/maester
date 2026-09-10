@@ -10,6 +10,7 @@ import type { Logger } from "./logger.js";
 import { requireSession } from "./middleware/session.js";
 import { requireWorkspace } from "./middleware/workspace.js";
 import { requestId } from "./middleware/request-id.js";
+import { documentRoutes } from "./routes/documents.js";
 import { jobRoutes } from "./routes/jobs.js";
 import { meRoutes } from "./routes/me.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
@@ -60,6 +61,7 @@ export function createApp(deps: AppDeps) {
   const ws = new Hono<AppEnv>();
   ws.use("*", requireWorkspace(deps.db));
   ws.route("/jobs", jobRoutes(deps));
+  ws.route("/documents", documentRoutes(deps));
   v1.route("/workspaces/:ws", ws);
 
   app.route("/v1", v1);
