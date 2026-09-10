@@ -33,14 +33,18 @@ export class LocalHttpDispatcher implements Dispatcher {
   }
 }
 
+export type TasksClientLike = Pick<CloudTasksClient, "queuePath" | "createTask">;
+
 export class CloudTasksDispatcher implements Dispatcher {
-  private readonly client = new CloudTasksClient();
+  private readonly client: TasksClientLike;
   private readonly parent: string;
 
   constructor(
     private readonly env: Env,
     private readonly logger: Logger,
+    client?: TasksClientLike,
   ) {
+    this.client = client ?? new CloudTasksClient();
     this.parent = this.client.queuePath(env.GOOGLE_CLOUD_PROJECT, env.GOOGLE_CLOUD_LOCATION, env.CLOUD_TASKS_QUEUE);
   }
 

@@ -31,8 +31,12 @@ export async function createJob(
     await dispatcher.enqueue(inserted[0]);
     return inserted[0];
   }
-  const existing = await db.select().from(schema.job).where(eq(schema.job.idempotencyKey, idempotencyKey)).limit(1);
-  if (!existing[0]) throw new Error("job vanished after idempotency conflict");
+  const existing = await db
+    .select()
+    .from(schema.job)
+    .where(and(eq(schema.job.idempotencyKey, idempotencyKey), eq(schema.job.workspaceId, input.workspaceId)))
+    .limit(1);
+  if (!existing[0]) throw new HttpError("CONFLICT", "job exists in another scope");
   return existing[0];
 }
 
