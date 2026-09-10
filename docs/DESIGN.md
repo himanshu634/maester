@@ -20,13 +20,23 @@ Exactly three values, defined once in `tokens.css`:
 | `--ink` | `#000000` | text, rules, buttons, inverted panels |
 | `--ink-muted` | `#5F5F5B` | secondary text and hairlines on paper only (7.0:1 against paper) |
 
-`--paper-muted` is paper at 72% opacity and is the only secondary text colour allowed on inverted panels. No accent colour, no semantic green or red, no gradients, no tints of black. Numerical direction is shown with a sign or a word, never a colour, which also satisfies the product rule that colour must not read as investment advice.
+`--paper-muted` is paper at 72% opacity and is the only secondary text colour allowed on inverted panels. No accent colour, no semantic green or red, no gradients, no tints of black.
+
+Three further values exist for sketched illustrations only, never for text, rules, buttons or state:
+
+| Token | Value | Use |
+| --- | --- | --- |
+| `--illus-yellow` | `#F2C53D` | illustration colour plate |
+| `--illus-red` | `#E0483A` | illustration colour plate |
+| `--illus-blue` | `#2F5FD0` | illustration colour plate | Numerical direction is shown with a sign or a word, never a colour, which also satisfies the product rule that colour must not read as investment advice.
 
 Rules the guard enforces: no hex, `rgb()`, `hsl()`, `oklch()`, `color-mix()` or named colour anywhere except `tokens.css`; components use `var(--…)`, `currentColor`, `transparent` or `inherit`.
 
 ## 3. Typography
 
 One family: Archivo, variable, self-hosted from `@fontsource-variable/archivo` (width and weight axes). Fallback stack `"Helvetica Neue", Arial, sans-serif`. No second family, no monospace: numbers and commands use Archivo with `font-variant-numeric: tabular-nums slashed-zero`.
+
+The single exception is `--font-hand` (Caveat, variable, self-hosted from `@fontsource-variable/caveat`), used only for lettering drawn inside a sketched illustration, such as the thought cloud on the sign-in page. It never sets interface text.
 
 | Role | Width | Weight | Size | Line height | Tracking |
 | --- | --- | --- | --- | --- | --- |
@@ -56,6 +66,7 @@ Sentence case everywhere. No all-caps labels, no letter-spaced eyebrows, no acce
 - **Spec list** (`AccuracySpec`): a definition list with a 2px top rule, 1px rules between entries and a 2px closing rule.
 - **Tag**: 1.5px border, 4px by 8px padding, 14px text. Used only for the synthetic-data label and status words.
 - **Form field**: visible label above the input, 44px input with a 2px border, paper background, error text below the field, status announced through `aria-live="polite"`.
+- **Illustration** (`LoginIllustration`): an inline SVG drawn as two plates, a colour plate slightly out of register under a hand-drawn ink plate. It uses `--ink`, `--paper` and the three `--illus-*` tokens and nothing else. Its frame is a 3px rule with a 30px radius on the `figure` that holds it, the one reviewed radius exception (marked `design-guard: allow`); the radius belongs to the drawing, not to the layout, and must not spread to any other element. From 1024px the frame sits to the right of the sign-in panel and fills the screen from the masthead to the bottom edge; below that it stacks under the panel at a square aspect.
 
 ## 6. Motion
 

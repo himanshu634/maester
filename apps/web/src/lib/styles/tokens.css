@@ -13,6 +13,8 @@
 
 	/* Type: one family, width and weight axes do the work. */
 	--font-sans: 'Archivo Variable', 'Helvetica Neue', Arial, sans-serif;
+	--font-hand:
+		'Caveat Variable', 'Bradley Hand', 'Segoe Print', cursive; /* lettering inside sketched illustrations only */
 	--wdth-wide: 125%;
 	--wdth-heading: 110%;
 	--wdth-body: 100%;
@@ -56,6 +58,14 @@
 	--gutter: 24px;
 	--max-width: 1440px;
 	--target: 44px;
+
+	/*
+	 * Illustration inks. Used only inside sketched illustrations (LoginIllustration),
+	 * never for text, rules, buttons or state. See docs/DESIGN.md section 2.
+	 */
+	--illus-yellow: #f2c53d;
+	--illus-red: #e0483a;
+	--illus-blue: #2f5fd0;
 
 	--focus-ring: 3px solid var(--ink);
 	--focus-offset: 2px;
