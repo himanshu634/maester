@@ -55,7 +55,7 @@ describe("common", () => {
       latestJob: null,
     };
     const r = P.parse({ items: [validDoc], nextCursor: "cursor123" });
-    expect(r.items[0].id).toBe("6d5d1b0a-1e5e-4f6b-9f5d-2a4e1c9b7f10");
+    expect(r.items[0]!.id).toBe("6d5d1b0a-1e5e-4f6b-9f5d-2a4e1c9b7f10");
     expect(r.nextCursor).toBe("cursor123");
     expect(() => P.parse({ items: [{ id: "not-a-uuid" }], nextCursor: null })).toThrow();
   });
@@ -112,7 +112,7 @@ describe("workspace", () => {
       ],
     });
     expect(me.user.id).toBe("user123");
-    expect(me.workspaces[0].name).toBe("My Workspace");
+    expect(me.workspaces[0]!.name).toBe("My Workspace");
   });
 
   it("Membership rejects invalid role", () => {
@@ -136,14 +136,14 @@ describe("payloads", () => {
       sizeBytes: 10,
     });
     expect(stored.outcome).toBe("stored");
-    expect(stored.sha256).toBe("a".repeat(64));
+    if (stored.outcome === "stored") expect(stored.sha256).toBe("a".repeat(64));
 
     const rejected = DocumentVerifyResult.parse({
       outcome: "rejected",
       code: "NOT_A_PDF",
     });
     expect(rejected.outcome).toBe("rejected");
-    expect(rejected.code).toBe("NOT_A_PDF");
+    if (rejected.outcome === "rejected") expect(rejected.code).toBe("NOT_A_PDF");
   });
 
   it("DocumentVerifyResult rejects invalid variants", () => {
