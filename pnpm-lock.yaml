@@ -73,6 +73,58 @@ importers:
         specifier: ^4.1.8
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.27.7)(tsx@4.23.13))
 
+  apps/worker:
+    dependencies:
+      '@hono/node-server':
+        specifier: ^2.1.0
+        version: 2.1.1(hono@4.13.7)
+      '@maester/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@maester/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@maester/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(kysely@0.29.5)(pg@8.23.0)
+      google-auth-library:
+        specifier: ^11.0.0
+        version: 11.0.2
+      hono:
+        specifier: ^4.13.0
+        version: 4.13.7
+      pino:
+        specifier: ^10.0.0
+        version: 10.3.1
+      zod:
+        specifier: ^4.1.0
+        version: 4.5.4
+    devDependencies:
+      '@maester/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.1
+      eslint:
+        specifier: ^10.4.1
+        version: 10.10.0
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(postcss@8.5.28)(tsx@4.23.13)(typescript@5.9.3)
+      tsx:
+        specifier: ^4.20.0
+        version: 4.23.13
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.8
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.13))
+
   packages/config:
     dependencies:
       '@eslint/js':
