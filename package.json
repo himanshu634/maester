@@ -1,0 +1,21 @@
+{
+  "name": "maester-platform-ts",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.2.2",
+  "engines": { "node": ">=22", "pnpm": ">=10" },
+  "scripts": {
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "build": "turbo run build",
+    "dev:api": "pnpm --filter @maester/api dev",
+    "dev:worker": "pnpm --filter @maester/worker dev",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.0",
+    "typescript": "^5.9.0"
+  }
+}
