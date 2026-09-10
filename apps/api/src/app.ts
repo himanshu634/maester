@@ -10,6 +10,7 @@ import type { Logger } from "./logger.js";
 import { requireSession } from "./middleware/session.js";
 import { requireWorkspace } from "./middleware/workspace.js";
 import { requestId } from "./middleware/request-id.js";
+import { devRoutes } from "./routes/dev.js";
 import { documentRoutes } from "./routes/documents.js";
 import { DEFAULT_SSE, jobEventsRoute, type SseOptions } from "./routes/job-events.js";
 import { jobRoutes } from "./routes/jobs.js";
@@ -55,6 +56,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}) {
   );
 
   app.get("/healthz", (c) => c.json({ status: "ok" }));
+
+  if (deps.env.NODE_ENV !== "production") app.route("/dev", devRoutes());
 
   app.on(["GET", "POST"], "/api/auth/*", (c) => deps.auth.handler(c.req.raw));
 

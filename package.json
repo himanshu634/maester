@@ -12,10 +12,14 @@
     "dev:api": "pnpm --filter @maester/api dev",
     "dev:worker": "pnpm --filter @maester/worker dev",
     "db:up": "docker compose up -d postgres",
-    "db:down": "docker compose down"
+    "db:down": "docker compose down",
+    "smoke": "tsx scripts/smoke-upload.ts"
   },
   "devDependencies": {
+    "@maester/config": "workspace:*",
+    "@types/node": "^22.0.0",
     "turbo": "^2.5.0",
+    "tsx": "^4.20.0",
     "typescript": "^5.9.0"
   }
 }
