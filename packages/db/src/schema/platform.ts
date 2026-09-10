@@ -6,7 +6,7 @@ export const membershipState = pgEnum("membership_state", ["active", "revoked"])
 export const documentState = pgEnum("document_state", ["pending_upload", "uploaded", "verifying", "stored", "rejected"]);
 export const jobState = pgEnum("job_state", ["queued", "running", "succeeded", "failed", "cancelled"]);
 
-const ts = (name: string) => timestamp(name, { withTimezone: true });
+const ts = (name: string) => timestamp(name, { withTimezone: true, precision: 3 });
 
 export const workspace = pgTable("workspace", {
   id: uuid("id").primaryKey(),

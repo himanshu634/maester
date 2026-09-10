@@ -17,7 +17,7 @@ export async function getLatestJobForSubject(
     .select()
     .from(job)
     .where(and(eq(job.workspaceId, workspaceId), eq(job.subjectType, subjectType), eq(job.subjectId, subjectId)))
-    .orderBy(desc(job.createdAt))
+    .orderBy(desc(job.createdAt), desc(job.id))
     .limit(1);
   return rows[0] ?? null;
 }

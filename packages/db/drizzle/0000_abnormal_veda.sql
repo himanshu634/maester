@@ -62,9 +62,9 @@ CREATE TABLE "document" (
 	"state" "document_state" NOT NULL,
 	"rejection_code" text,
 	"created_by_user_id" text NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"stored_at" timestamp with time zone,
+	"created_at" timestamp (3) with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp (3) with time zone DEFAULT now() NOT NULL,
+	"stored_at" timestamp (3) with time zone,
 	CONSTRAINT "document_storage_key_unique" UNIQUE("storage_key")
 );
 --> statement-breakpoint
@@ -79,15 +79,15 @@ CREATE TABLE "job" (
 	"attempt" integer DEFAULT 0 NOT NULL,
 	"max_attempts" integer DEFAULT 5 NOT NULL,
 	"lease_token" uuid,
-	"lease_expires_at" timestamp with time zone,
+	"lease_expires_at" timestamp (3) with time zone,
 	"progress" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"result" jsonb,
 	"last_error_code" text,
 	"last_error_message" text,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"started_at" timestamp with time zone,
-	"finished_at" timestamp with time zone,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"created_at" timestamp (3) with time zone DEFAULT now() NOT NULL,
+	"started_at" timestamp (3) with time zone,
+	"finished_at" timestamp (3) with time zone,
+	"updated_at" timestamp (3) with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "job_idempotency_key_unique" UNIQUE("idempotency_key")
 );
 --> statement-breakpoint
@@ -97,7 +97,7 @@ CREATE TABLE "membership" (
 	"user_id" text NOT NULL,
 	"role" "membership_role" NOT NULL,
 	"state" "membership_state" DEFAULT 'active' NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+	"created_at" timestamp (3) with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "workspace" (
@@ -105,8 +105,8 @@ CREATE TABLE "workspace" (
 	"name" text NOT NULL,
 	"owner_user_id" text NOT NULL,
 	"locale" text DEFAULT 'en-IN' NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"created_at" timestamp (3) with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp (3) with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

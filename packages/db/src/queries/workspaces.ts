@@ -35,7 +35,7 @@ export async function ensurePersonalWorkspace(
       .select({ workspace })
       .from(membership)
       .innerJoin(workspace, eq(membership.workspaceId, workspace.id))
-      .where(and(eq(membership.userId, input.userId), eq(membership.role, "owner")))
+      .where(and(eq(membership.userId, input.userId), eq(membership.role, "owner"), eq(membership.state, "active")))
       .limit(1);
     if (existing[0]) return existing[0].workspace;
 

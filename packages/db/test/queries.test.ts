@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { closeDb } from "../src/client.js";
 import * as schema from "../src/schema/index.js";
@@ -61,6 +62,48 @@ describe("documents", () => {
     const page2 = await listDocuments(db, wa.id, { limit: 2, cursor: page1.nextCursor! });
     expect(page2.items.map((d) => d.originalName)).toEqual(["a0.pdf"]);
     expect(page2.nextCursor).toBeNull();
+  });
+
+  it("cursor pagination visits every row exactly once with DB-assigned timestamps", async () => {
+    await insertUser(db, "u1", "u1@example.com");
+    const w = await ensurePersonalWorkspace(db, { userId: "u1", userName: "A" });
+    const seededIds: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const id = crypto.randomUUID();
+      await db.insert(schema.document).values({
+        id,
+        workspaceId: w.id,
+        originalName: `doc${i}.pdf`,
+        declaredSize: 10,
+        declaredMime: "application/pdf",
+        storageKey: `workspaces/${w.id}/documents/${id}/original.pdf`,
+        state: "pending_upload",
+        createdByUserId: "u1",
+      });
+      seededIds.push(id);
+    }
+
+    // Deterministic invariant behind the fix: DB-assigned created_at values must carry no
+    // sub-millisecond component, so encodeCursor's ISO-millisecond string reproduces the
+    // stored value exactly. Pre-fix (timestamptz without precision(3)) this is nonzero.
+    const precisionCheck = await db.execute(
+      sql`select count(*)::int as n from "document" where date_trunc('milliseconds', created_at) <> created_at`,
+    );
+    expect(precisionCheck.rows[0]!.n).toBe(0);
+
+    const seenIds: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const page = await listDocuments(db, w.id, { limit: 3, cursor: cursor ?? undefined });
+      seenIds.push(...page.items.map((d) => d.id));
+      cursor = page.nextCursor;
+      pages += 1;
+      expect(pages).toBeLessThan(10);
+    } while (cursor !== null);
+
+    expect(seenIds).toHaveLength(seededIds.length);
+    expect(new Set(seenIds)).toEqual(new Set(seededIds));
   });
 });
 

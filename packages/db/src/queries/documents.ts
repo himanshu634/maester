@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, lt, or } from "drizzle-orm";
 import type { Db } from "../client.js";
 import { decodeCursor, encodeCursor } from "../pagination.js";
 import { document, type DocumentRow } from "../schema/platform.js";
@@ -31,5 +31,3 @@ export async function listDocuments(
   const nextCursor = rows.length > opts.limit && last ? encodeCursor({ createdAt: last.createdAt, id: last.id }) : null;
   return { items, nextCursor };
 }
-
-export const documentUpdatedNow = sql`now()`;
