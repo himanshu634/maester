@@ -1,0 +1,65 @@
+name: typescript
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: maester
+          POSTGRES_PASSWORD: maester
+          POSTGRES_DB: maester_test
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U maester"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create per-package test databases
+        run: |
+          psql postgres://maester:maester@localhost:5433/postgres -c "CREATE DATABASE maester_test_db" \
+            -c "CREATE DATABASE maester_test_api" \
+            -c "CREATE DATABASE maester_test_worker"
+        env:
+          PGPASSWORD: maester
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+        env:
+          DATABASE_URL_TEST_DB: postgres://maester:maester@localhost:5433/maester_test_db
+          DATABASE_URL_TEST_API: postgres://maester:maester@localhost:5433/maester_test_api
+          DATABASE_URL_TEST_WORKER: postgres://maester:maester@localhost:5433/maester_test_worker
+      - run: pnpm build
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: ./infra/deploy.sh
+        env:
+          PROJECT: ${{ secrets.GCP_PROJECT }}
+          ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS }}
