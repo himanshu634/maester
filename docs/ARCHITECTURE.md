@@ -2,9 +2,9 @@
 
 ## 1. Current implementation
 
-Maester is now a uv workspace with two installable Python packages. `apps/cli` is the Typer application; `packages/financial-engine` contains extraction, schema, arithmetic checks, local storage and Q&A. The engine keeps the `pdf_financial_qa` import namespace for compatibility. Both `maester` and `pdf-financial-qa` console commands are owned by `maester-cli`.
+Maester is now two workspaces side by side: a uv workspace for Python and a pnpm workspace for TypeScript. The Python side keeps `apps/cli` (the Typer application) and `packages/financial-engine` (extraction, schema, arithmetic checks, local storage and Q&A, still under the `pdf_financial_qa` import namespace). Both `maester` and `pdf-financial-qa` console commands are owned by `maester-cli`. The root uv project coordinates Python dependencies and is not a distributable library; `uv.lock` resolves that workspace together, per uv's documented workspace model.[^1]
 
-The root project coordinates dependencies and is not a distributable library. `uv.lock` resolves the workspace together. This follows uv's documented workspace model.[^1] The split makes application and reusable-library ownership explicit; it does not yet separate provider adapters from domain objects inside the engine.
+The hosted backend is TypeScript on Node 22 (ADR 0003): `apps/api` is a Hono HTTP API mounting Better Auth at `/api/auth/*` and the `/v1` routes (health, current user, workspaces, document uploads and verification, jobs and Server-Sent Events progress). `apps/worker` is a Hono service that receives Cloud Tasks HTTP callbacks and runs the `document.verify` job. `packages/contracts` is the shared Zod schema package both apps and any frontend import; `packages/db` holds the Drizzle schema and Postgres access helpers; `packages/storage` holds the `ObjectStore` interface with a GCS implementation and an in-memory one for tests. `packages/financial-engine-ts` is a placeholder for the future TypeScript extraction pipeline (see §13 of the design spec and ADR 0003) — it exports nothing beyond a version constant today. These share one `pnpm-lock.yaml` and root `package.json`, orchestrated with Turborepo (`turbo.json`).
 
 `apps/web` contains a static SvelteKit index page with `/terminal` and `/login` entry points; its investor journeys are not built. `apps/api` and `apps/worker` contain boundary documentation only. None of them start a hosted server. There is no production database, queue, authentication service, market-data adapter or portfolio engine. The following sections specify their future implementation.
 
@@ -45,7 +45,7 @@ Use uv for Python and pnpm for TypeScript. Keep root Make commands as a small co
 | Contracts | Generated API types and transport client | A second hand-maintained definition of financial meaning |
 | UI package | Evidence/table/money display components | Independent numerical truth or business permissions |
 
-Applications depend on packages, and packages do not import applications. The existing CLI imports the engine. Python schemas are the authority for API contracts; generate TypeScript from the API's OpenAPI output. FastAPI supports the relevant OpenAPI and JSON Schema mechanisms.[^2] CI should reject uncommitted generated-client changes once generation exists.
+Applications depend on packages, and packages do not import applications. The existing CLI imports the engine. `packages/contracts` is the authority; the web app imports it. There is no OpenAPI document and no generated client to keep in sync.
 
 Use a modular API plus separately deployable workers at first. Keep identity, research and portfolio domains in one database with clear ownership. Scale worker queues independently; split more services only when deployment cadence, load or operational ownership justifies it.
 
@@ -128,12 +128,14 @@ The completed R0 migration moves business files without changing extraction or c
 
 R1 introduces versioned hosted schemas with a separate migration tool for legacy caches. That tool must label absent page locations, timestamps and review status as unknown. Legacy numeric JSON may already have lost precision; retain raw input and do not represent conversion to Decimal as recovered source fidelity.
 
+**R0.5 base.** ADR 0003 landed the TypeScript hosted base: `apps/api` and `apps/worker` run as Hono services (Node 22), authenticated with Better Auth (email/password, Postgres sessions, `HttpOnly` cookies), backed by PostgreSQL via Drizzle (`packages/db`) and private object storage via `packages/storage`. Uploading a document, verifying it in a worker job dispatched through Cloud Tasks (or an in-process dispatcher for local dev), and watching progress over Server-Sent Events all work end to end against a real Postgres instance. `packages/contracts` is the shared Zod type authority the frontend builds against (see its README). None of this runs the actual extraction/portfolio pipelines yet — `document.verify` only checks that the uploaded bytes are a PDF and records its checksum and size; `packages/financial-engine-ts` is a placeholder until the pipeline is ported.
+
 See [DEVELOPMENT.md](DEVELOPMENT.md) for working commands and [the monorepo ADR](decisions/0001-platform-monorepo.md) for consequences.
 
 ## Sources
 
 [^1]: Astral, [Using workspaces](https://docs.astral.sh/uv/concepts/projects/workspaces/), accessed 9 September 2026.
-[^2]: FastAPI, [Features](https://fastapi.tiangolo.com/features/), accessed 9 September 2026.
+[^2]: Hono, [Documentation](https://hono.dev/docs/), accessed 10 September 2026.
 [^3]: OWASP, [LLM Prompt Injection Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/LLM_Prompt_Injection_Prevention_Cheat_Sheet.html), accessed 9 September 2026.
 [^4]: PostgreSQL, [Numeric Types](https://www.postgresql.org/docs/18/datatype-numeric.html), accessed 9 September 2026.
 [^5]: PostgreSQL, [Row Security Policies](https://www.postgresql.org/docs/18/ddl-rowsecurity.html), accessed 9 September 2026.

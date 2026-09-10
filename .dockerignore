@@ -1,0 +1,10 @@
+**/node_modules
+**/dist
+**/.turbo
+.git
+.venv
+.uv-cache
+data
+docs
+tests
+*.md

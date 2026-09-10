@@ -1,0 +1,16 @@
+{
+  "name": "@maester/storage",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "lint": "eslint .", "typecheck": "tsc -p tsconfig.json", "test": "vitest run" },
+  "dependencies": { "@google-cloud/storage": "^8.0.0" },
+  "devDependencies": {
+    "@maester/config": "workspace:*",
+    "@types/node": "^22.0.0",
+    "eslint": "^10.4.1",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.8"
+  }
+}

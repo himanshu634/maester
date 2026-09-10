@@ -1,0 +1,90 @@
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import type { Db, MembershipRow, WorkspaceRow } from "@maester/db";
+import type { ObjectStore } from "@maester/storage";
+import type { Auth } from "./auth.js";
+import type { Dispatcher } from "./dispatch/index.js";
+import type { Env } from "./env.js";
+import { errorBody, HttpError } from "./errors.js";
+import type { Logger } from "./logger.js";
+import { requireSession } from "./middleware/session.js";
+import { requireWorkspace } from "./middleware/workspace.js";
+import { requestId } from "./middleware/request-id.js";
+import { devRoutes } from "./routes/dev.js";
+import { documentRoutes } from "./routes/documents.js";
+import { DEFAULT_SSE, jobEventsRoute, type SseOptions } from "./routes/job-events.js";
+import { jobRoutes } from "./routes/jobs.js";
+import { meRoutes } from "./routes/me.js";
+import { workspaceRoutes } from "./routes/workspaces.js";
+
+export type AppEnv = {
+  Variables: {
+    traceId: string;
+    user: { id: string; name: string; email: string };
+    session: { id: string; userId: string };
+    workspace: WorkspaceRow;
+    membership: MembershipRow;
+  };
+};
+
+export interface AppDeps {
+  env: Env;
+  logger: Logger;
+  db: Db;
+  auth: Auth;
+  store: ObjectStore;
+  dispatcher: Dispatcher;
+}
+
+export interface AppOptions {
+  sse?: SseOptions;
+}
+
+export function createApp(deps: AppDeps, options: AppOptions = {}) {
+  const app = new Hono<AppEnv>();
+  const allowed = new Set(deps.env.ALLOWED_ORIGINS);
+
+  app.use("*", requestId);
+  app.use(
+    "*",
+    cors({
+      origin: (origin) => (allowed.has(origin) ? origin : ""),
+      credentials: true,
+      allowHeaders: ["Content-Type", "x-request-id"],
+      exposeHeaders: ["x-request-id"],
+    }),
+  );
+
+  app.get("/healthz", (c) => c.json({ status: "ok" }));
+
+  if (deps.env.NODE_ENV === "development" || deps.env.NODE_ENV === "test") app.route("/dev", devRoutes());
+
+  app.on(["GET", "POST"], "/api/auth/*", (c) => deps.auth.handler(c.req.raw));
+
+  const v1 = new Hono<AppEnv>();
+  v1.use("*", requireSession(deps.auth));
+  v1.route("/me", meRoutes(deps));
+  v1.route("/workspaces", workspaceRoutes(deps));
+
+  const ws = new Hono<AppEnv>();
+  ws.use("*", requireWorkspace(deps.db));
+  ws.route("/jobs", jobEventsRoute(deps, options.sse ?? DEFAULT_SSE));
+  ws.route("/jobs", jobRoutes(deps));
+  ws.route("/documents", documentRoutes(deps));
+  v1.route("/workspaces/:ws", ws);
+
+  app.route("/v1", v1);
+
+  app.notFound((c) => c.json(errorBody("NOT_FOUND", "route not found", c.get("traceId")), 404));
+
+  app.onError((err, c) => {
+    const traceId = c.get("traceId") ?? "unknown";
+    if (err instanceof HttpError) {
+      return c.json(errorBody(err.code, err.message, traceId, err.fields), err.status as 400);
+    }
+    deps.logger.error({ traceId, err: { name: err.name, message: err.message, stack: err.stack } }, "unhandled error");
+    return c.json(errorBody("INTERNAL", "internal error", traceId), 500);
+  });
+
+  return app;
+}
