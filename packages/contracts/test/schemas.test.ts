@@ -4,9 +4,12 @@ import {
   CreateUploadRequest,
   DecimalString,
   Document,
+  DocumentVerifyResult,
   Job,
   JobTypes,
   ListQuery,
+  Me,
+  Membership,
   paginated,
 } from "../src/index.js";
 
@@ -37,8 +40,24 @@ describe("common", () => {
 
   it("paginated wraps items with nextCursor", () => {
     const P = paginated(Document);
-    const r = P.parse({ items: [], nextCursor: null });
-    expect(r.nextCursor).toBeNull();
+    const validDoc = {
+      id: "6d5d1b0a-1e5e-4f6b-9f5d-2a4e1c9b7f10",
+      workspaceId: "6d5d1b0a-1e5e-4f6b-9f5d-2a4e1c9b7f11",
+      originalName: "test.pdf",
+      declaredSize: 1024,
+      declaredMime: "application/pdf",
+      state: "stored" as const,
+      contentSha256: "a".repeat(64),
+      sizeBytes: 1024,
+      rejectionCode: null,
+      createdAt: "2026-09-10T00:00:00.000Z",
+      storedAt: "2026-09-10T01:00:00.000Z",
+      latestJob: null,
+    };
+    const r = P.parse({ items: [validDoc], nextCursor: "cursor123" });
+    expect(r.items[0].id).toBe("6d5d1b0a-1e5e-4f6b-9f5d-2a4e1c9b7f10");
+    expect(r.nextCursor).toBe("cursor123");
+    expect(() => P.parse({ items: [{ id: "not-a-uuid" }], nextCursor: null })).toThrow();
   });
 });
 
@@ -71,5 +90,74 @@ describe("job", () => {
       updatedAt: "2026-09-10T00:00:00.000Z",
     });
     expect(j.state).toBe("queued");
+  });
+});
+
+describe("workspace", () => {
+  it("Me accepts valid structure with user and workspaces", () => {
+    const me = Me.parse({
+      user: {
+        id: "user123",
+        name: "John Doe",
+        email: "john@example.com",
+      },
+      workspaces: [
+        {
+          id: "6d5d1b0a-1e5e-4f6b-9f5d-2a4e1c9b7f10",
+          name: "My Workspace",
+          ownerUserId: "user123",
+          locale: "en-US",
+          createdAt: "2026-09-10T00:00:00.000Z",
+        },
+      ],
+    });
+    expect(me.user.id).toBe("user123");
+    expect(me.workspaces[0].name).toBe("My Workspace");
+  });
+
+  it("Membership rejects invalid role", () => {
+    expect(() =>
+      Membership.parse({
+        id: "6d5d1b0a-1e5e-4f6b-9f5d-2a4e1c9b7f10",
+        workspaceId: "6d5d1b0a-1e5e-4f6b-9f5d-2a4e1c9b7f11",
+        userId: "user123",
+        role: "admin",
+        state: "active",
+      })
+    ).toThrow();
+  });
+});
+
+describe("payloads", () => {
+  it("DocumentVerifyResult accepts both stored and rejected variants", () => {
+    const stored = DocumentVerifyResult.parse({
+      outcome: "stored",
+      sha256: "a".repeat(64),
+      sizeBytes: 10,
+    });
+    expect(stored.outcome).toBe("stored");
+    expect(stored.sha256).toBe("a".repeat(64));
+
+    const rejected = DocumentVerifyResult.parse({
+      outcome: "rejected",
+      code: "NOT_A_PDF",
+    });
+    expect(rejected.outcome).toBe("rejected");
+    expect(rejected.code).toBe("NOT_A_PDF");
+  });
+
+  it("DocumentVerifyResult rejects invalid variants", () => {
+    expect(() =>
+      DocumentVerifyResult.parse({
+        outcome: "stored",
+        code: "NOT_A_PDF",
+      })
+    ).toThrow();
+
+    expect(() =>
+      DocumentVerifyResult.parse({
+        outcome: "nope",
+      })
+    ).toThrow();
   });
 });
