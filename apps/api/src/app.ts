@@ -3,11 +3,14 @@ import { cors } from "hono/cors";
 import type { Db, MembershipRow, WorkspaceRow } from "@maester/db";
 import type { ObjectStore } from "@maester/storage";
 import type { Auth } from "./auth.js";
+import type { Dispatcher } from "./dispatch/index.js";
 import type { Env } from "./env.js";
 import { errorBody, HttpError } from "./errors.js";
 import type { Logger } from "./logger.js";
 import { requireSession } from "./middleware/session.js";
+import { requireWorkspace } from "./middleware/workspace.js";
 import { requestId } from "./middleware/request-id.js";
+import { jobRoutes } from "./routes/jobs.js";
 import { meRoutes } from "./routes/me.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
 
@@ -27,7 +30,7 @@ export interface AppDeps {
   db: Db;
   auth: Auth;
   store: ObjectStore;
-  dispatcher: unknown;
+  dispatcher: Dispatcher;
 }
 
 export function createApp(deps: AppDeps) {
@@ -53,6 +56,12 @@ export function createApp(deps: AppDeps) {
   v1.use("*", requireSession(deps.auth));
   v1.route("/me", meRoutes(deps));
   v1.route("/workspaces", workspaceRoutes(deps));
+
+  const ws = new Hono<AppEnv>();
+  ws.use("*", requireWorkspace(deps.db));
+  ws.route("/jobs", jobRoutes(deps));
+  v1.route("/workspaces/:ws", ws);
+
   app.route("/v1", v1);
 
   app.notFound((c) => c.json(errorBody("NOT_FOUND", "route not found", c.get("traceId")), 404));
