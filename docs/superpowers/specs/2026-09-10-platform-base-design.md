@@ -42,7 +42,7 @@ The platform base is the backend foundation that the PDF extraction pipeline, re
 | Job dispatch | Cloud Tasks (`@google-cloud/tasks`) HTTP target → worker, OIDC-authenticated |
 | Real-time | Server-Sent Events from the API (`hono/streaming`) |
 | Logging | pino, JSON to stdout, Cloud Logging severity mapping |
-| Validation / contracts | Zod 3 in `packages/contracts` |
+| Validation / contracts | Zod 4 in `packages/contracts` |
 | Tests | Vitest; integration tests against Postgres from Docker Compose |
 | Hosting | Cloud Run services `maester-api`, `maester-worker` |
 | CI/CD | GitHub Actions, Workload Identity Federation, no stored keys |
@@ -66,20 +66,20 @@ packages/
   financial-engine/       Frozen Python engine (uv member, unchanged)
 infra/                    gcloud bootstrap scripts, Cloud Run service YAML
 docs/
-  decisions/0002-typescript-backend.md
+  decisions/0003-typescript-backend.md
   superpowers/specs/      This document
 .github/workflows/        check.yml (existing, Python) + ts.yml (new)
 docker-compose.yml        Local Postgres
 package.json, pnpm-workspace.yaml, turbo.json, .nvmrc, .npmrc
 ```
 
-Root `package.json` is private and declares `engines` (node >=22, pnpm >=10). `pnpm-workspace.yaml` lists `apps/*` and `packages/*`; the Python directories contain no `package.json` so pnpm ignores them. `apps/web` becomes a workspace member automatically when the owner adds a `package.json` there.
+Root `package.json` is private and declares `engines` (node >=22, pnpm >=10). `pnpm-workspace.yaml` lists `apps/api`, `apps/worker` and `packages/*` explicitly. `apps/web` is the owner's standalone SvelteKit project (ADR 0002) with its own lockfile and is not a member until the owner adds it.
 
 Python remains installable via `uv sync --locked`; the Makefile gains `ts-install`, `ts-check`, `ts-test`, `ts-dev` targets.
 
 ## 4. Authentication and workspaces
 
-Better Auth is mounted in the API at `/api/auth/*` with the Drizzle adapter. Email + password only in the base. Sessions are cookie-based: `SameSite=Lax`, `Secure` in production, `HttpOnly`.
+Better Auth is mounted in the API at `/api/auth/*` with the Drizzle adapter. Email + password only in the base. Sessions are cookie-based: `SameSite=Lax`, `Secure` in production, `HttpOnly`. Because the cookie is `SameSite=Lax`, in production the frontend must reach the API same-site — either the SvelteKit server proxies `/api/auth/*` and `/v1/*` to the API, or the two share a custom domain; a cross-site call to the raw Cloud Run URL will not carry the cookie.
 
 - `trustedOrigins` and CORS `origin` come from `ALLOWED_ORIGINS` (comma-separated). CORS uses `credentials: true`.
 - A `databaseHooks.user.create.after` hook runs after the user row commits and calls an idempotent `ensurePersonalWorkspace` that creates the personal workspace (`name = "<user name>'s workspace"`, `owner_user_id`) and an owner membership in one transaction.
@@ -221,11 +221,11 @@ Routes in the base:
 
 `packages/contracts` (`@maester/contracts`) exports Zod schemas and inferred types:
 
-- `auth`: `User`, `Session` (shape mirrors Better Auth output).
+- `auth`: user fields are inline in `Me`.
 - `workspace`: `Workspace`, `Membership`, `Me`.
 - `document`: `DocumentState`, `Document`, `CreateUploadRequest`, `CreateUploadResponse`, `FinalizeResponse`, `DownloadResponse`.
-- `job`: `JobState`, `JobProgress`, `Job`, `JobEvent` (SSE payload).
-- `common`: `ApiError`, `ErrorCode`, `Paginated(schema)`, `Cursor`, `DecimalString`, `IsoTimestamp`.
+- `job`: `JobState`, `JobProgress`, `Job` (the SSE payload is `Job`).
+- `common`: `ApiError`, `ErrorCode`, `Paginated(schema)`, `DecimalString`, `IsoTimestamp`.
 - `jobs/payloads`: `DocumentVerifyPayload`, `DocumentVerifyResult` (shared by API and worker).
 
 The README documents: auth flow (sign-up, sign-in, sign-out, session check with cookies and CORS), every route with request/response examples, the error envelope, the upload sequence, the SSE format, and local dev origins. This README is the deliverable the frontend builds against.
@@ -233,7 +233,7 @@ The README documents: auth flow (sign-up, sign-in, sign-out, session check with 
 ## 10. Deployment and local development
 
 **GCP resources** (one project, region `asia-south1` default, overridable):
-- Cloud SQL Postgres 16 instance, database `maester`, IAM DB auth for services; local dev uses password auth through Docker.
+- Cloud SQL Postgres 16 instance, database `maester`, password auth via the `DATABASE_URL` secret (IAM DB auth deferred); local dev uses password auth through Docker.
 - GCS bucket `maester-private-{project}`: uniform bucket-level access, no public access, versioning on, CORS configured for `ALLOWED_ORIGINS` on `PUT`.
 - Cloud Tasks queue `maester-jobs`.
 - Service accounts: `maester-api` (Cloud SQL client, `storage.objects.create/get` on the bucket, `roles/iam.serviceAccountTokenCreator` on itself so V4 URLs can be signed via IAM `signBlob`, `cloudtasks.enqueuer`, `iam.serviceAccountUser` on the worker SA so tasks carry an OIDC token), `maester-worker` (Cloud SQL client, `storage.objects.get`), `maester-migrate` (Cloud SQL client).
@@ -262,9 +262,9 @@ pino JSON logs with `severity` mapped for Cloud Logging, `traceId`, `workspaceId
 
 ## 13. Documentation changes
 
-- `docs/decisions/0002-typescript-backend.md`: TypeScript on Cloud Run replaces the Python API/worker proposal; SvelteKit replaces Next.js; Better Auth; Cloud Tasks; SSE; contracts package replaces OpenAPI codegen as the type authority; Python engine frozen as reference behaviour.
+- `docs/decisions/0003-typescript-backend.md`: TypeScript on Cloud Run replaces the Python API/worker proposal; SvelteKit replaces Next.js; Better Auth; Cloud Tasks; SSE; contracts package replaces OpenAPI codegen as the type authority; Python engine frozen as reference behaviour.
 - `docs/ARCHITECTURE.md`: sections 1–4 and 10 updated to the new stack; pipeline sections 5–9 unchanged in intent, language references corrected.
-- `README.md`, `apps/api/README.md`, `apps/worker/README.md`, `apps/web/README.md`: status and commands.
+- `README.md`, `apps/api/README.md`, `apps/worker/README.md`: status and commands. `apps/web/**` is not edited (owner's parallel work).
 - `docs/DEVELOPMENT.md`: TypeScript workflow.
 
 ## 14. Non-goals and deferred items

@@ -1,0 +1,34 @@
+{
+  "name": "@maester/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file=../../.env src/server.ts",
+    "build": "tsup",
+    "start": "node dist/server.js",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.0",
+    "@maester/contracts": "workspace:*",
+    "@maester/db": "workspace:*",
+    "@maester/storage": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "google-auth-library": "^11.0.0",
+    "hono": "^4.13.0",
+    "pino": "^10.0.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@maester/config": "workspace:*",
+    "@types/node": "^22.0.0",
+    "eslint": "^10.4.1",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.8"
+  }
+}

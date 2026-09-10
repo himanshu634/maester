@@ -2,7 +2,7 @@
 
 Maester is evolving into an investor platform for understanding portfolios, researching companies, and tracing financial conclusions back to evidence.
 
-The repository is a Python monorepo with a working financial-document engine and CLI. The web application, hosted API, ingestion workers, and portfolio accounting are specified in the product documentation and are **not implemented yet**.
+The repository holds a Python workspace with a working financial-document engine and CLI, plus a TypeScript workspace with a hosted API and worker base (ADR [0003](docs/decisions/0003-typescript-backend.md)). The web application, the financial-extraction pipeline running on the hosted base, and portfolio accounting are specified in the product documentation and are **not implemented yet**.
 
 ## Product direction
 
@@ -19,6 +19,9 @@ Read the [documentation index](docs/README.md), [product requirements](docs/PRD.
 - Check some subtotals and the balance-sheet identity with heuristic arithmetic checks.
 - Reuse cached extractions when asking questions about one document.
 - Run the original `pdf-financial-qa` command or the new `maester` alias.
+- Sign up, sign in and list workspaces against the hosted API (`apps/api`), with Better Auth sessions in Postgres.
+- Upload a PDF to private object storage and finalize it, gated by declared size and content type.
+- Verify an uploaded document as a durable job (`apps/worker`, dispatched via Cloud Tasks or an in-process dispatcher for local dev), with retry and progress streamed live over Server-Sent Events.
 
 These checks do not establish complete extraction accuracy. The current schema does not store page/cell provenance; answers do not yet have verified source citations or a deterministic calculation engine. Missing subtotals can mean a check was skipped. See [known limitations](docs/DEVELOPMENT.md).
 
@@ -27,22 +30,28 @@ These checks do not establish complete extraction accuracy. The current schema d
 ```text
 apps/
   cli/                      Working Typer application: maester and pdf-financial-qa
-  web/                      Planned web application boundary; documentation only
-  api/                      Planned HTTP API boundary; documentation only
-  worker/                   Planned background worker boundary; documentation only
+  web/                      Owner's SvelteKit app (ADR 0002); separate lockfile
+  api/                      Hono API: auth, workspaces, documents, jobs, SSE
+  worker/                   Hono worker: Cloud Tasks target, document.verify job
 packages/
   financial-engine/         Working Python library; imports remain pdf_financial_qa
+  financial-engine-ts/      Placeholder for the future TypeScript extraction pipeline
+  contracts/                Zod schemas/types shared by apps/api, apps/worker, apps/web
+  db/                       Drizzle schema, migrations and Postgres access helpers
+  storage/                  ObjectStore interface: GCS implementation, in-memory for tests
+  config/                   Shared tsconfig base and eslint config
 docs/                       PRD, UI, priorities, research, architecture, delivery
 scripts/                    Workspace and local documentation checks
 tests/                      Offline regression tests for the package migration
-.github/workflows/          CI definition, ready for a GitHub repository
+.github/workflows/          CI definitions for both the Python and TypeScript workspaces
 data/cache/                 Existing local extraction cache, ignored by version control
 pyproject.toml              uv workspace and local package dependencies
 uv.lock                     Shared Python dependency resolution
+package.json / pnpm-lock.yaml   pnpm workspace for apps/api, apps/worker and packages/*
 Makefile                    Root development commands
 ```
 
-Only `apps/cli` and `packages/financial-engine` are active workspace members. Planned application directories have no runtime or installable package. The future TypeScript workspace is described in [architecture](docs/ARCHITECTURE.md); Node.js is not required today.
+`apps/cli` and `packages/financial-engine` are the uv workspace members (ADR [0001](docs/decisions/0001-platform-monorepo.md)). `apps/api`, `apps/worker` and `packages/{contracts,db,storage,config,financial-engine-ts}` are the pnpm workspace introduced by ADR [0003](docs/decisions/0003-typescript-backend.md); it has its own lockfile and requires Node.js 22+ and pnpm. `apps/web` (SvelteKit, ADR 0002) is a separate project the owner maintains directly; it is not yet part of the pnpm workspace.
 
 ## Quick start
 
@@ -78,6 +87,18 @@ maester --help
 ```
 
 The pip path resolves package constraints independently; use uv for the shared locked environment. Root-level `pip install -e .` is replaced by installation of the two packages.
+
+To run the hosted TypeScript base locally, use Node 22+ and [pnpm](https://pnpm.io/):
+
+```bash
+pnpm install
+pnpm db:up                          # Postgres via docker-compose
+pnpm --filter @maester/db migrate
+PORT=8787 pnpm dev:api              # http://localhost:8787
+PORT=8788 pnpm dev:worker           # http://localhost:8788
+```
+
+With both servers running, open `http://localhost:8787/dev/upload` to sign in, upload a PDF and watch verification progress over SSE, or run `pnpm smoke path/to/file.pdf`. See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full workflow, including migrations and per-package test databases.
 
 ## Development
 
