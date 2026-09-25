@@ -3,6 +3,7 @@
 !.env.example
 data/cache/*
 !data/cache/.gitkeep
+data/blobs/
 __pycache__/
 *.pyc
 .venv/

@@ -6,7 +6,7 @@ For the product vision, read the [README](README.md). For product and engineerin
 
 ## Ways to contribute
 
-- **Code** for the R1 vertical slice: durable job pipeline, versioned fact extraction with page locations, the source reader, and the deterministic calculation service. Python today, TypeScript once the web client starts.
+- **Code** for the R1 vertical slice: versioned fact extraction with page locations, the source reader, the deterministic calculation service, and the web journeys on top of the existing API. TypeScript for the platform, Python for the document engine.
 - **Investor interviews.** If you keep a spreadsheet, hold a research subscription, or use more than one broker, open an issue describing your last earnings review and your last unexplained portfolio difference.
 - **Domain review** of accounting conventions: lot basis, external-flow treatment, corporate actions, TWR and XIRR edge cases. The [data model](docs/DATA_MODEL.md) is the document to challenge.
 - **Sample data.** Permissioned, redacted filings and broker exports so connectors are built from real formats rather than assumed headers. Never commit private documents; open an issue to coordinate.
@@ -16,29 +16,41 @@ Before starting significant work, open an issue referencing the feature ID from 
 
 ## What exists today
 
-Maester is a Python monorepo with a working financial-document engine and CLI, plus a static SvelteKit index page in `apps/web`. The web application's investor journeys, the HTTP API, ingestion workers and portfolio accounting are specified in the docs and not implemented.
+Maester is a two-language monorepo: a Python document engine and CLI, and a TypeScript platform base of an HTTP API, a job worker and a static SvelteKit web client. The investor journeys, the ledger and portfolio accounting are specified in the docs and not implemented.
 
 Working now:
 
-- Extract a financial-statement PDF into structured statements with Gemini on Vertex AI.
-- Store structured data and a text rendition in a local JSON cache.
-- Run heuristic arithmetic checks on subtotals and the balance-sheet identity.
-- Ask questions about a single cached document from the terminal.
-- Build and preview the static web index page (`pnpm --dir apps/web build`, `pnpm --dir apps/web preview`), which explains the workflow and carries the design system in [DESIGN.md](docs/DESIGN.md).
+- Extract a financial-statement PDF into structured statements with Gemini on Vertex AI, from the command line.
+- Store structured data and a text rendition in a local JSON cache, run heuristic arithmetic checks on subtotals and the balance-sheet identity, and ask questions about a cached document.
+- Sign up, get a personal workspace, upload a document to object storage, and watch a durable verification job run to completion over Server-Sent Events.
+- Serve the static public pages, which carry the design system in [DESIGN.md](docs/DESIGN.md).
 
-Not yet implemented: page-level provenance, verified citations, a deterministic calculation engine, a ledger, market data, or any hosted runtime. Extraction accuracy is not measured. See [known limitations](docs/DEVELOPMENT.md).
+The whole hosted stack runs locally in Docker with no Google Cloud account; see [setup](#setup).
+
+Not yet implemented: page-level provenance, verified citations, a deterministic calculation engine, a ledger, market data, or a web client connected to the API. Extraction accuracy is not measured. See [known limitations](docs/DEVELOPMENT.md).
 
 ## Prerequisites
 
-- Python 3.11 or newer.
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) for the shared locked environment.
-- A Google Cloud project with Vertex AI enabled and billing, only for ingestion and Q&A. Help, cache listing and offline tests need no credentials.
+- Docker with Compose v2, to run the API, worker, database and web client.
+- Node 22 and pnpm 11, for the TypeScript services, shared packages and the web client.
+- Python 3.11 or newer and [uv](https://docs.astral.sh/uv/getting-started/installation/), for the CLI and the document engine.
+- A Google Cloud project with Vertex AI enabled and billing, only for CLI ingestion and Q&A. Nothing else needs credentials.
 
-Node 22 and pnpm 11 are required only for `apps/web`; see [architecture](docs/ARCHITECTURE.md) and the [web README](apps/web/README.md). Python-only contributions do not need them.
+Take only what your change touches. A Python-only contribution needs no Node; a web-only contribution needs no Python.
 
 ## Setup
 
 Run all commands from the repository root.
+
+The hosted stack — Postgres, the API, the worker and the web client — starts with one command and needs no cloud account:
+
+```bash
+docker compose up --build
+```
+
+Then open <http://localhost:8787/dev/upload> to run the upload and verification flow end to end, and <http://localhost:5173> for the public pages. [Development](docs/DEVELOPMENT.md) explains what is running, how to work on the services without Docker, and how to troubleshoot.
+
+The Python CLI is independent of that stack:
 
 ```bash
 uv sync --locked
@@ -74,24 +86,50 @@ The pip path resolves package constraints independently. Use uv for the shared l
 ```text
 apps/
   cli/                      Working Typer application: maester and pdf-financial-qa
-  web/                      SvelteKit static index page; investor journeys planned
-  api/                      Planned FastAPI service; documentation only
-  worker/                   Planned durable-job workers; documentation only
+  api/                      Working Hono HTTP service: auth, workspaces, documents, jobs
+  worker/                   Working Hono job runner: leasing and document.verify
+  web/                      SvelteKit static pages; investor journeys planned
 packages/
   financial-engine/         Working extraction, schema, checks, cache and Q&A
+  contracts/                Shared Zod request and response schemas
+  db/                       Drizzle schema, queries and migrations
+  storage/                  Object storage drivers: Cloud Storage, local disk, memory
+  config/                   Shared TypeScript and ESLint configuration
 docs/                       PRD, UI spec, roadmap, research, architecture, data model
-scripts/                    Workspace and documentation checks
-tests/                      Offline regression tests
-.github/workflows/          CI definition
-data/cache/                 Local extraction cache, ignored by version control
-pyproject.toml              uv workspace and local package dependencies
-uv.lock                     Shared Python dependency resolution
-Makefile                    Root development commands
+infra/                      Cloud Run bootstrap and deploy scripts
+scripts/                    Workspace checks, database init, smoke test
+tests/                      Offline Python regression tests
+.github/workflows/          CI definitions
+data/                       Local extraction cache and uploads, ignored by version control
+docker-compose.yml          The local stack
+pyproject.toml, uv.lock     uv workspace and Python dependency resolution
+package.json, pnpm-*.yaml   pnpm workspace and TypeScript dependency resolution
+Makefile                    Python development commands
 ```
 
-Only `apps/cli` and `packages/financial-engine` are active uv workspace members. `apps/web` is a standalone pnpm project with its own lockfile. `apps/api` and `apps/worker` hold boundary documentation and no runtime. The engine keeps the `pdf_financial_qa` import namespace for compatibility.
+Only `apps/cli` and `packages/financial-engine` are uv workspace members. `apps/api`, `apps/worker` and `packages/*` are the pnpm workspace. `apps/web` is a standalone pnpm project with its own lockfile, so a root `pnpm install` does not install it. The engine keeps the `pdf_financial_qa` import namespace for compatibility.
 
 ## Development commands
+
+The local stack:
+
+```bash
+pnpm stack:up        # docker compose up --build
+pnpm stack:logs
+pnpm stack:down      # stop, keeping the database and uploads
+pnpm stack:reset     # stop and delete the volumes
+```
+
+The TypeScript workspace:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm lint
+pnpm typecheck
+pnpm test            # needs Postgres; see docs/DEVELOPMENT.md for the test database URLs
+```
+
+The Python workspace:
 
 ```bash
 make sync
@@ -140,7 +178,7 @@ These rules come from the [product requirements](docs/PRD.md) and [architecture]
 ## Pull request checklist
 
 - [ ] An issue exists and references a feature ID, or the change is a small documentation or tooling fix.
-- [ ] `make check` and `make test` pass locally, and `pnpm --dir apps/web verify` if `apps/web` changed.
+- [ ] `make check` and `make test` pass locally for Python changes; `pnpm lint`, `pnpm typecheck` and `pnpm test` for TypeScript changes; `pnpm --dir apps/web verify` if `apps/web` changed.
 - [ ] New behavior has offline tests that do not call a model.
 - [ ] Documentation under `docs/` is updated where semantics changed.
 - [ ] No private data, credentials or generated caches are included.

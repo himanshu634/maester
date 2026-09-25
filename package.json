@@ -13,6 +13,10 @@
     "dev:worker": "pnpm --filter @maester/worker dev",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
+    "stack:up": "docker compose up --build",
+    "stack:down": "docker compose down",
+    "stack:reset": "docker compose down --volumes",
+    "stack:logs": "docker compose logs -f",
     "smoke": "tsx scripts/smoke-upload.ts"
   },
   "devDependencies": {

@@ -14,14 +14,14 @@ Maester's product plan connects portfolio tracking with company research and ver
 | [Data model](DATA_MODEL.md) | Domain entities, money, provenance, accounting and API contracts | Backend and data |
 | [Quality and measurement](QUALITY.md) | Test matrix, product metrics and release criteria | Engineering, product, QA |
 | [Delivery plan](DELIVERY_PLAN.md) | Milestones, initial build sequence, dependencies and decisions | Delivery team |
-| [Development](DEVELOPMENT.md) | Working commands, migration and current limitations | Contributors |
+| [Development](DEVELOPMENT.md) | Running the stack locally, configuration, checks, troubleshooting and current limitations | Contributors |
 | [Design specification](DESIGN.md) | The visual contract for every web page: colour, type, structure, motion, copy, enforcement | Design and frontend |
 | [Monorepo decision](decisions/0001-platform-monorepo.md) | Rationale and consequences of the package split | Engineering |
 | [Web client decision](decisions/0002-web-sveltekit-brutalist-design-system.md) | SvelteKit, the brutalist design system and how it is enforced | Engineering and design |
 
 ## Document status
 
-Planning baseline: 9 September 2026. Status: proposed product direction, ready for implementation refinement. Functional code currently covers only the CLI and shared financial-document engine. Features tagged P0–P3 describe future releases unless explicitly marked existing.
+Planning baseline: 9 September 2026. Status: proposed product direction, ready for implementation refinement. Functional code currently covers the CLI, the shared financial-document engine, and the platform base of API, job worker and static web pages. Features tagged P0–P3 describe future releases unless explicitly marked existing.
 
 Assumptions: self-directed long-term investors; India-first discovery; desktop-first responsive web; cash equities and cash first; one personal workspace initially; no order execution in initial releases. Currency, exchange and security models must accommodate later global expansion. Audience and geography have not been confirmed by customer research.
 

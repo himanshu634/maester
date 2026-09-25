@@ -8,3 +8,5 @@ data
 docs
 tests
 *.md
+apps/web/build
+apps/web/.svelte-kit

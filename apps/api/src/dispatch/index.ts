@@ -45,7 +45,7 @@ export class CloudTasksDispatcher implements Dispatcher {
     client?: TasksClientLike,
   ) {
     this.client = client ?? new CloudTasksClient();
-    this.parent = this.client.queuePath(env.GOOGLE_CLOUD_PROJECT, env.GOOGLE_CLOUD_LOCATION, env.CLOUD_TASKS_QUEUE);
+    this.parent = this.client.queuePath(env.GOOGLE_CLOUD_PROJECT!, env.GOOGLE_CLOUD_LOCATION, env.CLOUD_TASKS_QUEUE);
   }
 
   async enqueue(job: JobRow): Promise<void> {

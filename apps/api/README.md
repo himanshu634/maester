@@ -8,13 +8,14 @@ Status: implemented (base). `apps/api` is a [Hono](https://hono.dev/) HTTP servi
 - `GET /healthz` — liveness, no auth.
 - `GET /v1/me` — current user and workspace memberships.
 - `GET /v1/workspaces`, `GET /v1/workspaces/:ws` — workspace listing and detail.
-- `POST /v1/workspaces/:ws/documents/uploads` — create a pending document and a signed GCS upload URL (`201`).
+- `POST /v1/workspaces/:ws/documents/uploads` — create a pending document and a signed upload URL (`201`).
 - `POST /v1/workspaces/:ws/documents/:id/finalize` — confirm the upload and enqueue a `document.verify` job.
 - `GET /v1/workspaces/:ws/documents`, `GET /v1/workspaces/:ws/documents/:id` — cursor-paginated list and detail (detail includes the latest job).
 - `GET /v1/workspaces/:ws/documents/:id/download` — signed, time-limited read URL.
 - `GET /v1/workspaces/:ws/jobs/:id`, `POST /v1/workspaces/:ws/jobs/:id/retry` — job state and manual retry.
 - `GET /v1/workspaces/:ws/jobs/:id/events` — Server-Sent Events stream of job progress.
 - `GET /dev/upload` — a small static page exercising the full upload → verify → SSE flow by hand; served only outside `NODE_ENV=production`.
+- `PUT|GET /dev/blobs/*` — signed local object storage standing in for Cloud Storage; mounted only when `STORAGE_DRIVER=disk`, which is refused in production.
 
 Request/response shapes come from `@maester/contracts`; see [its README](../../packages/contracts/README.md) for the full frontend integration guide (error envelope, upload sequence, SSE format, pagination).
 
@@ -28,8 +29,10 @@ Loaded from the root `.env` (see `.env.example`) via `loadEnv()` in `src/env.ts`
 | `BETTER_AUTH_SECRET` | Better Auth session signing secret (min 32 chars) |
 | `BETTER_AUTH_URL` | This service's own origin, used by Better Auth |
 | `ALLOWED_ORIGINS` | Comma-separated CORS allowlist (include the Vite dev origin locally) |
-| `GCS_BUCKET` | Private object storage bucket |
-| `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` | GCP project and Cloud Tasks queue region |
+| `STORAGE_DRIVER` | `gcs` (default) or `disk`, the local development driver |
+| `STORAGE_DIR` | Required when `STORAGE_DRIVER=disk`; directory holding uploaded objects |
+| `GCS_BUCKET` | Required when `STORAGE_DRIVER=gcs`; private object storage bucket |
+| `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` | GCP project and Cloud Tasks queue region; the project is required when `DISPATCH_MODE=cloud-tasks` |
 | `DISPATCH_MODE` | `local` (in-process dispatcher) or `cloud-tasks` |
 | `DISPATCH_SECRET` | Required when `DISPATCH_MODE=local`; shared secret the worker checks |
 | `WORKER_URL` | Base URL of `apps/worker`, used to build Cloud Tasks targets |
@@ -38,6 +41,12 @@ Loaded from the root `.env` (see `.env.example`) via `loadEnv()` in `src/env.ts`
 | `PORT`, `LOG_LEVEL`, `NODE_ENV` | Server basics (defaulted) |
 
 ## Running it
+
+```bash
+docker compose up --build           # the whole stack, including this service
+```
+
+Or as a local process, which reloads on save:
 
 ```bash
 pnpm install

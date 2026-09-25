@@ -11,8 +11,10 @@ const EnvSchema = z.object({
     .string()
     .default("")
     .transform((s) => s.split(",").map((x) => x.trim()).filter(Boolean)),
-  GCS_BUCKET: z.string().min(1),
-  GOOGLE_CLOUD_PROJECT: z.string().min(1),
+  STORAGE_DRIVER: z.enum(["gcs", "disk"]).default("gcs"),
+  STORAGE_DIR: z.string().default("data/blobs"),
+  GCS_BUCKET: z.string().min(1).optional(),
+  GOOGLE_CLOUD_PROJECT: z.string().min(1).optional(),
   GOOGLE_CLOUD_LOCATION: z.string().default("asia-south1"),
   DISPATCH_MODE: z.enum(["local", "cloud-tasks"]).default("local"),
   WORKER_URL: z.url(),
@@ -32,11 +34,20 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     const issues = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
     throw new Error(`invalid environment: ${issues}`);
   }
+  if (parsed.data.STORAGE_DRIVER === "gcs" && !parsed.data.GCS_BUCKET) {
+    throw new Error("invalid environment: GCS_BUCKET is required when STORAGE_DRIVER=gcs");
+  }
+  if (parsed.data.STORAGE_DRIVER === "disk" && parsed.data.NODE_ENV === "production") {
+    throw new Error("invalid environment: STORAGE_DRIVER=disk is a local development driver and is refused in production");
+  }
   if (parsed.data.DISPATCH_MODE === "local" && !parsed.data.DISPATCH_SECRET) {
     throw new Error("invalid environment: DISPATCH_SECRET is required when DISPATCH_MODE=local");
   }
   if (parsed.data.DISPATCH_MODE === "cloud-tasks" && !parsed.data.WORKER_INVOKER_SA) {
     throw new Error("invalid environment: WORKER_INVOKER_SA is required when DISPATCH_MODE=cloud-tasks");
+  }
+  if (parsed.data.DISPATCH_MODE === "cloud-tasks" && !parsed.data.GOOGLE_CLOUD_PROJECT) {
+    throw new Error("invalid environment: GOOGLE_CLOUD_PROJECT is required when DISPATCH_MODE=cloud-tasks");
   }
   return parsed.data;
 }

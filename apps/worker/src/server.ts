@@ -1,15 +1,15 @@
 import { serve } from "@hono/node-server";
 import { createDb } from "@maester/db";
-import { GcsObjectStore } from "@maester/storage";
 import { createWorkerApp } from "./app.js";
 import { loadWorkerEnv } from "./env.js";
 import { handlers } from "./jobs/index.js";
 import { createLogger } from "./logger.js";
+import { createStore } from "./store.js";
 
 const env = loadWorkerEnv();
 const logger = createLogger(env.LOG_LEVEL);
 const db = createDb(env.DATABASE_URL);
-const store = new GcsObjectStore(env.GCS_BUCKET);
+const store = createStore(env);
 const app = createWorkerApp({ db, store, logger, env, handlers });
 
 const server = serve({ fetch: app.fetch, port: env.PORT }, (info) =>
