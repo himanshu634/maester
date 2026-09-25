@@ -1,5 +1,8 @@
+import { Readable } from "node:stream";
 import { Hono } from "hono";
-import type { AppEnv } from "../app.js";
+import { ObjectNotFoundError, verifyBlobSignature, type DiskObjectStore } from "@maester/storage";
+import type { AppDeps, AppEnv } from "../app.js";
+import { BLOB_PATH_PREFIX } from "../store.js";
 
 const PAGE = `<!doctype html>
 <meta charset="utf-8">
@@ -46,8 +49,47 @@ document.getElementById('upload').onclick = async () => {
 };
 </script>`;
 
-export function devRoutes() {
+export function devRoutes(deps: AppDeps) {
   const r = new Hono<AppEnv>();
   r.get("/upload", (c) => c.html(PAGE));
+
+  // Local blob endpoints standing in for signed Cloud Storage URLs. Mounted
+  // only when STORAGE_DRIVER=disk, which env validation refuses in production.
+  if (deps.env.STORAGE_DRIVER === "disk") {
+    const secret = deps.env.DISPATCH_SECRET ?? deps.env.BETTER_AUTH_SECRET;
+    const store = deps.store as DiskObjectStore;
+
+    const authorize = (c: { req: { path: string; query: (k: string) => string | undefined } }, method: "PUT" | "GET") => {
+      const key = decodeURIComponent(c.req.path.slice(`${BLOB_PATH_PREFIX}/`.length));
+      const expires = Number(c.req.query("expires"));
+      const signature = c.req.query("signature") ?? "";
+      return verifyBlobSignature(secret, method, key, expires, signature) ? key : null;
+    };
+
+    r.put("/blobs/*", async (c) => {
+      const key = authorize(c, "PUT");
+      if (!key) return c.json({ error: "invalid or expired upload URL" }, 403);
+      const bytes = new Uint8Array(await c.req.arrayBuffer());
+      if (bytes.byteLength > deps.env.MAX_UPLOAD_BYTES) return c.json({ error: "too large" }, 413);
+      await store.put(key, bytes, c.req.header("content-type") ?? "application/octet-stream");
+      deps.logger.info({ key, bytes: bytes.byteLength }, "local blob stored");
+      return c.body(null, 200);
+    });
+
+    r.get("/blobs/*", async (c) => {
+      const key = authorize(c, "GET");
+      if (!key) return c.json({ error: "invalid or expired download URL" }, 403);
+      try {
+        const stream = await store.readStream(key);
+        return c.body(Readable.toWeb(stream) as ReadableStream, 200, {
+          "content-type": (await store.contentType(key)) ?? "application/octet-stream",
+        });
+      } catch (err) {
+        if (err instanceof ObjectNotFoundError) return c.json({ error: "not found" }, 404);
+        throw err;
+      }
+    });
+  }
+
   return r;
 }

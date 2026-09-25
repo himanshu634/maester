@@ -17,7 +17,9 @@ Loaded from the root `.env` (see `.env.example`) via `loadWorkerEnv()` in `src/e
 | Variable | Purpose |
 | --- | --- |
 | `DATABASE_URL` | Postgres connection string (Drizzle) |
-| `GCS_BUCKET` | Private object storage bucket |
+| `STORAGE_DRIVER` | `gcs` (default) or `disk`, the local development driver |
+| `STORAGE_DIR` | Required when `STORAGE_DRIVER=disk`; directory the API writes uploads to |
+| `GCS_BUCKET` | Required when `STORAGE_DRIVER=gcs`; private object storage bucket |
 | `DISPATCH_MODE` | `local` (shared-secret auth) or `cloud-tasks` (OIDC auth) |
 | `DISPATCH_SECRET` | Required when `DISPATCH_MODE=local`; must match the API's value |
 | `WORKER_URL` | This service's own base URL |
@@ -27,6 +29,12 @@ Loaded from the root `.env` (see `.env.example`) via `loadWorkerEnv()` in `src/e
 | `PORT`, `LOG_LEVEL`, `NODE_ENV` | Server basics (defaulted) |
 
 ## Running it
+
+```bash
+docker compose up --build           # the whole stack, including this service
+```
+
+Or as a local process, which reloads on save:
 
 ```bash
 pnpm install

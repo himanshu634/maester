@@ -20,3 +20,4 @@ export class ObjectNotFoundError extends Error {
 
 export { MemoryObjectStore } from "./memory.js";
 export { GcsObjectStore } from "./gcs.js";
+export { DiskObjectStore, verifyBlobSignature, type DiskSigningOptions } from "./disk.js";

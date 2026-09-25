@@ -16,6 +16,10 @@ WORKDIR /app
 COPY --from=build /out/dist ./dist
 COPY --from=build /out/node_modules ./node_modules
 COPY --from=build /out/package.json ./package.json
+# Mount point for the local-disk storage driver (docker-compose only). Creating
+# it here with the right owner lets the unprivileged runtime user write to a
+# named volume mounted on it; a deployed image leaves it empty and uses GCS.
+RUN mkdir -p /var/lib/maester/blobs && chown app:app /var/lib/maester/blobs
 USER app
 EXPOSE 8080
 CMD ["node", "dist/server.js"]

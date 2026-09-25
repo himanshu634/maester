@@ -1,3 +1,32 @@
+# Local Maester stack: Postgres, the API, the job worker and the web client.
+#
+#   docker compose up --build      (or: pnpm stack:up)
+#
+# Everything below runs with local development defaults and no Google Cloud
+# account: uploads are kept on a shared Docker volume by STORAGE_DRIVER=disk,
+# and jobs are dispatched over plain HTTP instead of Cloud Tasks. Nothing here
+# is a deployment template — see infra/README.md for how Maester is deployed.
+name: maester
+
+x-service-build: &api-build
+  context: .
+  dockerfile: apps/api/Dockerfile
+
+x-api-env: &api-env
+  NODE_ENV: development
+  LOG_LEVEL: info
+  DATABASE_URL: postgres://maester:maester@postgres:5432/maester
+  # 32 characters minimum. Local only; generate a real one for any shared host.
+  BETTER_AUTH_SECRET: local-development-secret-change-me-please
+  # The URL the browser uses. Signed upload URLs are built from it.
+  BETTER_AUTH_URL: http://localhost:8787
+  ALLOWED_ORIGINS: http://localhost:8787,http://localhost:5173,http://localhost:4173
+  STORAGE_DRIVER: disk
+  STORAGE_DIR: /var/lib/maester/blobs
+  DISPATCH_MODE: local
+  DISPATCH_SECRET: local-dispatch-secret
+  WORKER_URL: http://worker:8788
+
 services:
   postgres:
     image: postgres:16
@@ -15,5 +44,71 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # One-shot: applies Drizzle migrations, then exits. The API image ships the
+  # migration folder and a dist/migrate.js entry point, the same pair that
+  # infra/deploy.sh runs as a Cloud Run job.
+  migrate:
+    build: *api-build
+    image: maester/api:local
+    command: ["node", "dist/migrate.js"]
+    environment:
+      <<: *api-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: *api-build
+    image: maester/api:local
+    environment:
+      <<: *api-env
+      PORT: 8787
+    ports:
+      - "8787:8787"
+    volumes:
+      - blobs:/var/lib/maester/blobs
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    image: maester/worker:local
+    environment:
+      <<: *api-env
+      PORT: 8788
+    ports:
+      - "8788:8788"
+    volumes:
+      - blobs:/var/lib/maester/blobs
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8788/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # The public pages, built statically and served by nginx. They do not call
+  # the API yet; the working upload flow lives at http://localhost:8787/dev/upload.
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    image: maester/web:local
+    ports:
+      - "5173:8080"
+
 volumes:
   pgdata:
+  blobs:
