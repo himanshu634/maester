@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on 10 September 2026. Supersedes the Python API/worker proposal in ADR 0001 and `ARCHITECTURE.md` sections 2–4. ADR 0002 (SvelteKit web client) already records the frontend choice.
+Accepted on 10 September 2026. Supersedes the Python API/worker proposal in ADR 0001 and `ARCHITECTURE.md` sections 2–4. ADR 0002 (SvelteKit web client) already records the frontend choice. Partially superseded by [ADR 0004](0004-python-extraction-sidecar.md): document extraction stays in Python as a sidecar and the engine is no longer frozen for retirement.
 
 ## Context
 
