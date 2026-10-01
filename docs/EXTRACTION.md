@@ -65,7 +65,7 @@ statement branch:  extract → check ─┬─► done
 | locate | model | Statements present (balance sheet, income statement, cash flow × consolidated/standalone), their pages, and the company name as printed. Pages are validated (in range, at most 6 per statement). PDFs over 15 MB or 60 pages are located in 30-page chunks. Nothing found → `NO_STATEMENTS_FOUND` (permanent). |
 | extract | model | Sends a sub-PDF of only that statement's pages. Returns currency, unit label, periods and line items with values as printed text and the page of the sub-PDF each line was read from, mapped back to the original page index. |
 | check | deterministic | Parse values to `Decimal`, then subtotal and balance-sheet identity checks (0.5% relative, 1.0 absolute in reported units). |
-| correct | model | Re-extracts only a section with a failed check, given the expected and actual values. At most 2 attempts per statement. A corrected value that differs from the original must appear on its page's text layer (when the page has one), otherwise the correction is rejected, the original kept and a `CORRECTION_REJECTED` warning added. |
+| correct | model | Re-extracts only a section with a failed check, given the expected and actual values. At most 2 attempts per statement. A corrected value that differs from the original must appear on its page's text layer (when the page has one), otherwise the correction is rejected, the original kept and a `CORRECTION_REJECTED` warning added. A correction call that still fails after retries keeps the original and adds `CORRECTION_FAILED`. |
 | assemble | deterministic | State is `complete` when every located statement extracted, else `partial`. Warns `COMPANY_NAME_MISMATCH` when the printed name differs from the chosen company's. |
 
 - Model: Gemini on Vertex AI through `langchain-google-genai` (`ChatGoogleGenerativeAI(vertexai=True)`) with `with_structured_output` and Pydantic schemas. Model calls sit behind an `ExtractionModel` interface so tests inject a scripted model.
@@ -92,18 +92,18 @@ Decimals travel as plain decimal strings (`DecimalString`, never exponent notati
 | Failure | Where | Job outcome |
 | --- | --- | --- |
 | `EXTRACTOR_NOT_CONFIGURED` (no Vertex project or credentials) | extractor error event | permanent failure |
-| `UNREADABLE_PDF`, `NO_STATEMENTS_FOUND`, `MODEL_CALL_BUDGET_EXCEEDED` | extractor error event | permanent failure |
+| `UNREADABLE_PDF`, `NO_STATEMENTS_FOUND`, `NO_STATEMENTS_EXTRACTED`, `MODEL_REQUEST_REJECTED` (Vertex 4xx other than 429), `MODEL_CALL_BUDGET_EXCEEDED`, `DEADLINE_EXCEEDED` | extractor error event | permanent failure |
 | `TOO_LARGE_FOR_EXTRACTION` (over `EXTRACT_MAX_BYTES`, default 30 MiB) | worker before calling, or extractor `413` | permanent failure |
 | `EXTRACTOR_UNAUTHORIZED` (`401`/`403`) | worker | permanent failure |
-| `EXTRACTION_FAILED`, model unavailable, network error, `5xx`, stream ended without a terminal event, timeout | worker or extractor | retry with the job's attempt budget |
+| `EXTRACTION_FAILED`, `MODEL_UNAVAILABLE`, `EXTRACTOR_UNAVAILABLE`, `EXTRACTOR_HTTP_5xx`, `EXTRACTOR_STREAM_INTERRUPTED` (stream ended without a terminal event), timeout | worker or extractor | retry with the job's attempt budget |
 | Result fails Zod validation | worker | permanent failure, `INVALID_EXTRACTOR_RESULT` |
 
-Permanent failures are raised as a typed `JobFailure` (code, retryable) that the job runner honours: it records the code instead of `HANDLER_ERROR` and does not retry.
+Permanent failures are raised as a typed `JobFailure` (code, retryable) that the job runner honours: it records the code instead of `HANDLER_ERROR` and does not retry. The worker enqueues `document.extract` through `@maester/jobs`; in `cloud-tasks` mode it needs `GOOGLE_CLOUD_PROJECT`, `CLOUD_TASKS_QUEUE` and `WORKER_INVOKER_SA`, and sets the task's dispatch deadline from `TASK_DISPATCH_DEADLINE_SECONDS` (default 1800).
 
 API additions (all under `/v1/workspaces/:ws`):
 
 - `POST /companies`, `GET /companies`, `GET /companies/:id`. A duplicate name returns `409 CONFLICT`.
-- `POST /documents/uploads` now requires `companyId`; an unknown company is `422 VALIDATION_FAILED` on `companyId`. `Document` gains `companyId`.
+- `POST /documents/uploads` now requires `companyId`; an unknown company is `400 VALIDATION_FAILED` on `companyId`. `Document` gains `companyId`.
 - `POST /documents/:id/extract` → `202` with the new job. The document must be `stored`.
 - `GET /documents/:id/extraction` → the latest revision with its checks, or `404`.
 - `GET /documents/:id/facts?revisionId=` → a revision's facts with their source references (latest revision by default).

@@ -45,3 +45,7 @@ The `GCP_DEPLOY_SA` service account needs at least these IAM roles on the projec
 - `roles/viewer` on the project (needed for `gcloud projects describe`, which `deploy.sh` uses to compute the Cloud Run service URLs)
 
 Note: `bootstrap.sh` sets the `maester-jobs` queue to unlimited delivery attempts (`--max-attempts=unlimited`), so a job's own `max_attempts` column is what actually bounds retries, not the queue.
+
+## Extraction is not deployed yet
+
+`deploy.sh` does not deploy `apps/extractor`, and the deployed worker has no `EXTRACTOR_URL`, so production documents are verified but not extracted. Enabling it needs a `maester-extractor` Cloud Run service (internal ingress, a `--timeout` above 15 minutes, a service account with Vertex AI access), the worker's service account as its invoker, permission for the worker to enqueue Cloud Tasks as the invoker service account, and the worker variables listed in [document extraction](../docs/EXTRACTION.md) section 7.

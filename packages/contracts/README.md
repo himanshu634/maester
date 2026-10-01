@@ -105,11 +105,17 @@ All routes below except `/healthz` and `/api/auth/*` are under `/v1` and require
 | GET | `/v1/me` | Current user and their workspace memberships |
 | GET | `/v1/workspaces` | Workspaces the caller belongs to |
 | GET | `/v1/workspaces/{ws}` | One workspace's detail |
-| POST | `/v1/workspaces/{ws}/documents/uploads` | Create a pending document and a signed upload URL |
+| POST | `/v1/workspaces/{ws}/companies` | Create a company in the workspace |
+| GET | `/v1/workspaces/{ws}/companies` | List companies (cursor pagination) |
+| GET | `/v1/workspaces/{ws}/companies/{id}` | One company |
+| POST | `/v1/workspaces/{ws}/documents/uploads` | Create a pending document for a company and a signed upload URL |
 | POST | `/v1/workspaces/{ws}/documents/{id}/finalize` | Mark a document uploaded and enqueue verification |
 | GET | `/v1/workspaces/{ws}/documents` | List documents (cursor pagination) |
 | GET | `/v1/workspaces/{ws}/documents/{id}` | Document detail, including its latest job |
 | GET | `/v1/workspaces/{ws}/documents/{id}/download` | Signed, time-limited read URL |
+| POST | `/v1/workspaces/{ws}/documents/{id}/extract` | Enqueue a new extraction of a stored document |
+| GET | `/v1/workspaces/{ws}/documents/{id}/extraction` | The latest extraction revision and its checks |
+| GET | `/v1/workspaces/{ws}/documents/{id}/facts` | A revision's facts with page references |
 | GET | `/v1/workspaces/{ws}/jobs/{id}` | Job state |
 | POST | `/v1/workspaces/{ws}/jobs/{id}/retry` | Re-enqueue a `failed` or stuck `queued` job |
 | GET | `/v1/workspaces/{ws}/jobs/{id}/events` | Server-Sent Events stream of job progress (see §6) |
@@ -142,6 +148,28 @@ All routes below except `/healthz` and `/api/auth/*` are under `/v1` and require
   "ownerUserId": "usr_3f6a1c2b9d8e4f01",
   "locale": "en-IN",
   "createdAt": "2026-09-10T08:15:00Z"
+}
+```
+
+### `POST /v1/workspaces/{ws}/companies`
+
+Every document belongs to a company the user chose. Names are unique per workspace, ignoring case (`409 CONFLICT` otherwise); `country` is an ISO 3166-1 alpha-2 code.
+
+<!-- schema: CreateCompanyRequest -->
+```json
+{ "displayName": "Synthetic Industries Limited", "country": "IN" }
+```
+
+Response (`201 Created`), also the shape of `GET …/companies/{id}` and of each item of `GET …/companies`:
+
+<!-- schema: Company -->
+```json
+{
+  "id": "c0a8012e-5b6f-4c3d-9e2a-1f0b2c3d4e5f",
+  "workspaceId": "3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f",
+  "displayName": "Synthetic Industries Limited",
+  "country": "IN",
+  "createdAt": "2026-09-10T08:14:00Z"
 }
 ```
 
@@ -302,6 +330,96 @@ Only valid once the document is `stored`; otherwise `409 INVALID_STATE`.
 }
 ```
 
+### Extraction: `POST …/documents/{id}/extract`, `GET …/extraction`, `GET …/facts`
+
+When a document is verified and extraction is enabled, the worker runs a `document.extract` job automatically; `POST …/extract` runs another (`202`, body `ExtractResponse` with the new `job`, which can be followed over SSE like any job). Only `stored` documents can be extracted (`409 INVALID_STATE` otherwise). Every successful run creates a new, immutable revision; the latest one is current.
+
+`GET …/extraction` returns the latest revision and its arithmetic checks (`404` before the first extraction). `coverage` lists each statement found, its 0-based page indexes and whether it was extracted; `state` is `partial` when any statement failed.
+
+<!-- schema: DocumentExtraction -->
+```json
+{
+  "revision": {
+    "id": "5d1f6a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b",
+    "documentId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "jobId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+    "state": "complete",
+    "pipelineVersion": "extract-1",
+    "model": "gemini-2.5-pro",
+    "promptVersion": "55d5e28e6e4b",
+    "pageCount": 120,
+    "companyNameAsPrinted": "SYNTHETIC INDUSTRIES LIMITED",
+    "coverage": [{ "statement": "balance_sheet", "basis": "consolidated", "pages": [41, 42], "status": "extracted", "message": null }],
+    "warnings": [],
+    "createdAt": "2026-09-10T08:18:00Z"
+  },
+  "checks": [
+    {
+      "id": "8e9f0a1b-2c3d-4e5f-9a0b-1c2d3e4f5a6b",
+      "checkType": "subtotal",
+      "statement": "balance_sheet",
+      "basis": "consolidated",
+      "section": "Assets",
+      "periodLabel": "As at 31 March 2026",
+      "subjectLabel": "Total assets",
+      "status": "passed",
+      "expected": "120956.50",
+      "actual": "120956.50",
+      "detail": "components sum to the subtotal"
+    }
+  ]
+}
+```
+
+`GET …/facts?revisionId=` returns one revision's facts (the latest by default). Each fact keeps the value exactly as printed (`reportedText`), its parsed decimal (`reportedValue`, `null` for a dash or unparseable text, see `valueStatus`), the unit and scale, and `normalizedValue` in actual currency units when the unit is recognised. `periodEnd` (income and cash flow) or `asOfDate` (balance sheet) is set only when the period label names an unambiguous date. `source.pageIndex` is the 0-based page of the original PDF; `source.textLayerMatch` says whether the value was found in that page's text (`null` for a scanned page). All decimals are strings.
+
+<!-- schema: DocumentFacts -->
+```json
+{
+  "revision": {
+    "id": "5d1f6a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b",
+    "documentId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "jobId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+    "state": "complete",
+    "pipelineVersion": "extract-1",
+    "model": "gemini-2.5-pro",
+    "promptVersion": "55d5e28e6e4b",
+    "pageCount": 120,
+    "companyNameAsPrinted": "SYNTHETIC INDUSTRIES LIMITED",
+    "coverage": [{ "statement": "balance_sheet", "basis": "consolidated", "pages": [41, 42], "status": "extracted", "message": null }],
+    "warnings": [],
+    "createdAt": "2026-09-10T08:18:00Z"
+  },
+  "facts": [
+    {
+      "id": "0f1e2d3c-4b5a-4968-8776-655443322110",
+      "revisionId": "5d1f6a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b",
+      "companyId": "c0a8012e-5b6f-4c3d-9e2a-1f0b2c3d4e5f",
+      "statement": "balance_sheet",
+      "basis": "consolidated",
+      "section": "Assets",
+      "lineOrder": 0,
+      "reportedLabel": "Cash and cash equivalents",
+      "isSubtotal": false,
+      "componentLabels": [],
+      "periodLabel": "As at 31 March 2026",
+      "periodEnd": null,
+      "asOfDate": "2026-03-31",
+      "reportedText": "1,23,456.50",
+      "reportedValue": "123456.50",
+      "valueStatus": "value",
+      "unitLabel": "₹ in crores",
+      "scaleFactor": "10000000",
+      "currency": "INR",
+      "normalizedValue": "1234565000000.00",
+      "source": { "documentId": "7c9e6679-7425-40de-944b-e07fc1f90ae7", "pageIndex": 41, "textLayerMatch": true }
+    }
+  ]
+}
+```
+
+A failed extract job carries a code in `lastErrorCode`: `EXTRACTOR_NOT_CONFIGURED`, `UNREADABLE_PDF`, `NO_STATEMENTS_FOUND`, `NO_STATEMENTS_EXTRACTED`, `TOO_LARGE_FOR_EXTRACTION`, `MODEL_REQUEST_REJECTED` and `MODEL_CALL_BUDGET_EXCEEDED` fail at once; `MODEL_UNAVAILABLE`, `EXTRACTION_FAILED`, `EXTRACTOR_UNAVAILABLE` and `EXTRACTOR_STREAM_INTERRUPTED` are retried first.
+
 ### `GET /v1/workspaces/{ws}/jobs/{id}` and `POST /v1/workspaces/{ws}/jobs/{id}/retry`
 
 Both return a `Job`:
@@ -328,7 +446,7 @@ Both return a `Job`:
 }
 ```
 
-`lastErrorCode` on a job is one of the worker's own error codes — `HANDLER_ERROR` (the handler threw) or `UNKNOWN_JOB_TYPE` (no handler registered for `job.type`) — not to be confused with a document's `rejectionCode` (`NOT_A_PDF`, `TOO_LARGE`, `OBJECT_MISSING`), which describes why a *document* was rejected, not why a job failed; a rejected document's verify job still `succeeds`, with `result.outcome === "rejected"`.
+`lastErrorCode` on a job is one of the worker's own error codes — `HANDLER_ERROR` (the handler threw), `UNKNOWN_JOB_TYPE` (no handler registered for `job.type`) or an extraction code listed above — not to be confused with a document's `rejectionCode` (`NOT_A_PDF`, `TOO_LARGE`, `OBJECT_MISSING`), which describes why a *document* was rejected, not why a job failed; a rejected document's verify job still `succeeds`, with `result.outcome === "rejected"`.
 
 `retry` only succeeds when the job is `failed` or a `queued` job stuck without a dispatched task; any other state returns `409 INVALID_STATE`. On success it raises `maxAttempts` by 5 (relative to the job's current `attempt`) and resets `finishedAt` and `progress` back to their initial values (`null` and `{}`).
 
@@ -336,7 +454,7 @@ Both return a `Job`:
 
 Uploading and verifying a PDF is a five-step round trip:
 
-1. **Create the upload.** `POST /v1/workspaces/{ws}/documents/uploads` with `CreateUploadRequest` (`originalName`, `size`, `mimeType: "application/pdf"`). The response's `document` is `pending_upload`; `upload` carries a signed `PUT` URL, the exact headers required, and an expiry.
+1. **Create the upload.** `POST /v1/workspaces/{ws}/documents/uploads` with `CreateUploadRequest` (`companyId`, `originalName`, `size`, `mimeType: "application/pdf"`). An unknown `companyId` is `400 VALIDATION_FAILED` on that field. The response's `document` is `pending_upload`; `upload` carries a signed `PUT` URL, the exact headers required, and an expiry.
 2. **PUT the bytes.** `fetch(upload.url, { method: "PUT", headers: upload.headers, body: file })` — send *exactly* the headers in `upload.headers` (`Content-Type` and `Content-Length`, in that exact casing — the API returns them as-is) and nothing else; a mismatched header invalidates the signature. Do not send the session cookie or `credentials: "include"` on this request — it goes straight to object storage, not the API.
 3. **Finalize.** `POST /v1/workspaces/{ws}/documents/{id}/finalize` with no body. This confirms the object landed, flips the document to `uploaded`, and enqueues a `document.verify` job. The response is `FinalizeResponse` (`document`, `job`).
 4. **Subscribe to progress.** Open `GET /v1/workspaces/{ws}/jobs/{job.id}/events` (see §6) to watch the job move through `queued` → `running` → `succeeded`/`failed`.
@@ -416,4 +534,4 @@ import type { Document as DocumentType, Job as JobType, ApiError as ApiErrorType
 const doc = Document.parse(await res.json()); // throws on shape drift
 ```
 
-Every exported schema (`Workspace`, `Membership`, `Me`, `Document`, `CreateUploadRequest`, `CreateUploadResponse`, `FinalizeResponse`, `DownloadResponse`, `Job`, `JobProgress`, `ApiError`, `ErrorCode`, `DocumentVerifyResult`, …) is both a runtime validator and, via `z.infer<typeof X>`, the TypeScript type of the same name — there is no separate `.d.ts` to keep in sync.
+Every exported schema (`Workspace`, `Membership`, `Me`, `Company`, `CreateCompanyRequest`, `Document`, `CreateUploadRequest`, `DocumentExtraction`, `DocumentFacts`, `FinancialFact`, `ExtractorEvent`, `CreateUploadResponse`, `FinalizeResponse`, `DownloadResponse`, `Job`, `JobProgress`, `ApiError`, `ErrorCode`, `DocumentVerifyResult`, …) is both a runtime validator and, via `z.infer<typeof X>`, the TypeScript type of the same name — there is no separate `.d.ts` to keep in sync.
