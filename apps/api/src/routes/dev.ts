@@ -15,7 +15,8 @@ const PAGE = `<!doctype html>
 <button id="signup">Sign up</button> <button id="signin">Sign in</button> <span id="who"></span>
 </fieldset>
 <fieldset><legend>2. Upload</legend>
-<input type="file" id="file" accept="application/pdf"> <button id="upload">Upload and verify</button>
+<label>Company <input id="company" value="Synthetic Industries Limited"> <input id="country" value="IN" size="2"></label>
+<input type="file" id="file" accept="application/pdf"> <button id="upload">Upload, verify and extract</button>
 </fieldset>
 <h3>Log</h3><pre id="log"></pre>
 <script>
@@ -35,17 +36,48 @@ document.getElementById('signup').onclick = async () => {
 document.getElementById('signin').onclick = async () => {
   await j('/api/auth/sign-in/email', { email: email.value, password: password.value }); await me(); log('signed in');
 };
+async function companyId() {
+  const name = document.getElementById('company').value.trim();
+  const list = await j('/v1/workspaces/' + workspaceId + '/companies?limit=100');
+  const found = list.items.find((c) => c.displayName.toLowerCase() === name.toLowerCase());
+  if (found) return found.id;
+  const created = await j('/v1/workspaces/' + workspaceId + '/companies', { displayName: name, country: document.getElementById('country').value });
+  log('company ' + created.id);
+  return created.id;
+}
+const follow = (jobId, onDone) => {
+  const es = new EventSource('/v1/workspaces/' + workspaceId + '/jobs/' + jobId + '/events', { withCredentials: true });
+  es.addEventListener('job', (e) => { const job = JSON.parse(e.data); log(job.type + ' ' + job.state + ' ' + JSON.stringify(job.progress) + (job.lastErrorCode ? ' ' + job.lastErrorCode + ': ' + job.lastErrorMessage : '')); });
+  es.addEventListener('done', () => { es.close(); onDone(); });
+};
+async function showExtraction(docId) {
+  const base = '/v1/workspaces/' + workspaceId + '/documents/' + docId;
+  const x = await j(base + '/extraction');
+  log('revision ' + x.revision.id + ' ' + x.revision.state + ' pages=' + x.revision.pageCount + ' warnings=' + JSON.stringify(x.revision.warnings));
+  log('coverage ' + JSON.stringify(x.revision.coverage));
+  log('checks ' + x.checks.map((c) => c.status).join(','));
+  const f = await j(base + '/facts');
+  for (const fact of f.facts.slice(0, 25)) log('  p' + (fact.source.pageIndex + 1) + ' ' + fact.statement + ' | ' + fact.reportedLabel + ' | ' + fact.periodLabel + ' | ' + fact.reportedText + ' -> ' + fact.normalizedValue);
+  log(f.facts.length + ' facts');
+}
 document.getElementById('upload').onclick = async () => {
   const f = document.getElementById('file').files[0]; if (!f) return log('choose a file');
-  const created = await j('/v1/workspaces/' + workspaceId + '/documents/uploads', { originalName: f.name, size: f.size, mimeType: 'application/pdf' });
+  const created = await j('/v1/workspaces/' + workspaceId + '/documents/uploads', { companyId: await companyId(), originalName: f.name, size: f.size, mimeType: 'application/pdf' });
   log('document ' + created.document.id);
   const put = await fetch(created.upload.url, { method: 'PUT', headers: created.upload.headers, body: f });
   if (!put.ok) return log('PUT failed ' + put.status);
   const fin = await j('/v1/workspaces/' + workspaceId + '/documents/' + created.document.id + '/finalize', {});
   log('job ' + fin.job.id + ' ' + fin.job.state);
-  const es = new EventSource('/v1/workspaces/' + workspaceId + '/jobs/' + fin.job.id + '/events', { withCredentials: true });
-  es.addEventListener('job', (e) => { const job = JSON.parse(e.data); log('job ' + job.state + ' ' + JSON.stringify(job.progress)); });
-  es.addEventListener('done', async () => { es.close(); const d = await j('/v1/workspaces/' + workspaceId + '/documents/' + created.document.id); log('document ' + d.state + ' sha256=' + d.contentSha256 + ' rejection=' + d.rejectionCode); });
+  follow(fin.job.id, async () => {
+    const d = await j('/v1/workspaces/' + workspaceId + '/documents/' + created.document.id);
+    log('document ' + d.state + ' sha256=' + d.contentSha256 + ' rejection=' + d.rejectionCode);
+    const next = d.latestJob;
+    if (!next || next.type !== 'document.extract') return log('extraction is not enabled (worker has no EXTRACTOR_URL)');
+    follow(next.id, async () => {
+      const job = await j('/v1/workspaces/' + workspaceId + '/jobs/' + next.id);
+      if (job.state === 'succeeded') await showExtraction(created.document.id);
+    });
+  });
 };
 </script>`;
 

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { closeDb, createDb, runMigrations, schema, type Db } from "@maester/db";
+import { RecordingDispatcher } from "@maester/jobs";
 import { MemoryObjectStore } from "@maester/storage";
 import { loadWorkerEnv } from "../src/env.js";
 import { silentLogger } from "../src/logger.js";
@@ -19,14 +20,15 @@ export function workerTestEnv(overrides: Partial<NodeJS.ProcessEnv> = {}) {
   });
 }
 
-export async function createWorkerContext(handlers: Record<string, JobHandler> = {}) {
-  const env = workerTestEnv();
+export async function createWorkerContext(handlers: Record<string, JobHandler> = {}, overrides: Partial<WorkerDeps> = {}, envOverrides: Partial<NodeJS.ProcessEnv> = {}) {
+  const env = workerTestEnv(envOverrides);
   const db = createDb(env.DATABASE_URL);
   await runMigrations(db);
   await db.execute(sql`TRUNCATE TABLE "job", "document", "membership", "workspace", "session", "account", "verification", "user" CASCADE`);
   const store = new MemoryObjectStore();
-  const deps: WorkerDeps = { db, store, logger: silentLogger, env, handlers };
-  return { ...deps, close: () => closeDb(db) };
+  const dispatcher = new RecordingDispatcher();
+  const deps: WorkerDeps = { db, store, logger: silentLogger, env, handlers, dispatcher, extractor: null, ...overrides };
+  return { ...deps, dispatcher, close: () => closeDb(db) };
 }
 
 export async function seedWorkspace(db: Db) {

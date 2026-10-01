@@ -24,8 +24,9 @@ async function call(path: string, body?: unknown, method = body ? "POST" : "GET"
 await call("/api/auth/sign-up/email", { name: "Smoke", email, password });
 const me = (await call("/v1/me")) as { workspaces: { id: string }[] };
 const ws = me.workspaces[0]!.id;
+const company = (await call(`/v1/workspaces/${ws}/companies`, { displayName: "Smoke Test Company", country: "IN" })) as { id: string };
 const bytes = await readFile(file);
-const created = (await call(`/v1/workspaces/${ws}/documents/uploads`, { originalName: basename(file), size: bytes.length, mimeType: "application/pdf" })) as {
+const created = (await call(`/v1/workspaces/${ws}/documents/uploads`, { companyId: company.id, originalName: basename(file), size: bytes.length, mimeType: "application/pdf" })) as {
   document: { id: string }; upload: { url: string; headers: Record<string, string> };
 };
 const put = await fetch(created.upload.url, { method: "PUT", headers: created.upload.headers, body: bytes });

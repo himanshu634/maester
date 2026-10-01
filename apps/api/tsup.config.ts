@@ -7,6 +7,10 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   noExternal: [/^@maester\//],
+  // Bundled, google-gax (under @google-cloud/tasks, used by @maester/jobs) reads
+  // __dirname, which ESM output lacks; it stays external and is listed as a
+  // dependency of this app so `pnpm deploy` ships it.
+  external: ["@google-cloud/tasks"],
   // Workspace deps (e.g. @maester/db) pull in CJS libs like `pg` that call
   // `require(...)` internally. Bundled into ESM output, esbuild's fallback
   // `__require` shim throws "Dynamic require of ... is not supported"

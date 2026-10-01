@@ -1,5 +1,13 @@
-import type { Document, Job, Workspace } from "@maester/contracts";
-import type { DocumentRow, JobRow, WorkspaceRow } from "@maester/db";
+import type { Company, Document, ExtractionCheck, ExtractionRevision, FinancialFact, Job, Workspace } from "@maester/contracts";
+import type {
+  CompanyRow,
+  DocumentRow,
+  ExtractionCheckRow,
+  ExtractionRevisionRow,
+  FactWithSource,
+  JobRow,
+  WorkspaceRow,
+} from "@maester/db";
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
@@ -32,6 +40,7 @@ export function toDocument(row: DocumentRow, latestJob: JobRow | null): Document
   return {
     id: row.id,
     workspaceId: row.workspaceId,
+    companyId: row.companyId,
     originalName: row.originalName,
     declaredSize: row.declaredSize,
     declaredMime: row.declaredMime,
@@ -42,5 +51,68 @@ export function toDocument(row: DocumentRow, latestJob: JobRow | null): Document
     createdAt: row.createdAt.toISOString(),
     storedAt: iso(row.storedAt),
     latestJob: latestJob ? toJob(latestJob) : null,
+  };
+}
+
+export function toCompany(row: CompanyRow): Company {
+  return { id: row.id, workspaceId: row.workspaceId, displayName: row.displayName, country: row.country, createdAt: row.createdAt.toISOString() };
+}
+
+export function toRevision(row: ExtractionRevisionRow): ExtractionRevision {
+  return {
+    id: row.id,
+    documentId: row.documentId,
+    jobId: row.jobId,
+    state: row.state,
+    pipelineVersion: row.pipelineVersion,
+    model: row.model,
+    promptVersion: row.promptVersion,
+    pageCount: row.pageCount,
+    companyNameAsPrinted: row.companyNameAsPrinted,
+    coverage: row.coverage.statements as ExtractionRevision["coverage"],
+    warnings: row.warnings,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export function toCheck(row: ExtractionCheckRow): ExtractionCheck {
+  return {
+    id: row.id,
+    checkType: row.checkType,
+    statement: row.statement,
+    basis: row.basis,
+    section: row.section,
+    periodLabel: row.periodLabel,
+    subjectLabel: row.subjectLabel,
+    status: row.status,
+    expected: row.expected,
+    actual: row.actual,
+    detail: row.detail,
+  };
+}
+
+export function toFact({ fact, source }: FactWithSource): FinancialFact {
+  return {
+    id: fact.id,
+    revisionId: fact.revisionId,
+    companyId: fact.companyId,
+    statement: fact.statement,
+    basis: fact.basis,
+    section: fact.section,
+    lineOrder: fact.lineOrder,
+    reportedLabel: fact.reportedLabel,
+    isSubtotal: fact.isSubtotal,
+    componentLabels: fact.componentLabels,
+    periodLabel: fact.periodLabel,
+    periodEnd: fact.periodEnd,
+    asOfDate: fact.asOfDate,
+    reportedText: fact.reportedText,
+    reportedValue: fact.reportedValue,
+    valueStatus: fact.valueStatus,
+    unitLabel: fact.unitLabel,
+    scaleFactor: fact.scaleFactor,
+    currency: fact.currency,
+    normalizedValue: fact.normalizedValue,
+    source: { documentId: source.documentId, pageIndex: source.pageIndex, textLayerMatch: source.textLayerMatch },
   };
 }

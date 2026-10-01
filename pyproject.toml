@@ -6,14 +6,18 @@ readme = "README.md"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-dependencies = ["maester-cli==0.1.0"]
+dependencies = ["maester-cli==0.1.0", "maester-extractor==0.1.0"]
+
+[dependency-groups]
+dev = ["httpx>=0.27"]
 
 [tool.uv]
 package = false
 
 [tool.uv.workspace]
-members = ["apps/cli", "packages/financial-engine"]
+members = ["apps/cli", "apps/extractor", "packages/financial-engine"]
 
 [tool.uv.sources]
 maester-cli = { workspace = true }
+maester-extractor = { workspace = true }
 maester-financial-engine = { workspace = true }

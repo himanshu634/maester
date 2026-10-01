@@ -8,10 +8,14 @@ Status: implemented (base). `apps/api` is a [Hono](https://hono.dev/) HTTP servi
 - `GET /healthz` — liveness, no auth.
 - `GET /v1/me` — current user and workspace memberships.
 - `GET /v1/workspaces`, `GET /v1/workspaces/:ws` — workspace listing and detail.
-- `POST /v1/workspaces/:ws/documents/uploads` — create a pending document and a signed upload URL (`201`).
+- `POST /v1/workspaces/:ws/companies`, `GET /v1/workspaces/:ws/companies`, `GET /v1/workspaces/:ws/companies/:id` — workspace-owned company records; a duplicate name is `409`.
+- `POST /v1/workspaces/:ws/documents/uploads` — create a pending document for a company (`companyId` required) and a signed upload URL (`201`).
 - `POST /v1/workspaces/:ws/documents/:id/finalize` — confirm the upload and enqueue a `document.verify` job.
 - `GET /v1/workspaces/:ws/documents`, `GET /v1/workspaces/:ws/documents/:id` — cursor-paginated list and detail (detail includes the latest job).
 - `GET /v1/workspaces/:ws/documents/:id/download` — signed, time-limited read URL.
+- `POST /v1/workspaces/:ws/documents/:id/extract` — enqueue a new `document.extract` job for a stored document (`202`); every call produces a new revision.
+- `GET /v1/workspaces/:ws/documents/:id/extraction` — the latest extraction revision with its checks.
+- `GET /v1/workspaces/:ws/documents/:id/facts?revisionId=` — a revision's facts with their page references (latest revision by default).
 - `GET /v1/workspaces/:ws/jobs/:id`, `POST /v1/workspaces/:ws/jobs/:id/retry` — job state and manual retry.
 - `GET /v1/workspaces/:ws/jobs/:id/events` — Server-Sent Events stream of job progress.
 - `GET /dev/upload` — a small static page exercising the full upload → verify → SSE flow by hand; served only outside `NODE_ENV=production`.
