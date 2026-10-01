@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { schema } from "@maester/db";
 import { createWorkerApp } from "../src/app.js";
+import { JobFailure } from "../src/jobs/types.js";
 import { runJob } from "../src/run.js";
 import { createWorkerContext, seedJob, seedWorkspace } from "./context.js";
 
@@ -14,6 +15,12 @@ beforeAll(async () => {
     },
     "test.fail": async () => {
       throw new Error("handler exploded");
+    },
+    "test.permanent": async () => {
+      throw new JobFailure("NO_STATEMENTS_FOUND", "nothing to extract", false);
+    },
+    "test.retryable": async () => {
+      throw new JobFailure("MODEL_UNAVAILABLE", "try later", true);
     },
   });
 });
@@ -44,6 +51,22 @@ describe("runJob", () => {
     [row] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, id));
     expect(row!.state).toBe("failed");
     expect(row!.lastErrorCode).toBe("HANDLER_ERROR");
+  });
+
+  it("fails a permanent JobFailure on the first attempt and records its code", async () => {
+    const { workspaceId } = await seedWorkspace(ctx.db);
+    const id = await seedJob(ctx.db, workspaceId, { type: "test.permanent", maxAttempts: 5 });
+    expect((await runJob(ctx, "test.permanent", id)).status).toBe(200);
+    const [row] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, id));
+    expect(row).toMatchObject({ state: "failed", attempt: 1, lastErrorCode: "NO_STATEMENTS_FOUND", lastErrorMessage: "nothing to extract" });
+  });
+
+  it("requeues a retryable JobFailure with its code", async () => {
+    const { workspaceId } = await seedWorkspace(ctx.db);
+    const id = await seedJob(ctx.db, workspaceId, { type: "test.retryable", maxAttempts: 5 });
+    expect((await runJob(ctx, "test.retryable", id)).status).toBe(500);
+    const [row] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, id));
+    expect(row).toMatchObject({ state: "queued", lastErrorCode: "MODEL_UNAVAILABLE" });
   });
 
   it("acks already-terminal jobs, 409s a held lease, and fails unknown types", async () => {

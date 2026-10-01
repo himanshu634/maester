@@ -1,9 +1,26 @@
 import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
-import type { DocumentVerifyResult, RejectionCode } from "@maester/contracts";
-import { schema } from "@maester/db";
+import { JobTypes, type DocumentVerifyResult, type RejectionCode } from "@maester/contracts";
+import { schema, type JobRow } from "@maester/db";
+import { createJob } from "@maester/jobs";
 import { ObjectNotFoundError } from "@maester/storage";
-import type { JobHandler } from "./types.js";
+import type { JobContext, JobHandler } from "./types.js";
+
+/**
+ * Enqueue extraction for a stored document when the worker can reach an
+ * extractor. The fixed idempotency key means a verify retry never enqueues twice.
+ */
+async function chainExtraction(job: JobRow, ctx: JobContext): Promise<void> {
+  if (!ctx.env.EXTRACTOR_URL) return;
+  const next = await createJob(ctx.db, ctx.dispatcher, {
+    workspaceId: job.workspaceId,
+    type: JobTypes.DOCUMENT_EXTRACT,
+    subjectType: "document",
+    subjectId: job.subjectId,
+    pipelineVersion: "auto",
+  });
+  ctx.logger.info({ documentId: job.subjectId, extractJobId: next.id }, "extraction enqueued");
+}
 
 const PDF_MAGIC = Buffer.from("%PDF-");
 
@@ -14,10 +31,12 @@ export const documentVerify: JobHandler = async (job, ctx) => {
     .where(and(eq(schema.document.id, job.subjectId), eq(schema.document.workspaceId, job.workspaceId)))
     .limit(1);
   if (!doc) throw new Error(`document ${job.subjectId} not found in workspace ${job.workspaceId}`);
-  if (doc.state === "stored" || doc.state === "rejected") {
-    return doc.state === "stored"
-      ? ({ outcome: "stored", sha256: doc.contentSha256!, sizeBytes: doc.sizeBytes! } satisfies DocumentVerifyResult)
-      : ({ outcome: "rejected", code: doc.rejectionCode as RejectionCode } satisfies DocumentVerifyResult);
+  if (doc.state === "stored") {
+    await chainExtraction(job, ctx);
+    return { outcome: "stored", sha256: doc.contentSha256!, sizeBytes: doc.sizeBytes! } satisfies DocumentVerifyResult;
+  }
+  if (doc.state === "rejected") {
+    return { outcome: "rejected", code: doc.rejectionCode as RejectionCode } satisfies DocumentVerifyResult;
   }
 
   await ctx.db.update(schema.document).set({ state: "verifying", updatedAt: sql`now()` }).where(eq(schema.document.id, doc.id));
@@ -62,5 +81,6 @@ export const documentVerify: JobHandler = async (job, ctx) => {
     .where(eq(schema.document.id, doc.id));
   await ctx.progress({ stage: "stored", percent: 100 });
   ctx.logger.info({ documentId: doc.id, sizeBytes: size }, "document stored");
+  await chainExtraction(job, ctx);
   return { outcome: "stored", sha256, sizeBytes: size } satisfies DocumentVerifyResult;
 };

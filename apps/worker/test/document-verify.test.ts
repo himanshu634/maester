@@ -194,3 +194,40 @@ describe("document.verify storage error handling and streaming", () => {
     expect(doc.contentSha256).toBe(createHash("sha256").update(full).digest("hex"));
   });
 });
+
+describe("document.verify chains extraction", () => {
+  it("enqueues one document.extract per document when an extractor is configured", async () => {
+    const chained = await createWorkerContext({ [JobTypes.DOCUMENT_VERIFY]: documentVerify }, {}, {
+      EXTRACTOR_URL: "http://localhost:8790", EXTRACTOR_SECRET: "s",
+    });
+    try {
+      const { workspaceId, userId } = await seedWorkspace(chained.db);
+      const id = crypto.randomUUID();
+      const storageKey = `workspaces/${workspaceId}/documents/${id}/original.pdf`;
+      await chained.db.insert(schema.document).values({
+        id, workspaceId, originalName: "x.pdf", declaredSize: 9, declaredMime: "application/pdf", storageKey, state: "uploaded", createdByUserId: userId,
+      });
+      await chained.store.put(storageKey, new TextEncoder().encode("%PDF-1.7"), "application/pdf");
+      for (let i = 0; i < 2; i++) {
+        const jobId = await seedJob(chained.db, workspaceId, { type: JobTypes.DOCUMENT_VERIFY, subjectType: "document", subjectId: id });
+        await runJob(chained, JobTypes.DOCUMENT_VERIFY, jobId);
+      }
+      const extractJobs = await chained.db.select().from(schema.job).where(eq(schema.job.type, JobTypes.DOCUMENT_EXTRACT));
+      expect(extractJobs).toHaveLength(1);
+      expect(extractJobs[0]).toMatchObject({ subjectId: id, workspaceId, state: "queued", idempotencyKey: `document.extract:${id}:auto` });
+      expect(chained.dispatcher.enqueued.map((j) => j.id)).toEqual([extractJobs[0]!.id]);
+    } finally {
+      await chained.close();
+    }
+  });
+
+  it("does not enqueue extraction without an extractor", async () => {
+    const { workspaceId, userId } = await seedWorkspace(ctx.db);
+    const { id, storageKey } = await seedDocument(workspaceId, userId);
+    await ctx.store.put(storageKey, new TextEncoder().encode("%PDF-1.7"), "application/pdf");
+    await verify(workspaceId, id);
+    const extractJobs = await ctx.db.select().from(schema.job).where(eq(schema.job.subjectId, id));
+    expect(extractJobs.map((j) => j.type)).toEqual([JobTypes.DOCUMENT_VERIFY]);
+    expect(ctx.dispatcher.enqueued).toHaveLength(0);
+  });
+});

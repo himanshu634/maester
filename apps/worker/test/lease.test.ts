@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { schema } from "@maester/db";
-import { acquireLease, completeJob, failAttempt } from "../src/lease.js";
+import { acquireLease, completeJob, failAttempt, renewLease } from "../src/lease.js";
 import { createWorkerContext, seedJob, seedWorkspace } from "./context.js";
 
 let ctx: Awaited<ReturnType<typeof createWorkerContext>>;
@@ -18,6 +18,16 @@ describe("lease", () => {
     expect(winners[0]!.state).toBe("running");
     expect(winners[0]!.attempt).toBe(1);
     expect(winners[0]!.leaseToken).toBeTruthy();
+  });
+
+  it("renewLease extends the lease only for the holder", async () => {
+    const { workspaceId } = await seedWorkspace(ctx.db);
+    const id = await seedJob(ctx.db, workspaceId);
+    const held = (await acquireLease(ctx.db, id, 5))!;
+    expect(await renewLease(ctx.db, id, crypto.randomUUID(), 600)).toBe(false);
+    expect(await renewLease(ctx.db, id, held.leaseToken!, 600)).toBe(true);
+    const [row] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, id));
+    expect(row!.leaseExpiresAt!.getTime() - held.leaseExpiresAt!.getTime()).toBeGreaterThan(500_000);
   });
 
   it("an expired lease can be re-acquired", async () => {
