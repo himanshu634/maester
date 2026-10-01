@@ -1,12 +1,20 @@
 # Document extraction (F03 minimal + F05)
 
-Status: approved design, 1 October 2026. Implements the minimal company record (F03) and versioned fact extraction with page provenance (F05) from the [feature roadmap](FEATURE_ROADMAP.md), the next step of Slice A in the [delivery plan](DELIVERY_PLAN.md). Architecture decision: [ADR 0004](decisions/0004-python-extraction-sidecar.md).
+Status: implemented, 1 October 2026. Sections 2–4 (architecture, data model, workflow) were approved in conversation before implementation; sections 5–7 (contracts and errors, testing, operation) and the refinements listed under "Changes during implementation" were written while building and still need review. Implements the minimal company record (F03) and versioned fact extraction with page provenance (F05) from the [feature roadmap](FEATURE_ROADMAP.md), the next step of Slice A in the [delivery plan](DELIVERY_PLAN.md). Architecture decision: [ADR 0004](decisions/0004-python-extraction-sidecar.md).
 
 ## 1. Outcome
 
 An investor uploads a financial-statement PDF for a company they chose. Without further action, Maester stores a new extraction revision: every reported value as printed, its parsed decimal, its unit and scale, its period and basis, and the page of the original PDF it was read from. Arithmetic checks record what passed, what failed and what could not be checked. Re-running extraction creates another revision and never overwrites an earlier one.
 
 Out of scope here: the source reader and review/corrections (F06), the financial table UI (F07), calculations (F08), the Analyst (F09), shared reference companies, securities and tickers, dimensions and restatement links.
+
+## Changes during implementation
+
+- The current revision is the newest by `created_at`; there is no `document.current_revision_id` pointer (it would have made a circular foreign key).
+- A failed extraction writes no revision; its code lives on the job. Revision states are `complete` and `partial` only.
+- `source_reference.printed_page_label` and `excerpt` were dropped until the source reader (F06) needs them.
+- Added codes: `CORRECTION_FAILED` (warning), `MODEL_REQUEST_REJECTED`, `NO_STATEMENTS_EXTRACTED`, `DEADLINE_EXCEEDED`, `CANCELLED`.
+- Job creation and dispatch moved to `@maester/jobs` so the worker can enqueue `document.extract`.
 
 ## 2. Architecture
 
@@ -120,4 +128,4 @@ The write is idempotent per job: `extraction_revision.job_id` is unique, and a r
 ## 7. Local and deployed operation
 
 - Docker Compose adds `extractor` (port 8790). Extraction needs `GOOGLE_CLOUD_PROJECT` and Application Default Credentials; without them extract jobs fail with `EXTRACTOR_NOT_CONFIGURED` and uploads still work.
-- Deployment is a follow-up and is not part of this change. Before enabling extraction in Cloud Run: deploy `maester-extractor` with internal ingress and `--timeout` above 15 minutes; grant the worker service account `run.invoker` on it; grant the worker `cloudtasks.enqueuer` and `iam.serviceAccountUser` on the invoker service account so it can enqueue `document.extract`; give the extract task a `dispatchDeadline` above the extraction budget; set `EXTRACTOR_URL`, `EXTRACTOR_AUTH=oidc`, `GOOGLE_CLOUD_PROJECT`, `CLOUD_TASKS_QUEUE` and `WORKER_INVOKER_SA` on the worker. Cloud Run's 32 MiB HTTP/1 request limit is why `EXTRACT_MAX_BYTES` defaults to 30 MiB.
+- Deployment is a follow-up and is not part of this change. Before enabling extraction in Cloud Run: deploy `maester-extractor` with internal ingress and `--timeout` above 15 minutes; grant the worker service account `run.invoker` on it; grant the worker `cloudtasks.enqueuer` and `iam.serviceAccountUser` on the invoker service account so it can enqueue `document.extract`; give the extract task a `dispatchDeadline` above the extraction budget (the worker sets one from `TASK_DISPATCH_DEADLINE_SECONDS`, but the API's dispatcher sets none, so manual `POST …/extract` tasks get Cloud Tasks' default until it does); raise the worker's Cloud Run `--timeout` above `EXTRACTOR_TIMEOUT_SECONDS` (both are 900 s today, so Cloud Run could end the request first); set `EXTRACTOR_URL`, `EXTRACTOR_AUTH=oidc`, `GOOGLE_CLOUD_PROJECT`, `CLOUD_TASKS_QUEUE` and `WORKER_INVOKER_SA` on the worker. Cloud Run's 32 MiB HTTP/1 request limit is why `EXTRACT_MAX_BYTES` defaults to 30 MiB.

@@ -111,7 +111,7 @@ def create_app(settings: Settings | None = None, model_factory: ModelFactory | N
             model = model_factory()
         except ExtractionError as err:
             yield _line(StartedEvent(pipeline_version=PIPELINE_VERSION, model=settings.model, prompt_version=PROMPT_VERSION))
-            log.warning("extraction refused", extra={"document_id": x_document_id, "code": err.code})
+            log.warning("extraction refused document=%s code=%s", x_document_id, err.code)
             yield _line(ErrorEvent(code=err.code, retryable=err.retryable, message=err.message))
             return
         yield _line(StartedEvent(pipeline_version=PIPELINE_VERSION, model=model.name, prompt_version=PROMPT_VERSION))
@@ -146,16 +146,16 @@ def create_app(settings: Settings | None = None, model_factory: ModelFactory | N
             try:
                 result = run.result()
             except ExtractionError as err:
-                log.info("extraction failed", extra={"document_id": x_document_id, "code": err.code,
-                                                     "seconds": round(time.monotonic() - started, 1)})
+                log.info("extraction failed document=%s code=%s retryable=%s seconds=%.1f",
+                         x_document_id, err.code, err.retryable, time.monotonic() - started)
                 yield _line(ErrorEvent(code=err.code, retryable=err.retryable, message=err.message))
                 return
             except Exception as exc:  # a bug, not a document problem; the job system retries
-                log.exception("extraction crashed", extra={"document_id": x_document_id})
+                log.exception("extraction crashed document=%s", x_document_id)
                 yield _line(ErrorEvent(code="EXTRACTION_FAILED", retryable=True, message=f"unexpected {type(exc).__name__}"))
                 return
-            log.info("extraction finished", extra={"document_id": x_document_id, "state": result.state,
-                                                   "facts": len(result.facts), "seconds": round(time.monotonic() - started, 1)})
+            log.info("extraction finished document=%s state=%s facts=%d warnings=%d seconds=%.1f", x_document_id,
+                     result.state, len(result.facts), len(result.warnings), time.monotonic() - started)
             yield _line(ResultEvent(result=result))
         finally:
             # The client went away or the stream ended: stop any further model calls.
