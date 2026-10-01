@@ -10,6 +10,7 @@ import type { Logger } from "./logger.js";
 import { requireSession } from "./middleware/session.js";
 import { requireWorkspace } from "./middleware/workspace.js";
 import { requestId } from "./middleware/request-id.js";
+import { companyRoutes } from "./routes/companies.js";
 import { devRoutes } from "./routes/dev.js";
 import { documentRoutes } from "./routes/documents.js";
 import { DEFAULT_SSE, jobEventsRoute, type SseOptions } from "./routes/job-events.js";
@@ -70,6 +71,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}) {
   ws.use("*", requireWorkspace(deps.db));
   ws.route("/jobs", jobEventsRoute(deps, options.sse ?? DEFAULT_SSE));
   ws.route("/jobs", jobRoutes(deps));
+  ws.route("/companies", companyRoutes(deps));
   ws.route("/documents", documentRoutes(deps));
   v1.route("/workspaces/:ws", ws);
 

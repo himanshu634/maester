@@ -30,6 +30,16 @@ export async function createTestContext() {
     return { cookie, userId: body.user.id, workspaceId: body.workspaces[0]!.id };
   }
 
-  return { app, db, store, dispatcher, env, signUp, close: () => closeDb(db) };
+  async function createCompany(workspaceId: string, cookie: string, displayName = `Company ${crypto.randomUUID()}`) {
+    const res = await app.request(`/v1/workspaces/${workspaceId}/companies`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json", origin: "http://localhost" },
+      body: JSON.stringify({ displayName, country: "IN" }),
+    });
+    if (res.status !== 201) throw new Error(`create company failed: ${res.status} ${await res.text()}`);
+    return ((await res.json()) as { id: string }).id;
+  }
+
+  return { app, db, store, dispatcher, env, signUp, createCompany, close: () => closeDb(db) };
 }
 export type TestContext = Awaited<ReturnType<typeof createTestContext>>;

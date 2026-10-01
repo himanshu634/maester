@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { bigint, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { user } from "./auth.js";
 
@@ -6,7 +7,7 @@ export const membershipState = pgEnum("membership_state", ["active", "revoked"])
 export const documentState = pgEnum("document_state", ["pending_upload", "uploaded", "verifying", "stored", "rejected"]);
 export const jobState = pgEnum("job_state", ["queued", "running", "succeeded", "failed", "cancelled"]);
 
-const ts = (name: string) => timestamp(name, { withTimezone: true, precision: 3 });
+export const ts = (name: string) => timestamp(name, { withTimezone: true, precision: 3 });
 
 export const workspace = pgTable("workspace", {
   id: uuid("id").primaryKey(),
@@ -30,11 +31,29 @@ export const membership = pgTable(
   (t) => [uniqueIndex("membership_workspace_user").on(t.workspaceId, t.userId)],
 );
 
+export const company = pgTable(
+  "company",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspace.id),
+    displayName: text("display_name").notNull(),
+    country: text("country").notNull(),
+    createdByUserId: text("created_by_user_id").notNull().references(() => user.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("company_workspace_name").on(t.workspaceId, sql`lower(${t.displayName})`),
+    index("company_workspace_created").on(t.workspaceId, t.createdAt),
+  ],
+);
+
 export const document = pgTable(
   "document",
   {
     id: uuid("id").primaryKey(),
     workspaceId: uuid("workspace_id").notNull().references(() => workspace.id),
+    companyId: uuid("company_id").references(() => company.id),
     originalName: text("original_name").notNull(),
     declaredSize: bigint("declared_size", { mode: "number" }).notNull(),
     declaredMime: text("declared_mime").notNull(),
@@ -84,5 +103,6 @@ export const job = pgTable(
 
 export type WorkspaceRow = typeof workspace.$inferSelect;
 export type MembershipRow = typeof membership.$inferSelect;
+export type CompanyRow = typeof company.$inferSelect;
 export type DocumentRow = typeof document.$inferSelect;
 export type JobRow = typeof job.$inferSelect;

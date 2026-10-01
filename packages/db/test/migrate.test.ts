@@ -9,7 +9,7 @@ afterAll(() => closeDb(db));
 it("creates all base tables", async () => {
   const res = await db.execute(sql`select table_name from information_schema.tables where table_schema = 'public' order by table_name`);
   const names = res.rows.map((r) => r.table_name);
-  for (const t of ["user", "session", "account", "verification", "workspace", "membership", "document", "job"]) {
+  for (const t of ["user", "session", "account", "verification", "workspace", "membership", "document", "job", "company", "extraction_revision", "financial_fact", "source_reference", "extraction_check"]) {
     expect(names).toContain(t);
   }
 });

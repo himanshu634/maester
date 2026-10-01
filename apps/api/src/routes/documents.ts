@@ -2,18 +2,33 @@ import { and, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import {
   CreateUploadRequest,
+  FactsQuery,
   JobTypes,
   ListQuery,
   type CreateUploadResponse,
+  type DocumentExtraction,
+  type DocumentFacts,
   type DownloadResponse,
+  type ExtractResponse,
   type FinalizeResponse,
 } from "@maester/contracts";
-import { getDocument, getLatestJobForSubject, listDocuments, schema, type DocumentRow } from "@maester/db";
+import {
+  getCompany,
+  getDocument,
+  getLatestJobForSubject,
+  getLatestRevision,
+  getRevision,
+  listChecks,
+  listDocuments,
+  listFactsWithSources,
+  schema,
+  type DocumentRow,
+} from "@maester/db";
 import type { AppDeps, AppEnv } from "../app.js";
 import { HttpError } from "../errors.js";
 import { createJob } from "../jobs/create.js";
 import { uuidParam } from "../middleware/params.js";
-import { toDocument, toJob } from "../serialize.js";
+import { toCheck, toDocument, toFact, toJob, toRevision } from "../serialize.js";
 import { validate } from "../validation.js";
 
 export function storageKeyFor(workspaceId: string, documentId: string): string {
@@ -34,6 +49,9 @@ export function documentRoutes(deps: AppDeps) {
     if (input.size > deps.env.MAX_UPLOAD_BYTES) {
       throw new HttpError("UPLOAD_TOO_LARGE", `uploads are limited to ${deps.env.MAX_UPLOAD_BYTES} bytes`, [{ path: "size", message: "too large" }]);
     }
+    if (!(await getCompany(deps.db, workspace.id, input.companyId))) {
+      throw new HttpError("VALIDATION_FAILED", "company not found in this workspace", [{ path: "companyId", message: "unknown company" }]);
+    }
     const id = crypto.randomUUID();
     const storageKey = storageKeyFor(workspace.id, id);
     const [row] = await deps.db
@@ -41,6 +59,7 @@ export function documentRoutes(deps: AppDeps) {
       .values({
         id,
         workspaceId: workspace.id,
+        companyId: input.companyId,
         originalName: sanitiseName(input.originalName),
         declaredSize: input.size,
         declaredMime: input.mimeType,
@@ -115,6 +134,48 @@ export function documentRoutes(deps: AppDeps) {
     if (doc.state !== "stored") throw new HttpError("INVALID_STATE", `document is ${doc.state}`);
     const signed = await deps.store.signDownload(doc.storageKey, { expiresInSeconds: deps.env.DOWNLOAD_URL_TTL_SECONDS });
     const body: DownloadResponse = { url: signed.url, expiresAt: signed.expiresAt.toISOString() };
+    return c.json(body);
+  });
+
+  r.post("/:id/extract", async (c) => {
+    const workspace = c.get("workspace");
+    const doc = await getDocument(deps.db, workspace.id, uuidParam(c, "id"));
+    if (!doc) throw new HttpError("NOT_FOUND", "document not found");
+    if (doc.state !== "stored") throw new HttpError("INVALID_STATE", `document is ${doc.state}; only stored documents can be extracted`);
+    const job = await createJob(deps.db, deps.dispatcher, {
+      workspaceId: workspace.id,
+      type: JobTypes.DOCUMENT_EXTRACT,
+      subjectType: "document",
+      subjectId: doc.id,
+      // Every manual run is a new job and produces a new revision.
+      pipelineVersion: `manual-${crypto.randomUUID()}`,
+    });
+    const body: ExtractResponse = { job: toJob(job) };
+    return c.json(body, 202);
+  });
+
+  r.get("/:id/extraction", async (c) => {
+    const workspace = c.get("workspace");
+    const doc = await getDocument(deps.db, workspace.id, uuidParam(c, "id"));
+    if (!doc) throw new HttpError("NOT_FOUND", "document not found");
+    const revision = await getLatestRevision(deps.db, workspace.id, doc.id);
+    if (!revision) throw new HttpError("NOT_FOUND", "document has no extraction yet");
+    const checks = await listChecks(deps.db, workspace.id, revision.id);
+    const body: DocumentExtraction = { revision: toRevision(revision), checks: checks.map(toCheck) };
+    return c.json(body);
+  });
+
+  r.get("/:id/facts", validate("query", FactsQuery), async (c) => {
+    const q = c.req.valid("query");
+    const workspace = c.get("workspace");
+    const doc = await getDocument(deps.db, workspace.id, uuidParam(c, "id"));
+    if (!doc) throw new HttpError("NOT_FOUND", "document not found");
+    const revision = q.revisionId
+      ? await getRevision(deps.db, workspace.id, doc.id, q.revisionId)
+      : await getLatestRevision(deps.db, workspace.id, doc.id);
+    if (!revision) throw new HttpError("NOT_FOUND", q.revisionId ? "revision not found" : "document has no extraction yet");
+    const facts = await listFactsWithSources(deps.db, workspace.id, revision.id);
+    const body: DocumentFacts = { revision: toRevision(revision), facts: facts.map(toFact) };
     return c.json(body);
   });
 

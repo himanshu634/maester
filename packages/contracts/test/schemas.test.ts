@@ -43,6 +43,7 @@ describe("common", () => {
     const validDoc = {
       id: "6d5d1b0a-1e5e-4f6b-9f5d-2a4e1c9b7f10",
       workspaceId: "6d5d1b0a-1e5e-4f6b-9f5d-2a4e1c9b7f11",
+      companyId: null,
       originalName: "test.pdf",
       declaredSize: 1024,
       declaredMime: "application/pdf",
@@ -62,10 +63,12 @@ describe("common", () => {
 });
 
 describe("document", () => {
-  it("CreateUploadRequest only allows PDF and positive size", () => {
-    expect(CreateUploadRequest.parse({ originalName: "a.pdf", size: 10, mimeType: "application/pdf" }).size).toBe(10);
-    expect(() => CreateUploadRequest.parse({ originalName: "a.png", size: 10, mimeType: "image/png" })).toThrow();
-    expect(() => CreateUploadRequest.parse({ originalName: "a.pdf", size: 0, mimeType: "application/pdf" })).toThrow();
+  it("CreateUploadRequest requires a company and only allows PDF with a positive size", () => {
+    const companyId = "6d5d1b0a-1e5e-4f6b-9f5d-2a4e1c9b7f12";
+    expect(CreateUploadRequest.parse({ companyId, originalName: "a.pdf", size: 10, mimeType: "application/pdf" }).size).toBe(10);
+    expect(() => CreateUploadRequest.parse({ originalName: "a.pdf", size: 10, mimeType: "application/pdf" })).toThrow();
+    expect(() => CreateUploadRequest.parse({ companyId, originalName: "a.png", size: 10, mimeType: "image/png" })).toThrow();
+    expect(() => CreateUploadRequest.parse({ companyId, originalName: "a.pdf", size: 0, mimeType: "application/pdf" })).toThrow();
   });
 });
 

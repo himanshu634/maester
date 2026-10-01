@@ -14,8 +14,15 @@ const post = (cookie: string, body: unknown) => ({
   body: JSON.stringify(body),
 });
 
+const companies = new Map<string, string>();
+async function companyFor(ws: string, cookie: string) {
+  if (!companies.has(ws)) companies.set(ws, await ctx.createCompany(ws, cookie));
+  return companies.get(ws)!;
+}
+
 async function createUpload(ws: string, cookie: string, size = 1234, originalName = "fy24.pdf") {
-  const res = await ctx.app.request(`/v1/workspaces/${ws}/documents/uploads`, post(cookie, { originalName, size, mimeType: "application/pdf" }));
+  const companyId = await companyFor(ws, cookie);
+  const res = await ctx.app.request(`/v1/workspaces/${ws}/documents/uploads`, post(cookie, { companyId, originalName, size, mimeType: "application/pdf" }));
   return { status: res.status, body: await res.json() };
 }
 
@@ -35,7 +42,8 @@ describe("documents", () => {
     const big = await createUpload(a.workspaceId, a.cookie, 52428801);
     expect(big.status).toBe(413);
     expect((big.body as { error: { code: string } }).error.code).toBe("UPLOAD_TOO_LARGE");
-    const res = await ctx.app.request(`/v1/workspaces/${a.workspaceId}/documents/uploads`, post(a.cookie, { originalName: "x.png", size: 5, mimeType: "image/png" }));
+    const companyId = await companyFor(a.workspaceId, a.cookie);
+    const res = await ctx.app.request(`/v1/workspaces/${a.workspaceId}/documents/uploads`, post(a.cookie, { companyId, originalName: "x.png", size: 5, mimeType: "image/png" }));
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: { code: string; fields: { path: string; message: string }[] } };
     expect(body.error.code).toBe("VALIDATION_FAILED");

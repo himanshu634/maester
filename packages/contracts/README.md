@@ -152,6 +152,7 @@ Request:
 <!-- schema: CreateUploadRequest -->
 ```json
 {
+  "companyId": "c0a8012e-5b6f-4c3d-9e2a-1f0b2c3d4e5f",
   "originalName": "fy24-annual-report.pdf",
   "size": 245678,
   "mimeType": "application/pdf"
@@ -166,6 +167,7 @@ Response (`201 Created`):
   "document": {
     "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
     "workspaceId": "3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f",
+    "companyId": "c0a8012e-5b6f-4c3d-9e2a-1f0b2c3d4e5f",
     "originalName": "fy24-annual-report.pdf",
     "declaredSize": 245678,
     "declaredMime": "application/pdf",
@@ -196,6 +198,7 @@ No request body. Response:
   "document": {
     "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
     "workspaceId": "3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f",
+    "companyId": "c0a8012e-5b6f-4c3d-9e2a-1f0b2c3d4e5f",
     "originalName": "fy24-annual-report.pdf",
     "declaredSize": 245678,
     "declaredMime": "application/pdf",
@@ -254,6 +257,7 @@ A document once verification has finished, with its terminal job attached:
 {
   "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
   "workspaceId": "3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f",
+  "companyId": "c0a8012e-5b6f-4c3d-9e2a-1f0b2c3d4e5f",
   "originalName": "fy24-annual-report.pdf",
   "declaredSize": 245678,
   "declaredMime": "application/pdf",
@@ -382,6 +386,7 @@ GET /v1/workspaces/3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f/documents?limit=25
     {
       "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
       "workspaceId": "3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f",
+      "companyId": "c0a8012e-5b6f-4c3d-9e2a-1f0b2c3d4e5f",
       "originalName": "fy24-annual-report.pdf",
       "declaredSize": 245678,
       "declaredMime": "application/pdf",
