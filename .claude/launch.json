@@ -4,14 +4,38 @@
     {
       "name": "web-dev",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--dir", "apps/web", "dev", "--port", "5173", "--strictPort"],
+      "runtimeArgs": [
+        "--dir",
+        "apps/web",
+        "dev",
+        "--port",
+        "5173",
+        "--strictPort"
+      ],
       "port": 5173
     },
     {
       "name": "web-preview",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--dir", "apps/web", "preview", "--port", "4173", "--strictPort"],
+      "runtimeArgs": [
+        "--dir",
+        "apps/web",
+        "preview",
+        "--port",
+        "4173",
+        "--strictPort"
+      ],
       "port": 4173
+    },
+    {
+      "name": "stack",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": [
+        "compose",
+        "up",
+        "--build"
+      ],
+      "port": 8787
     }
   ]
 }

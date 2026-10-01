@@ -6,6 +6,13 @@
 # account: uploads are kept on a shared Docker volume by STORAGE_DRIVER=disk,
 # and jobs are dispatched over plain HTTP instead of Cloud Tasks. Nothing here
 # is a deployment template — see infra/README.md for how Maester is deployed.
+#
+# Fact extraction (the extractor service) calls Gemini on Vertex AI, which does
+# need Google Cloud. Without GOOGLE_CLOUD_PROJECT and Application Default
+# Credentials, extract jobs fail with EXTRACTOR_NOT_CONFIGURED and everything
+# else keeps working. To enable it, set in the root .env:
+#   GOOGLE_CLOUD_PROJECT=<your project>
+#   GCLOUD_CONFIG_DIR=<absolute path to ~/.config/gcloud>  (after gcloud auth application-default login)
 name: maester
 
 x-service-build: &api-build
@@ -86,6 +93,8 @@ services:
     environment:
       <<: *api-env
       PORT: 8788
+      EXTRACTOR_URL: http://extractor:8790
+      EXTRACTOR_SECRET: local-extractor-secret
     ports:
       - "8788:8788"
     volumes:
@@ -93,8 +102,34 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      extractor:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8788/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # Stateless Python service the worker streams PDFs to; it reads them with
+  # Gemini and never touches the database or the blobs volume.
+  extractor:
+    build:
+      context: .
+      dockerfile: apps/extractor/Dockerfile
+    image: maester/extractor:local
+    environment:
+      PORT: 8790
+      EXTRACTOR_SECRET: local-extractor-secret
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      VERTEX_LOCATION: ${VERTEX_LOCATION:-us-central1}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-pro}
+      GOOGLE_APPLICATION_CREDENTIALS: /var/lib/maester/gcloud/application_default_credentials.json
+    volumes:
+      - ${GCLOUD_CONFIG_DIR:-./data/gcloud}:/var/lib/maester/gcloud:ro
+    ports:
+      - "8790:8790"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8790/healthz').status == 200 else 1)"]
       interval: 5s
       timeout: 3s
       retries: 12

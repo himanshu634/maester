@@ -228,6 +228,15 @@ class FailureTests(unittest.TestCase):
             run_extraction(PDF, model=model, settings=FAST)
         self.assertEqual((ctx.exception.code, ctx.exception.retryable), ("MODEL_UNAVAILABLE", True))
 
+    def test_a_rejected_model_request_is_permanent(self):
+        from google.genai import errors
+
+        model = ScriptedModel(locate=[errors.ClientError(403, {"error": {"message": "permission denied"}})])
+        with self.assertRaises(ExtractionError) as ctx:
+            run_extraction(PDF, model=model, settings=FAST)
+        self.assertEqual((ctx.exception.code, ctx.exception.retryable), ("MODEL_REQUEST_REJECTED", False))
+        self.assertEqual(model.count("locate"), 1)
+
     def test_no_statements_found_is_permanent(self):
         with self.assertRaises(ExtractionError) as ctx:
             run_extraction(PDF, model=ScriptedModel(locate=[LocateOutput(company_name=None, statements=[])]), settings=FAST)

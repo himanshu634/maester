@@ -463,4 +463,12 @@ def _classify(exc: Exception) -> ExtractionError:
         pass
     if is_transient(exc):
         return ExtractionError("MODEL_UNAVAILABLE", f"the model call failed: {type(exc).__name__}", retryable=True)
+    try:
+        from google.genai import errors as genai_errors
+
+        if isinstance(exc, genai_errors.ClientError):
+            # Wrong project, missing permission or an unknown model: retrying cannot help.
+            return ExtractionError("MODEL_REQUEST_REJECTED", f"the model rejected the request ({exc.code})", retryable=False)
+    except ImportError:  # pragma: no cover
+        pass
     return ExtractionError("EXTRACTION_FAILED", f"unexpected {type(exc).__name__}", retryable=True)

@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@google-cloud/tasks": "^7.1.0",
     "@hono/node-server": "^2.1.0",
     "@hono/zod-validator": "^0.9.0",
     "@maester/contracts": "workspace:*",
