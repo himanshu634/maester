@@ -21,7 +21,7 @@ export const CoverageEntry = z.object({
   /** 0-based page indexes of the original PDF. */
   pages: z.array(z.number().int().min(0)),
   status: z.enum(["extracted", "failed"]),
-  message: z.string().optional(),
+  message: z.string().nullish(),
 });
 export type CoverageEntry = z.infer<typeof CoverageEntry>;
 

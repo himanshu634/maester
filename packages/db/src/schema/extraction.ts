@@ -10,7 +10,7 @@ export const checkType = pgEnum("check_type", ["subtotal", "balance_identity"]);
 export const checkStatus = pgEnum("check_status", ["passed", "failed", "not_checked"]);
 
 export type CoverageJson = {
-  statements: { statement: string; basis: string; pages: number[]; status: string; message?: string }[];
+  statements: { statement: string; basis: string; pages: number[]; status: string; message?: string | null }[];
 };
 export type WarningJson = { code: string; message: string }[];
 
