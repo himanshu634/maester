@@ -37,6 +37,19 @@ describe("Google sign-in", () => {
     expect(await ctx.db.select().from(schema.workspace).where(eq(schema.workspace.ownerUserId, user!.id))).toHaveLength(1);
   });
 
+  it("does not accept a client-submitted Google id token (redirect flow only)", async () => {
+    const sessionsBefore = (await ctx.db.select().from(schema.session)).length;
+    const res = await ctx.app.request("/api/auth/sign-in/social", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "http://localhost" },
+      body: JSON.stringify({ provider: "google", idToken: { token: "x" } }),
+    });
+    expect(res.status).not.toBe(200);
+    expect(res.headers.getSetCookie()).toHaveLength(0);
+    expect(((await res.json()) as { code?: string }).code).toBe("ID_TOKEN_NOT_SUPPORTED");
+    expect(await ctx.db.select().from(schema.session)).toHaveLength(sessionsBefore);
+  });
+
   it("returns to the error URL when the person cancels at Google", async () => {
     const start = await ctx.app.request("/api/auth/sign-in/social", {
       method: "POST",

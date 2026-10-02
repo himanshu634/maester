@@ -36,6 +36,11 @@ describe("env", () => {
     expect(() => testEnv({ NODE_ENV: "production", GOOGLE_CLIENT_ID: undefined, GOOGLE_CLIENT_SECRET: undefined })).toThrow(/GOOGLE_CLIENT_ID/);
   });
 
+  it("requires TRUSTED_PROXIES in production", () => {
+    expect(() => testEnv({ NODE_ENV: "production", TRUSTED_PROXIES: "" })).toThrow(/TRUSTED_PROXIES/);
+    expect(testEnv({ NODE_ENV: "production", TRUSTED_PROXIES: "10.0.0.0/8, 172.16.0.0/12" }).TRUSTED_PROXIES).toEqual(["10.0.0.0/8", "172.16.0.0/12"]);
+  });
+
   it("treats empty Google credentials as unset", () => {
     expect(testEnv({ GOOGLE_CLIENT_ID: "", GOOGLE_CLIENT_SECRET: "" }).GOOGLE_CLIENT_ID).toBeUndefined();
   });

@@ -14,6 +14,7 @@ export function testEnv(overrides: Partial<NodeJS.ProcessEnv> = {}): Env {
     DISPATCH_SECRET: "local-dispatch-secret",
     GOOGLE_CLIENT_ID: "test-google-client.apps.googleusercontent.com",
     GOOGLE_CLIENT_SECRET: "test-google-secret",
+    TRUSTED_PROXIES: "10.0.0.0/8",
     ...overrides,
   });
 }

@@ -22,7 +22,14 @@ export function createAuth({ db, env }: { db: Db; env: Env }) {
     }),
     emailAndPassword: { enabled: true, minPasswordLength: 8 },
     socialProviders: env.GOOGLE_CLIENT_ID
-      ? { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET! } }
+      ? {
+          google: {
+            clientId: env.GOOGLE_CLIENT_ID,
+            clientSecret: env.GOOGLE_CLIENT_SECRET!,
+            // Redirect flow only: refuse a client-submitted id token at /sign-in/social.
+            disableIdTokenSignIn: true,
+          },
+        }
       : {},
     account: { accountLinking: { enabled: true, trustedProviders: ["google"] } },
     // On in production; elsewhere only with AUTH_RATE_LIMIT=on. Without a forwarded address
@@ -45,8 +52,9 @@ export function createAuth({ db, env }: { db: Db; env: Env }) {
       useSecureCookies: env.NODE_ENV === "production",
       defaultCookieAttributes: { sameSite: "lax" },
       // nginx forwards the browser's address. With more than one address in the header,
-      // Better Auth walks from the right past trustedProxies; with none configured it
-      // gives up and the limiter skips the request (TRUSTED_PROXIES is set in deploy).
+      // Better Auth walks from the right past trustedProxies. An address it cannot
+      // resolve falls into one shared rate-limit bucket for everyone, which is why
+      // production requires TRUSTED_PROXIES.
       ipAddress: { ipAddressHeaders: ["x-forwarded-for"], trustedProxies: env.TRUSTED_PROXIES },
     },
     databaseHooks: {

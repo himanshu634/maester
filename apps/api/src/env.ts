@@ -65,5 +65,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   if (parsed.data.NODE_ENV === "production" && !parsed.data.GOOGLE_CLIENT_ID) {
     throw new Error("invalid environment: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required in production");
   }
+  if (parsed.data.NODE_ENV === "production" && parsed.data.TRUSTED_PROXIES.length === 0) {
+    throw new Error("invalid environment: TRUSTED_PROXIES is required in production (the rate limiter cannot tell clients apart without it)");
+  }
   return parsed.data;
 }
