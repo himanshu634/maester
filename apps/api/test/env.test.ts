@@ -44,4 +44,12 @@ describe("env", () => {
   it("treats empty Google credentials as unset", () => {
     expect(testEnv({ GOOGLE_CLIENT_ID: "", GOOGLE_CLIENT_SECRET: "" }).GOOGLE_CLIENT_ID).toBeUndefined();
   });
+
+  it("refuses the console mailer in production", () => {
+    expect(() => testEnv({ NODE_ENV: "production", MAIL_DRIVER: "console" })).toThrow(/MAIL_DRIVER/);
+  });
+
+  it("needs a key and a sender for Resend", () => {
+    expect(() => testEnv({ MAIL_DRIVER: "resend", RESEND_API_KEY: undefined })).toThrow(/RESEND_API_KEY/);
+  });
 });

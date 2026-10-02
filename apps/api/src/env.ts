@@ -34,6 +34,10 @@ const EnvSchema = z.object({
     .string()
     .default("")
     .transform((s) => s.split(",").map((x) => x.trim()).filter(Boolean)),
+  // Confirmation and reset mail. "console" logs the message; "resend" sends it.
+  MAIL_DRIVER: z.enum(["console", "resend"]).default("console"),
+  RESEND_API_KEY: z.string().optional().transform((v) => v || undefined),
+  MAIL_FROM: z.string().optional().transform((v) => v || undefined),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -67,6 +71,12 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   }
   if (parsed.data.NODE_ENV === "production" && parsed.data.TRUSTED_PROXIES.length === 0) {
     throw new Error("invalid environment: TRUSTED_PROXIES is required in production (the rate limiter cannot tell clients apart without it)");
+  }
+  if (parsed.data.MAIL_DRIVER === "console" && parsed.data.NODE_ENV === "production") {
+    throw new Error("invalid environment: MAIL_DRIVER=console only logs mail and is refused in production");
+  }
+  if (parsed.data.MAIL_DRIVER === "resend" && (!parsed.data.RESEND_API_KEY || !parsed.data.MAIL_FROM)) {
+    throw new Error("invalid environment: RESEND_API_KEY and MAIL_FROM are required when MAIL_DRIVER=resend");
   }
   return parsed.data;
 }

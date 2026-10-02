@@ -15,6 +15,9 @@ export function testEnv(overrides: Partial<NodeJS.ProcessEnv> = {}): Env {
     GOOGLE_CLIENT_ID: "test-google-client.apps.googleusercontent.com",
     GOOGLE_CLIENT_SECRET: "test-google-secret",
     TRUSTED_PROXIES: "10.0.0.0/8",
+    MAIL_DRIVER: "resend",
+    RESEND_API_KEY: "re_test",
+    MAIL_FROM: "Maester <test@example.com>",
     ...overrides,
   });
 }
