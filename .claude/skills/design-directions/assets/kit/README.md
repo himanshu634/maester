@@ -16,3 +16,5 @@ Run `node build.mjs --measure`, open `../canvas/twins/measure.html` over a local
 server, run `await measureAll()`, save the result as `heights.json`, then
 `node build.mjs heights.json`. Output lands in `../canvas/project/` (artboards and
 `canvas.json`) and `../canvas/twins/` (contact sheet and measure page).
+`../canvas/` is generated output: `assets/.gitignore` ignores it, so it is never
+committed. Publish the canvas from it; commit only the kit.
