@@ -62,6 +62,7 @@ Sentence case everywhere. No all-caps labels, no letter-spaced eyebrows, no acce
 ## 5. Components
 
 - **Button** (`.button`): 2px border, 44px minimum height, 24px horizontal padding, weight 700. Filled ink on paper for the screen's one primary action; `.outline` for secondary actions. Hover and focus invert hard, with no transition. On inverted panels the border becomes paper.
+- **Disabled button** (`.button:disabled`): a write action that cannot run here. `--ink-muted` text and a 2px `--ink-muted` border on paper, `--paper-muted` on inverted panels; no fill, no hover inversion, `cursor: not-allowed`. It is a real `<button disabled>`, and it always points at a visible note that says why, through `aria-describedby`.
 - **Link**: always underlined, offset 3px, 1.5px thick. Hover inverts to an ink block. Never remove the underline to make a link look like a button; use `.button`.
 - **Focus**: 3px solid ink outline, 2px offset, on every interactive element. Paper outline on inverted panels.
 - **Ledger** (`EvidenceTrace`, `WorkflowLedger`): a 2px box; header row separated by a 2px rule; body rows by 1px hairlines; figures right-aligned and tabular.
@@ -69,6 +70,10 @@ Sentence case everywhere. No all-caps labels, no letter-spaced eyebrows, no acce
 - **Tag**: 1.5px border, 4px by 8px padding, 14px text. Used only for the synthetic-data label and status words.
 - **Form field**: visible label above the input, 44px input with a 2px border, paper background, error text below the field, status announced through `aria-live="polite"`.
 - **Illustration** (`LoginIllustration`): an inline SVG drawn as two plates, a colour plate slightly out of register under a hand-drawn ink plate. It uses `--ink`, `--paper` and the three `--illus-*` tokens and nothing else. Its frame is a 3px rule with a 30px radius on the `figure` that holds it, the one reviewed radius exception (marked `design-guard: allow`); the radius belongs to the drawing, not to the layout, and must not spread to any other element. From 1024px the frame sits to the right of the sign-in panel and fills the screen from the masthead to the bottom edge; below that it stacks under the panel at a square aspect.
+- **Due panel** (`DuePanel`): an inverted panel with a 2px paper rule under its header and 1px paper rules between rows. The first item opens with a Trigger, Evidence and Your call spec list; the rest are one-line rows. When nothing is due it lists what was checked.
+- **Figure strip** (`FigureStrip`): four headline figures, each with a note saying what it covers. A spec list on a phone, two by two from 768px, one row from 1024px, with 1px `--ink-muted` rules between cells inside a 2px frame.
+- **Holdings table** (`HoldingsTable`): a ledger with all five columns at every width, figures right-aligned and tabular, closed by a 2px totals row. Below the width it needs, it scrolls inside its labelled `.scroll-x` region, which takes focus. An unknown figure is "—" with the reason read out.
+- **Sector bars** (`SectorBars`): label, bar and percentage per row, largest first. The bar is drawing only; the label and percentage carry the figure. The unknown bucket is a dashed outline, last, and never a zero.
 
 ## 6. Motion
 
@@ -90,3 +95,22 @@ WCAG 2.2 AA. Semantic landmarks (`header`, `nav`, `main`, `section` with `aria-l
 2. Need a new component? Build it from the rules above and add it to section 5.
 3. Need an exception? Put `/* design-guard: allow */` on the offending line and justify it in the pull request. Expect the reviewer to say no.
 4. Run `pnpm verify` in `apps/web` before opening a pull request. The guard, the type checker and the linter must all pass.
+
+## 10. The terminal
+
+The terminal is the signed-in app. It follows [UI specification](UI_SPECIFICATION.md) sections 2, 12, 13 and 14 and uses the colour, type, rule and component rules above without change. Three things differ from the public pages: it has an app shell, its gutters are 24px at every width (section 4's 48px from 1024px does not apply), and there is no register grid. The implementation is in [`apps/web/src/lib/components/terminal/`](../apps/web/src/lib/components/terminal/).
+
+**Shell** (`TerminalShell`). From 1024px a 224px rail on the left holds the wordmark, the workspace and the page list, divided from the content by a 2px rule. A 56px context header runs across the content and shows the workspace and portfolio as text. Below 1024px the rail becomes a 56px top bar, and a Menu button opens the same list as a drawer; Escape closes it and returns focus to the button. The rail lists only pages that exist. The current page is an ink block with `aria-current="page"`. Search, account, the portfolio picker and links to pages that are not built are omitted until they exist.
+
+**Overview.** One `h1`, the workspace name, with the "Synthetic example" tag, the as-of date and the read-only note beneath it. The one page-level action, "Update holdings", sits beside the title from 768px and closes the page on a phone. Below it, in order:
+
+1. The due panel.
+2. The figure strip.
+3. Holdings beside allocation from 1024px, stacked below that.
+4. Research updates.
+
+**Due panel.** Inverted, so it is the one dark block on the page; on a phone it runs edge to edge. Decisions come before data fixes: review due, then position limit breached, then missing price, and within each kind the larger portfolio weight first. The subtitle states the count and the order. The first item is expanded with Trigger, Evidence and Your call and carries "Start the review" (the screen's one primary action) and "Move to next week". The rest are one-line rows. When nothing is due the panel says so and lists what was checked, because an empty panel with no evidence would read as a missing feature.
+
+**Figures.** A figure whose input is missing is "—" with the reason available to screen readers, never zero. Each headline figure carries a note naming what it covers, such as how many holdings are priced. Direction is shown with a sign, never a colour.
+
+**Demo.** `/terminal/demo` shows the overview with items due and `/terminal/demo/quiet` shows it with nothing due. Both are prerendered, marked `noindex`, built from a synthetic portfolio and tagged "Synthetic example". Write actions cannot work in a read-only demo, so "Start the review", "Move to next week" and "Update holdings" are disabled buttons that point at the visible note "Read-only demo. Decisions and updates arrive with your account." `/terminal` with a session links to the demo and never shows synthetic numbers under a real session.
