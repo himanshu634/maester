@@ -31,18 +31,35 @@
 		googleBusy = true;
 		status = copy.login.googleStatus;
 		const errorCallbackURL = `/login?next=${encodeURIComponent(next)}`;
-		const { error } = await authClient().signIn.social({
-			provider: 'google',
-			callbackURL: next,
-			errorCallbackURL
-		});
-		if (error) {
+		try {
+			const { error } = await authClient().signIn.social({
+				provider: 'google',
+				callbackURL: next,
+				errorCallbackURL
+			});
+			if (error) fail(messageFor(error.code || 'generic', error.status));
+		} catch {
+			// Network failure: the request never got an answer.
+			fail(messageFor('generic'));
+		}
+	}
+
+	function fail(shown: AuthMessage | null) {
+		googleBusy = false;
+		status = '';
+		message = shown;
+	}
+
+	// Back from Google restores the page from the back/forward cache as it was left.
+	function onpageshow(event: PageTransitionEvent) {
+		if (event.persisted) {
 			googleBusy = false;
 			status = '';
-			message = messageFor(error.code ?? 'generic', error.status);
 		}
 	}
 </script>
+
+<svelte:window {onpageshow} />
 
 <svelte:head>
 	<title>{copy.login.title}</title>

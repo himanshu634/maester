@@ -28,6 +28,8 @@ export function createAuth({ db, env }: { db: Db; env: Env }) {
             clientSecret: env.GOOGLE_CLIENT_SECRET!,
             // Redirect flow only: refuse a client-submitted id token at /sign-in/social.
             disableIdTokenSignIn: true,
+            // Always show Google's account chooser, so "Use another account" can switch.
+            prompt: "select_account",
           },
         }
       : {},

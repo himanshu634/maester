@@ -18,6 +18,10 @@ describe('messageFor', () => {
 		expect(messageFor(code)?.kind).toBe(kind);
 	});
 
+	it('has no message for an empty code', () => {
+		expect(messageFor('')).toBeNull();
+	});
+
 	it('treats 429 as too many attempts whatever the code', () => {
 		expect(messageFor(undefined, 429)?.kind).toBe('rate-limited');
 		expect(messageFor('SOMETHING', 429)?.kind).toBe('rate-limited');

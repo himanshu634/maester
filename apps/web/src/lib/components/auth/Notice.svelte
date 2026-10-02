@@ -11,7 +11,7 @@
 	let { title, id, children }: Props = $props();
 </script>
 
-<div class="notice" {id}>
+<div class="notice" role="alert" {id}>
 	<p class="title">{title}</p>
 	{#if children}
 		<div class="body">{@render children()}</div>
