@@ -1,0 +1,30 @@
+{
+  "rows": [
+    {
+      "title": "Today · /login",
+      "note": "What runs now: one email and password form that sends nothing and says sign-in is not open.\n\n• 0 ways in that work; 0 ways to create an account; 0 ways to recover a password.\n• It prints a route (/terminal) on a public page.\n• The illustration is approved and stays in every direction.\n\nThe flow needs 5 pages and 15 states (spec section 2). Each row below answers the same question: where does Google sit next to email, and when does someone learn they are on the waitlist?"
+    },
+    {
+      "title": "A · Google first, one panel",
+      "note": "The bet: Google is the one primary action, and email sits under it in the same panel. The page anatomy stays exactly as today, so the illustration, widths and phone stacking don't change.\n\n• Sign in and create account are separate pages (/login, /signup).\n• Someone who isn't invited finds out after they submit (A4), or after they type a password on /signup.\n• Cost: nothing new beyond the spec. One component, the Google button, and the --brand-google-* exception.\n\nRecommended."
+    },
+    {
+      "title": "B · Two doors",
+      "note": "The bet: the two ways in get equal weight, side by side. Google is an ink door and email a paper door, and each door says what it costs you (\"One step. Maester gets your name and email from Google\").\n\n• This matches Google's equal-prominence guidance most literally.\n• Cost: the panel widens to 800px and the illustration narrows to about 450px. The ink door is the page's one dark block. On a phone the doors stack, so the email form moves below the fold.\n• No filled ink button on paper: the primary sits inside the ink door."
+    },
+    {
+      "title": "C · Email first",
+      "note": "The bet: one field first. Maester then answers with the right next step: your password (C2), a new account if you're invited (C4), or the waitlist before you invent a password (C3). Sign in and sign up merge into one page, so /signup is gone.\n\n• Kindest to people who aren't invited, and fewest pages (4 instead of 5).\n• Cost: a new API lookup that says whether an email has an account or an invitation. That is account enumeration, so it needs a strict rate limit, and Better Auth doesn't ship it. Two steps for returning email users."
+    },
+    {
+      "title": "Every direction · states and the other pages",
+      "note": "The states and pages below are the same in every direction, drawn in A's panel:\n\n• Messages are a 2px box with a bold first line. A status word carries the state, not colour.\n• A field error is a 3px border on the field plus bold text under it that says the fix.\n• Every password field has a Show button.\n• Forgot password answers the same way whether or not the account exists.\n• Links last one hour and can be used once, and the page says so."
+    },
+    {
+      "title": "Every direction · signed in",
+      "note": "The terminal rail gains its foot: who is signed in, and a Sign out button. That's an account block, not an account page; DESIGN section 10 keeps account links out until the page exists.\n\nThe phone drawer carries the same block at the bottom. Sign out returns to the index page."
+    }
+  ],
+  "shared": "Fixes in every direction\n\n• Remove \"Sending you to /terminal after sign-in\": no routes on public pages. The destination is still honoured.\n• Remove \"Sign-in is not open yet\".\n• Show button on every password field (a 44px real button, not an eye icon).\n• Google button: the official four-colour G on a paper chip, \"Continue with Google\" in Archivo, a square 2px border. The only colour outside the three is inside the mark (guarded --brand-google-* tokens).\n• Waitlisted copy: \"Maester is open to invited investors for now. We've added you to the list.\" It promises no email.\n• Errors say what happened and the fix. They never name a code or the provider's internals.",
+  "questions": "Open questions\n\n1. When someone isn't invited, should they find out before typing a password? Yes picks C; \"after is fine\" picks A or B.\n2. Should the Google button be the filled primary (A), or equal to email (B, C)?\n3. Should the waitlist message say when invitations open, or nothing? (It promises nothing until you decide.)"
+}

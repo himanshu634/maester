@@ -18,3 +18,14 @@ server, run `await measureAll()`, save the result as `heights.json`, then
 `canvas.json`) and `../canvas/twins/` (contact sheet and measure page).
 `../canvas/` is generated output: `assets/.gitignore` ignores it, so it is never
 committed. Publish the canvas from it; commit only the kit.
+
+## Sign-in round (2026-10-02)
+
+`signin.mjs`, `signin-notes.json` and `signin-heights.json` built round 2 of the
+"Maester Sign-in" canvas (https://claude.ai/artifact/VZmn6QA8rBpLuMJ4bWXY1r):
+Today, A · Google first (picked), B · Two doors, C · Email first, and the shared
+states and pages. They add the Google button, the password field with Show, the
+or rule and the notice. The sign-in illustration SVG and the round-1 boards are
+read from `../prev/Main.dc.html` and `../prev/Mobile.dc.html`: save them there
+from the published canvas first (`project/Main.dc.html`, `project/Mobile.dc.html`).
+Run `node signin.mjs signin-heights.json`.
