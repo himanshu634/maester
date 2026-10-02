@@ -17,6 +17,10 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
         proxy_set_header X-Forwarded-Host $host;
+        # Signed local blob uploads (PUT /dev/blobs/*) pass through here; the API's
+        # MAX_UPLOAD_BYTES is 50 MB. Stream them instead of spooling to disk.
+        client_max_body_size 50m;
+        proxy_request_buffering off;
         # Job progress is Server-Sent Events: no buffering, long reads.
         proxy_buffering off;
         proxy_read_timeout 3600s;
