@@ -34,6 +34,8 @@ x-api-env: &api-env
   GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
   STORAGE_DRIVER: disk
   STORAGE_DIR: /var/lib/maester/blobs
+  # Confirmation and reset links are written to the api log instead of being sent.
+  MAIL_DRIVER: console
   DISPATCH_MODE: local
   DISPATCH_SECRET: local-dispatch-secret
   WORKER_URL: http://worker:8788

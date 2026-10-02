@@ -1,6 +1,7 @@
 import { Readable } from "node:stream";
 import { Hono } from "hono";
-import { approveWaitlistEmail } from "@maester/db";
+import { eq } from "drizzle-orm";
+import { approveWaitlistEmail, normalizeEmail, schema } from "@maester/db";
 import { ObjectNotFoundError, verifyBlobSignature, type DiskObjectStore } from "@maester/storage";
 import type { AppDeps, AppEnv } from "../app.js";
 import { BLOB_PATH_PREFIX } from "../store.js";
@@ -33,7 +34,9 @@ let workspaceId = null;
 async function me() { const m = await j('/v1/me'); workspaceId = m.workspaces[0].id; document.getElementById('who').textContent = m.user.email + ' / ' + workspaceId; }
 document.getElementById('signup').onclick = async () => {
   await j('/dev/auth/admit', { email: email.value });
-  await j('/api/auth/sign-up/email', { name: 'Dev', email: email.value, password: password.value }); await me(); log('signed up');
+  await j('/api/auth/sign-up/email', { name: 'Dev', email: email.value, password: password.value });
+  await j('/dev/auth/admit', { email: email.value });
+  await j('/api/auth/sign-in/email', { email: email.value, password: password.value }); await me(); log('signed up');
 };
 document.getElementById('signin').onclick = async () => {
   await j('/api/auth/sign-in/email', { email: email.value, password: password.value }); await me(); log('signed in');
@@ -93,6 +96,8 @@ export function devRoutes(deps: AppDeps) {
     const { email } = (await c.req.json()) as { email?: string };
     if (!email || !email.includes("@")) return c.json({ error: "email required" }, 400);
     await approveWaitlistEmail(deps.db, email);
+    // Also confirm the email of an existing account, so local sign-in needs no inbox.
+    await deps.db.update(schema.user).set({ emailVerified: true }).where(eq(schema.user.email, normalizeEmail(email)));
     return c.json({ admitted: email });
   });
 

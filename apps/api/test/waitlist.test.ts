@@ -16,9 +16,10 @@ const signUpRaw = (email: string) =>
 
 describe("waitlist gate", () => {
   it("refuses email sign-up for an email that is not approved and records it", async () => {
+    // With email confirmation on, Better Auth answers a refused sign-up with the same
+    // generic 200 it gives a duplicate email, so the response reveals nothing.
     const res = await signUpRaw("stranger@example.com");
-    expect(res.status).toBe(403);
-    expect(((await res.json()) as { code: string }).code).toBe("WAITLISTED");
+    expect(res.status).toBe(200);
     const users = await ctx.db.select().from(schema.user).where(eq(schema.user.email, "stranger@example.com"));
     expect(users).toHaveLength(0);
     const [entry] = await ctx.db.select().from(schema.waitlistEntry).where(eq(schema.waitlistEntry.email, "stranger@example.com"));
@@ -33,6 +34,14 @@ describe("waitlist gate", () => {
     });
     expect(admit.status).toBe(200);
     expect((await signUpRaw("dev.admit@example.com")).status).toBe(200);
+    // Admitting again confirms the existing account, so local sign-in needs no inbox.
+    await ctx.app.request("/dev/auth/admit", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "Dev.Admit@Example.com" }),
+    });
+    const [user] = await ctx.db.select().from(schema.user).where(eq(schema.user.email, "dev.admit@example.com"));
+    expect(user!.emailVerified).toBe(true);
     const bad = await ctx.app.request("/dev/auth/admit", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     expect(bad.status).toBe(400);
   });

@@ -1,11 +1,12 @@
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { vi } from "vitest";
-import { approveWaitlistEmail, closeDb, createDb, runMigrations } from "@maester/db";
+import { approveWaitlistEmail, closeDb, createDb, runMigrations, schema } from "@maester/db";
 import { MemoryObjectStore } from "@maester/storage";
 import { createApp } from "../src/app.js";
 import { createAuth } from "../src/auth.js";
 import { RecordingDispatcher } from "../src/dispatch/index.js";
 import { silentLogger } from "../src/logger.js";
+import { RecordingMailer } from "../src/mail/index.js";
 import { testEnv } from "./env.js";
 
 export async function createTestContext(overrides: Partial<NodeJS.ProcessEnv> = {}) {
@@ -15,7 +16,8 @@ export async function createTestContext(overrides: Partial<NodeJS.ProcessEnv> = 
   await db.execute(sql`TRUNCATE TABLE "job", "document", "membership", "workspace", "session", "account", "verification", "user", "waitlist_entry", "rate_limit" CASCADE`);
   const store = new MemoryObjectStore();
   const dispatcher = new RecordingDispatcher();
-  const auth = createAuth({ db, env });
+  const mailer = new RecordingMailer();
+  const auth = createAuth({ db, env, mailer, logger: silentLogger });
   const app = createApp({ env, logger: silentLogger, db, auth, store, dispatcher }, { sse: { pollMs: 50, heartbeatMs: 1000, maxLifetimeMs: 10000 } });
 
   async function signUp(email: string) {
@@ -26,7 +28,15 @@ export async function createTestContext(overrides: Partial<NodeJS.ProcessEnv> = 
       body: JSON.stringify({ name: "Test User", email, password: "correct-horse-battery" }),
     });
     if (res.status !== 200) throw new Error(`sign-up failed: ${res.status} ${await res.text()}`);
-    const cookie = res.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
+    // Confirming by link is tested in email-auth.test.ts; everywhere else, confirm directly.
+    await db.update(schema.user).set({ emailVerified: true }).where(eq(schema.user.email, email));
+    const signIn = await app.request("/api/auth/sign-in/email", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "http://localhost" },
+      body: JSON.stringify({ email, password: "correct-horse-battery" }),
+    });
+    if (signIn.status !== 200) throw new Error(`sign-in failed: ${signIn.status} ${await signIn.text()}`);
+    const cookie = signIn.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
     const me = await app.request("/v1/me", { headers: { cookie } });
     const body = (await me.json()) as { user: { id: string }; workspaces: { id: string }[] };
     return { cookie, userId: body.user.id, workspaceId: body.workspaces[0]!.id };
@@ -87,6 +97,6 @@ export async function createTestContext(overrides: Partial<NodeJS.ProcessEnv> = 
     }
   }
 
-  return { app, db, store, dispatcher, env, signUp, googleSignIn, createCompany, close: () => closeDb(db) };
+  return { app, db, store, dispatcher, mailer, env, signUp, googleSignIn, createCompany, close: () => closeDb(db) };
 }
 export type TestContext = Awaited<ReturnType<typeof createTestContext>>;
