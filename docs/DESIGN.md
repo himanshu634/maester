@@ -28,7 +28,9 @@ Three further values exist for sketched illustrations only, never for text, rule
 | --- | --- | --- |
 | `--illus-yellow` | `#F2C53D` | illustration colour plate |
 | `--illus-red` | `#E0483A` | illustration colour plate |
-| `--illus-blue` | `#2F5FD0` | illustration colour plate | Numerical direction is shown with a sign or a word, never a colour, which also satisfies the product rule that colour must not read as investment advice.
+| `--illus-blue` | `#2F5FD0` | illustration colour plate |
+
+Numerical direction is shown with a sign or a word, never a colour, which also satisfies the product rule that colour must not read as investment advice.
 
 Rules the guard enforces: no hex, `rgb()`, `hsl()`, `oklch()`, `color-mix()` or named colour anywhere except `tokens.css`; components use `var(--…)`, `currentColor`, `transparent` or `inherit`.
 
