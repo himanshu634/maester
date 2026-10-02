@@ -6,7 +6,7 @@ Read this when you are about to take screenshots or build/extend the canvas (ste
 
 1. Seeing the real pages (SvelteKit dev server)
 2. Starting the canvas — and where the type's rules override this skill
-3. The frame kit — built in the first round
+3. The frame kit — copy, check, extend
 4. Measuring, so heights and length claims are true
 5. Checking your frames before publishing
 6. Rounds and finals on the same canvas
@@ -50,11 +50,11 @@ Title: what it is, two to four words — "Maester Holdings Page", "Evidence Revi
 
 Also from the type: the first artboard is `Main.dc.html`; a board's root element is exactly the board's `w`×`h`, which also equals `$preview`; keep the `support.js` script line verbatim; inline styles (the properties panel edits those); no `<iframe>`; network is Google Fonts `css2` only — load Archivo with its width axis (`family=Archivo:wdth,wght@62..125,100..900`), and Caveat only for a frame that draws an illustration; real `<button>`s, with an `aria-label` on icon-only ones.
 
-## 3. The frame kit — built in the first round
+## 3. The frame kit — copy, check, extend
 
-Hand-written frames drift apart; generated ones stay consistent and make round 2 a ten-minute job. There is no maester kit yet. The first round builds one in the session scratchpad and the build PR commits it to `.claude/skills/design-directions/assets/kit/`. Later rounds copy it from there, check it still matches `tokens.css`, and extend it.
+Hand-written frames drift apart; generated ones stay consistent and make round 2 a ten-minute job. The maester kit lives at `.claude/skills/design-directions/assets/kit/`; it was built for the Terminal Overview canvas (`lib.mjs`, `build.mjs`, `heights.json`, `notes.json`, `README.md`). Each round copies it into the session scratchpad, checks it against `apps/web/src/lib/styles/tokens.css` first (tokens, type roles and shells drift as the app changes), and extends it with the pieces the round needs; the extended kit is committed back with the build. Its generated output (`assets/canvas/`) is gitignored and never committed.
 
-What to build — two files, both plain Node ESM with no dependencies:
+What the kit holds, and what to add when a round needs it — plain Node ESM with no dependencies:
 
 - `lib.mjs`:
   - **Tokens** copied from `apps/web/src/lib/styles/tokens.css` with a header comment naming the file and date: `--paper`, `--ink`, `--ink-muted`, `--paper-muted`, and `--illus-*` kept in a separate object so nothing but an illustration can reach them. No other colour exists; a helper that takes an arbitrary colour is a bug.
@@ -65,7 +65,7 @@ What to build — two files, both plain Node ESM with no dependencies:
   - `css(obj)` and `el(tag, style, children)` helpers — everything is inline styles, because the canvas's properties panel edits those.
 - `build.mjs` — the frame list (id, title, board size, render function), the two-pass build (§4), `twins/measure.html` with a `measureAll()` that waits for `document.fonts.ready`, `twins/sheet.html` (the contact sheet, §5), and the `canvas.json` layout: one row per direction, a `title1` heading and a sticky beside each row.
 
-A worked kit lives in the bull-crm repo (`~/bull/bull-crm/.claude/skills/design-directions/assets/kit/` — `lib.mjs`, `build.mjs`, `README.md`). Use it for the **machinery only**: `css`/`el`/`esc` helpers, `dcHtml`/`twinHtml` wrappers, the two-pass build, the measure page, the contact sheet and the canvas layout. Replace every token, font, shell and piece — it draws a shadcn admin console with radius, shadows and a green accent, everything maester forbids.
+`build.mjs` and `notes.json` hold the last round's frames; a new round replaces them and keeps the machinery. The machinery (`css`/`el`/`esc` helpers, `dcHtml`/`twinHtml` wrappers, the two-pass build, the measure page, the contact sheet and the canvas layout) was first taken from the bull-crm kit (`~/bull/bull-crm/.claude/skills/design-directions/assets/kit/`). Do not copy from there again: it draws a shadcn admin console with radius, shadows and a green accent, everything maester forbids.
 
 **Calibrate before drawing directions**: build the Today frame first and compare it with the running page (§4). If the twin is off by more than a few points, fix the kit — every length claim on the canvas depends on it.
 

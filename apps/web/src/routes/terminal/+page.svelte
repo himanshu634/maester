@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { content } from '$lib/content';
+	import { terminalContent } from '$lib/content/terminal';
 	import { hasSession } from '$lib/session';
 	import Masthead from '$lib/components/Masthead.svelte';
 
@@ -28,6 +29,7 @@
 	<h1>{content.terminal.heading}</h1>
 	{#if state === 'signed-in'}
 		<p class="measure">{content.terminal.placeholder}</p>
+		<p><a href={resolve('/terminal/demo')}>{terminalContent.enterDemo}</a></p>
 	{:else}
 		<p class="muted" role="status">{content.terminal.checking}</p>
 		<noscript>

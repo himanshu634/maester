@@ -1,0 +1,107 @@
+/**
+ * Sentences the overview composes from a valuation: the collapsed due rows and the notes
+ * under the figures and the sector bars. Kept out of the components so the copy is tested.
+ */
+import { terminalContent } from '$lib/content/terminal';
+import { mixesDecisionsAndData, type DueItem } from './due';
+import { dueDetail } from './fixture';
+import { inr, percent, quantity } from './format';
+import type { Valuation, Valued } from './portfolio';
+
+const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
+
+const dayMonth = new Intl.DateTimeFormat('en-GB', {
+	day: 'numeric',
+	month: 'short',
+	timeZone: 'UTC'
+});
+
+/** `2026-10-14` as `14 Oct`. */
+export function shortDate(iso: string): string {
+	return dayMonth.format(new Date(`${iso}T00:00:00Z`));
+}
+
+/** True when the item is the review that has expanded copy in the fixture. */
+export function hasDetail(item: DueItem): boolean {
+	return item.kind === 'review' && item.holding === dueDetail.holding;
+}
+
+/** `3 items. Decisions first, then data to fix.`, the order only when both kinds are due. */
+export function dueSubtitle(items: readonly DueItem[]): string {
+	return terminalContent.due.subtitle(items.length, mixesDecisionsAndData(items));
+}
+
+/** Unknown is shown as unknown, never as zero. */
+const UNKNOWN = '—';
+
+/**
+ * A collapsed row in the due panel: a bold title and a muted detail. The detail is null
+ * when there is nothing true to say (a review with no date).
+ */
+export function dueRow(
+	item: DueItem,
+	v: Valuation,
+	limit: number
+): { title: string; detail: string | null } {
+	const h = v.holdings.find((x) => x.name === item.holding);
+	switch (item.kind) {
+		case 'limit': {
+			const weight = item.weight === null ? UNKNOWN : percent(item.weight);
+			const value = h?.value == null ? UNKNOWN : inr(h.value);
+			return {
+				title: `${item.holding} is over your ${limit}% limit`,
+				detail: `${weight} of priced value · ${value}`
+			};
+		}
+		case 'missing-price':
+			return {
+				title: `${item.holding} has no price`,
+				detail: h
+					? `${quantity(h.quantity)} shares left out of value`
+					: 'Its shares are left out of value'
+			};
+		case 'review':
+			return {
+				title: `${item.holding} review is due`,
+				detail: h?.reviewDate ? `Due ${shortDate(h.reviewDate)}` : null
+			};
+	}
+}
+
+const unpriced = (v: Valuation): Valued[] => v.holdings.filter((h) => h.value === null);
+
+/**
+ * `+16.9% on the 7 holdings with a known cost. 2 left out.` The percent is "—" when the
+ * known cost is zero; with no costed holding at all there is no count to give.
+ */
+export function gainNote(v: Valuation): string {
+	if (v.withCost === 0) return terminalContent.figures.gainNoneCosted;
+	const pct = v.gainPercent;
+	const shown = pct === null ? UNKNOWN : `${Number(pct.toFixed(1)) > 0 ? '+' : ''}${percent(pct)}`;
+	const base = `${shown} on the ${v.withCost} ${plural(v.withCost, 'holding', 'holdings')} with a known cost.`;
+	const left = v.count - v.withCost;
+	return left > 0 ? `${base} ${left} left out.` : base;
+}
+
+/** Names the unpriced holding, or says every holding has a price. */
+export function coverageNote(v: Valuation): string {
+	const missing = unpriced(v);
+	if (missing.length === 0) return terminalContent.figures.coverageComplete;
+	if (missing.length === 1) return `${missing[0].name} has no price`;
+	return `${missing.length} holdings have no price`;
+}
+
+/** What the sector bars measure, what the dashed bar is, and what is left out. */
+export function allocationNote(v: Valuation): string {
+	const noSector = v.holdings.filter((h) => h.value !== null && h.sector === null);
+	const missing = unpriced(v);
+	const parts: string[] = [terminalContent.allocation.note];
+	if (noSector.length === 1)
+		parts.push(`The dashed bar is ${noSector[0].name}, which has no sector yet.`);
+	else if (noSector.length > 1)
+		parts.push(`The dashed bar is ${noSector.length} holdings that have no sector yet.`);
+	if (missing.length === 1) parts.push(`${missing[0].name} stays out until it has a price.`);
+	else if (missing.length > 1)
+		parts.push(`${missing.length} holdings stay out until they have a price.`);
+	return parts.join(' ');
+}
