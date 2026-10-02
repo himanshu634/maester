@@ -1,8 +1,8 @@
 <script lang="ts">
 	/**
 	 * Every holding, largest value first, closed by a totals row. A holding with no price
-	 * shows "—" with the reason read out, never a zero. Below 768px only company, value
-	 * and weight show; the table scrolls inside its own region rather than the page.
+	 * shows "—" with the reason read out, never a zero. All five columns show at every
+	 * width; on a narrow screen the table scrolls inside its own region, never the page.
 	 */
 	import { terminalContent } from '$lib/content/terminal';
 	import { inr, percent, price, quantity } from '$lib/terminal/format';
@@ -33,8 +33,8 @@
 			<thead>
 				<tr>
 					<th scope="col">{columns.company}</th>
-					<th scope="col" class="figure wide">{columns.quantity}</th>
-					<th scope="col" class="figure wide">{columns.price}</th>
+					<th scope="col" class="figure">{columns.quantity}</th>
+					<th scope="col" class="figure">{columns.price}</th>
 					<th scope="col" class="figure">{columns.value}</th>
 					<th scope="col" class="figure">{columns.weight}</th>
 				</tr>
@@ -43,8 +43,8 @@
 				{#each valuation.holdings as h (h.name)}
 					<tr>
 						<th scope="row">{h.name}</th>
-						<td class="figure num wide">{quantity(h.quantity)}</td>
-						<td class="figure num wide">
+						<td class="figure num">{quantity(h.quantity)}</td>
+						<td class="figure num">
 							{#if h.price === null}{@render unknown()}{:else}{price(h.price)}{/if}
 						</td>
 						<td class="figure num">
@@ -59,8 +59,8 @@
 			<tfoot>
 				<tr>
 					<th scope="row">{copy.pricedOf(valuation.priced, valuation.count)}</th>
-					<td class="wide"></td>
-					<td class="wide"></td>
+					<td></td>
+					<td></td>
 					<td class="figure num">{inr(valuation.knownValue)}</td>
 					<td class="figure num">
 						{#if valuation.priced > 0}{percent(100)}{:else}{@render unknown()}{/if}
@@ -111,8 +111,10 @@
 		padding-right: var(--space-3);
 	}
 
+	/* Names stay on one line; a narrow screen scrolls the region instead of squeezing them. */
 	th {
 		font-weight: 400;
+		white-space: nowrap;
 	}
 
 	thead th {
@@ -139,10 +141,6 @@
 		white-space: nowrap;
 	}
 
-	.wide {
-		display: none;
-	}
-
 	@media (min-width: 768px) {
 		th,
 		td {
@@ -155,10 +153,6 @@
 
 		tr > :last-child {
 			padding-right: var(--space-4);
-		}
-
-		.wide {
-			display: table-cell;
 		}
 	}
 </style>

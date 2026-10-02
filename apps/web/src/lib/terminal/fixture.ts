@@ -23,7 +23,7 @@ export interface Demo {
 	research: readonly ResearchItem[];
 }
 
-/** The demo week: Friday 3 Oct falls inside it, Tuesday 14 Oct does not. */
+/** The demo week: 3 Oct falls inside it, 14 Oct does not. */
 export const WEEK = { today: '2026-10-02', weekEnd: '2026-10-04' } as const;
 
 const holdings: readonly Holding[] = [
@@ -152,7 +152,7 @@ export const quietDemo: Demo = {
 /** The expanded review item in the "Due this week" panel. */
 export const dueDetail = {
 	title: 'Review your thesis on Harbour Cements',
-	tag: 'Due Friday 3 Oct',
+	tag: 'Due 3 Oct',
 	meta: 'Triggered by the FY2025 annual report, published 30 Sep',
 	trigger:
 		'Operating cash flow fell 18% year on year. Your thesis note says the case rests on cash generation.',
@@ -169,7 +169,7 @@ export function quietChecks(v: Valuation, limit: number): Check[] {
 			detail:
 				'Harbour Cements annual report, reviewed by you on 1 Oct. Quill Software Q2 results, 29 Sep: nothing crossed a line you set.'
 		},
-		{ label: 'Review dates', detail: 'Next one: Northgate Pharma, Tuesday 14 Oct.' },
+		{ label: 'Review dates', detail: 'Next one: Northgate Pharma, 14 Oct.' },
 		{
 			label: 'Position limit',
 			detail: `Largest holding is ${largest.name} at ${percent(largest.weight ?? 0)} of your ${limit}% limit.`

@@ -28,28 +28,39 @@ export function hasDetail(item: DueItem): boolean {
 	return item.kind === 'review' && item.holding === DETAILED_REVIEW;
 }
 
-/** A collapsed row in the due panel: a bold title and a muted detail. */
+/** Unknown is shown as unknown, never as zero. */
+const UNKNOWN = '—';
+
+/**
+ * A collapsed row in the due panel: a bold title and a muted detail. The detail is null
+ * when there is nothing true to say (a review with no date).
+ */
 export function dueRow(
 	item: DueItem,
 	v: Valuation,
 	limit: number
-): { title: string; detail: string } {
+): { title: string; detail: string | null } {
 	const h = v.holdings.find((x) => x.name === item.holding);
 	switch (item.kind) {
-		case 'limit':
+		case 'limit': {
+			const weight = item.weight === null ? UNKNOWN : percent(item.weight);
+			const value = h?.value == null ? UNKNOWN : inr(h.value);
 			return {
 				title: `${item.holding} is over your ${limit}% limit`,
-				detail: `${percent(item.weight ?? 0)} of priced value · ${inr(h?.value ?? 0)}`
+				detail: `${weight} of priced value · ${value}`
 			};
+		}
 		case 'missing-price':
 			return {
 				title: `${item.holding} has no price`,
-				detail: `${quantity(h?.quantity ?? 0)} shares left out of value`
+				detail: h
+					? `${quantity(h.quantity)} shares left out of value`
+					: 'Its shares are left out of value'
 			};
 		case 'review':
 			return {
 				title: `${item.holding} review is due`,
-				detail: h?.reviewDate ? `Due ${shortDate(h.reviewDate)}` : ''
+				detail: h?.reviewDate ? `Due ${shortDate(h.reviewDate)}` : null
 			};
 	}
 }

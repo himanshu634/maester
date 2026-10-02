@@ -3,7 +3,7 @@
 	 * The inverted "Due this week" panel. Decisions come before data fixes; the first item
 	 * opens with its trigger, evidence and the call to make, the rest are one-line rows.
 	 * When nothing is due it lists what was checked, because silence is a checked answer.
-	 * The read-only note is always rendered: the page's disabled buttons point at it.
+	 * The write actions are disabled in the demo and described by the page's read-only note.
 	 */
 	import { terminalContent } from '$lib/content/terminal';
 	import type { Check, DueItem } from '$lib/terminal/due';
@@ -33,10 +33,6 @@
 	);
 </script>
 
-{#snippet note()}
-	<p class="muted note" id={noteId}>{terminalContent.readOnlyNote}</p>
-{/snippet}
-
 <section class="due inverted" aria-labelledby={headingId}>
 	{#if items.length === 0}
 		<div class="head quiet">
@@ -52,7 +48,6 @@
 					</div>
 				{/each}
 			</dl>
-			{@render note()}
 		</div>
 	{:else}
 		<div class="head">
@@ -88,7 +83,6 @@
 						{actions.moveToNextWeek}
 					</button>
 				</div>
-				{@render note()}
 			</div>
 		{/if}
 		{#if rows.length > 0}
@@ -96,13 +90,10 @@
 				{#each rows as row (row.key)}
 					<li class="row">
 						<p class="row-title">{row.title}</p>
-						<p class="muted num">{row.detail}</p>
+						{#if row.detail}<p class="muted num">{row.detail}</p>{/if}
 					</li>
 				{/each}
 			</ul>
-		{/if}
-		{#if !detailed}
-			<div class="body tail">{@render note()}</div>
 		{/if}
 	{/if}
 </section>
@@ -155,11 +146,6 @@
 
 	.body.checks {
 		padding-top: var(--space-2);
-	}
-
-	.body.tail {
-		border-top: var(--rule-thin) solid var(--paper);
-		padding-top: var(--space-4);
 	}
 
 	.title-row {
@@ -231,19 +217,15 @@
 		white-space: nowrap;
 	}
 
-	.due .primary {
+	/* Enabled colours only; a disabled button takes the global .button:disabled style. */
+	.due .primary:not(:disabled) {
 		background: var(--paper);
 		color: var(--ink);
 	}
 
-	.due .secondary {
+	.due .secondary:not(:disabled) {
 		background: transparent;
 		color: var(--paper);
-	}
-
-	.note {
-		font-size: var(--text-sm);
-		line-height: var(--leading-small);
 	}
 
 	.rows {
@@ -291,10 +273,6 @@
 
 		.body.checks {
 			padding: var(--space-2) var(--space-7) var(--space-6);
-		}
-
-		.body.tail {
-			padding-top: var(--space-4);
 		}
 
 		h3 {

@@ -109,9 +109,17 @@ a:hover {
 	border-color: var(--paper);
 }
 
-/* A write action the read-only demo cannot perform: same shape, no hover, a visible note says why. */
+/* A write action that cannot run here: muted, no hover inversion, a visible note says why. */
 .button:disabled {
+	background: transparent;
+	color: var(--ink-muted);
+	border-color: var(--ink-muted);
 	cursor: not-allowed;
+}
+
+.inverted .button:disabled {
+	color: var(--paper-muted);
+	border-color: var(--paper-muted);
 }
 
 .num {
@@ -159,6 +167,7 @@ a:hover {
 
 /* Wide tables scroll inside their own region; the page never scrolls sideways. */
 .scroll-x {
+	position: relative; /* contains visually hidden text, so it cannot widen the page */
 	overflow-x: auto;
 }
 

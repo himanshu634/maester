@@ -8,6 +8,7 @@ export const terminalContent = {
 	snapshotTag: 'Holdings snapshot',
 	workspace: 'Long-term',
 	pageTitle: 'Overview (synthetic demo). Maester',
+	quietPageTitle: 'Overview, quiet week (synthetic demo). Maester',
 	shell: {
 		navLabel: 'Terminal',
 		overview: 'Overview',

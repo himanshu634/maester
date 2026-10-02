@@ -39,6 +39,7 @@
 				</div>
 			</div>
 			<p class="muted as-of">{data.asOf}</p>
+			<p class="muted note" id={noteId}>{terminalContent.readOnlyNote}</p>
 		</div>
 		<div class="update">
 			<button class="button outline" type="button" disabled aria-describedby={noteId}>
@@ -101,7 +102,8 @@
 		white-space: nowrap;
 	}
 
-	.as-of {
+	.as-of,
+	.note {
 		font-size: var(--text-sm);
 		line-height: var(--leading-small);
 	}

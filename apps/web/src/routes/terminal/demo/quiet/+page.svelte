@@ -5,7 +5,7 @@
 </script>
 
 <svelte:head>
-	<title>{terminalContent.pageTitle}</title>
+	<title>{terminalContent.quietPageTitle}</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 

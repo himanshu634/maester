@@ -30,6 +30,15 @@ describe('overview copy', () => {
 		expect(shortDate('2026-10-03')).toBe('3 Oct');
 	});
 
+	it('never prints an unknown as zero, and gives an undated review no detail', () => {
+		const limit = { kind: 'limit', holding: 'Nobody', weight: null } as const;
+		expect(dueRow(limit, busy, demo.limit).detail).toBe('— of priced value · —');
+		const missing = { kind: 'missing-price', holding: 'Nobody', weight: null } as const;
+		expect(dueRow(missing, busy, demo.limit).detail).toBe('Its shares are left out of value');
+		const review = { kind: 'review', holding: 'Meridian Bank', weight: 23.9 } as const;
+		expect(dueRow(review, busy, demo.limit).detail).toBeNull();
+	});
+
 	it('notes the gain and coverage for both weeks', () => {
 		expect(gainNote(busy)).toBe('+16.9% on the 7 holdings with a known cost. 2 left out.');
 		expect(gainNote(quiet)).toBe('+16.0% on the 8 holdings with a known cost. 1 left out.');
