@@ -59,12 +59,13 @@
 		</div>
 	</header>
 
-	<div class="context">
+	<!-- A region, not a second <header>: the rail is already the page's banner landmark. -->
+	<section class="context" aria-label={shell.contextLabel}>
 		<span class="portfolio">{shell.portfolio(terminalContent.workspace)}</span>
 		{#if demo}
 			<a href={resolve('/')}>{terminalContent.leaveDemo}</a>
 		{/if}
-	</div>
+	</section>
 
 	<main id="main">
 		{@render children()}

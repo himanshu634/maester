@@ -18,7 +18,8 @@ export interface Check {
 
 /**
  * Category order is review, then limit, then missing price; within a category the larger
- * weight comes first. `today` and `weekEnd` are ISO dates and both count as inside the week.
+ * weight comes first. `today` and `weekEnd` are ISO dates. A review is due when its date
+ * falls on or before `weekEnd`, so an overdue review stays due until it is reviewed.
  */
 export function dueItems(
 	v: Valuation,
@@ -32,11 +33,15 @@ export function dueItems(
 			.sort(byWeight);
 
 	return [
-		...pick(
-			'review',
-			(h) => h.reviewDate !== null && h.reviewDate >= opts.today && h.reviewDate <= opts.weekEnd
-		),
+		...pick('review', (h) => h.reviewDate !== null && h.reviewDate <= opts.weekEnd),
 		...pick('limit', (h) => h.weight !== null && h.weight > opts.limit),
 		...pick('missing-price', (h) => h.price === null)
 	];
+}
+
+/** True when the items hold both a decision (review or limit) and a data fix (missing price). */
+export function mixesDecisionsAndData(items: readonly DueItem[]): boolean {
+	return (
+		items.some((i) => i.kind === 'missing-price') && items.some((i) => i.kind !== 'missing-price')
+	);
 }

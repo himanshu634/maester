@@ -1,7 +1,8 @@
 <script lang="ts">
 	/**
 	 * The four headline figures, each with the note that says what it covers. A spec list
-	 * on a phone, two by two from 768px, one row from 1024px.
+	 * on a phone, two by two from 768px, one row from 1024px. A figure with no input is "—"
+	 * with the reason read out, never a zero.
 	 */
 	import { terminalContent } from '$lib/content/terminal';
 	import { inr } from '$lib/terminal/format';
@@ -15,18 +16,33 @@
 
 	let { valuation, cash }: Props = $props();
 
+	interface Figure {
+		label: string;
+		/** Null when the figure is unknown; `reason` is then read out. */
+		value: string | null;
+		reason: string;
+		note: string;
+	}
+
 	const labels = terminalContent.figures;
-	let figures = $derived([
+	let figures: Figure[] = $derived([
 		{
 			label: labels.knownValue,
-			value: inr(valuation.knownValue),
+			value: valuation.priced > 0 ? inr(valuation.knownValue) : null,
+			reason: labels.unknownValue,
 			note: labels.pricedOf(valuation.priced, valuation.count)
 		},
-		{ label: labels.cash, value: inr(cash), note: labels.cashNote },
-		{ label: labels.gain, value: inr(valuation.gain, { sign: true }), note: gainNote(valuation) },
+		{ label: labels.cash, value: inr(cash), reason: '', note: labels.cashNote },
+		{
+			label: labels.gain,
+			value: valuation.withCost > 0 ? inr(valuation.gain, { sign: true }) : null,
+			reason: labels.unknownGain,
+			note: gainNote(valuation)
+		},
 		{
 			label: labels.coverage,
 			value: `${valuation.priced} of ${valuation.count}`,
+			reason: '',
 			note: coverageNote(valuation)
 		}
 	]);
@@ -37,7 +53,13 @@
 		<div class="cell">
 			<dt>{figure.label}</dt>
 			<dd>
-				<span class="figure num">{figure.value}</span>
+				<span class="figure num">
+					{#if figure.value === null}
+						<span aria-hidden="true">—</span><span class="visually-hidden">{figure.reason}</span>
+					{:else}
+						{figure.value}
+					{/if}
+				</span>
 				<span class="muted note">{figure.note}</span>
 			</dd>
 		</div>

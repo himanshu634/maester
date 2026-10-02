@@ -29,10 +29,12 @@ export interface Valuation {
 	knownValue: number;
 	priced: number;
 	count: number;
+	/** Over holdings with both a price and a cost; 0 when there are none (see withCost). */
 	gain: number;
-	gainPercent: number;
+	/** Percent of the cost of those holdings; null when that cost is zero or there are none. */
+	gainPercent: number | null;
 	withCost: number;
-	/** Largest share first, the unknown bucket last. */
+	/** Largest share first, the unknown bucket last. Empty when no value is known. */
 	sectors: SectorShare[];
 }
 
@@ -43,7 +45,9 @@ export function valuePortfolio(holdings: readonly Holding[]): Valuation {
 		h.price === null ? [] : [{ holding: h, value: h.quantity * h.price }]
 	);
 	const knownValue = priced.reduce((sum, p) => sum + p.value, 0);
-	const share = (value: number) => (knownValue > 0 ? (value / knownValue) * 100 : 0);
+	// Weights and shares exist only against a known, positive value.
+	const share = (value: number): number | null =>
+		knownValue > 0 ? (value / knownValue) * 100 : null;
 
 	const valued: Valued[] = holdings
 		.map((h) => {
@@ -61,12 +65,16 @@ export function valuePortfolio(holdings: readonly Holding[]): Valuation {
 	);
 
 	const bySector = new Map<string, number>();
-	for (const p of priced) {
+	for (const p of knownValue > 0 ? priced : []) {
 		const label = p.holding.sector ?? UNKNOWN_SECTOR;
 		bySector.set(label, (bySector.get(label) ?? 0) + p.value);
 	}
 	const sectors: SectorShare[] = [...bySector]
-		.map(([label, value]) => ({ label, share: share(value), unknown: label === UNKNOWN_SECTOR }))
+		.map(([label, value]) => ({
+			label,
+			share: (value / knownValue) * 100,
+			unknown: label === UNKNOWN_SECTOR
+		}))
 		.sort((a, b) => Number(a.unknown) - Number(b.unknown) || b.share - a.share);
 
 	return {
@@ -75,7 +83,7 @@ export function valuePortfolio(holdings: readonly Holding[]): Valuation {
 		priced: priced.length,
 		count: holdings.length,
 		gain,
-		gainPercent: costBasis > 0 ? (gain / costBasis) * 100 : 0,
+		gainPercent: costBasis > 0 ? (gain / costBasis) * 100 : null,
 		withCost: costed.length,
 		sectors
 	};

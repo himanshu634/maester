@@ -61,7 +61,9 @@
 					<th scope="row">{copy.pricedOf(valuation.priced, valuation.count)}</th>
 					<td></td>
 					<td></td>
-					<td class="figure num">{inr(valuation.knownValue)}</td>
+					<td class="figure num">
+						{#if valuation.priced > 0}{inr(valuation.knownValue)}{:else}{@render unknown()}{/if}
+					</td>
 					<td class="figure num">
 						{#if valuation.priced > 0}{percent(100)}{:else}{@render unknown()}{/if}
 					</td>

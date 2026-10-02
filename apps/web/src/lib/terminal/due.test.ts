@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dueItems } from './due';
+import { dueItems, mixesDecisionsAndData } from './due';
 import { demo, quietDemo, WEEK } from './fixture';
 import { valuePortfolio } from './portfolio';
 
@@ -21,7 +21,7 @@ describe('dueItems', () => {
 		expect(items).toEqual([]);
 	});
 
-	it('counts review dates on either edge of the week, and nothing outside it', () => {
+	it('counts review dates up to the end of the week, and nothing after it', () => {
 		const v = valuePortfolio(demo.holdings);
 		const at = (today: string, weekEnd: string) =>
 			dueItems(v, { today, weekEnd, limit: 100 })
@@ -29,8 +29,17 @@ describe('dueItems', () => {
 				.map((i) => i.holding);
 		expect(at('2026-10-03', '2026-10-04')).toEqual(['Harbour Cements']);
 		expect(at('2026-09-28', '2026-10-03')).toEqual(['Harbour Cements']);
-		expect(at('2026-10-04', '2026-10-10')).toEqual([]);
-		expect(at('2026-10-14', '2026-10-14')).toEqual(['Northgate Pharma']);
+		expect(at('2026-09-20', '2026-09-27')).toEqual([]);
+		expect(at('2026-10-14', '2026-10-14')).toEqual(['Harbour Cements', 'Northgate Pharma']);
+	});
+
+	it('keeps an overdue review due until it is reviewed', () => {
+		const v = valuePortfolio(demo.holdings);
+		const items = dueItems(v, { today: '2026-10-05', weekEnd: '2026-10-11', limit: 100 });
+		// Harbour Cements was due 3 Oct, before this week starts.
+		expect(items.filter((i) => i.kind === 'review')).toEqual([
+			{ kind: 'review', holding: 'Harbour Cements', weight: expect.any(Number) }
+		]);
 	});
 
 	it('does not flag a holding sitting exactly on the limit', () => {
@@ -46,5 +55,16 @@ describe('dueItems', () => {
 		const weights = limits.map((i) => i.weight ?? 0);
 		expect(limits.length).toBeGreaterThan(1);
 		expect(weights).toEqual([...weights].sort((a, b) => b - a));
+	});
+
+	it('says the items mix decisions and data fixes only when both are present', () => {
+		const review = { kind: 'review', holding: 'A', weight: 10 } as const;
+		const limit = { kind: 'limit', holding: 'B', weight: 30 } as const;
+		const missing = { kind: 'missing-price', holding: 'C', weight: null } as const;
+		expect(mixesDecisionsAndData([review, limit, missing])).toBe(true);
+		expect(mixesDecisionsAndData([limit, missing])).toBe(true);
+		expect(mixesDecisionsAndData([review, limit])).toBe(false);
+		expect(mixesDecisionsAndData([missing, { ...missing, holding: 'D' }])).toBe(false);
+		expect(mixesDecisionsAndData([])).toBe(false);
 	});
 });

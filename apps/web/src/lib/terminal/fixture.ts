@@ -11,7 +11,6 @@ export interface ResearchItem {
 	/** Short date, as shown. */
 	when: string;
 	body: string;
-	action: string;
 }
 
 export interface Demo {
@@ -107,20 +106,17 @@ const research: readonly ResearchItem[] = [
 	{
 		title: 'Harbour Cements · FY2025 annual report',
 		when: '30 Sep',
-		body: 'Operating cash flow fell 18% year on year, from ₹1,412 crore to ₹1,158 crore.',
-		action: 'Open page 96'
+		body: 'Operating cash flow fell 18% year on year, from ₹1,412 crore to ₹1,158 crore.'
 	},
 	{
 		title: 'Quill Software · Q2 results',
 		when: '29 Sep',
-		body: 'Revenue up 11% year on year. Read and checked; nothing you follow moved.',
-		action: 'Open the results'
+		body: 'Revenue up 11% year on year. Read and checked; nothing you follow moved.'
 	},
 	{
 		title: 'Kestrel Power · dividend declared',
 		when: '26 Sep',
-		body: '₹2.50 a share, record date 17 Oct. Expected ₹3,750 on your 1,500 shares.',
-		action: 'See the announcement'
+		body: '₹2.50 a share, record date 17 Oct. Expected ₹3,750 on your 1,500 shares.'
 	}
 ];
 
@@ -141,8 +137,7 @@ export const quietDemo: Demo = {
 		{
 			title: 'Harbour Cements · FY2025 annual report',
 			when: '30 Sep',
-			body: 'Reviewed by you on 1 Oct. You held and revised the thesis; next review 14 Jan.',
-			action: 'See your decision'
+			body: 'Reviewed by you on 1 Oct. You held and revised the thesis; next review 14 Jan.'
 		},
 		research[1],
 		research[2]
@@ -151,6 +146,7 @@ export const quietDemo: Demo = {
 
 /** The expanded review item in the "Due this week" panel. */
 export const dueDetail = {
+	holding: 'Harbour Cements',
 	title: 'Review your thesis on Harbour Cements',
 	tag: 'Due 3 Oct',
 	meta: 'Triggered by the FY2025 annual report, published 30 Sep',
@@ -162,7 +158,12 @@ export const dueDetail = {
 
 /** What was looked at, shown when nothing is due. Silence is a checked answer. */
 export function quietChecks(v: Valuation, limit: number): Check[] {
-	const [largest] = v.holdings;
+	// Holdings come largest first, so the first weight is the largest, if any is known.
+	const largest = v.holdings.at(0);
+	const limitCheck =
+		largest?.weight == null
+			? `No holding has a price, so the largest share is — of your ${limit}% limit.`
+			: `Largest holding is ${largest.name} at ${percent(largest.weight)} of your ${limit}% limit.`;
 	return [
 		{
 			label: 'New filings',
@@ -172,7 +173,7 @@ export function quietChecks(v: Valuation, limit: number): Check[] {
 		{ label: 'Review dates', detail: 'Next one: Northgate Pharma, 14 Oct.' },
 		{
 			label: 'Position limit',
-			detail: `Largest holding is ${largest.name} at ${percent(largest.weight ?? 0)} of your ${limit}% limit.`
+			detail: limitCheck
 		},
 		{ label: 'Prices', detail: 'All nine holdings priced on 1 Oct.' }
 	];

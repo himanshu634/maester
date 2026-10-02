@@ -18,7 +18,7 @@ describe('valuePortfolio on the demo portfolio', () => {
 
 	it('computes unrealized gain over holdings with both price and cost', () => {
 		expect(v.gain).toBe(366960);
-		expect(v.gainPercent.toFixed(1)).toBe('16.9');
+		expect(v.gainPercent?.toFixed(1)).toBe('16.9');
 		expect(v.withCost).toBe(7);
 	});
 
@@ -66,13 +66,37 @@ describe('valuePortfolio edge cases', () => {
 		...over
 	});
 
-	it('does not divide by zero when nothing is priced', () => {
-		const empty = valuePortfolio([make({ price: null })]);
+	it('leaves the gain percent and the sectors unknown when nothing is priced', () => {
+		const empty = valuePortfolio([make({ price: null }), make({ name: 'B', price: null })]);
 		expect(empty.knownValue).toBe(0);
 		expect(empty.priced).toBe(0);
-		expect(empty.gainPercent).toBe(0);
-		expect(empty.holdings[0].weight).toBeNull();
+		expect(empty.withCost).toBe(0);
+		expect(empty.gainPercent).toBeNull();
+		expect(empty.holdings.map((h) => h.weight)).toEqual([null, null]);
 		expect(empty.sectors).toEqual([]);
+	});
+
+	it('leaves the gain percent unknown when no priced holding has a cost', () => {
+		const uncosted = valuePortfolio([make({ cost: null }), make({ name: 'B', cost: null })]);
+		expect(uncosted.priced).toBe(2);
+		expect(uncosted.withCost).toBe(0);
+		expect(uncosted.gain).toBe(0);
+		expect(uncosted.gainPercent).toBeNull();
+		expect(uncosted.sectors).toEqual([{ label: 'Utilities', share: 100, unknown: false }]);
+	});
+
+	it('leaves the gain percent unknown when the known cost is zero', () => {
+		const free = valuePortfolio([make({ cost: 0 })]);
+		expect(free.withCost).toBe(1);
+		expect(free.gain).toBe(1000);
+		expect(free.gainPercent).toBeNull();
+	});
+
+	it('gives no weights or sectors when every price is zero', () => {
+		const zero = valuePortfolio([make({ price: 0 })]);
+		expect(zero.priced).toBe(1);
+		expect(zero.holdings[0].weight).toBeNull();
+		expect(zero.sectors).toEqual([]);
 	});
 
 	it('does not mutate its input', () => {

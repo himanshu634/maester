@@ -1,7 +1,8 @@
 <script lang="ts">
 	/**
 	 * Share of priced value by sector, largest first. The bars are drawing only; the label
-	 * and percentage carry the figure. The unknown bucket is a dashed outline, last.
+	 * and percentage carry the figure. The unknown bucket is a dashed outline, last. With no
+	 * known value there are no bars, only the note saying what is left out.
 	 */
 	import { terminalContent } from '$lib/content/terminal';
 	import { percent } from '$lib/terminal/format';
@@ -21,18 +22,20 @@
 
 <section aria-labelledby={headingId}>
 	<h2 id={headingId}>{terminalContent.allocation.heading}</h2>
-	<ul class="bars">
-		{#each valuation.sectors as sector (sector.label)}
-			<li class={['bar-row', { unknown: sector.unknown }]}>
-				<span class="label">{sector.label}</span>
-				<span class="track" aria-hidden="true">
-					<span class="bar" style:width="{largest > 0 ? (sector.share / largest) * 100 : 0}%"
-					></span>
-				</span>
-				<span class="share num">{percent(sector.share)}</span>
-			</li>
-		{/each}
-	</ul>
+	{#if valuation.sectors.length > 0}
+		<ul class="bars">
+			{#each valuation.sectors as sector (sector.label)}
+				<li class={['bar-row', { unknown: sector.unknown }]}>
+					<span class="label">{sector.label}</span>
+					<span class="track" aria-hidden="true">
+						<span class="bar" style:width="{largest > 0 ? (sector.share / largest) * 100 : 0}%"
+						></span>
+					</span>
+					<span class="share num">{percent(sector.share)}</span>
+				</li>
+			{/each}
+		</ul>
+	{/if}
 	<p class="muted note">{allocationNote(valuation)}</p>
 </section>
 

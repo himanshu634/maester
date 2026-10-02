@@ -15,6 +15,7 @@ export const terminalContent = {
 		menu: 'Menu',
 		workspaceLabel: 'Workspace',
 		workspaceName: 'Personal',
+		contextLabel: 'Portfolio',
 		portfolio: (name: string) => `Portfolio: ${name}`
 	},
 	readOnlyNote: 'Read-only demo. Decisions and updates arrive with your account.',
@@ -30,15 +31,23 @@ export const terminalContent = {
 		quietHeading: 'Nothing is due this week',
 		quietLede: 'That is a checked answer, not a quiet feed. Here is what was looked at.',
 		labels: { trigger: 'Trigger', evidence: 'Evidence', call: 'Your call' },
-		/** "3 items. Decisions first, then data to fix." / "1 item." */
-		subtitle: (count: number) =>
-			count === 1 ? '1 item.' : `${count} items. Decisions first, then data to fix.`
+		/**
+		 * "3 items. Decisions first, then data to fix." when decisions and data fixes are both
+		 * due, otherwise just the count: "2 items." / "1 item."
+		 */
+		subtitle: (count: number, mixed: boolean) => {
+			const counted = count === 1 ? '1 item.' : `${count} items.`;
+			return mixed ? `${counted} Decisions first, then data to fix.` : counted;
+		}
 	},
 	figures: {
 		knownValue: 'Known value',
 		cash: 'Cash',
 		cashNote: 'As you entered it on 30 Sep',
 		gain: 'Unrealized gain',
+		gainNoneCosted: 'Counts holdings with a price and a known cost; none has both yet.',
+		unknownValue: 'Unknown until a holding has a price',
+		unknownGain: 'Unknown until a holding has both a price and a cost',
 		coverage: 'Valuation coverage',
 		coverageComplete: 'Every holding has a price',
 		pricedOf: (priced: number, count: number) => `${priced} of ${count} holdings priced`

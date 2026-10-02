@@ -3,12 +3,10 @@
  * under the figures and the sector bars. Kept out of the components so the copy is tested.
  */
 import { terminalContent } from '$lib/content/terminal';
-import type { DueItem } from './due';
+import { mixesDecisionsAndData, type DueItem } from './due';
+import { dueDetail } from './fixture';
 import { inr, percent, quantity } from './format';
 import type { Valuation, Valued } from './portfolio';
-
-/** The review that `dueDetail` in fixture.ts describes. */
-const DETAILED_REVIEW = 'Harbour Cements';
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
@@ -25,7 +23,12 @@ export function shortDate(iso: string): string {
 
 /** True when the item is the review that has expanded copy in the fixture. */
 export function hasDetail(item: DueItem): boolean {
-	return item.kind === 'review' && item.holding === DETAILED_REVIEW;
+	return item.kind === 'review' && item.holding === dueDetail.holding;
+}
+
+/** `3 items. Decisions first, then data to fix.`, the order only when both kinds are due. */
+export function dueSubtitle(items: readonly DueItem[]): string {
+	return terminalContent.due.subtitle(items.length, mixesDecisionsAndData(items));
 }
 
 /** Unknown is shown as unknown, never as zero. */
@@ -67,11 +70,15 @@ export function dueRow(
 
 const unpriced = (v: Valuation): Valued[] => v.holdings.filter((h) => h.value === null);
 
-/** `+16.9% on the 7 holdings with a known cost. 2 left out.` */
+/**
+ * `+16.9% on the 7 holdings with a known cost. 2 left out.` The percent is "—" when the
+ * known cost is zero; with no costed holding at all there is no count to give.
+ */
 export function gainNote(v: Valuation): string {
-	const shown = percent(v.gainPercent);
-	const sign = Number(v.gainPercent.toFixed(1)) > 0 ? '+' : '';
-	const base = `${sign}${shown} on the ${v.withCost} ${plural(v.withCost, 'holding', 'holdings')} with a known cost.`;
+	if (v.withCost === 0) return terminalContent.figures.gainNoneCosted;
+	const pct = v.gainPercent;
+	const shown = pct === null ? UNKNOWN : `${Number(pct.toFixed(1)) > 0 ? '+' : ''}${percent(pct)}`;
+	const base = `${shown} on the ${v.withCost} ${plural(v.withCost, 'holding', 'holdings')} with a known cost.`;
 	const left = v.count - v.withCost;
 	return left > 0 ? `${base} ${left} left out.` : base;
 }

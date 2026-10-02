@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { dueItems } from './due';
-import { demo, quietDemo, WEEK } from './fixture';
-import { allocationNote, coverageNote, dueRow, gainNote, hasDetail, shortDate } from './overview';
-import { valuePortfolio } from './portfolio';
+import { demo, dueDetail, quietDemo, WEEK } from './fixture';
+import {
+	allocationNote,
+	coverageNote,
+	dueRow,
+	dueSubtitle,
+	gainNote,
+	hasDetail,
+	shortDate
+} from './overview';
+import { valuePortfolio, type Holding } from './portfolio';
 
 const busy = valuePortfolio(demo.holdings);
 const quiet = valuePortfolio(quietDemo.holdings);
@@ -10,6 +18,7 @@ const quiet = valuePortfolio(quietDemo.holdings);
 describe('overview copy', () => {
 	it('writes the collapsed due rows as frame C1 shows them', () => {
 		const [review, ...rest] = dueItems(busy, { ...WEEK, limit: demo.limit });
+		expect(review.holding).toBe(dueDetail.holding);
 		expect(hasDetail(review)).toBe(true);
 		expect(rest.map((item) => dueRow(item, busy, demo.limit))).toEqual([
 			{
@@ -53,5 +62,47 @@ describe('overview copy', () => {
 		expect(allocationNote(quiet)).toBe(
 			'Share of priced value. The dashed bar is Lantern Logistics, which has no sector yet.'
 		);
+	});
+
+	it('states the order in the subtitle only when decisions and data fixes are both due', () => {
+		const items = dueItems(busy, { ...WEEK, limit: demo.limit });
+		expect(dueSubtitle(items)).toBe('3 items. Decisions first, then data to fix.');
+		const decisions = items.filter((i) => i.kind !== 'missing-price');
+		expect(dueSubtitle(decisions)).toBe('2 items.');
+		const data = items.filter((i) => i.kind === 'missing-price');
+		expect(dueSubtitle(data)).toBe('1 item.');
+	});
+});
+
+describe('overview copy for a portfolio with unknowns', () => {
+	const make = (over: Partial<Holding>): Holding => ({
+		name: 'Test Co',
+		quantity: 10,
+		price: 100,
+		cost: 80,
+		sector: 'Utilities',
+		reviewDate: null,
+		...over
+	});
+
+	it('never writes a zero percent gain when nothing is priced', () => {
+		const v = valuePortfolio([make({ price: null }), make({ name: 'B', price: null })]);
+		const note = gainNote(v);
+		expect(note).toBe('Counts holdings with a price and a known cost; none has both yet.');
+		expect(note).not.toMatch(/0\.0%|\b0 holdings\b/);
+		expect(coverageNote(v)).toBe('2 holdings have no price');
+		expect(allocationNote(v)).toBe(
+			'Share of priced value. 2 holdings stay out until they have a price.'
+		);
+	});
+
+	it('never writes a zero percent gain when nothing priced has a cost', () => {
+		const v = valuePortfolio([make({ cost: null })]);
+		expect(gainNote(v)).toBe('Counts holdings with a price and a known cost; none has both yet.');
+	});
+
+	it('shows the gain percent as unknown when the known cost is zero', () => {
+		const v = valuePortfolio([make({ cost: 0 }), make({ name: 'B', cost: null })]);
+		expect(gainNote(v)).toBe('— on the 1 holding with a known cost. 1 left out.');
 	});
 });

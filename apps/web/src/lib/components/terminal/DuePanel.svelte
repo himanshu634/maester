@@ -8,7 +8,7 @@
 	import { terminalContent } from '$lib/content/terminal';
 	import type { Check, DueItem } from '$lib/terminal/due';
 	import { dueDetail } from '$lib/terminal/fixture';
-	import { dueRow, hasDetail } from '$lib/terminal/overview';
+	import { dueRow, dueSubtitle, hasDetail } from '$lib/terminal/overview';
 	import type { Valuation } from '$lib/terminal/portfolio';
 
 	interface Props {
@@ -52,7 +52,7 @@
 	{:else}
 		<div class="head">
 			<h2 id={headingId}>{due.heading}</h2>
-			<p class="muted">{due.subtitle(items.length)}</p>
+			<p class="muted">{dueSubtitle(items)}</p>
 		</div>
 		{#if detailed}
 			<div class="body">
