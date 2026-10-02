@@ -69,7 +69,7 @@ export interface SiteContent {
 	trust: { heading: string; intro: string; principles: Principle[]; measured: string };
 	status: { heading: string; paragraphs: string[]; cta: Link };
 	footer: { note: string; links: ExternalLink[] };
-	login: { heading: string; lede: string; notConnected: string };
+	login: { heading: string; lede: string };
 	terminal: { heading: string; checking: string; noScript: string; placeholder: string };
 }
 
@@ -305,9 +305,7 @@ export const content = {
 	},
 	login: {
 		heading: 'Sign in to the terminal',
-		lede: 'The terminal is where your holdings, your thesis and your suggestions live.',
-		notConnected:
-			'Sign-in is not open yet. Accounts arrive with the first release of the terminal. Nothing you typed was sent anywhere.'
+		lede: 'The terminal is where your holdings, your thesis and your suggestions live.'
 	},
 	terminal: {
 		heading: 'The terminal',

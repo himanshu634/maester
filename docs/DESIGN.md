@@ -30,6 +30,17 @@ Three further values exist for sketched illustrations only, never for text, rule
 | `--illus-red` | `#E0483A` | illustration colour plate |
 | `--illus-blue` | `#2F5FD0` | illustration colour plate |
 
+Google's four mark colours exist for the Google sign-in mark only, because Google's branding rules forbid a monochrome G:
+
+| Token | Value | Use |
+| --- | --- | --- |
+| `--brand-google-blue` | `#4285F4` | Google mark only |
+| `--brand-google-red` | `#EA4335` | Google mark only |
+| `--brand-google-yellow` | `#FBBC05` | Google mark only |
+| `--brand-google-green` | `#34A853` | Google mark only |
+
+The guard fails any file but `GoogleButton.svelte` that names them.
+
 Numerical direction is shown with a sign or a word, never a colour, which also satisfies the product rule that colour must not read as investment advice.
 
 Rules the guard enforces: no hex, `rgb()`, `hsl()`, `oklch()`, `color-mix()` or named colour anywhere except `tokens.css`; components use `var(--…)`, `currentColor`, `transparent` or `inherit`.
@@ -69,6 +80,9 @@ Sentence case everywhere. No all-caps labels, no letter-spaced eyebrows, no acce
 - **Spec list** (`AccuracySpec`): a definition list with a 2px top rule, 1px rules between entries and a 2px closing rule.
 - **Tag**: 1.5px border, 4px by 8px padding, 14px text. Used only for the synthetic-data label and status words.
 - **Form field**: visible label above the input, 44px input with a 2px border, paper background, error text below the field, status announced through `aria-live="polite"`.
+- **Google button** (`GoogleButton`): 48px, full panel width, a 2px border, square, Archivo 700, "Continue with Google" or "Sign up with Google". Google's G at 18px on a 28px paper chip, the only place `--brand-google-*` is used. Filled ink when it is the screen's primary action (on `/login` and `/signup`), outline otherwise. Hover inverts the button; the chip keeps the mark on paper. While it redirects it is disabled and points at the status line.
+- **Notice** (`Notice`): a form-level message. A 2px box, a bold first line saying what happened, then what to do; an action (a button or link) may follow. State is the words, never colour.
+- **Auth layout** (`AuthLayout`): the sign-in pages' frame — masthead, a 480px panel with a 2px rule, and on `/login` the illustration.
 - **Illustration** (`LoginIllustration`): an inline SVG drawn as two plates, a colour plate slightly out of register under a hand-drawn ink plate. It uses `--ink`, `--paper` and the three `--illus-*` tokens and nothing else. Its frame is a 3px rule with a 30px radius on the `figure` that holds it, the one reviewed radius exception (marked `design-guard: allow`); the radius belongs to the drawing, not to the layout, and must not spread to any other element. From 1024px the frame sits to the right of the sign-in panel and fills the screen from the masthead to the bottom edge; below that it stacks under the panel at a square aspect.
 - **Due panel** (`DuePanel`): an inverted panel with a 2px paper rule under its header and 1px paper rules between rows. The first item opens with a Trigger, Evidence and Your call spec list; the rest are one-line rows. When nothing is due it lists what was checked.
 - **Figure strip** (`FigureStrip`): four headline figures, each with a note saying what it covers. A spec list on a phone, two by two from 768px, one row from 1024px, with 1px `--ink-muted` rules between cells, inside 2px top and bottom rules. An unknown figure is "—" with the reason read out.
