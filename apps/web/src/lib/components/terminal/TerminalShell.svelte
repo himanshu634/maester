@@ -17,7 +17,7 @@
 		/** Shown in the context header; without it the workspace name is. */
 		portfolio?: string;
 		/** Who is signed in. Absent in the demo, which has no session. */
-		account?: { email: string; signingOut: boolean; onSignOut: () => void };
+		account?: { email: string; signingOut: boolean; failed?: boolean; onSignOut: () => void };
 		children: Snippet;
 	}
 
@@ -72,6 +72,9 @@
 					>
 						{account.signingOut ? shell.signingOut : shell.signOut}
 					</button>
+					<p class="status" role="status" aria-live="polite">
+						{account.failed ? shell.signOutFailed : ''}
+					</p>
 				</div>
 			{/if}
 		</div>
@@ -178,6 +181,15 @@
 	.account .muted {
 		font-size: var(--text-sm);
 		line-height: var(--leading-small);
+	}
+
+	.status {
+		font-size: var(--text-sm);
+		line-height: var(--leading-small);
+	}
+
+	.status:empty {
+		display: none;
 	}
 
 	.email {

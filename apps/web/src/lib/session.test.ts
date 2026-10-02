@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readSession, safeNext, verifyCallback } from './session';
+import { endSession, readSession, safeNext, verifyCallback } from './session';
 
 describe('safeNext', () => {
 	it('keeps a same-site path', () => {
@@ -57,5 +57,27 @@ describe('readSession', () => {
 			}
 		});
 		expect(state).toEqual({ status: 'signed-out' });
+	});
+});
+
+describe('endSession', () => {
+	it('is true when sign-out succeeds', async () => {
+		expect(await endSession({ signOut: async () => ({ data: { success: true } }) })).toBe(true);
+	});
+
+	it('is false when the API answers with an error', async () => {
+		expect(
+			await endSession({ signOut: async () => ({ data: null, error: { status: 500 } }) })
+		).toBe(false);
+	});
+
+	it('is false when the request fails', async () => {
+		expect(
+			await endSession({
+				signOut: async () => {
+					throw new Error('network');
+				}
+			})
+		).toBe(false);
 	});
 });

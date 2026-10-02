@@ -5,12 +5,13 @@
 	import { content } from '$lib/content';
 	import { terminalContent } from '$lib/content/terminal';
 	import { authClient } from '$lib/auth/client';
-	import { readSession, type SessionUser } from '$lib/session';
+	import { endSession, readSession, type SessionUser } from '$lib/session';
 	import Masthead from '$lib/components/Masthead.svelte';
 	import TerminalShell from '$lib/components/terminal/TerminalShell.svelte';
 
 	let user = $state<SessionUser | null>(null);
 	let signingOut = $state(false);
+	let signOutFailed = $state(false);
 
 	onMount(async () => {
 		const session = await readSession(authClient());
@@ -20,8 +21,13 @@
 
 	async function signOut() {
 		signingOut = true;
-		await authClient().signOut();
-		goto(resolve('/'), { replaceState: true });
+		signOutFailed = false;
+		if (await endSession(authClient())) {
+			goto(resolve('/'), { replaceState: true });
+		} else {
+			signingOut = false;
+			signOutFailed = true;
+		}
 	}
 </script>
 
@@ -34,7 +40,7 @@
 	<TerminalShell
 		demo={false}
 		overview="/terminal"
-		account={{ email: user.email, signingOut, onSignOut: signOut }}
+		account={{ email: user.email, signingOut, failed: signOutFailed, onSignOut: signOut }}
 	>
 		<div class="placeholder">
 			<h1>{content.terminal.heading}</h1>

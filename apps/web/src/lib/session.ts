@@ -48,3 +48,21 @@ export function safeNext(candidate: string | null, fallback = '/terminal'): stri
 export function verifyCallback(next: string): string {
 	return `/verify-email?next=${encodeURIComponent(next)}`;
 }
+
+interface SignOutSource {
+	signOut(): Promise<{ data?: unknown; error?: unknown } | undefined | void>;
+}
+
+/**
+ * Ends the session. The Better Auth client reports an HTTP failure as `{ error }`
+ * rather than throwing, and a network failure rejects: both mean the session is
+ * still live, so both return false.
+ */
+export async function endSession(source: SignOutSource): Promise<boolean> {
+	try {
+		const result = await source.signOut();
+		return !result?.error;
+	} catch {
+		return false;
+	}
+}

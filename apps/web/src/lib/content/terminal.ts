@@ -19,7 +19,8 @@ export const terminalContent = {
 		portfolio: (name: string) => `Portfolio: ${name}`,
 		signedInAs: 'Signed in as',
 		signOut: 'Sign out',
-		signingOut: 'Signing out…'
+		signingOut: 'Signing out…',
+		signOutFailed: 'Sign-out didn’t finish. Try again.'
 	},
 	readOnlyNote: 'Read-only demo. Decisions and updates arrive with your account.',
 	enterDemo: 'Explore the synthetic demo',
