@@ -12,12 +12,16 @@
 
 	interface Props {
 		demo: boolean;
-		/** The overview this page is, so the rail marks it as current. */
-		overview: '/terminal/demo' | '/terminal/demo/quiet';
+		/** The page this is, so the rail marks it as current. */
+		overview: '/terminal' | '/terminal/demo' | '/terminal/demo/quiet';
+		/** Shown in the context header; without it the workspace name is. */
+		portfolio?: string;
+		/** Who is signed in. Absent in the demo, which has no session. */
+		account?: { email: string; signingOut: boolean; onSignOut: () => void };
 		children: Snippet;
 	}
 
-	let { demo, overview, children }: Props = $props();
+	let { demo, overview, portfolio, account, children }: Props = $props();
 
 	const shell = terminalContent.shell;
 	let open = $state(false);
@@ -56,12 +60,26 @@
 			<nav aria-label={shell.navLabel}>
 				<a class="current" href={resolve(overview)} aria-current="page">{shell.overview}</a>
 			</nav>
+			{#if account}
+				<div class="account">
+					<span class="muted">{shell.signedInAs}</span>
+					<span class="email">{account.email}</span>
+					<button
+						class="button outline"
+						type="button"
+						disabled={account.signingOut}
+						onclick={account.onSignOut}
+					>
+						{account.signingOut ? shell.signingOut : shell.signOut}
+					</button>
+				</div>
+			{/if}
 		</div>
 	</header>
 
 	<!-- A region, not a second <header>: the rail is already the page's banner landmark. -->
 	<section class="context" aria-label={shell.contextLabel}>
-		<span class="portfolio">{shell.portfolio(terminalContent.workspace)}</span>
+		<span class="portfolio">{portfolio ? shell.portfolio(portfolio) : shell.workspaceName}</span>
 		{#if demo}
 			<a href={resolve('/')}>{terminalContent.leaveDemo}</a>
 		{/if}
@@ -149,6 +167,25 @@
 		text-decoration: none;
 	}
 
+	.account {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+		padding: var(--space-4) var(--space-6) var(--space-6);
+		border-top: var(--rule) solid var(--ink);
+	}
+
+	.account .muted {
+		font-size: var(--text-sm);
+		line-height: var(--leading-small);
+	}
+
+	.email {
+		font-weight: 700;
+		font-size: 1rem;
+		overflow-wrap: anywhere;
+	}
+
 	.context {
 		display: flex;
 		align-items: center;
@@ -197,6 +234,11 @@
 		.drawer.open {
 			display: flex;
 			border-bottom: 0;
+			min-height: calc(100dvh - var(--space-14));
+		}
+
+		.account {
+			margin-top: auto;
 		}
 
 		.context {

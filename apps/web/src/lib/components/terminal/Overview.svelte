@@ -28,7 +28,7 @@
 	let checks = $derived(items.length === 0 ? quietChecks(valuation, data.limit) : []);
 </script>
 
-<TerminalShell demo overview={path}>
+<TerminalShell demo overview={path} portfolio={terminalContent.workspace}>
 	<div class="overview">
 		<div class="title">
 			<div class="name-row">

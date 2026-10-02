@@ -314,6 +314,6 @@ export const content = {
 		checking: 'Checking your session.',
 		noScript: 'Sign in to enter the terminal.',
 		placeholder:
-			'You have a session, but the terminal has no screens yet. The first release adds your holdings and the filings behind them.'
+			'You are in. Your holdings and the filings behind them arrive with the first release.'
 	}
 } as const satisfies SiteContent;

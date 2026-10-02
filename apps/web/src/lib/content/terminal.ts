@@ -16,7 +16,10 @@ export const terminalContent = {
 		workspaceLabel: 'Workspace',
 		workspaceName: 'Personal',
 		contextLabel: 'Portfolio',
-		portfolio: (name: string) => `Portfolio: ${name}`
+		portfolio: (name: string) => `Portfolio: ${name}`,
+		signedInAs: 'Signed in as',
+		signOut: 'Sign out',
+		signingOut: 'Signing out…'
 	},
 	readOnlyNote: 'Read-only demo. Decisions and updates arrive with your account.',
 	enterDemo: 'Explore the synthetic demo',

@@ -4,18 +4,25 @@
 	import { resolve } from '$app/paths';
 	import { content } from '$lib/content';
 	import { terminalContent } from '$lib/content/terminal';
-	import { hasSession } from '$lib/session';
+	import { authClient } from '$lib/auth/client';
+	import { readSession, type SessionUser } from '$lib/session';
 	import Masthead from '$lib/components/Masthead.svelte';
+	import TerminalShell from '$lib/components/terminal/TerminalShell.svelte';
 
-	let state = $state<'checking' | 'signed-in'>('checking');
+	let user = $state<SessionUser | null>(null);
+	let signingOut = $state(false);
 
-	onMount(() => {
-		if (hasSession()) {
-			state = 'signed-in';
-		} else {
-			goto(resolve('/login?next=/terminal'), { replaceState: true });
-		}
+	onMount(async () => {
+		const session = await readSession(authClient());
+		if (session.status === 'signed-in') user = session.user;
+		else goto(resolve('/login?next=/terminal'), { replaceState: true });
 	});
+
+	async function signOut() {
+		signingOut = true;
+		await authClient().signOut();
+		goto(resolve('/'), { replaceState: true });
+	}
 </script>
 
 <svelte:head>
@@ -23,36 +30,54 @@
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<Masthead {...content.masthead} />
-
-<main id="main" class="terminal">
-	<h1>{content.terminal.heading}</h1>
-	{#if state === 'signed-in'}
-		<p class="measure">{content.terminal.placeholder}</p>
-		<p><a href={resolve('/terminal/demo')}>{terminalContent.enterDemo}</a></p>
-	{:else}
+{#if user}
+	<TerminalShell
+		demo={false}
+		overview="/terminal"
+		account={{ email: user.email, signingOut, onSignOut: signOut }}
+	>
+		<div class="placeholder">
+			<h1>{content.terminal.heading}</h1>
+			<p class="measure">{content.terminal.placeholder}</p>
+			<p><a href={resolve('/terminal/demo')}>{terminalContent.enterDemo}</a></p>
+		</div>
+	</TerminalShell>
+{:else}
+	<Masthead {...content.masthead} />
+	<main id="main" class="checking">
+		<h1>{content.terminal.heading}</h1>
 		<p class="muted" role="status">{content.terminal.checking}</p>
 		<noscript>
 			<p><a href={resolve('/login?next=/terminal')}>{content.terminal.noScript}</a></p>
 		</noscript>
-	{/if}
-</main>
+	</main>
+{/if}
 
 <style>
-	.terminal {
-		max-width: var(--max-width);
-		margin: 0 auto;
-		padding: var(--space-12) var(--gutter) var(--space-14) var(--gutter);
+	.checking,
+	.placeholder {
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-5);
 	}
 
+	.checking {
+		max-width: var(--max-width);
+		margin: 0 auto;
+		padding: var(--space-12) var(--gutter) var(--space-14) var(--gutter);
+	}
+
 	h1 {
 		font-stretch: var(--wdth-wide);
 		font-weight: 800;
-		font-size: var(--text-2xl);
+		font-size: 2rem;
 		line-height: var(--leading-heading);
 		letter-spacing: var(--tracking-heading);
+	}
+
+	@media (min-width: 768px) {
+		h1 {
+			font-size: var(--text-2xl);
+		}
 	}
 </style>
