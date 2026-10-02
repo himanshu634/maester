@@ -22,6 +22,11 @@ describe("dev upload page", () => {
     const res = await createApp(deps(testEnv({ NODE_ENV: "production" }))).request("/dev/upload");
     expect(res.status).toBe(404);
   });
+
+  it("offers no admit route in production", async () => {
+    const res = await createApp(deps(testEnv({ NODE_ENV: "production" }))).request("/dev/auth/admit", { method: "POST", body: "{}" });
+    expect(res.status).toBe(404);
+  });
 });
 
 describe("dev blob routes", () => {

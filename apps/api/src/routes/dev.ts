@@ -1,5 +1,6 @@
 import { Readable } from "node:stream";
 import { Hono } from "hono";
+import { approveWaitlistEmail } from "@maester/db";
 import { ObjectNotFoundError, verifyBlobSignature, type DiskObjectStore } from "@maester/storage";
 import type { AppDeps, AppEnv } from "../app.js";
 import { BLOB_PATH_PREFIX } from "../store.js";
@@ -31,6 +32,7 @@ const j = async (url, body) => {
 let workspaceId = null;
 async function me() { const m = await j('/v1/me'); workspaceId = m.workspaces[0].id; document.getElementById('who').textContent = m.user.email + ' / ' + workspaceId; }
 document.getElementById('signup').onclick = async () => {
+  await j('/dev/auth/admit', { email: email.value });
   await j('/api/auth/sign-up/email', { name: 'Dev', email: email.value, password: password.value }); await me(); log('signed up');
 };
 document.getElementById('signin').onclick = async () => {
@@ -84,6 +86,15 @@ document.getElementById('upload').onclick = async () => {
 export function devRoutes(deps: AppDeps) {
   const r = new Hono<AppEnv>();
   r.get("/upload", (c) => c.html(PAGE));
+
+  // Development and test only (dev routes are never mounted in production):
+  // approve an email so the dev page and local testing can create accounts.
+  r.post("/auth/admit", async (c) => {
+    const { email } = (await c.req.json()) as { email?: string };
+    if (!email || !email.includes("@")) return c.json({ error: "email required" }, 400);
+    await approveWaitlistEmail(deps.db, email);
+    return c.json({ admitted: email });
+  });
 
   // Local blob endpoints standing in for signed Cloud Storage URLs. Mounted
   // only when STORAGE_DRIVER=disk, which env validation refuses in production.

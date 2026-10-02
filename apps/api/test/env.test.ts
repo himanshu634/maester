@@ -26,4 +26,17 @@ describe("env", () => {
     });
     expect(env.ALLOWED_ORIGINS).toEqual(["http://a.test", "http://b.test"]);
   });
+
+  it("needs both Google credentials or neither", () => {
+    expect(() => testEnv({ GOOGLE_CLIENT_SECRET: undefined })).toThrow(/GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET/);
+    expect(testEnv({ GOOGLE_CLIENT_ID: undefined, GOOGLE_CLIENT_SECRET: undefined }).GOOGLE_CLIENT_ID).toBeUndefined();
+  });
+
+  it("requires Google credentials in production", () => {
+    expect(() => testEnv({ NODE_ENV: "production", GOOGLE_CLIENT_ID: undefined, GOOGLE_CLIENT_SECRET: undefined })).toThrow(/GOOGLE_CLIENT_ID/);
+  });
+
+  it("treats empty Google credentials as unset", () => {
+    expect(testEnv({ GOOGLE_CLIENT_ID: "", GOOGLE_CLIENT_SECRET: "" }).GOOGLE_CLIENT_ID).toBeUndefined();
+  });
 });

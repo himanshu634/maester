@@ -29,6 +29,9 @@ x-api-env: &api-env
   # /dev here, so the session cookie and signed local upload URLs are first-party.
   BETTER_AUTH_URL: http://localhost:5173
   ALLOWED_ORIGINS: http://localhost:5173,http://localhost:4173
+  # Google sign-in: set both in the root .env to enable it locally.
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
   STORAGE_DRIVER: disk
   STORAGE_DIR: /var/lib/maester/blobs
   DISPATCH_MODE: local
