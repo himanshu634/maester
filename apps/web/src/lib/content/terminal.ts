@@ -7,6 +7,15 @@ export const terminalContent = {
 	demoTag: 'Synthetic example',
 	snapshotTag: 'Holdings snapshot',
 	workspace: 'Long-term',
+	pageTitle: 'Overview (synthetic demo). Maester',
+	shell: {
+		navLabel: 'Terminal',
+		overview: 'Overview',
+		menu: 'Menu',
+		workspaceLabel: 'Workspace',
+		workspaceName: 'Personal',
+		portfolio: (name: string) => `Portfolio: ${name}`
+	},
 	readOnlyNote: 'Read-only demo. Decisions and updates arrive with your account.',
 	enterDemo: 'Explore the synthetic demo',
 	leaveDemo: 'Leave the demo',
@@ -19,6 +28,7 @@ export const terminalContent = {
 		heading: 'Due this week',
 		quietHeading: 'Nothing is due this week',
 		quietLede: 'That is a checked answer, not a quiet feed. Here is what was looked at.',
+		labels: { trigger: 'Trigger', evidence: 'Evidence', call: 'Your call' },
 		/** "3 items. Decisions first, then data to fix." / "1 item." */
 		subtitle: (count: number) =>
 			count === 1 ? '1 item.' : `${count} items. Decisions first, then data to fix.`
