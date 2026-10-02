@@ -25,9 +25,10 @@ x-api-env: &api-env
   DATABASE_URL: postgres://maester:maester@postgres:5432/maester
   # 32 characters minimum. Local only; generate a real one for any shared host.
   BETTER_AUTH_SECRET: local-development-secret-change-me-please
-  # The URL the browser uses. Signed upload URLs are built from it.
-  BETTER_AUTH_URL: http://localhost:8787
-  ALLOWED_ORIGINS: http://localhost:8787,http://localhost:5173,http://localhost:4173
+  # The browser's origin. The web container (and `vite dev`) proxy /api/auth, /v1 and
+  # /dev here, so the session cookie and signed local upload URLs are first-party.
+  BETTER_AUTH_URL: http://localhost:5173
+  ALLOWED_ORIGINS: http://localhost:5173,http://localhost:4173
   STORAGE_DRIVER: disk
   STORAGE_DIR: /var/lib/maester/blobs
   DISPATCH_MODE: local
@@ -134,15 +135,22 @@ services:
       timeout: 3s
       retries: 12
 
-  # The public pages, built statically and served by nginx. They do not call
-  # the API yet; the working upload flow lives at http://localhost:8787/dev/upload.
+  # The web client, served statically by nginx, which proxies /api/auth, /v1 and
+  # /dev to the API. Sign in at http://localhost:5173/login.
   web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
     image: maester/web:local
+    environment:
+      NGINX_RESOLVER: 127.0.0.11
+      API_PROXY_TARGET: http://api:8787
+      API_PROXY_HOST: localhost:5173
     ports:
       - "5173:8080"
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   pgdata:

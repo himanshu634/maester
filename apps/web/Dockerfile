@@ -9,6 +9,14 @@ COPY apps/web ./
 RUN pnpm build
 
 FROM nginx:1.27-alpine
-COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
+# Defaults for Cloud Run; docker-compose overrides them for the local stack.
+ENV NGINX_RESOLVER=169.254.169.254 \
+    API_PROXY_TARGET=http://localhost:8787 \
+    API_PROXY_HOST=localhost:8787
+COPY apps/web/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /web/build /usr/share/nginx/html
+# Fail the build on a broken config: render the template once and test it.
+RUN envsubst '$NGINX_RESOLVER $API_PROXY_TARGET $API_PROXY_HOST' \
+      < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf \
+    && nginx -t
 EXPOSE 8080
