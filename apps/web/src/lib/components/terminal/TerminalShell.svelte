@@ -3,21 +3,27 @@
 	 * The terminal frame. From 1024px a 224px rail on the left holds the wordmark, the
 	 * workspace and the page list; a 56px context header runs across the content. Below
 	 * 1024px the rail becomes a top bar whose Menu button opens the same list as a drawer.
-	 * The rail lists only pages that exist.
+	 * The rail lists only pages that exist. When the connection drops, a banner under the
+	 * context header says so (OfflineBanner).
 	 */
 	import type { Snippet } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { content } from '$lib/content';
 	import { terminalContent } from '$lib/content/terminal';
+	import OfflineBanner from '$lib/components/errors/OfflineBanner.svelte';
 
 	interface Props {
 		demo: boolean;
-		/** The overview this page is, so the rail marks it as current. */
+		/** The overview the rail links to (and marks as current, unless `current` is false). */
 		overview: '/terminal/demo' | '/terminal/demo/quiet';
+		/** False on a page the rail does not list (an error page), so nothing is marked current. */
+		current?: boolean;
+		/** False where the page itself says the device is offline, so it isn't said twice. */
+		offlineBanner?: boolean;
 		children: Snippet;
 	}
 
-	let { demo, overview, children }: Props = $props();
+	let { demo, overview, current = true, offlineBanner = true, children }: Props = $props();
 
 	const shell = terminalContent.shell;
 	let open = $state(false);
@@ -54,7 +60,9 @@
 				<span class="name">{shell.workspaceName}</span>
 			</div>
 			<nav aria-label={shell.navLabel}>
-				<a class="current" href={resolve(overview)} aria-current="page">{shell.overview}</a>
+				<a class={{ current }} href={resolve(overview)} aria-current={current ? 'page' : undefined}
+					>{shell.overview}</a
+				>
 			</nav>
 		</div>
 	</header>
@@ -66,6 +74,10 @@
 			<a href={resolve('/')}>{terminalContent.leaveDemo}</a>
 		{/if}
 	</section>
+
+	{#if offlineBanner}
+		<OfflineBanner />
+	{/if}
 
 	<main id="main">
 		{@render children()}
@@ -173,11 +185,11 @@
 		.shell {
 			display: grid;
 			grid-template-columns: var(--rail) minmax(0, 1fr);
-			grid-template-rows: auto 1fr;
+			grid-template-rows: auto auto 1fr;
 		}
 
 		.rail {
-			grid-row: 1 / span 2;
+			grid-row: 1 / span 3;
 			border-right: var(--rule) solid var(--ink);
 		}
 
@@ -204,7 +216,9 @@
 			padding: 0 var(--space-6);
 		}
 
+		/* Row 3 even when the banner row is empty. */
 		main {
+			grid-row: 3;
 			max-width: var(--max-width);
 			padding: var(--space-8) var(--space-6) var(--space-14);
 		}

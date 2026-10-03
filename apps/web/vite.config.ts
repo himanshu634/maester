@@ -11,10 +11,12 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 			// Fully static output: every route must prerender (see src/routes/+layout.ts).
+			// 404.html is the app shell; nginx serves it for any missing address and the
+			// client renders src/routes/+error.svelte there.
 			adapter: adapter({
 				pages: 'build',
 				assets: 'build',
-				fallback: undefined,
+				fallback: '404.html',
 				precompress: false,
 				strict: true
 			}),

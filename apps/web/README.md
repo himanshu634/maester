@@ -33,11 +33,16 @@ src/lib/components/                  Register, Masthead, Hero, Problem, Evidence
 src/routes/+page.svelte              index page
 src/routes/terminal/+page.svelte     hands off to /login when no session cookie exists
 src/routes/login/+page.svelte        sign-in form; not connected until workspace identity (F01) ships
+src/routes/+error.svelte             every error page; the build writes it as 404.html for nginx
+src/lib/errors/errors.ts             which error page to show, the connection check
+src/lib/components/errors/           the error sketches, offline banner and section issue
+static/50x.html                      the no-script page nginx serves for its own 5xx responses
 ```
 
 ## Notes
 
 - Every route is prerendered (`src/routes/+layout.ts`). `trailingSlash` is `never`, so a future `/about` route emits `about.html`; switch to `always` if the host cannot map extensionless paths.
+- nginx serves `404.html` (the app shell, which renders `+error.svelte`) for any missing address and `50x.html` for a 5xx (`nginx.conf`). To see an error state while developing, open a missing address such as `/termnal` or `/terminal/demo/holdings`.
 - Archivo is self-hosted through `@fontsource-variable/archivo`; the build makes no request to a font CDN.
 - Sign-in posts nowhere. The form tells the visitor that sign-in is not connected. Do not change that wording until the API exists and the primary journey is tested ([development guide](../../docs/DEVELOPMENT.md)).
 - This project is not a uv workspace member. Node and pnpm are needed only for work in this directory.
