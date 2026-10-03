@@ -11,6 +11,11 @@ The design-directions kit for Maester, built for the Terminal Overview canvas
 - `build.mjs` and `notes.json` are this round's frames (Today plus A–D), examples of
   the pattern rather than a fixed catalogue. A later round replaces them.
 - `heights.json`: measured frame heights fed back into `build.mjs`.
+- `errors.mjs` and `errors-notes.json`: the Error Screens canvas (2026-10-03, Today plus
+  A–D plus shared states; C · The sketchbook was built). It adds interactive boards (a
+  DCLogic class per board with event holes, and twins that render the default state via
+  `twinize`), the public masthead with the register rail, the terminal shell as built
+  (`TerminalShell.svelte`) and the two-plate sketches. Run `node errors.mjs`.
 
 Run `node build.mjs --measure`, open `../canvas/twins/measure.html` over a local
 server, run `await measureAll()`, save the result as `heights.json`, then
