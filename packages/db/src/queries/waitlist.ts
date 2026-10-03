@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Db } from "../client.js";
 import { waitlistEntry } from "../schema/waitlist.js";
 
@@ -22,11 +22,14 @@ export async function admitOrWaitlist(
   return row?.status === "approved" ? "approved" : "waitlisted";
 }
 
-/** Approve an email, whether or not it asked first. */
+/** Approve an email, whether or not it asked first. Approving again keeps the first approval time. */
 export async function approveWaitlistEmail(db: Db, email: string): Promise<void> {
   const normalized = normalizeEmail(email);
   await db
     .insert(waitlistEntry)
     .values({ email: normalized, status: "approved", source: "admin", approvedAt: new Date() })
-    .onConflictDoUpdate({ target: waitlistEntry.email, set: { status: "approved", approvedAt: new Date() } });
+    .onConflictDoUpdate({
+      target: waitlistEntry.email,
+      set: { status: "approved", approvedAt: sql`coalesce(${waitlistEntry.approvedAt}, now())` },
+    });
 }

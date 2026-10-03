@@ -48,4 +48,14 @@ describe("waitlist", () => {
     expect(row!.status).toBe("approved");
     expect(row!.approvedAt).toBeInstanceOf(Date);
   });
+
+  it("keeps the first approval time when an email is approved again", async () => {
+    await approveWaitlistEmail(db, "twice@example.com");
+    const first = new Date("2026-01-15T09:30:00Z");
+    await db.update(schema.waitlistEntry).set({ approvedAt: first }).where(eq(schema.waitlistEntry.email, "twice@example.com"));
+    await approveWaitlistEmail(db, "Twice@Example.com");
+    const [row] = await rows("twice@example.com");
+    expect(row!.status).toBe("approved");
+    expect(row!.approvedAt!.getTime()).toBe(first.getTime());
+  });
 });
