@@ -15,6 +15,13 @@
       "when": 1790843376587,
       "tag": "0001_company_and_extraction",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790940731411,
+      "tag": "0002_sign_in",
+      "breakpoints": true
     }
   ]
 }

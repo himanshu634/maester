@@ -1,202 +1,258 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import { content } from '$lib/content';
-	import { safeNext } from '$lib/session';
-	import Masthead from '$lib/components/Masthead.svelte';
-	import LoginIllustration from '$lib/components/LoginIllustration.svelte';
+	import { authContent as copy } from '$lib/content/auth';
+	import { authClient } from '$lib/auth/client';
+	import { messageFor, type AuthMessage } from '$lib/auth/messages';
+	import { validateEmail, focusAfterFailure, focusFirstInvalid } from '$lib/auth/validate';
+	import { readSession, safeNext, verifyCallback } from '$lib/session';
+	import AuthLayout from '$lib/components/auth/AuthLayout.svelte';
+	import GoogleButton from '$lib/components/auth/GoogleButton.svelte';
+	import Notice from '$lib/components/auth/Notice.svelte';
+	import OrRule from '$lib/components/auth/OrRule.svelte';
+	import TextField from '$lib/components/auth/TextField.svelte';
+	import PasswordField from '$lib/components/auth/PasswordField.svelte';
 
 	let next = $state('/terminal');
-	let email = $state('');
-	let password = $state('');
-	let status = $state<string | null>(null);
+	let message = $state<AuthMessage | null>(null);
+	let googleBusy = $state(false);
+	let status = $state('');
+	let waitlistedHeading = $state<HTMLHeadingElement>();
+	let googleButton = $state<HTMLButtonElement>();
+	let submitButton = $state<HTMLButtonElement>();
 
-	onMount(() => {
+	const waitlisted = $derived(message?.kind === 'waitlisted');
+
+	onMount(async () => {
 		next = safeNext(page.url.searchParams.get('next'));
+		message = messageFor(page.url.searchParams.get('error'));
+		// Back from /reset-password. The status line is the one live region; no Notice, so it is
+		// announced once.
+		if (page.url.searchParams.get('reset') === 'done') status = copy.login.passwordChanged;
+		if (waitlisted) {
+			// The page swapped to the waitlist view: put focus on its heading, so the change is announced.
+			await tick();
+			waitlistedHeading?.focus();
+		}
+		const session = await readSession(authClient());
+		if (session.status === 'signed-in') {
+			status = copy.login.alreadySignedIn;
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- next is a same-site path checked by safeNext
+			goto(next, { replaceState: true });
+		}
 	});
 
-	function submit(event: SubmitEvent) {
+	async function continueWithGoogle() {
+		if (busy) return;
+		message = null;
+		googleBusy = true;
+		status = copy.login.googleStatus;
+		const errorCallbackURL = `/login?next=${encodeURIComponent(next)}`;
+		try {
+			const { error } = await authClient().signIn.social({
+				provider: 'google',
+				callbackURL: next,
+				errorCallbackURL
+			});
+			if (error) await fail(messageFor(error.code || 'generic', error.status));
+		} catch {
+			// Network failure: the request never got an answer.
+			await fail(messageFor('generic'));
+		}
+	}
+
+	async function fail(shown: AuthMessage | null) {
+		googleBusy = false;
+		status = '';
+		message = shown;
+		await focusAfterFailure(() => googleButton);
+	}
+
+	let email = $state('');
+	let password = $state('');
+	let errors = $state<{ email: string | null; password: string | null }>({
+		email: null,
+		password: null
+	});
+	let submitting = $state(false);
+	let resending = $state(false);
+
+	// One action at a time: Google and the form lock each other out.
+	const busy = $derived(googleBusy || submitting);
+
+	async function signIn(event: SubmitEvent) {
 		event.preventDefault();
-		// The hosted API (F01) is not built. Say so instead of pretending.
-		status = content.login.notConnected;
-		password = '';
+		if (busy) return;
+		message = null;
+		errors = {
+			email: validateEmail(email),
+			// Only emptiness is checked: a stored password may predate today's length rule.
+			password: password ? null : copy.login.passwordMissing
+		};
+		if (errors.email || errors.password) {
+			focusFirstInvalid(errors, { email: 'email', password: 'password' });
+			return;
+		}
+		submitting = true;
+		status = copy.login.signingIn;
+		let shown: AuthMessage | null;
+		try {
+			const { error } = await authClient().signIn.email({
+				email: email.trim(),
+				password,
+				callbackURL: verifyCallback(next)
+			});
+			shown = error ? messageFor(error.code || 'generic', error.status) : null;
+		} catch {
+			// Network failure: the request never got an answer.
+			shown = messageFor('generic');
+		}
+		submitting = false;
+		status = '';
+		if (shown) {
+			message = shown;
+			password = '';
+			await focusAfterFailure(() => submitButton);
+			return;
+		}
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- next is a same-site path checked by safeNext
+		goto(next, { replaceState: true });
+	}
+
+	async function resend() {
+		resending = true;
+		status = copy.login.resending;
+		try {
+			const { error } = await authClient().sendVerificationEmail({
+				email: email.trim(),
+				callbackURL: verifyCallback(next)
+			});
+			if (error) {
+				message = messageFor(error.code || 'generic', error.status);
+				status = '';
+			} else {
+				status = copy.login.resent;
+			}
+		} catch {
+			message = messageFor('generic');
+			status = '';
+		} finally {
+			resending = false;
+		}
+	}
+
+	// Back from Google restores the page from the back/forward cache as it was left.
+	function onpageshow(event: PageTransitionEvent) {
+		if (event.persisted) {
+			googleBusy = false;
+			status = '';
+		}
 	}
 </script>
 
+<svelte:window {onpageshow} />
+
 <svelte:head>
-	<title>{content.login.heading}. Maester</title>
+	<title>{waitlisted ? copy.waitlisted.title : copy.login.title}</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<div class="page">
-	<Masthead {...content.masthead} />
-
-	<main id="main" class="login">
-		<div class="panel">
-			<h1>{content.login.heading}</h1>
-			<p class="measure lede">{content.login.lede}</p>
-
-			<form onsubmit={submit} novalidate>
-				<input type="hidden" name="next" value={next} />
-				<div class="field">
-					<label for="email">Email</label>
-					<input id="email" name="email" type="email" autocomplete="email" bind:value={email} />
-				</div>
-				<div class="field">
-					<label for="password">Password</label>
-					<input
-						id="password"
-						name="password"
-						type="password"
-						autocomplete="current-password"
-						bind:value={password}
-					/>
-				</div>
-				<button class="button" type="submit">Sign in</button>
-			</form>
-
-			<p class="status" role="status" aria-live="polite">{status ?? ''}</p>
-			<p class="muted small">
-				Sending you to <code>{next}</code> after sign-in.
-				<a href={resolve('/')}>Back to the index page</a>.
-			</p>
-		</div>
-		<figure class="scene">
-			<LoginIllustration />
-		</figure>
-	</main>
-</div>
+<AuthLayout illustration>
+	{#if waitlisted}
+		<h1 tabindex="-1" bind:this={waitlistedHeading}>{copy.waitlisted.heading}</h1>
+		<p class="measure">{copy.waitlisted.bodyGoogle}</p>
+		<p class="measure">{copy.waitlisted.nothingCreated}</p>
+		<p class="links">
+			{copy.waitlisted.wrongAccount}
+			<a href={resolve('/login')} onclick={() => (message = null)}>{copy.waitlisted.useAnother}</a>
+		</p>
+	{:else}
+		<h1>{copy.login.heading}</h1>
+		<p class="measure">{copy.login.lede}</p>
+		{#if message}
+			<Notice title={message.title}>
+				{#if message.kind === 'wrong-password'}
+					<p>
+						{copy.login.wrongPassword.before}<a href={resolve('/forgot-password')}
+							>{copy.login.wrongPassword.link}</a
+						>{copy.login.wrongPassword.after}
+					</p>
+				{:else if message.kind === 'not-verified'}
+					<p>{message.body}</p>
+					<button class="button outline" type="button" disabled={resending} onclick={resend}>
+						{resending ? copy.login.resending : copy.login.resend}
+					</button>
+				{:else}
+					<p>{message.body}</p>
+				{/if}
+			</Notice>
+		{/if}
+		<GoogleButton
+			label={copy.login.google}
+			busyLabel={copy.login.googleBusy}
+			busy={googleBusy}
+			disabled={busy}
+			primary
+			describedby="login-status"
+			onclick={continueWithGoogle}
+			bind:element={googleButton}
+		/>
+		<OrRule label={copy.login.or} />
+		<form class="form" method="post" onsubmit={signIn} novalidate>
+			<TextField
+				id="email"
+				label={copy.login.email}
+				type="email"
+				autocomplete="email"
+				bind:value={email}
+				error={errors.email}
+			/>
+			<PasswordField
+				id="password"
+				label={copy.login.password}
+				autocomplete="current-password"
+				bind:value={password}
+				error={errors.password}
+			/>
+			<div class="actions">
+				<button class="button outline" type="submit" disabled={busy} bind:this={submitButton}>
+					{submitting ? copy.login.signingIn : copy.login.signIn}
+				</button>
+				<a href={resolve('/forgot-password')}>{copy.login.forgot}</a>
+			</div>
+		</form>
+		<p class="status" id="login-status" role="status" aria-live="polite">{status}</p>
+		<p class="links">
+			{copy.login.newHere}
+			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the query string is built from an encodeURIComponent value; next is checked by safeNext -->
+			<a href={`${resolve('/signup')}?next=${encodeURIComponent(next)}`}
+				>{copy.login.createAccount}</a
+			>
+		</p>
+		<noscript><p>{copy.login.noScript}</p></noscript>
+	{/if}
+	<p class="small muted"><a href={resolve('/')}>{copy.login.back}</a></p>
+</AuthLayout>
 
 <style>
-	/* Masthead, then everything left of the screen. A grid, because its 1fr row respects min-height. */
-	.page {
-		min-height: 100dvh;
-		display: grid;
-		grid-template-rows: auto minmax(0, 1fr);
-	}
-
-	.login {
-		width: 100%;
-		max-width: var(--max-width);
-		margin: 0 auto;
-		padding: var(--space-12) var(--gutter) var(--space-14) var(--gutter);
-		display: grid;
-		grid-template-columns: minmax(0, 480px);
-		align-content: start;
-		gap: var(--space-10);
-	}
-
-	.panel {
-		width: 100%;
-		border: var(--rule) solid var(--ink);
-		padding: var(--space-6);
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-5);
-	}
-
-	h1 {
-		font-stretch: var(--wdth-wide);
-		font-weight: 800;
-		font-size: var(--text-xl);
-		line-height: var(--leading-heading);
-		letter-spacing: var(--tracking-heading);
-	}
-
-	form {
+	.form {
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-4);
-		align-items: flex-start;
 	}
 
-	.field {
+	.actions {
 		display: flex;
-		flex-direction: column;
-		gap: var(--space-1);
-		width: 100%;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-4);
 	}
 
-	label {
-		font-weight: 700;
-		font-size: var(--text-sm);
-	}
-
-	input {
-		width: 100%;
+	.actions a {
+		display: inline-flex;
+		align-items: center;
 		min-height: var(--target);
-		padding: 0 var(--space-3);
-		border: var(--rule) solid var(--ink);
-		background: var(--paper);
-		color: var(--ink);
-		font: inherit;
-		font-size: 1rem;
-		border-radius: var(--radius);
-	}
-
-	.status {
-		font-size: var(--text-sm);
-		min-height: 1.5em;
-	}
-
-	.small {
-		font-size: var(--text-sm);
-	}
-
-	/* The drawing's rounded frame. The radius is the illustration's, not the layout's (docs/DESIGN.md, section 5). */
-	.scene {
-		position: relative;
-		margin: 0;
-		width: 100%;
-		max-width: 640px;
-		aspect-ratio: 1;
-		border: 3px solid var(--ink);
-		border-radius: 30px; /* design-guard: allow */
-		background: var(--paper);
-		overflow: hidden;
-	}
-
-	/* Out of flow, so the drawing takes the frame's size instead of setting it. */
-	.scene > :global(svg) {
-		position: absolute;
-		inset: 0;
-	}
-
-	code {
-		font-family: inherit;
-		font-weight: 700;
-	}
-
-	@media (min-width: 768px) {
-		.panel {
-			padding: var(--space-8);
-		}
-
-		h1 {
-			font-size: var(--text-2xl);
-		}
-	}
-
-	@media (min-width: 1024px) {
-		.login {
-			grid-template-columns: minmax(0, 480px) minmax(0, 1fr);
-			grid-template-rows: minmax(0, 1fr);
-			align-content: stretch;
-			gap: var(--gutter);
-			padding: var(--gutter);
-		}
-
-		.panel {
-			align-self: start;
-		}
-
-		/* Fills the column from the masthead to the bottom of the screen. */
-		.scene {
-			max-width: none;
-			aspect-ratio: auto;
-			min-height: 0;
-			height: 100%;
-		}
 	}
 </style>

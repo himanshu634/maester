@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 
-const API = process.env.API_URL ?? "http://localhost:8787";
+// The web origin: it proxies /api/auth, /v1 and /dev to the API, and BETTER_AUTH_URL is this origin.
+const API = process.env.API_URL ?? "http://localhost:5173";
 const file = process.argv[2];
 if (!file) throw new Error("usage: pnpm smoke <file.pdf>");
 const email = `smoke-${Date.now()}@example.com`;
@@ -21,7 +22,12 @@ async function call(path: string, body?: unknown, method = body ? "POST" : "GET"
   return data as never;
 }
 
+// Development only: approve the email, sign up, then confirm the account (the admit route does
+// both), because sign-up needs an approved email and sign-in needs a confirmed one.
+await call("/dev/auth/admit", { email });
 await call("/api/auth/sign-up/email", { name: "Smoke", email, password });
+await call("/dev/auth/admit", { email });
+await call("/api/auth/sign-in/email", { email, password });
 const me = (await call("/v1/me")) as { workspaces: { id: string }[] };
 const ws = me.workspaces[0]!.id;
 const company = (await call(`/v1/workspaces/${ws}/companies`, { displayName: "Smoke Test Company", country: "IN" })) as { id: string };

@@ -83,7 +83,7 @@ If a skill named here isn't in this session's list, carry on without it and say 
 - **Say what each costs**: new components, new tokens, new copy, a backend ask (`apps/api`, or `apps/extractor` / `apps/worker` for document data — a direction that needs a new endpoint or field says so), a change to a rule in DESIGN.md or the UI specification.
 - **Recommend one** and say why in a sentence. The user often overrules the recommendation; that is the canvas doing its job.
 
-Build **one design canvas** (Artifact, design type) holding Today + all directions, so the user compares them side by side on one link. Frames are generated from a small kit, not written by hand — there is no maester kit yet, so **the first round builds it** (`references/canvas.md` §3) and the build PR commits it to `.claude/skills/design-directions/assets/kit/`. Before publishing, look at your own frames on a local contact sheet: text that wraps or truncates, a primary action pushed off the frame, a ledger wider than its frame, and a frame taller than you claimed are all things the user will see first. The published canvas itself is not re-opened, so if its layout is a guess, say so.
+Build **one design canvas** (Artifact, design type) holding Today + all directions, so the user compares them side by side on one link. Frames are generated from a small kit, not written by hand. The maester kit lives at `.claude/skills/design-directions/assets/kit/` (built for the Terminal Overview canvas): **copy it, check it against `tokens.css` first, then extend it** for this round (`references/canvas.md` §3), and commit the extended kit back with the build. Before publishing, look at your own frames on a local contact sheet: text that wraps or truncates, a primary action pushed off the frame, a ledger wider than its frame, and a frame taller than you claimed are all things the user will see first. The published canvas itself is not re-opened, so if its layout is a guess, say so.
 
 ## 5. Present, record, stop
 
@@ -135,7 +135,7 @@ Now it is an ordinary maester change, and `CONTRIBUTING.md`, `docs/DEVELOPMENT.m
 5. **Hold it against the picked frame.** See it running from the worktree (`references/canvas.md` §1 says how), at 1440, 768 and 360, and compare to the canvas frame by frame. Report honestly what differs and what you could not see running.
 6. **Verify**: `pnpm --dir apps/web verify` (type and accessibility check, prettier, eslint, the design guard, the static build) — pnpm, never Make. `review` before the PR.
 7. **PR only when the user asks** — into the branch it was cut from, never `main` by default. Commits signed off (`git commit -s`, CONTRIBUTING.md). The body names the direction by letter and links the canvas.
-8. **Memory**: the canvas record becomes "X PICKED and BUILT (see `<branch>`)". If this round built the kit, commit it to `.claude/skills/design-directions/assets/kit/` in the same PR.
+8. **Memory**: the canvas record becomes "X PICKED and BUILT (see `<branch>`)". If this round extended the kit, commit it to `.claude/skills/design-directions/assets/kit/` with the build.
 
 ## What this skill is not for
 

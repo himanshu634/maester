@@ -8,8 +8,12 @@
  */
 import type { Pathname } from '$app/types';
 
-/** Internal destinations only: a known route, optionally with a search string or fragment. */
-export type Href = Pathname | `${Pathname}?${string}` | `${Pathname}#${string}`;
+/**
+ * Internal destinations only: the index page and its sections, or the terminal. Kept to the few
+ * routes the public copy links to, because resolve() cannot take a union of every route once
+ * there are more than 25 (the compiler stops matching the argument against its overloads).
+ */
+export type Href = Extract<Pathname, '/' | '/terminal'> | `/#${string}`;
 
 export interface Link {
 	label: string;
@@ -69,7 +73,7 @@ export interface SiteContent {
 	trust: { heading: string; intro: string; principles: Principle[]; measured: string };
 	status: { heading: string; paragraphs: string[]; cta: Link };
 	footer: { note: string; links: ExternalLink[] };
-	login: { heading: string; lede: string; notConnected: string };
+	login: { heading: string; lede: string };
 	terminal: { heading: string; checking: string; noScript: string; placeholder: string };
 }
 
@@ -305,15 +309,13 @@ export const content = {
 	},
 	login: {
 		heading: 'Sign in to the terminal',
-		lede: 'The terminal is where your holdings, your thesis and your suggestions live.',
-		notConnected:
-			'Sign-in is not open yet. Accounts arrive with the first release of the terminal. Nothing you typed was sent anywhere.'
+		lede: 'The terminal is where your holdings, your thesis and your suggestions live.'
 	},
 	terminal: {
 		heading: 'The terminal',
 		checking: 'Checking your session.',
 		noScript: 'Sign in to enter the terminal.',
 		placeholder:
-			'You have a session, but the terminal has no screens yet. The first release adds your holdings and the filings behind them.'
+			'You are in. Your holdings and the filings behind them arrive with the first release.'
 	}
 } as const satisfies SiteContent;

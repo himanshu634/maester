@@ -6,7 +6,7 @@ import type { Readable } from "node:stream";
 import { ObjectNotFoundError, type ObjectStore, type SignedDownload, type SignedUpload } from "./index.js";
 
 export interface DiskSigningOptions {
-  /** Public base URL of the API that serves the blob routes, e.g. http://localhost:8787 */
+  /** Public base URL that serves the blob routes: the web origin, which proxies /dev to the API, e.g. http://localhost:5173 */
   baseUrl: string;
   /** Secret used to sign and verify blob URLs. */
   secret: string;

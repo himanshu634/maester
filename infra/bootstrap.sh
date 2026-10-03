@@ -61,14 +61,18 @@ gcloud projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:$API_
 gcloud iam service-accounts add-iam-policy-binding "$API_SA" --member="serviceAccount:$API_SA" --role="roles/iam.serviceAccountUser" >/dev/null
 
 # Secrets (values set manually afterwards)
-for S in DATABASE_URL BETTER_AUTH_SECRET; do
+for S in DATABASE_URL BETTER_AUTH_SECRET GOOGLE_CLIENT_SECRET RESEND_API_KEY; do
   gcloud secrets describe "$S" >/dev/null 2>&1 || gcloud secrets create "$S" --replication-policy=automatic
 done
 for SA in "$API_SA" "$WORKER_SA" "$MIGRATE_SA"; do
   gcloud secrets add-iam-policy-binding DATABASE_URL --member="serviceAccount:$SA" --role="roles/secretmanager.secretAccessor" >/dev/null
 done
-gcloud secrets add-iam-policy-binding BETTER_AUTH_SECRET --member="serviceAccount:$API_SA" --role="roles/secretmanager.secretAccessor" >/dev/null
+for S in BETTER_AUTH_SECRET GOOGLE_CLIENT_SECRET RESEND_API_KEY; do
+  gcloud secrets add-iam-policy-binding "$S" --member="serviceAccount:$API_SA" --role="roles/secretmanager.secretAccessor" >/dev/null
+done
 
 echo "bootstrap complete. Next: add secret versions:"
 echo "  printf '%s' 'postgres://USER:PASS@localhost/$DB_NAME?host=/cloudsql/$PROJECT:$REGION:$SQL_INSTANCE' | gcloud secrets versions add DATABASE_URL --data-file=-"
 echo "  openssl rand -base64 48 | gcloud secrets versions add BETTER_AUTH_SECRET --data-file=-"
+echo "  printf %s \"<client secret>\" | gcloud secrets versions add GOOGLE_CLIENT_SECRET --data-file=-"
+echo "  printf %s \"<Resend API key>\" | gcloud secrets versions add RESEND_API_KEY --data-file=-"

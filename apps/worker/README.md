@@ -51,4 +51,4 @@ pnpm --filter @maester/db migrate
 PORT=8788 pnpm dev:worker           # http://localhost:8788
 ```
 
-Run the API alongside it (`PORT=8787 pnpm dev:api`) to exercise a full upload → finalize → verify round trip via `/dev/upload` or `pnpm smoke path/to/file.pdf`. `pnpm --filter @maester/worker lint|typecheck|test` runs this package alone. See [DEVELOPMENT.md](../../docs/DEVELOPMENT.md) for the full TypeScript workflow.
+Run the API alongside it (`PORT=8787 pnpm dev:api`) and the web dev server (`pnpm --dir apps/web dev`, which proxies the API) to exercise a full upload → finalize → verify round trip via <http://localhost:5173/dev/upload> or `pnpm smoke path/to/file.pdf` (which defaults to the web origin). `pnpm --filter @maester/worker lint|typecheck|test` runs this package alone. See [DEVELOPMENT.md](../../docs/DEVELOPMENT.md) for the full TypeScript workflow.
