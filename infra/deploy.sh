@@ -67,7 +67,7 @@ API_HOST="${API_URL#https://}"
 gcloud run deploy maester-web --region="$REGION" --image="$REGISTRY/web:$TAG" \
   --allow-unauthenticated --port=8080 \
   --set-env-vars="API_PROXY_TARGET=$API_URL,API_PROXY_HOST=$API_HOST,NGINX_RESOLVER=169.254.169.254" \
-  --concurrency=200 --min-instances=0 --max-instances=10
+  --timeout=1800 --concurrency=200 --min-instances=0 --max-instances=10
 echo "api: $API_URL"
 echo "worker: $WORKER_URL"
 echo "web: $WEB_URL"
