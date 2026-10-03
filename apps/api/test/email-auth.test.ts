@@ -83,6 +83,57 @@ describe("password reset", () => {
   });
 });
 
+describe("sign-up for an address that already has an account", () => {
+  const EXISTING = "You already have a Maester account";
+  const mailsTo = (to: string, subject: string) => ctx.mailer.sent.filter((m) => m.to === to && m.subject === subject);
+  async function waitForMail(to: string, subject: string) {
+    for (let i = 0; i < 100 && mailsTo(to, subject).length === 0; i++) await new Promise((r) => setTimeout(r, 20));
+    return mailsTo(to, subject);
+  }
+  // The duplicate answer is synthetic: compare its shape, not its id or timestamps.
+  const shapeOf = async (res: Response) => {
+    const body = (await res.json()) as { token: unknown; user: Record<string, unknown> };
+    return { status: res.status, keys: Object.keys(body).sort(), token: body.token, userKeys: Object.keys(body.user).sort(), emailVerified: body.user.emailVerified };
+  };
+  const signUpAs = (email: string, password: string) => post("/api/auth/sign-up/email", { name: "Someone", email, password, callbackURL: "/verify-email" });
+
+  it("answers like a fresh sign-up and mails the confirmed owner once", async () => {
+    await approveWaitlistEmail(ctx.db, "fresh-shape@example.com");
+    const fresh = await shapeOf(await signUpAs("fresh-shape@example.com", "correct-horse-battery"));
+
+    await ctx.signUp("owner@example.com");
+    const duplicate = await signUpAs("owner@example.com", "another-password");
+    const dupShape = await shapeOf(duplicate);
+    expect(dupShape).toEqual(fresh);
+    expect(dupShape.status).toBe(200);
+    expect(dupShape.token).toBeNull();
+
+    const mails = await waitForMail("owner@example.com", EXISTING);
+    expect(mails).toHaveLength(1);
+    expect(mails[0]!.text).toContain("You already have one.");
+    expect(mails[0]!.text).toContain("http://localhost/login");
+    expect(mails[0]!.text).toContain("http://localhost/forgot-password");
+    // The owner's password is unchanged.
+    expect((await post("/api/auth/sign-in/email", { email: "owner@example.com", password: "another-password" })).status).not.toBe(200);
+  });
+
+  it("answers like a fresh sign-up and tells an unconfirmed owner to reset", async () => {
+    await approveWaitlistEmail(ctx.db, "fresh-shape-2@example.com");
+    const fresh = await shapeOf(await signUpAs("fresh-shape-2@example.com", "correct-horse-battery"));
+
+    await approveWaitlistEmail(ctx.db, "waiting@example.com");
+    await signUpAs("waiting@example.com", "first-password");
+    const duplicate = await shapeOf(await signUpAs("waiting@example.com", "second-password"));
+    expect(duplicate).toEqual(fresh);
+
+    const mails = await waitForMail("waiting@example.com", EXISTING);
+    expect(mails).toHaveLength(1);
+    expect(mails[0]!.text).toContain("waiting to be confirmed");
+    expect(mails[0]!.text).toContain("The password just chosen was not saved.");
+    expect(mails[0]!.text).toContain("http://localhost/forgot-password");
+  });
+});
+
 describe("takeover guard", () => {
   it("removes an unconfirmed password when the real owner signs in with Google", async () => {
     await approveWaitlistEmail(ctx.db, "victim@example.com");

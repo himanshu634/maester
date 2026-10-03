@@ -31,6 +31,8 @@ export class ResendMailer implements Mailer {
       method: "POST",
       headers: { authorization: `Bearer ${this.options.apiKey}`, "content-type": "application/json" },
       body: JSON.stringify({ from: this.options.from, to: [message.to], subject: message.subject, text: message.text, html: message.html }),
+      // A hung connection must not hold the request's background work open indefinitely.
+      signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) throw new Error(`resend refused the message: ${res.status} ${await res.text()}`);
   }

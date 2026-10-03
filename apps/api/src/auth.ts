@@ -6,13 +6,15 @@ import { admitOrWaitlist, ensurePersonalWorkspace, schema, type Db } from "@maes
 import type { Env } from "./env.js";
 import type { Logger } from "./logger.js";
 import type { Mailer, MailMessage } from "./mail/index.js";
-import { confirmEmail, resetPassword } from "./mail/templates.js";
+import { confirmEmail, existingAccount, resetPassword } from "./mail/templates.js";
 
 export function createAuth({ db, env, mailer, logger }: { db: Db; env: Env; mailer: Mailer; logger: Logger }) {
   // Never awaited inside the request: response time must not reveal whether an account exists.
   const send = (to: string, message: Omit<MailMessage, "to">) => {
     void mailer.send({ to, ...message }).catch((err: unknown) => logger.error({ err, to }, "mail failed"));
   };
+  // Links in mail point at the web origin, which proxies /api/auth to this API.
+  const webLink = (path: string) => new URL(path, env.BETTER_AUTH_URL).href;
 
   return betterAuth({
     baseURL: env.BETTER_AUTH_URL,
@@ -36,6 +38,12 @@ export function createAuth({ db, env, mailer, logger }: { db: Db; env: Env; mail
       resetPasswordTokenExpiresIn: 3600,
       revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, url }) => send(user.email, resetPassword({ name: user.name, url })),
+      // A sign-up for an address that already has an account answers exactly like a fresh
+      // one (requireEmailVerification turns on Better Auth's generic duplicate response).
+      // The owner hears about it by email instead, so a real owner who signs up after an
+      // impostor is told to reset.
+      onExistingUserSignUp: async ({ user }) =>
+        send(user.email, existingAccount({ name: user.name, emailVerified: user.emailVerified, loginUrl: webLink("/login"), resetUrl: webLink("/forgot-password") })),
     },
     emailVerification: {
       sendOnSignUp: true,
@@ -95,6 +103,10 @@ export function createAuth({ db, env, mailer, logger }: { db: Db; env: Env; mail
       },
     },
     advanced: {
+      // Better Auth skips its origin and callback-URL checks whenever NODE_ENV=test or TEST
+      // is set in the process. Pin them on, so the test suite exercises what production runs
+      // and a stray TEST variable cannot turn them off.
+      disableOriginCheck: false,
       cookiePrefix: "maester",
       useSecureCookies: env.NODE_ENV === "production",
       defaultCookieAttributes: { sameSite: "lax" },
