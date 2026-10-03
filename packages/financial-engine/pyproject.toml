@@ -5,7 +5,15 @@ description = "Shared financial-document extraction, validation, storage, and Q&
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-dependencies = ["google-genai>=1.33.0", "pydantic>=2.7", "python-dotenv>=1.0"]
+dependencies = [
+    "google-genai>=1.33.0",
+    "langchain-core>=1.0",
+    "langchain-google-genai>=3.0",
+    "langgraph>=1.0",
+    "pydantic>=2.7",
+    "pypdf>=6.0",
+    "python-dotenv>=1.0",
+]
 
 [build-system]
 requires = ["hatchling"]

@@ -6,7 +6,7 @@ For the product vision, read the [README](README.md). For product and engineerin
 
 ## Ways to contribute
 
-- **Code** for the R1 vertical slice: versioned fact extraction with page locations, the source reader, the deterministic calculation service, and the web journeys on top of the existing API. TypeScript for the platform, Python for the document engine.
+- **Code** for the R1 vertical slice: the source reader and fact review (F06), the financial tables (F07), the deterministic calculation service, extraction accuracy measurement, and the web journeys on top of the existing API. TypeScript for the platform, Python for the document engine and extractor.
 - **Investor interviews.** If you keep a spreadsheet, hold a research subscription, or use more than one broker, open an issue describing your last earnings review and your last unexplained portfolio difference.
 - **Domain review** of accounting conventions: lot basis, external-flow treatment, corporate actions, TWR and XIRR edge cases. The [data model](docs/DATA_MODEL.md) is the document to challenge.
 - **Sample data.** Permissioned, redacted filings and broker exports so connectors are built from real formats rather than assumed headers. Never commit private documents; open an issue to coordinate.
@@ -16,18 +16,19 @@ Before starting significant work, open an issue referencing the feature ID from 
 
 ## What exists today
 
-Maester is a two-language monorepo: a Python document engine and CLI, and a TypeScript platform base of an HTTP API, a job worker and a static SvelteKit web client. The investor journeys, the ledger and portfolio accounting are specified in the docs and not implemented.
+Maester is a two-language monorepo: a Python document engine, extraction service and CLI, and a TypeScript platform of an HTTP API, a job worker and a static SvelteKit web client. The investor journeys, the ledger and portfolio accounting are specified in the docs and not implemented.
 
 Working now:
 
 - Extract a financial-statement PDF into structured statements with Gemini on Vertex AI, from the command line.
 - Store structured data and a text rendition in a local JSON cache, run heuristic arithmetic checks on subtotals and the balance-sheet identity, and ask questions about a cached document.
-- Sign up, get a personal workspace, upload a document to object storage, and watch a durable verification job run to completion over Server-Sent Events.
+- Sign up, get a personal workspace, create a company, upload a document for it to object storage, and watch a durable verification job run to completion over Server-Sent Events.
+- Extract the uploaded statements into versioned facts with page references and arithmetic checks, through a LangGraph workflow with self-correction ([document extraction](docs/EXTRACTION.md)). This needs a Google Cloud project with Vertex AI.
 - Serve the static public pages, which carry the design system in [DESIGN.md](docs/DESIGN.md).
 
-The whole hosted stack runs locally in Docker with no Google Cloud account; see [setup](#setup).
+The whole hosted stack runs locally in Docker with no Google Cloud account, apart from fact extraction itself; see [setup](#setup).
 
-Not yet implemented: page-level provenance, verified citations, a deterministic calculation engine, a ledger, market data, or a web client connected to the API. Extraction accuracy is not measured. See [known limitations](docs/DEVELOPMENT.md).
+Not yet implemented: fact review and correction, verified citations, a deterministic calculation engine, a ledger, market data, a deployed extractor, or a web client connected to the API. Extraction accuracy is not measured. See [known limitations](docs/DEVELOPMENT.md).
 
 ## Prerequisites
 
@@ -48,7 +49,7 @@ The hosted stack — Postgres, the API, the worker and the web client — starts
 docker compose up --build
 ```
 
-Then open <http://localhost:8787/dev/upload> to run the upload and verification flow end to end, and <http://localhost:5173> for the public pages. [Development](docs/DEVELOPMENT.md) explains what is running, how to work on the services without Docker, and how to troubleshoot.
+Then open <http://localhost:5173/dev/upload> to run the upload and verification flow end to end, and <http://localhost:5173> for the public pages and sign-in. Everything is served through the web origin, which proxies the API. [Development](docs/DEVELOPMENT.md) explains what is running, how to work on the services without Docker, and how to troubleshoot.
 
 The Python CLI is independent of that stack:
 
@@ -87,10 +88,12 @@ The pip path resolves package constraints independently. Use uv for the shared l
 apps/
   cli/                      Working Typer application: maester and pdf-financial-qa
   api/                      Working Hono HTTP service: auth, workspaces, documents, jobs
-  worker/                   Working Hono job runner: leasing and document.verify
+  worker/                   Working Hono job runner: leasing, document.verify, document.extract
+  extractor/                Working FastAPI extraction sidecar over the engine's LangGraph workflow
   web/                      SvelteKit static pages; investor journeys planned
 packages/
-  financial-engine/         Working extraction, schema, checks, cache and Q&A
+  financial-engine/         Working LangGraph extraction workflow, plus the CLI's extraction, checks, cache and Q&A
+  jobs/                     Job creation and dispatch shared by the API and the worker
   contracts/                Shared Zod request and response schemas
   db/                       Drizzle schema, queries and migrations
   storage/                  Object storage drivers: Cloud Storage, local disk, memory
@@ -107,7 +110,7 @@ package.json, pnpm-*.yaml   pnpm workspace and TypeScript dependency resolution
 Makefile                    Python development commands
 ```
 
-Only `apps/cli` and `packages/financial-engine` are uv workspace members. `apps/api`, `apps/worker` and `packages/*` are the pnpm workspace. `apps/web` is a standalone pnpm project with its own lockfile, so a root `pnpm install` does not install it. The engine keeps the `pdf_financial_qa` import namespace for compatibility.
+Only `apps/cli`, `apps/extractor` and `packages/financial-engine` are uv workspace members. `apps/api`, `apps/worker` and `packages/*` are the pnpm workspace. `apps/web` is a standalone pnpm project with its own lockfile, so a root `pnpm install` does not install it. The engine keeps the `pdf_financial_qa` import namespace for compatibility.
 
 ## Development commands
 

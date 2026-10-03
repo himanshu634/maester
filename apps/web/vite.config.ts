@@ -2,6 +2,13 @@ import { defineConfig } from 'vitest/config';
 import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 
+// The browser only ever talks to this origin; auth, API and dev routes go to the API.
+// Same paths as nginx.conf.template, so the session cookie is first-party everywhere.
+const API_PROXY_TARGET = process.env.API_PROXY_TARGET ?? 'http://localhost:8787';
+const apiProxy = Object.fromEntries(
+	['/api/auth/', '/v1/', '/dev/'].map((path) => [path, { target: API_PROXY_TARGET }])
+);
+
 export default defineConfig({
 	plugins: [
 		sveltekit({
@@ -11,10 +18,12 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 			// Fully static output: every route must prerender (see src/routes/+layout.ts).
+			// 404.html is the app shell; nginx serves it for any missing address and the
+			// client renders src/routes/+error.svelte there.
 			adapter: adapter({
 				pages: 'build',
 				assets: 'build',
-				fallback: undefined,
+				fallback: '404.html',
 				precompress: false,
 				strict: true
 			}),
@@ -24,6 +33,8 @@ export default defineConfig({
 			}
 		})
 	],
+	server: { proxy: apiProxy },
+	preview: { proxy: apiProxy },
 	test: {
 		expect: { requireAssertions: true },
 		projects: [

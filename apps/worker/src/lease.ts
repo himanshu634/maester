@@ -23,6 +23,16 @@ export async function acquireLease(db: Db, jobId: string, leaseSeconds: number):
   return row ?? null;
 }
 
+/** Push the lease expiry forward while a long handler is still working. */
+export async function renewLease(db: Db, jobId: string, leaseToken: string, leaseSeconds: number): Promise<boolean> {
+  const rows = await db
+    .update(schema.job)
+    .set({ leaseExpiresAt: sql`now() + make_interval(secs => ${leaseSeconds}::int)`, updatedAt: sql`now()` })
+    .where(and(eq(schema.job.id, jobId), eq(schema.job.leaseToken, leaseToken)))
+    .returning({ id: schema.job.id });
+  return rows.length === 1;
+}
+
 export async function writeProgress(db: Db, jobId: string, leaseToken: string, progress: JobProgressJson): Promise<void> {
   await db
     .update(schema.job)

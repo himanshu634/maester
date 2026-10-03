@@ -62,4 +62,5 @@ jobs:
       - run: ./infra/deploy.sh
         env:
           PROJECT: ${{ secrets.GCP_PROJECT }}
-          ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          MAIL_FROM: ${{ vars.MAIL_FROM }}

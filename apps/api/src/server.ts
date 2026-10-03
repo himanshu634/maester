@@ -5,13 +5,14 @@ import { createAuth } from "./auth.js";
 import { createDispatcher } from "./dispatch/index.js";
 import { loadEnv } from "./env.js";
 import { createLogger } from "./logger.js";
+import { createMailer } from "./mail/index.js";
 import { createStore } from "./store.js";
 
 const env = loadEnv();
 const logger = createLogger(env.LOG_LEVEL);
 const db = createDb(env.DATABASE_URL);
 const store = createStore(env);
-const auth = createAuth({ db, env });
+const auth = createAuth({ db, env, mailer: createMailer(env, logger), logger });
 const dispatcher = createDispatcher(env, logger);
 
 const app = createApp({ env, logger, db, store, auth, dispatcher });

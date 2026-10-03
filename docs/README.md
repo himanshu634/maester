@@ -15,9 +15,14 @@ Maester's product plan connects portfolio tracking with company research and ver
 | [Quality and measurement](QUALITY.md) | Test matrix, product metrics and release criteria | Engineering, product, QA |
 | [Delivery plan](DELIVERY_PLAN.md) | Milestones, initial build sequence, dependencies and decisions | Delivery team |
 | [Development](DEVELOPMENT.md) | Running the stack locally, configuration, checks, troubleshooting and current limitations | Contributors |
+| [Document extraction](EXTRACTION.md) | Company records and versioned fact extraction with page provenance (F03, F05) | Backend, data and platform |
+| [Sign-in](SIGN_IN.md) | Google, email and password, and the waitlist: topology, flows, pages, configuration, known limits | Engineering and design |
 | [Design specification](DESIGN.md) | The visual contract for every web page: colour, type, structure, motion, copy, enforcement | Design and frontend |
 | [Monorepo decision](decisions/0001-platform-monorepo.md) | Rationale and consequences of the package split | Engineering |
 | [Web client decision](decisions/0002-web-sveltekit-brutalist-design-system.md) | SvelteKit, the brutalist design system and how it is enforced | Engineering and design |
+| [TypeScript backend decision](decisions/0003-typescript-backend.md) | Hono API and worker on Cloud Run, Zod contracts, Drizzle | Engineering |
+| [Extraction sidecar decision](decisions/0004-python-extraction-sidecar.md) | Python extraction service with LangGraph behind the TypeScript worker | Engineering |
+| [Sign-in decision](decisions/0005-sign-in-google-email-waitlist.md) | Better Auth with Google and email, a waitlist gate, Resend and the web-origin proxy | Engineering and product |
 
 ## Document status
 

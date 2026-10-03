@@ -8,45 +8,62 @@ import { Document, Job, ApiError } from "@maester/contracts";
 
 ## 1. Origins, cookies and CORS
 
-The API is the origin of truth for the session cookie. Better Auth sets an `HttpOnly` cookie named `maester.session_token` (cookie prefix `maester`) scoped to the API's own origin — there is no cross-site cookie sharing.
+The browser talks to one origin, the web origin. In development `vite dev` and `vite preview`, and in production the web container's nginx, proxy `/api/auth/*`, `/v1/*` and `/dev/*` to the API. Better Auth sets an `HttpOnly` cookie named `maester.session_token` (cookie prefix `maester`) on that origin; in production it is `__Secure-maester.session_token`, `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, because secure cookies add the `__Secure-` prefix. The cookie is first-party and the browser sends it on every call to the web origin. This is how Maester runs, locally (`http://localhost:5173`, proxying to the API on `:8787`) and deployed.
 
 Any browser client must:
 
-- Send `credentials: "include"` on every `fetch` call to the API (including the `/api/auth/*` endpoints), so the cookie is attached and, on auth responses, stored.
-- Be served from an origin listed in the API's `ALLOWED_ORIGINS` environment variable. The API only reflects `Access-Control-Allow-Origin` for origins in that list, and always sends `Access-Control-Allow-Credentials: true` for them.
-- `http://localhost:5173` (the default Vite dev server origin) is included in `ALLOWED_ORIGINS` by default in `.env.example`, so a local SvelteKit dev server works against a local API with no extra configuration.
+- Call the web origin with relative URLs (`fetch("/v1/me")`, `authClient` with `baseURL: window.location.origin`). Never call the API's own origin: the raw `*.run.app` URL is a different site from the frontend, and the `SameSite=Lax` session cookie is not sent to it. `credentials: "include"` is harmless but not needed for same-origin calls.
+- Be served from an origin listed in the API's `ALLOWED_ORIGINS` environment variable, which holds the web origin only. Better Auth's `BETTER_AUTH_URL` is the same web origin, so the Google callback is `<web origin>/api/auth/callback/google`.
+- Treat the session cookie as unreadable. Script cannot see an `HttpOnly` cookie: ask the API (`GET /api/auth/get-session`) who is signed in.
 
-**Cookie scope in production.** The session cookie Better Auth sets is `SameSite=Lax`, so the browser only attaches it to requests that are same-site with the page that set it. In production this means the browser must reach the API on the same site as the frontend — there are two ways to arrange that:
-
-1. **The SvelteKit server proxies `/api/auth/*` and `/v1/*` to the API (recommended).** The browser only ever talks to the frontend's own origin; the SvelteKit server forwards those paths to the API over a trusted, server-to-server connection. `credentials: "include"` is not needed for this path, since the request never leaves the app's origin from the browser's point of view.
-2. **The frontend and the API share a custom domain** (e.g. `app.example.com` and `api.example.com`, both under `example.com` with matching `SameSite=Lax` eligibility), so the cookie set by the API is still sent on requests the browser makes to the frontend's origin family.
-
-A cross-site call straight to the raw `*.run.app` Cloud Run URL (a different site from the frontend's origin) will not carry the cookie, regardless of `credentials: "include"` or CORS configuration — `SameSite=Lax` blocks it at the browser level before CORS is even evaluated.
-
-Local development (`http://localhost:5173` calling `http://localhost:8787`) is same-site (same registrable domain, different port), so `credentials: "include"` works there with no proxy needed.
+The proxy passes `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host`, and streams Server-Sent Events and uploads without buffering. `/dev/*` is proxied too, for the development upload page and signed local blob URLs; the API does not mount it in production.
 
 ```http
 GET /v1/me HTTP/1.1
-Host: localhost:8787
+Host: localhost:5173
 Cookie: maester.session_token=<opaque-session-value>
 ```
 
 ## 2. Authentication endpoints
 
-Authentication is [Better Auth](https://www.better-auth.com/) mounted at `/api/auth/*` with the email/password provider enabled. Use its Svelte client (`better-auth/svelte`) to call these rather than hand-rolling `fetch` calls — the client manages the cookie and exposes a reactive session store. The raw HTTP shapes are:
+Authentication is [Better Auth](https://www.better-auth.com/) mounted at `/api/auth/*`, with Google and email/password with email confirmation enabled, behind a waitlist (see [sign-in](../../docs/SIGN_IN.md)). Use its Svelte client (`better-auth/svelte`) to call these rather than hand-rolling `fetch` calls — the client manages the cookie and exposes a reactive session store.
+
+The endpoints the web uses, all under `/api/auth`:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/sign-in/social` | Start Google sign-in; returns the Google URL to go to |
+| GET | `/callback/google` | Google returns here; Better Auth sets the session and redirects |
+| POST | `/sign-in/email` | Email and password sign-in |
+| POST | `/sign-up/email` | Create an account for an approved email |
+| GET | `/verify-email` | The emailed confirmation link |
+| POST | `/send-verification-email` | Send a fresh confirmation link |
+| POST | `/request-password-reset` | Email a reset link |
+| POST | `/reset-password` | Set a new password with the emailed token |
+| GET | `/get-session` | The current session, or `null` |
+| POST | `/sign-out` | End the session |
+
+The raw HTTP shapes of the main calls:
+
+```http
+POST /api/auth/sign-in/social
+Content-Type: application/json
+
+{ "provider": "google", "callbackURL": "/terminal", "errorCallbackURL": "/login" }
+```
 
 ```http
 POST /api/auth/sign-up/email
 Content-Type: application/json
 
-{ "name": "Dev User", "email": "dev@example.com", "password": "correct-horse-battery" }
+{ "name": "Dev User", "email": "dev@example.com", "password": "correct-horse-battery", "callbackURL": "/verify-email" }
 ```
 
 ```http
 POST /api/auth/sign-in/email
 Content-Type: application/json
 
-{ "email": "dev@example.com", "password": "correct-horse-battery" }
+{ "email": "dev@example.com", "password": "correct-horse-battery", "callbackURL": "/verify-email" }
 ```
 
 ```http
@@ -57,9 +74,23 @@ POST /api/auth/sign-out
 GET /api/auth/get-session
 ```
 
-`sign-up` and `sign-in` set the `maester.session_token` cookie on a successful response; `sign-out` clears it. `get-session` returns the current session (or `null`) using whatever cookie is attached to the request. The API creates a personal workspace for the new user during sign-up itself — call `GET /v1/me` after the session is established to read it.
+A successful sign-in sets the `maester.session_token` cookie (`__Secure-maester.session_token` in production); `sign-out` clears it. `get-session` returns the current session (or `null`) using whatever cookie is attached to the request. The API creates a personal workspace for the new user during account creation itself — call `GET /v1/me` after the session is established to read it. Passwords are at least 8 characters, and confirmation and reset links last one hour; a reset link works once.
 
-These four are the only endpoints the frontend calls directly on `/api/auth/*`; everything else in this guide is under `/v1`.
+**Email sign-up never reveals the waitlist.** A sign-up for an email that is not approved answers the same `200` as one that is. It records a pending waitlist row and creates no user, so no error code distinguishes the two, and an approved address is the only one that is sent a confirmation link. Sign-in with an unconfirmed email answers `403 EMAIL_NOT_VERIFIED` and sends a fresh link. A sign-up for an address that already has an account answers the same `200` too, changes nothing, and emails the owner instead.
+
+**Google-callback errors.** When Google sign-in cannot finish, Better Auth redirects to the `errorCallbackURL` with `?error=<code>`:
+
+| Code | Meaning |
+| --- | --- |
+| `WAITLISTED` | The Google email is not approved. It is recorded as pending, and no account, session or workspace is created. A Google-callback code only: email sign-up never returns it |
+| `GOOGLE_EMAIL_NOT_VERIFIED` | Google has not verified the email on the Google account; nothing is linked or created |
+| `access_denied` | The person cancelled at Google |
+
+Any other `?error=` value is a generic failure. Treat unknown codes as such and never show the raw string.
+
+The JSON endpoints answer other Better Auth codes the web maps to copy: `INVALID_EMAIL_OR_PASSWORD` (401), `EMAIL_NOT_VERIFIED` (403), `INVALID_TOKEN` and `TOKEN_EXPIRED` (an expired confirmation link, or an expired or used reset link), and `429` when the auth rate limit is hit.
+
+Everything else in this guide is under `/v1`.
 
 ## 3. Error envelope
 
@@ -105,11 +136,17 @@ All routes below except `/healthz` and `/api/auth/*` are under `/v1` and require
 | GET | `/v1/me` | Current user and their workspace memberships |
 | GET | `/v1/workspaces` | Workspaces the caller belongs to |
 | GET | `/v1/workspaces/{ws}` | One workspace's detail |
-| POST | `/v1/workspaces/{ws}/documents/uploads` | Create a pending document and a signed upload URL |
+| POST | `/v1/workspaces/{ws}/companies` | Create a company in the workspace |
+| GET | `/v1/workspaces/{ws}/companies` | List companies (cursor pagination) |
+| GET | `/v1/workspaces/{ws}/companies/{id}` | One company |
+| POST | `/v1/workspaces/{ws}/documents/uploads` | Create a pending document for a company and a signed upload URL |
 | POST | `/v1/workspaces/{ws}/documents/{id}/finalize` | Mark a document uploaded and enqueue verification |
 | GET | `/v1/workspaces/{ws}/documents` | List documents (cursor pagination) |
 | GET | `/v1/workspaces/{ws}/documents/{id}` | Document detail, including its latest job |
 | GET | `/v1/workspaces/{ws}/documents/{id}/download` | Signed, time-limited read URL |
+| POST | `/v1/workspaces/{ws}/documents/{id}/extract` | Enqueue a new extraction of a stored document |
+| GET | `/v1/workspaces/{ws}/documents/{id}/extraction` | The latest extraction revision and its checks |
+| GET | `/v1/workspaces/{ws}/documents/{id}/facts` | A revision's facts with page references |
 | GET | `/v1/workspaces/{ws}/jobs/{id}` | Job state |
 | POST | `/v1/workspaces/{ws}/jobs/{id}/retry` | Re-enqueue a `failed` or stuck `queued` job |
 | GET | `/v1/workspaces/{ws}/jobs/{id}/events` | Server-Sent Events stream of job progress (see §6) |
@@ -145,6 +182,28 @@ All routes below except `/healthz` and `/api/auth/*` are under `/v1` and require
 }
 ```
 
+### `POST /v1/workspaces/{ws}/companies`
+
+Every document belongs to a company the user chose. Names are unique per workspace, ignoring case (`409 CONFLICT` otherwise); `country` is an ISO 3166-1 alpha-2 code.
+
+<!-- schema: CreateCompanyRequest -->
+```json
+{ "displayName": "Synthetic Industries Limited", "country": "IN" }
+```
+
+Response (`201 Created`), also the shape of `GET …/companies/{id}` and of each item of `GET …/companies`:
+
+<!-- schema: Company -->
+```json
+{
+  "id": "c0a8012e-5b6f-4c3d-9e2a-1f0b2c3d4e5f",
+  "workspaceId": "3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f",
+  "displayName": "Synthetic Industries Limited",
+  "country": "IN",
+  "createdAt": "2026-09-10T08:14:00Z"
+}
+```
+
 ### `POST /v1/workspaces/{ws}/documents/uploads`
 
 Request:
@@ -152,6 +211,7 @@ Request:
 <!-- schema: CreateUploadRequest -->
 ```json
 {
+  "companyId": "c0a8012e-5b6f-4c3d-9e2a-1f0b2c3d4e5f",
   "originalName": "fy24-annual-report.pdf",
   "size": 245678,
   "mimeType": "application/pdf"
@@ -166,6 +226,7 @@ Response (`201 Created`):
   "document": {
     "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
     "workspaceId": "3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f",
+    "companyId": "c0a8012e-5b6f-4c3d-9e2a-1f0b2c3d4e5f",
     "originalName": "fy24-annual-report.pdf",
     "declaredSize": 245678,
     "declaredMime": "application/pdf",
@@ -196,6 +257,7 @@ No request body. Response:
   "document": {
     "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
     "workspaceId": "3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f",
+    "companyId": "c0a8012e-5b6f-4c3d-9e2a-1f0b2c3d4e5f",
     "originalName": "fy24-annual-report.pdf",
     "declaredSize": 245678,
     "declaredMime": "application/pdf",
@@ -254,6 +316,7 @@ A document once verification has finished, with its terminal job attached:
 {
   "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
   "workspaceId": "3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f",
+  "companyId": "c0a8012e-5b6f-4c3d-9e2a-1f0b2c3d4e5f",
   "originalName": "fy24-annual-report.pdf",
   "declaredSize": 245678,
   "declaredMime": "application/pdf",
@@ -298,6 +361,96 @@ Only valid once the document is `stored`; otherwise `409 INVALID_STATE`.
 }
 ```
 
+### Extraction: `POST …/documents/{id}/extract`, `GET …/extraction`, `GET …/facts`
+
+When a document is verified and extraction is enabled, the worker runs a `document.extract` job automatically; `POST …/extract` runs another (`202`, body `ExtractResponse` with the new `job`, which can be followed over SSE like any job). Only `stored` documents can be extracted (`409 INVALID_STATE` otherwise). Every successful run creates a new, immutable revision; the latest one is current.
+
+`GET …/extraction` returns the latest revision and its arithmetic checks (`404` before the first extraction). `coverage` lists each statement found, its 0-based page indexes and whether it was extracted; `state` is `partial` when any statement failed.
+
+<!-- schema: DocumentExtraction -->
+```json
+{
+  "revision": {
+    "id": "5d1f6a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b",
+    "documentId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "jobId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+    "state": "complete",
+    "pipelineVersion": "extract-1",
+    "model": "gemini-2.5-pro",
+    "promptVersion": "55d5e28e6e4b",
+    "pageCount": 120,
+    "companyNameAsPrinted": "SYNTHETIC INDUSTRIES LIMITED",
+    "coverage": [{ "statement": "balance_sheet", "basis": "consolidated", "pages": [41, 42], "status": "extracted", "message": null }],
+    "warnings": [],
+    "createdAt": "2026-09-10T08:18:00Z"
+  },
+  "checks": [
+    {
+      "id": "8e9f0a1b-2c3d-4e5f-9a0b-1c2d3e4f5a6b",
+      "checkType": "subtotal",
+      "statement": "balance_sheet",
+      "basis": "consolidated",
+      "section": "Assets",
+      "periodLabel": "As at 31 March 2026",
+      "subjectLabel": "Total assets",
+      "status": "passed",
+      "expected": "120956.50",
+      "actual": "120956.50",
+      "detail": "components sum to the subtotal"
+    }
+  ]
+}
+```
+
+`GET …/facts?revisionId=` returns one revision's facts (the latest by default). Each fact keeps the value exactly as printed (`reportedText`), its parsed decimal (`reportedValue`, `null` for a dash or unparseable text, see `valueStatus`), the unit and scale, and `normalizedValue` in actual currency units when the unit is recognised. `periodEnd` (income and cash flow) or `asOfDate` (balance sheet) is set only when the period label names an unambiguous date. `source.pageIndex` is the 0-based page of the original PDF; `source.textLayerMatch` says whether the value was found in that page's text (`null` for a scanned page). All decimals are strings.
+
+<!-- schema: DocumentFacts -->
+```json
+{
+  "revision": {
+    "id": "5d1f6a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b",
+    "documentId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "jobId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+    "state": "complete",
+    "pipelineVersion": "extract-1",
+    "model": "gemini-2.5-pro",
+    "promptVersion": "55d5e28e6e4b",
+    "pageCount": 120,
+    "companyNameAsPrinted": "SYNTHETIC INDUSTRIES LIMITED",
+    "coverage": [{ "statement": "balance_sheet", "basis": "consolidated", "pages": [41, 42], "status": "extracted", "message": null }],
+    "warnings": [],
+    "createdAt": "2026-09-10T08:18:00Z"
+  },
+  "facts": [
+    {
+      "id": "0f1e2d3c-4b5a-4968-8776-655443322110",
+      "revisionId": "5d1f6a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b",
+      "companyId": "c0a8012e-5b6f-4c3d-9e2a-1f0b2c3d4e5f",
+      "statement": "balance_sheet",
+      "basis": "consolidated",
+      "section": "Assets",
+      "lineOrder": 0,
+      "reportedLabel": "Cash and cash equivalents",
+      "isSubtotal": false,
+      "componentLabels": [],
+      "periodLabel": "As at 31 March 2026",
+      "periodEnd": null,
+      "asOfDate": "2026-03-31",
+      "reportedText": "1,23,456.50",
+      "reportedValue": "123456.50",
+      "valueStatus": "value",
+      "unitLabel": "₹ in crores",
+      "scaleFactor": "10000000",
+      "currency": "INR",
+      "normalizedValue": "1234565000000.00",
+      "source": { "documentId": "7c9e6679-7425-40de-944b-e07fc1f90ae7", "pageIndex": 41, "textLayerMatch": true }
+    }
+  ]
+}
+```
+
+A failed extract job carries a code in `lastErrorCode`: `EXTRACTOR_NOT_CONFIGURED`, `UNREADABLE_PDF`, `NO_STATEMENTS_FOUND`, `NO_STATEMENTS_EXTRACTED`, `TOO_LARGE_FOR_EXTRACTION`, `MODEL_REQUEST_REJECTED` and `MODEL_CALL_BUDGET_EXCEEDED` fail at once; `MODEL_UNAVAILABLE`, `EXTRACTION_FAILED`, `EXTRACTOR_UNAVAILABLE` and `EXTRACTOR_STREAM_INTERRUPTED` are retried first.
+
 ### `GET /v1/workspaces/{ws}/jobs/{id}` and `POST /v1/workspaces/{ws}/jobs/{id}/retry`
 
 Both return a `Job`:
@@ -324,7 +477,7 @@ Both return a `Job`:
 }
 ```
 
-`lastErrorCode` on a job is one of the worker's own error codes — `HANDLER_ERROR` (the handler threw) or `UNKNOWN_JOB_TYPE` (no handler registered for `job.type`) — not to be confused with a document's `rejectionCode` (`NOT_A_PDF`, `TOO_LARGE`, `OBJECT_MISSING`), which describes why a *document* was rejected, not why a job failed; a rejected document's verify job still `succeeds`, with `result.outcome === "rejected"`.
+`lastErrorCode` on a job is one of the worker's own error codes — `HANDLER_ERROR` (the handler threw), `UNKNOWN_JOB_TYPE` (no handler registered for `job.type`) or an extraction code listed above — not to be confused with a document's `rejectionCode` (`NOT_A_PDF`, `TOO_LARGE`, `OBJECT_MISSING`), which describes why a *document* was rejected, not why a job failed; a rejected document's verify job still `succeeds`, with `result.outcome === "rejected"`.
 
 `retry` only succeeds when the job is `failed` or a `queued` job stuck without a dispatched task; any other state returns `409 INVALID_STATE`. On success it raises `maxAttempts` by 5 (relative to the job's current `attempt`) and resets `finishedAt` and `progress` back to their initial values (`null` and `{}`).
 
@@ -332,7 +485,7 @@ Both return a `Job`:
 
 Uploading and verifying a PDF is a five-step round trip:
 
-1. **Create the upload.** `POST /v1/workspaces/{ws}/documents/uploads` with `CreateUploadRequest` (`originalName`, `size`, `mimeType: "application/pdf"`). The response's `document` is `pending_upload`; `upload` carries a signed `PUT` URL, the exact headers required, and an expiry.
+1. **Create the upload.** `POST /v1/workspaces/{ws}/documents/uploads` with `CreateUploadRequest` (`companyId`, `originalName`, `size`, `mimeType: "application/pdf"`). An unknown `companyId` is `400 VALIDATION_FAILED` on that field. The response's `document` is `pending_upload`; `upload` carries a signed `PUT` URL, the exact headers required, and an expiry.
 2. **PUT the bytes.** `fetch(upload.url, { method: "PUT", headers: upload.headers, body: file })` — send *exactly* the headers in `upload.headers` (`Content-Type` and `Content-Length`, in that exact casing — the API returns them as-is) and nothing else; a mismatched header invalidates the signature. Do not send the session cookie or `credentials: "include"` on this request — it goes straight to object storage, not the API.
 3. **Finalize.** `POST /v1/workspaces/{ws}/documents/{id}/finalize` with no body. This confirms the object landed, flips the document to `uploaded`, and enqueues a `document.verify` job. The response is `FinalizeResponse` (`document`, `job`).
 4. **Subscribe to progress.** Open `GET /v1/workspaces/{ws}/jobs/{job.id}/events` (see §6) to watch the job move through `queued` → `running` → `succeeded`/`failed`.
@@ -382,6 +535,7 @@ GET /v1/workspaces/3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f/documents?limit=25
     {
       "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
       "workspaceId": "3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f",
+      "companyId": "c0a8012e-5b6f-4c3d-9e2a-1f0b2c3d4e5f",
       "originalName": "fy24-annual-report.pdf",
       "declaredSize": 245678,
       "declaredMime": "application/pdf",
@@ -411,4 +565,4 @@ import type { Document as DocumentType, Job as JobType, ApiError as ApiErrorType
 const doc = Document.parse(await res.json()); // throws on shape drift
 ```
 
-Every exported schema (`Workspace`, `Membership`, `Me`, `Document`, `CreateUploadRequest`, `CreateUploadResponse`, `FinalizeResponse`, `DownloadResponse`, `Job`, `JobProgress`, `ApiError`, `ErrorCode`, `DocumentVerifyResult`, …) is both a runtime validator and, via `z.infer<typeof X>`, the TypeScript type of the same name — there is no separate `.d.ts` to keep in sync.
+Every exported schema (`Workspace`, `Membership`, `Me`, `Company`, `CreateCompanyRequest`, `Document`, `CreateUploadRequest`, `DocumentExtraction`, `DocumentFacts`, `FinancialFact`, `ExtractorEvent`, `CreateUploadResponse`, `FinalizeResponse`, `DownloadResponse`, `Job`, `JobProgress`, `ApiError`, `ErrorCode`, `DocumentVerifyResult`, …) is both a runtime validator and, via `z.infer<typeof X>`, the TypeScript type of the same name — there is no separate `.d.ts` to keep in sync.

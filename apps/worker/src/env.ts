@@ -14,6 +14,18 @@ const Schema = z.object({
   API_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
   MAX_UPLOAD_BYTES: z.coerce.number().int().default(52428800),
   LEASE_SECONDS: z.coerce.number().int().default(600),
+  // Extraction (apps/extractor). Unset EXTRACTOR_URL disables chaining document.extract after verify.
+  EXTRACTOR_URL: z.url().optional(),
+  EXTRACTOR_AUTH: z.enum(["secret", "oidc"]).default("secret"),
+  EXTRACTOR_SECRET: z.string().optional(),
+  EXTRACTOR_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
+  EXTRACT_MAX_BYTES: z.coerce.number().int().positive().default(31457280),
+  // Needed only to enqueue follow-up jobs through Cloud Tasks.
+  GOOGLE_CLOUD_PROJECT: z.string().min(1).optional(),
+  GOOGLE_CLOUD_LOCATION: z.string().default("asia-south1"),
+  CLOUD_TASKS_QUEUE: z.string().default("maester-jobs"),
+  WORKER_INVOKER_SA: z.string().optional(),
+  TASK_DISPATCH_DEADLINE_SECONDS: z.coerce.number().int().positive().default(1800),
 });
 export type WorkerEnv = z.infer<typeof Schema>;
 
@@ -27,5 +39,10 @@ export function loadWorkerEnv(source: NodeJS.ProcessEnv = process.env): WorkerEn
     throw new Error("STORAGE_DRIVER=disk is a local development driver and is refused in production");
   if (parsed.data.DISPATCH_MODE === "local" && !parsed.data.DISPATCH_SECRET) throw new Error("DISPATCH_SECRET required when DISPATCH_MODE=local");
   if (parsed.data.DISPATCH_MODE === "cloud-tasks" && !parsed.data.API_SERVICE_ACCOUNT_EMAIL) throw new Error("API_SERVICE_ACCOUNT_EMAIL required when DISPATCH_MODE=cloud-tasks");
+  if (parsed.data.EXTRACTOR_URL) {
+    if (parsed.data.EXTRACTOR_AUTH === "secret" && !parsed.data.EXTRACTOR_SECRET) throw new Error("EXTRACTOR_SECRET required when EXTRACTOR_AUTH=secret");
+    if (parsed.data.DISPATCH_MODE === "cloud-tasks" && (!parsed.data.GOOGLE_CLOUD_PROJECT || !parsed.data.WORKER_INVOKER_SA))
+      throw new Error("GOOGLE_CLOUD_PROJECT and WORKER_INVOKER_SA required to enqueue extraction when DISPATCH_MODE=cloud-tasks");
+  }
   return parsed.data;
 }

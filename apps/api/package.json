@@ -17,6 +17,7 @@
     "@hono/zod-validator": "^0.9.0",
     "@maester/contracts": "workspace:*",
     "@maester/db": "workspace:*",
+    "@maester/jobs": "workspace:*",
     "@maester/storage": "workspace:*",
     "better-auth": "^1.7.0",
     "drizzle-orm": "^0.45.2",

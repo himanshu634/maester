@@ -11,6 +11,7 @@ export type RejectionCode = z.infer<typeof RejectionCode>;
 export const Document = z.object({
   id: Uuid,
   workspaceId: Uuid,
+  companyId: Uuid.nullable(),
   originalName: z.string(),
   declaredSize: z.number().int(),
   declaredMime: z.string(),
@@ -25,6 +26,7 @@ export const Document = z.object({
 export type Document = z.infer<typeof Document>;
 
 export const CreateUploadRequest = z.object({
+  companyId: Uuid,
   originalName: z.string().min(1).max(255),
   size: z.number().int().positive(),
   mimeType: z.literal("application/pdf"),

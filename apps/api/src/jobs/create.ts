@@ -1,43 +1,19 @@
 import { and, eq, sql } from "drizzle-orm";
 import { getJob, schema, type Db, type JobRow } from "@maester/db";
+import { createJob as createSharedJob, DEFAULT_MAX_ATTEMPTS, JobScopeConflictError, type CreateJobInput } from "@maester/jobs";
 import type { Dispatcher } from "../dispatch/index.js";
 import { HttpError } from "../errors.js";
 
-export const DEFAULT_MAX_ATTEMPTS = 5;
+export { DEFAULT_MAX_ATTEMPTS };
 export const STUCK_QUEUED_MS = 5 * 60 * 1000;
 
-export async function createJob(
-  db: Db,
-  dispatcher: Dispatcher,
-  input: { workspaceId: string; type: string; subjectType: string; subjectId: string; pipelineVersion?: string },
-): Promise<JobRow> {
-  const idempotencyKey = `${input.type}:${input.subjectId}:${input.pipelineVersion ?? "1"}`;
-  const inserted = await db
-    .insert(schema.job)
-    .values({
-      id: crypto.randomUUID(),
-      workspaceId: input.workspaceId,
-      type: input.type,
-      subjectType: input.subjectType,
-      subjectId: input.subjectId,
-      idempotencyKey,
-      state: "queued",
-      maxAttempts: DEFAULT_MAX_ATTEMPTS,
-    })
-    .onConflictDoNothing({ target: schema.job.idempotencyKey })
-    .returning();
-
-  if (inserted[0]) {
-    await dispatcher.enqueue(inserted[0]);
-    return inserted[0];
+export async function createJob(db: Db, dispatcher: Dispatcher, input: CreateJobInput): Promise<JobRow> {
+  try {
+    return await createSharedJob(db, dispatcher, input);
+  } catch (err) {
+    if (err instanceof JobScopeConflictError) throw new HttpError("CONFLICT", err.message);
+    throw err;
   }
-  const existing = await db
-    .select()
-    .from(schema.job)
-    .where(and(eq(schema.job.idempotencyKey, idempotencyKey), eq(schema.job.workspaceId, input.workspaceId)))
-    .limit(1);
-  if (!existing[0]) throw new HttpError("CONFLICT", "job exists in another scope");
-  return existing[0];
 }
 
 export async function retryJob(db: Db, dispatcher: Dispatcher, workspaceId: string, jobId: string): Promise<JobRow> {

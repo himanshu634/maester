@@ -6,6 +6,13 @@
 # account: uploads are kept on a shared Docker volume by STORAGE_DRIVER=disk,
 # and jobs are dispatched over plain HTTP instead of Cloud Tasks. Nothing here
 # is a deployment template — see infra/README.md for how Maester is deployed.
+#
+# Fact extraction (the extractor service) calls Gemini on Vertex AI, which does
+# need Google Cloud. Without GOOGLE_CLOUD_PROJECT and Application Default
+# Credentials, extract jobs fail with EXTRACTOR_NOT_CONFIGURED and everything
+# else keeps working. To enable it, set in the root .env:
+#   GOOGLE_CLOUD_PROJECT=<your project>
+#   GCLOUD_CONFIG_DIR=<absolute path to ~/.config/gcloud>  (after gcloud auth application-default login)
 name: maester
 
 x-service-build: &api-build
@@ -18,11 +25,17 @@ x-api-env: &api-env
   DATABASE_URL: postgres://maester:maester@postgres:5432/maester
   # 32 characters minimum. Local only; generate a real one for any shared host.
   BETTER_AUTH_SECRET: local-development-secret-change-me-please
-  # The URL the browser uses. Signed upload URLs are built from it.
-  BETTER_AUTH_URL: http://localhost:8787
-  ALLOWED_ORIGINS: http://localhost:8787,http://localhost:5173,http://localhost:4173
+  # The browser's origin. The web container (and `vite dev`) proxy /api/auth, /v1 and
+  # /dev here, so the session cookie and signed local upload URLs are first-party.
+  BETTER_AUTH_URL: http://localhost:5173
+  ALLOWED_ORIGINS: http://localhost:5173,http://localhost:4173
+  # Google sign-in: set both in the root .env to enable it locally.
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
   STORAGE_DRIVER: disk
   STORAGE_DIR: /var/lib/maester/blobs
+  # Confirmation and reset links are written to the api log instead of being sent.
+  MAIL_DRIVER: console
   DISPATCH_MODE: local
   DISPATCH_SECRET: local-dispatch-secret
   WORKER_URL: http://worker:8788
@@ -86,6 +99,8 @@ services:
     environment:
       <<: *api-env
       PORT: 8788
+      EXTRACTOR_URL: http://extractor:8790
+      EXTRACTOR_SECRET: local-extractor-secret
     ports:
       - "8788:8788"
     volumes:
@@ -93,21 +108,54 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      extractor:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8788/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
       interval: 5s
       timeout: 3s
       retries: 12
 
-  # The public pages, built statically and served by nginx. They do not call
-  # the API yet; the working upload flow lives at http://localhost:8787/dev/upload.
+  # Stateless Python service the worker streams PDFs to; it reads them with
+  # Gemini and never touches the database or the blobs volume.
+  extractor:
+    build:
+      context: .
+      dockerfile: apps/extractor/Dockerfile
+    image: maester/extractor:local
+    environment:
+      PORT: 8790
+      EXTRACTOR_SECRET: local-extractor-secret
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      VERTEX_LOCATION: ${VERTEX_LOCATION:-us-central1}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-pro}
+      GOOGLE_APPLICATION_CREDENTIALS: /var/lib/maester/gcloud/application_default_credentials.json
+    volumes:
+      - ${GCLOUD_CONFIG_DIR:-./data/gcloud}:/var/lib/maester/gcloud:ro
+    ports:
+      - "8790:8790"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8790/healthz').status == 200 else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # The web client, served statically by nginx, which proxies /api/auth, /v1 and
+  # /dev to the API. Sign in at http://localhost:5173/login.
   web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
     image: maester/web:local
+    environment:
+      NGINX_RESOLVER: 127.0.0.11
+      API_PROXY_TARGET: http://api:8787
+      API_PROXY_HOST: localhost:5173
     ports:
       - "5173:8080"
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   pgdata:

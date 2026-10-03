@@ -24,6 +24,20 @@ const EnvSchema = z.object({
   MAX_UPLOAD_BYTES: z.coerce.number().int().default(52428800),
   UPLOAD_URL_TTL_SECONDS: z.coerce.number().int().default(900),
   DOWNLOAD_URL_TTL_SECONDS: z.coerce.number().int().default(300),
+  // Google sign-in. An empty string (docker compose passes one when unset) means unset.
+  GOOGLE_CLIENT_ID: z.string().optional().transform((v) => v || undefined),
+  GOOGLE_CLIENT_SECRET: z.string().optional().transform((v) => v || undefined),
+  // The auth rate limiter runs in production; "on" turns it on elsewhere (its own test does).
+  AUTH_RATE_LIMIT: z.enum(["on", "off"]).default("off"),
+  // Proxy addresses or CIDR ranges to skip when reading X-Forwarded-For from the right.
+  TRUSTED_PROXIES: z
+    .string()
+    .default("")
+    .transform((s) => s.split(",").map((x) => x.trim()).filter(Boolean)),
+  // Confirmation and reset mail. "console" logs the message; "resend" sends it.
+  MAIL_DRIVER: z.enum(["console", "resend"]).default("console"),
+  RESEND_API_KEY: z.string().optional().transform((v) => v || undefined),
+  MAIL_FROM: z.string().optional().transform((v) => v || undefined),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -48,6 +62,21 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   }
   if (parsed.data.DISPATCH_MODE === "cloud-tasks" && !parsed.data.GOOGLE_CLOUD_PROJECT) {
     throw new Error("invalid environment: GOOGLE_CLOUD_PROJECT is required when DISPATCH_MODE=cloud-tasks");
+  }
+  if (Boolean(parsed.data.GOOGLE_CLIENT_ID) !== Boolean(parsed.data.GOOGLE_CLIENT_SECRET)) {
+    throw new Error("invalid environment: set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET together");
+  }
+  if (parsed.data.NODE_ENV === "production" && !parsed.data.GOOGLE_CLIENT_ID) {
+    throw new Error("invalid environment: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required in production");
+  }
+  if (parsed.data.NODE_ENV === "production" && parsed.data.TRUSTED_PROXIES.length === 0) {
+    throw new Error("invalid environment: TRUSTED_PROXIES is required in production (the rate limiter cannot tell clients apart without it)");
+  }
+  if (parsed.data.MAIL_DRIVER === "console" && parsed.data.NODE_ENV === "production") {
+    throw new Error("invalid environment: MAIL_DRIVER=console only logs mail and is refused in production");
+  }
+  if (parsed.data.MAIL_DRIVER === "resend" && (!parsed.data.RESEND_API_KEY || !parsed.data.MAIL_FROM)) {
+    throw new Error("invalid environment: RESEND_API_KEY and MAIL_FROM are required when MAIL_DRIVER=resend");
   }
   return parsed.data;
 }

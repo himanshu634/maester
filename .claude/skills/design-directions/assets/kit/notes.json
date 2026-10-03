@@ -1,0 +1,26 @@
+{
+ "rows": [
+  {
+   "title": "Today · the terminal has no overview yet",
+   "note": "Today: /terminal shows a one-line placeholder after the session check (left). Without a session it hands off to /login. There is nothing to measure.\n\nSo the yardstick is the brief:\n• The index page promises a terminal that tells you when a decision is due (\"What a suggestion looks like\").\n• UI spec §4 R1 asks for a snapshot: value, cash, coverage, holdings, allocation, research updates, data issues. No suggestions, no performance chart.\n• PRD: a few repeatable workflows, not a crowded widget dashboard.\n\nEach row below answers that gap differently. Lengths are measured: desktop screens of 900px, phone screens of 844px."
+  },
+  {
+   "title": "A · The snapshot, as specified",
+   "note": "Bet: build UI spec §4 exactly. Figures strip, holdings ledger beside sector bars, research updates beside data to fix.\n\nLength: 1.6 desktop screens, 3.1 phone.\n\nCosts: nothing new beyond the shared shell. Runs on R1 data alone (holdings snapshot, prices you enter, the document library).\n\nWeakness: it answers \"what do I own\", not \"what should I look at\". Nothing on it is the index page's promise.\n\nA3: an empty portfolio. One primary action (import), typing them in as the alternative, a synthetic demo clearly labelled."
+  },
+  {
+   "title": "B · The weekly letter",
+   "note": "Bet: carry the index page's register straight into the terminal. Every band has its label in a left column and reads top to bottom like a letter. The headline is a sentence built from your numbers: \"₹27,03,690 across eight priced holdings. Two things need you this week.\"\n\nLength: 2.5 desktop screens, 3.2 phone. The longest.\n\nCosts: the sentence is a fixed template, not generated text. \"Needs you\" needs two new fields: a review date per holding and a position limit per portfolio.\n\nB3: a quiet week. The sentence says so, and a band lists what was checked."
+  },
+  {
+   "title": "C · Due this week",
+   "note": "Bet: lead with decisions. An inverted \"Due this week\" panel opens the page and turns the index page's suggestion block into the real thing: trigger, evidence, your call. The snapshot sits below it at a lower volume.\n\nLength: 2.1 desktop screens, 2.6 phone.\n\nCosts: the same review-date and limit fields as B, plus a ranking rule. The trigger line that ties a filing number to your thesis needs the watching loop, which is a later release. The R1 version ranks review dates, limit breaches, missing data and new filings.\n\nC3: nothing due. A checked answer that lists what was looked at."
+  },
+  {
+   "title": "D · One ledger",
+   "note": "Bet: the holdings ledger is the overview. One table: weight bars with your limit marked, sector and a \"What needs you\" column. Totals sit on one line above it. No panels and no separate chart.\n\nLength: 1.1 desktop screens, 1.6 phone. The shortest.\n\nCosts: Overview and Holdings become one page, so the rail loses an item. Allocation is a text line, not bars. \"What needs you\" needs the same fields as B and C.\n\nD3: the same ledger at 24 holdings. It holds up, but anything urgent can only be found by scanning one column."
+  }
+ ],
+ "shared": "In every direction:\n• The terminal shell: a 224px rail with R1 items only (Overview, Holdings, Research, Watchlist, Documents, Analyst; Activity and Settings at the bottom), the current page as an ink block, and a 56px header with the portfolio picker and search.\n• Beside every figure: as-of date, price source and currency.\n• Unknown shows as \"—\" and the reason is listed. It is never zero.\n• \"Sector not set\" gets its own dashed bar.\n• Gain counts only the holdings with a known cost, and says how many.\n• One primary action per screen. No performance chart in snapshot mode.\n• Every frame is labelled \"Synthetic example\".\n\nNew to DESIGN.md §5 if built: the terminal shell (rail and context header), the figure strip, ink bars, and a dashed bar for an unknown bucket.",
+ "questions": "Open questions:\n1. Will R1 store a review date per holding and a position limit per portfolio? Yes opens B, C and D. No leaves A.\n2. Should Overview and Holdings stay separate pages? No points to D.\n3. Is the decision panel (C) worth showing before the watching loop exists, given that its trigger line comes later?"
+}

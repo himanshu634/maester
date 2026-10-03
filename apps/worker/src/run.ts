@@ -1,9 +1,11 @@
 import { eq } from "drizzle-orm";
 import { schema, type Db } from "@maester/db";
+import type { Dispatcher } from "@maester/jobs";
 import type { ObjectStore } from "@maester/storage";
 import type { WorkerEnv } from "./env.js";
-import type { JobHandler } from "./jobs/types.js";
-import { acquireLease, completeJob, failAttempt, writeProgress } from "./lease.js";
+import type { ExtractorClient } from "./extractor.js";
+import { JobFailure, type JobHandler } from "./jobs/types.js";
+import { acquireLease, completeJob, failAttempt, renewLease, writeProgress } from "./lease.js";
 import type { Logger } from "./logger.js";
 
 export interface WorkerDeps {
@@ -12,7 +14,12 @@ export interface WorkerDeps {
   logger: Logger;
   env: WorkerEnv;
   handlers: Record<string, JobHandler>;
+  dispatcher: Dispatcher;
+  extractor: ExtractorClient | null;
 }
+
+/** Minimum gap between lease renewals triggered by heartbeat(). */
+export const HEARTBEAT_THROTTLE_MS = 5_000;
 
 export type RunResult = { status: 200 | 409 | 500; body: { jobId: string; outcome: string } };
 
@@ -44,21 +51,31 @@ export async function runJob(deps: WorkerDeps, type: string, jobId: string): Pro
 
   try {
     log.info({ attempt: job.attempt }, "job started");
+    let lastRenewal = Date.now();
     const result = await handler(job, {
       db: deps.db,
       store: deps.store,
       logger: log,
       env: deps.env,
+      dispatcher: deps.dispatcher,
+      extractor: deps.extractor,
       progress: (p) => writeProgress(deps.db, job.id, leaseToken, p),
+      heartbeat: async () => {
+        if (Date.now() - lastRenewal < HEARTBEAT_THROTTLE_MS) return;
+        lastRenewal = Date.now();
+        await renewLease(deps.db, job.id, leaseToken, deps.env.LEASE_SECONDS);
+      },
     });
     const ok = await completeJob(deps.db, job.id, leaseToken, result ?? null);
     log.info({ durationMs: Date.now() - startedAt, ok }, "job succeeded");
     return { status: 200, body: { jobId, outcome: ok ? "succeeded" : "lease_lost" } };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    const final = job.attempt >= job.maxAttempts;
-    await failAttempt(deps.db, job, leaseToken, { code: "HANDLER_ERROR", message }, final);
-    log.error({ durationMs: Date.now() - startedAt, attempt: job.attempt, final, err: message }, "job attempt failed");
+    const code = err instanceof JobFailure ? err.code : "HANDLER_ERROR";
+    const permanent = err instanceof JobFailure && !err.retryable;
+    const final = permanent || job.attempt >= job.maxAttempts;
+    await failAttempt(deps.db, job, leaseToken, { code, message }, final);
+    log.error({ durationMs: Date.now() - startedAt, attempt: job.attempt, final, code, err: message }, "job attempt failed");
     return final ? { status: 200, body: { jobId, outcome: "failed" } } : { status: 500, body: { jobId, outcome: "retry" } };
   }
 }
