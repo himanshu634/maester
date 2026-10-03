@@ -10,10 +10,23 @@ describe("mail templates", () => {
     expect(m.text).toContain("http://localhost:5173/api/auth/verify-email?token=t");
     expect(m.text).toContain("one hour");
     expect(m.html).toContain('href="http://localhost:5173/api/auth/verify-email?token=t"');
+    expect(m.text).toContain("Someone asked to open a Maester account with this email address.");
+    expect(m.text).toContain("If it wasn't you");
   });
 
-  it("escape the name in HTML", () => {
-    expect(resetPassword({ name: "<b>x</b>", url: "http://x/r" }).html).not.toContain("<b>x</b>");
+  it("never include the name the person signed up with", () => {
+    for (const template of [confirmEmail, resetPassword]) {
+      const m = template({ name: "Meera", url: "http://x/r" });
+      expect(m.text).not.toContain("Meera");
+      expect(m.html).not.toContain("Meera");
+      expect(m.text).toContain("Hello,");
+    }
+  });
+
+  it("escape the URL inside the href", () => {
+    const html = resetPassword({ name: "x", url: 'http://x/r?a="b"&c=d' }).html;
+    expect(html).toContain('href="http://x/r?a=&quot;b&quot;&amp;c=d"');
+    expect(html).not.toContain('a="b"');
   });
 });
 

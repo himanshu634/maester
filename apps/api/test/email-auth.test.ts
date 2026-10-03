@@ -65,6 +65,18 @@ describe("password reset", () => {
     expect((await post("/api/auth/sign-in/email", { email: "reset@example.com", password: "a-new-long-password" })).status).toBe(200);
   });
 
+  it("refuses a reset link used a second time and keeps the first new password", async () => {
+    await ctx.signUp("reuse@example.com");
+    await post("/api/auth/request-password-reset", { email: "reuse@example.com", redirectTo: "/reset-password" });
+    const landing = await ctx.app.request(pathOf(linkIn((await ctx.mailer.waitFor("reuse@example.com")).text)));
+    const token = new URL(landing.headers.get("location")!, "http://localhost").searchParams.get("token")!;
+    expect((await post("/api/auth/reset-password", { newPassword: "first-new-password", token })).status).toBe(200);
+    expect((await post("/api/auth/reset-password", { newPassword: "second-new-password", token })).status).not.toBe(200);
+
+    expect((await post("/api/auth/sign-in/email", { email: "reuse@example.com", password: "second-new-password" })).status).not.toBe(200);
+    expect((await post("/api/auth/sign-in/email", { email: "reuse@example.com", password: "first-new-password" })).status).toBe(200);
+  });
+
   it("answers the same for an email with no account", async () => {
     const res = await post("/api/auth/request-password-reset", { email: "nobody@example.com", redirectTo: "/reset-password" });
     expect(res.status).toBe(200);
@@ -122,14 +134,17 @@ describe("rate limit", () => {
   it("answers 429 after five sign-in attempts a minute from one address", async () => {
     const limited = await createTestContext({ AUTH_RATE_LIMIT: "on" });
     try {
-      const attempt = () =>
+      const attempt = (address = "203.0.113.9") =>
         limited.app.request("/api/auth/sign-in/email", {
           method: "POST",
-          headers: { "content-type": "application/json", origin: "http://localhost", "x-forwarded-for": "203.0.113.9" },
+          headers: { "content-type": "application/json", origin: "http://localhost", "x-forwarded-for": address },
           body: JSON.stringify({ email: "x@example.com", password: "wrong-password" }),
         });
       for (let i = 0; i < 5; i++) expect((await attempt()).status).not.toBe(429);
       expect((await attempt()).status).toBe(429);
+      // The bucket is per address: another forwarded address is not limited yet.
+      const other = await attempt("198.51.100.7");
+      expect(other.status).not.toBe(429);
     } finally {
       await limited.close();
     }
