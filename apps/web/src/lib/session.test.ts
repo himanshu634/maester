@@ -17,9 +17,16 @@ describe('safeNext', () => {
 		'/%2F%2Fevil.com',
 		'/%5Cevil.com',
 		'javascript:alert(1)',
-		'/login\nSet-Cookie: x=1'
+		'/login\nSet-Cookie: x=1',
+		'/%0d%0aX'
 	])('falls back for %j', (candidate) => {
 		expect(safeNext(candidate)).toBe('/terminal');
+	});
+
+	it('keeps a doubly encoded path on this site', () => {
+		// Decoded once it is "/%2F%2Fevil.com", a path on this site; the browser never
+		// decodes it twice.
+		expect(safeNext('/%252F%252Fevil.com')).toBe('/%252F%252Fevil.com');
 	});
 
 	it('uses the given fallback', () => {
