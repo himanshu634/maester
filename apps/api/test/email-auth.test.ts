@@ -131,6 +131,19 @@ describe("sign-up for an address that already has an account", () => {
     expect(mails[0]!.text).toContain("waiting to be confirmed");
     expect(mails[0]!.text).toContain("The password just chosen was not saved.");
     expect(mails[0]!.text).toContain("http://localhost/forgot-password");
+
+    // What the email promises: a reset replaces the earlier password, and only confirming
+    // the address remains.
+    expect((await post("/api/auth/request-password-reset", { email: "waiting@example.com", redirectTo: "/reset-password" })).status).toBe(200);
+    const reset = await waitForMail("waiting@example.com", "Reset your Maester password");
+    expect(reset).toHaveLength(1);
+    const landing = await ctx.app.request(pathOf(linkIn(reset[0]!.text)));
+    const token = new URL(landing.headers.get("location")!, "http://localhost").searchParams.get("token")!;
+    expect((await post("/api/auth/reset-password", { newPassword: "owner-chosen-password", token })).status).toBe(200);
+    expect((await post("/api/auth/sign-in/email", { email: "waiting@example.com", password: "first-password" })).status).toBe(401);
+    const owner = await post("/api/auth/sign-in/email", { email: "waiting@example.com", password: "owner-chosen-password" });
+    expect(owner.status).toBe(403);
+    expect(((await owner.json()) as { code: string }).code).toBe("EMAIL_NOT_VERIFIED");
   });
 });
 
