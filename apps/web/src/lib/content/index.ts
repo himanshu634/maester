@@ -8,8 +8,12 @@
  */
 import type { Pathname } from '$app/types';
 
-/** Internal destinations only: a known route, optionally with a search string or fragment. */
-export type Href = Pathname | `${Pathname}?${string}` | `${Pathname}#${string}`;
+/**
+ * Internal destinations only: the index page and its sections, or the terminal. Kept to the few
+ * routes the public copy links to, because resolve() cannot take a union of every route once
+ * there are more than 25 (the compiler stops matching the argument against its overloads).
+ */
+export type Href = Extract<Pathname, '/' | '/terminal'> | `/#${string}`;
 
 export interface Link {
 	label: string;

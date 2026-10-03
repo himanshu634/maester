@@ -23,6 +23,9 @@
 	onMount(async () => {
 		next = safeNext(page.url.searchParams.get('next'));
 		message = messageFor(page.url.searchParams.get('error'));
+		// Back from /reset-password. The status line is the one live region; no Notice, so it is
+		// announced once.
+		if (page.url.searchParams.get('reset') === 'done') status = copy.login.passwordChanged;
 		const session = await readSession(authClient());
 		if (session.status === 'signed-in') {
 			status = copy.login.alreadySignedIn;
@@ -158,8 +161,7 @@
 		{#if message}
 			<Notice title={message.title}>
 				{#if message.kind === 'wrong-password'}
-					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- /forgot-password arrives in Task 11; resolve() cannot type a route that does not exist yet -->
-					<p>Try again, or <a href="/forgot-password">reset your password</a>.</p>
+					<p>Try again, or <a href={resolve('/forgot-password')}>reset your password</a>.</p>
 				{:else if message.kind === 'not-verified'}
 					<p>{message.body}</p>
 					<button class="button outline" type="button" disabled={resending} onclick={resend}>
@@ -199,8 +201,7 @@
 				<button class="button outline" type="submit" disabled={submitting}>
 					{submitting ? copy.login.signingIn : copy.login.signIn}
 				</button>
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- /forgot-password arrives in Task 11 -->
-				<a href="/forgot-password">{copy.login.forgot}</a>
+				<a href={resolve('/forgot-password')}>{copy.login.forgot}</a>
 			</div>
 		</form>
 		<p class="status" id="login-status" role="status" aria-live="polite">{status}</p>

@@ -23,7 +23,32 @@ export const authContent = {
 		forgot: 'Forgot your password?',
 		resend: 'Send the link again',
 		resending: 'Sending…',
-		resent: 'Sent. Check your email for a new link.'
+		resent: 'Sent. Check your email for a new link.',
+		passwordChanged: 'Password changed. Sign in with your new password.'
+	},
+	forgot: {
+		title: 'Reset your password. Maester',
+		heading: 'Reset your password',
+		lede: 'Enter the email you sign in with. We’ll send a link to set a new password.',
+		send: 'Send reset link',
+		sending: 'Sending…',
+		// The same words whether or not the address has an account.
+		sentTitle: 'Check your email',
+		sent: (email: string) =>
+			`If ${email} has a Maester account, a reset link is on its way. It works for one hour.`,
+		failedTitle: 'We couldn’t send the link',
+		backToSignIn: 'Back to sign in'
+	},
+	reset: {
+		title: 'Set a new password. Maester',
+		heading: 'Set a new password',
+		newPassword: 'New password',
+		set: 'Set new password',
+		setting: 'Saving…',
+		failedTitle: 'We couldn’t save your password',
+		expiredHeading: 'This reset link has expired',
+		expiredLede: 'Reset links work once, for one hour.',
+		requestNew: 'Request a new link'
 	},
 	waitlisted: {
 		heading: 'You’re on the list',

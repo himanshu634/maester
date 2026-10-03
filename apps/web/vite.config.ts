@@ -25,14 +25,6 @@ export default defineConfig({
 				precompress: false,
 				strict: true
 			}),
-			prerender: {
-				// TEMPORARY: /login and /signup link to /forgot-password, which Task 11 adds. Remove
-				// this hook once it exists; any other broken link still fails the build.
-				handleHttpError: ({ path, referrer, message }) => {
-					if (['/login', '/signup'].includes(referrer ?? '') && path === '/forgot-password') return;
-					throw new Error(message);
-				}
-			},
 			paths: {
 				// Served at the domain root. Set BASE_PATH="/some-prefix" only for sub-path hosts.
 				base: (process.env.BASE_PATH as '' | `/${string}` | undefined) ?? ''
