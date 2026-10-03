@@ -8,7 +8,7 @@ import { Document, Job, ApiError } from "@maester/contracts";
 
 ## 1. Origins, cookies and CORS
 
-The browser talks to one origin, the web origin. In development `vite dev` and `vite preview`, and in production the web container's nginx, proxy `/api/auth/*`, `/v1/*` and `/dev/*` to the API. Better Auth sets an `HttpOnly` cookie named `maester.session_token` (cookie prefix `maester`) on that origin, so the cookie is first-party and the browser sends it on every call to the web origin. This is how Maester runs, locally (`http://localhost:5173`, proxying to the API on `:8787`) and deployed.
+The browser talks to one origin, the web origin. In development `vite dev` and `vite preview`, and in production the web container's nginx, proxy `/api/auth/*`, `/v1/*` and `/dev/*` to the API. Better Auth sets an `HttpOnly` cookie named `maester.session_token` (cookie prefix `maester`) on that origin; in production it is `__Secure-maester.session_token`, `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, because secure cookies add the `__Secure-` prefix. The cookie is first-party and the browser sends it on every call to the web origin. This is how Maester runs, locally (`http://localhost:5173`, proxying to the API on `:8787`) and deployed.
 
 Any browser client must:
 
@@ -74,9 +74,9 @@ POST /api/auth/sign-out
 GET /api/auth/get-session
 ```
 
-A successful sign-in sets the `maester.session_token` cookie; `sign-out` clears it. `get-session` returns the current session (or `null`) using whatever cookie is attached to the request. The API creates a personal workspace for the new user during account creation itself — call `GET /v1/me` after the session is established to read it. Passwords are at least 8 characters, and confirmation and reset links last one hour; a reset link works once.
+A successful sign-in sets the `maester.session_token` cookie (`__Secure-maester.session_token` in production); `sign-out` clears it. `get-session` returns the current session (or `null`) using whatever cookie is attached to the request. The API creates a personal workspace for the new user during account creation itself — call `GET /v1/me` after the session is established to read it. Passwords are at least 8 characters, and confirmation and reset links last one hour; a reset link works once.
 
-**Email sign-up never reveals the waitlist.** A sign-up for an email that is not approved answers the same `200` as one that is. It records a pending waitlist row and creates no user, so no error code distinguishes the two, and an approved address is the only one that is sent a confirmation link. Sign-in with an unconfirmed email answers `403 EMAIL_NOT_VERIFIED` and sends a fresh link.
+**Email sign-up never reveals the waitlist.** A sign-up for an email that is not approved answers the same `200` as one that is. It records a pending waitlist row and creates no user, so no error code distinguishes the two, and an approved address is the only one that is sent a confirmation link. Sign-in with an unconfirmed email answers `403 EMAIL_NOT_VERIFIED` and sends a fresh link. A sign-up for an address that already has an account answers the same `200` too, changes nothing, and emails the owner instead.
 
 **Google-callback errors.** When Google sign-in cannot finish, Better Auth redirects to the `errorCallbackURL` with `?error=<code>`:
 
