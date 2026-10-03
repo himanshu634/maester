@@ -52,10 +52,9 @@
 		try {
 			// eslint-disable-next-line svelte/no-navigation-without-resolve -- same page, same origin: only the query string changes
 			replaceState(cleaned, page.state);
-		} catch (cause) {
-			// Only the router-not-started case falls back; anything else is a real error.
-			if (!(cause instanceof Error) || !cause.message.includes('before router is initialized'))
-				throw cause;
+		} catch {
+			// SvelteKit throws if its router has not started yet. Whatever the reason, the token
+			// must still leave the address bar, so fall back to the browser's own history API.
 			history.replaceState(history.state, '', cleaned);
 		}
 		expiredHeading?.focus();
