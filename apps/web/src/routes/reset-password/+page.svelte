@@ -25,6 +25,14 @@
 	let saving = $state(false);
 	let status = $state('');
 	let message = $state<AuthMessage | null>(null);
+	let expiredHeading = $state<HTMLHeadingElement>();
+
+	/** Switch to the expired view and put focus on its heading, so the change is announced. */
+	async function showExpired() {
+		expired = true;
+		await tick();
+		expiredHeading?.focus();
+	}
 
 	onMount(async () => {
 		const params = page.url.searchParams;
@@ -44,10 +52,13 @@
 		try {
 			// eslint-disable-next-line svelte/no-navigation-without-resolve -- same page, same origin: only the query string changes
 			replaceState(cleaned, page.state);
-		} catch {
-			// The router is not ready yet.
+		} catch (cause) {
+			// Only the router-not-started case falls back; anything else is a real error.
+			if (!(cause instanceof Error) || !cause.message.includes('before router is initialized'))
+				throw cause;
 			history.replaceState(history.state, '', cleaned);
 		}
+		expiredHeading?.focus();
 	});
 
 	async function save(event: SubmitEvent) {
@@ -61,7 +72,7 @@
 			return;
 		}
 		if (!token) {
-			expired = true;
+			await showExpired();
 			return;
 		}
 		saving = true;
@@ -73,10 +84,10 @@
 			});
 			if (failure) {
 				const shown = messageFor(failure.code || 'generic', failure.status);
-				if (shown?.kind === 'link-expired') expired = true;
-				else message = shown;
 				saving = false;
 				status = '';
+				if (shown?.kind === 'link-expired') await showExpired();
+				else message = shown;
 				return;
 			}
 		} catch {
@@ -106,7 +117,7 @@
 
 <AuthLayout>
 	{#if expired}
-		<h1>{copy.reset.expiredHeading}</h1>
+		<h1 tabindex="-1" bind:this={expiredHeading}>{copy.reset.expiredHeading}</h1>
 		<p class="measure">{copy.reset.expiredLede}</p>
 		<p><a class="button" href={resolve('/forgot-password')}>{copy.reset.requestNew}</a></p>
 	{:else}
@@ -116,7 +127,7 @@
 				<p>{message.body}</p>
 			</Notice>
 		{/if}
-		<form class="form" onsubmit={save} novalidate>
+		<form class="form" method="post" onsubmit={save} novalidate>
 			<PasswordField
 				id="password"
 				label={copy.reset.newPassword}

@@ -181,7 +181,7 @@
 			onclick={continueWithGoogle}
 		/>
 		<OrRule label={copy.login.or} />
-		<form class="form" onsubmit={signIn} novalidate>
+		<form class="form" method="post" onsubmit={signIn} novalidate>
 			<TextField
 				id="email"
 				label={copy.login.email}

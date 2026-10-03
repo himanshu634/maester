@@ -68,7 +68,7 @@
 			<p>{message.body}</p>
 		</Notice>
 	{/if}
-	<form class="form" onsubmit={send} novalidate>
+	<form class="form" method="post" onsubmit={send} novalidate>
 		<TextField
 			id="email"
 			label={copy.login.email}

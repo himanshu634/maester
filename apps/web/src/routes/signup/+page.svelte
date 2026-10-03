@@ -161,7 +161,7 @@
 			onclick={continueWithGoogle}
 		/>
 		<OrRule label={copy.signup.or} />
-		<form class="form" onsubmit={create} novalidate>
+		<form class="form" method="post" onsubmit={create} novalidate>
 			<TextField
 				id="name"
 				label={copy.signup.name}
