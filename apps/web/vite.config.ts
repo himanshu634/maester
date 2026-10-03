@@ -25,6 +25,14 @@ export default defineConfig({
 				precompress: false,
 				strict: true
 			}),
+			prerender: {
+				// TEMPORARY: /login links to pages that Tasks 10 and 11 add. Remove this once
+				// /signup and /forgot-password exist; any other broken link still fails the build.
+				handleHttpError: ({ path, referrer, message }) => {
+					if (referrer === '/login' && ['/signup', '/forgot-password'].includes(path)) return;
+					throw new Error(message);
+				}
+			},
 			paths: {
 				// Served at the domain root. Set BASE_PATH="/some-prefix" only for sub-path hosts.
 				base: (process.env.BASE_PATH as '' | `/${string}` | undefined) ?? ''

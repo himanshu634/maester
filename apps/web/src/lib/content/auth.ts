@@ -15,7 +15,15 @@ export const authContent = {
 		createAccount: 'Create an account',
 		back: 'Back to the index page',
 		noScript: 'Signing in needs JavaScript. Turn it on for this site and reload the page.',
-		alreadySignedIn: 'You are already signed in. Taking you to the terminal.'
+		alreadySignedIn: 'You are already signed in. Taking you to the terminal.',
+		email: 'Email',
+		password: 'Password',
+		signIn: 'Sign in',
+		signingIn: 'Signing in…',
+		forgot: 'Forgot your password?',
+		resend: 'Send the link again',
+		resending: 'Sending…',
+		resent: 'Sent. Check your email for a new link.'
 	},
 	waitlisted: {
 		heading: 'You’re on the list',
@@ -40,6 +48,10 @@ export const authContent = {
 		notVerified: {
 			title: 'Confirm your email first',
 			body: 'We sent you a link when you created your account. It works for one hour.'
+		},
+		googleEmailNotVerified: {
+			title: 'Google hasn’t confirmed this email',
+			body: 'Confirm the address with Google, or use another account.'
 		},
 		rateLimited: {
 			title: 'Too many attempts',

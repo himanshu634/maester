@@ -12,6 +12,7 @@ describe('messageFor', () => {
 		['access_denied', 'cancelled'],
 		['INVALID_EMAIL_OR_PASSWORD', 'wrong-password'],
 		['EMAIL_NOT_VERIFIED', 'not-verified'],
+		['GOOGLE_EMAIL_NOT_VERIFIED', 'google-email-not-verified'],
 		['INVALID_TOKEN', 'link-expired'],
 		['TOKEN_EXPIRED', 'link-expired']
 	])('maps %s to %s', (code, kind) => {

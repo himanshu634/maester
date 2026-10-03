@@ -5,6 +5,7 @@ export type AuthMessageKind =
 	| 'cancelled'
 	| 'wrong-password'
 	| 'not-verified'
+	| 'google-email-not-verified'
 	| 'rate-limited'
 	| 'link-expired'
 	| 'generic';
@@ -37,6 +38,8 @@ export function messageFor(code: string | null | undefined, status?: number): Au
 			return { kind: 'wrong-password', ...m.wrongPassword };
 		case 'EMAIL_NOT_VERIFIED':
 			return { kind: 'not-verified', ...m.notVerified };
+		case 'GOOGLE_EMAIL_NOT_VERIFIED':
+			return { kind: 'google-email-not-verified', ...m.googleEmailNotVerified };
 		case 'INVALID_TOKEN':
 		case 'TOKEN_EXPIRED':
 			return { kind: 'link-expired', ...m.linkExpired };
