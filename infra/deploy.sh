@@ -24,6 +24,14 @@ MAIL_FROM="${MAIL_FROM:?set MAIL_FROM, e.g. Maester <hello@your-domain>}"
 TRUSTED_PROXIES="${TRUSTED_PROXIES:-35.191.0.0/16,130.211.0.0/22,169.254.0.0/16}"
 # The browser only talks to the web origin, so it is the only allowed origin.
 ALLOWED_ORIGINS="$WEB_URL"
+# The API's variables are passed with gcloud's ^#^ delimiter (step 3), so a "#" inside one
+# would silently split it. Refuse before anything is built.
+for name in MAIL_FROM TRUSTED_PROXIES GOOGLE_CLIENT_ID; do
+  if [[ "${!name}" == *"#"* ]]; then
+    echo "deploy.sh: $name contains '#', which gcloud would read as a variable delimiter. Remove it and run again." >&2
+    exit 1
+  fi
+done
 
 gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
 docker build -f apps/api/Dockerfile -t "$REGISTRY/api:$TAG" .
