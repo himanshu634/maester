@@ -3,7 +3,7 @@
 	connection (design direction C, "The sketchbook"). Public errors use the masthead and the
 	register's rail; errors inside the demo terminal stay in its shell. The play scales down
 	with the stakes: the not-found sketch follows the pointer, the offline plug can be dragged,
-	and inside the terminal the sketches are small and still beside the way out. Nothing moves
+	and inside the terminal the failed-page sketch is small and still; only the offline plug moves there, on a page with no figures. Nothing moves
 	on its own. The build writes this page as 404.html, which the web server serves for any
 	missing address.
 -->

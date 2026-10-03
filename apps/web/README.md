@@ -36,7 +36,7 @@ src/routes/login/+page.svelte        sign-in form; not connected until workspace
 src/routes/+error.svelte             every error page; the build writes it as 404.html for nginx
 src/lib/errors/errors.ts             which error page to show, the connection check
 src/lib/components/errors/           the error sketches, offline banner and section issue
-static/50x.html                      the no-script page nginx serves when the site itself fails
+static/50x.html                      the no-script page nginx serves for its own 5xx responses
 ```
 
 ## Notes
