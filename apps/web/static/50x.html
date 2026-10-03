@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="robots" content="noindex" />
+		<title>Maester isn’t responding. Maester</title>
+		<!--
+			The page nginx serves when the site itself fails (see nginx.conf). It has to work when
+			nothing else does: no script, no motion, no font download, nothing loaded from the app's
+			build. The colours copy src/lib/styles/tokens.css (paper, ink, muted ink) by hand,
+			because this file cannot load it; keep them in step.
+		-->
+		<style>
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				background: #edede8;
+				color: #000000;
+				font-family: 'Helvetica Neue', Arial, sans-serif;
+				font-size: 1.0625rem;
+				line-height: 1.5;
+			}
+			header {
+				padding: 16px 24px;
+				border-bottom: 2px solid #000000;
+			}
+			.wordmark {
+				font-weight: 800;
+				font-size: 1.75rem;
+				letter-spacing: -0.02em;
+				line-height: 1;
+			}
+			main {
+				max-width: 1440px;
+				padding: 48px 24px 56px;
+				display: flex;
+				flex-direction: column;
+				align-items: flex-start;
+				gap: 24px;
+			}
+			.label {
+				margin: 0;
+				font-size: 0.875rem;
+				font-weight: 700;
+			}
+			h1 {
+				margin: 0;
+				font-weight: 800;
+				font-size: clamp(2.75rem, 7.5vw, 6.5rem);
+				line-height: 0.95;
+				letter-spacing: -0.03em;
+			}
+			p {
+				margin: 0;
+				max-width: 68ch;
+			}
+			.button {
+				display: inline-flex;
+				align-items: center;
+				min-height: 44px;
+				padding: 0 24px;
+				border: 2px solid #000000;
+				background: #000000;
+				color: #edede8;
+				font-weight: 700;
+				text-decoration: none;
+			}
+			.button:hover {
+				background: #edede8;
+				color: #000000;
+			}
+			.button:focus-visible {
+				outline: 3px solid #000000;
+				outline-offset: 2px;
+			}
+			@media (min-width: 1024px) {
+				header,
+				main {
+					padding-left: 48px;
+					padding-right: 48px;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<header><span class="wordmark">Maester</span></header>
+		<main>
+			<p class="label">Unavailable</p>
+			<h1>Maester isn’t responding.</h1>
+			<p>
+				Something on our side is down, and it’s ours to fix. Try again in a few minutes.
+			</p>
+			<a class="button" href="">Try again</a>
+		</main>
+	</body>
+</html>
