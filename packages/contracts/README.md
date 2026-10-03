@@ -8,45 +8,62 @@ import { Document, Job, ApiError } from "@maester/contracts";
 
 ## 1. Origins, cookies and CORS
 
-The API is the origin of truth for the session cookie. Better Auth sets an `HttpOnly` cookie named `maester.session_token` (cookie prefix `maester`) scoped to the API's own origin — there is no cross-site cookie sharing.
+The browser talks to one origin, the web origin. In development `vite dev` and `vite preview`, and in production the web container's nginx, proxy `/api/auth/*`, `/v1/*` and `/dev/*` to the API. Better Auth sets an `HttpOnly` cookie named `maester.session_token` (cookie prefix `maester`) on that origin, so the cookie is first-party and the browser sends it on every call to the web origin. This is how Maester runs, locally (`http://localhost:5173`, proxying to the API on `:8787`) and deployed.
 
 Any browser client must:
 
-- Send `credentials: "include"` on every `fetch` call to the API (including the `/api/auth/*` endpoints), so the cookie is attached and, on auth responses, stored.
-- Be served from an origin listed in the API's `ALLOWED_ORIGINS` environment variable. The API only reflects `Access-Control-Allow-Origin` for origins in that list, and always sends `Access-Control-Allow-Credentials: true` for them.
-- `http://localhost:5173` (the default Vite dev server origin) is included in `ALLOWED_ORIGINS` by default in `.env.example`, so a local SvelteKit dev server works against a local API with no extra configuration.
+- Call the web origin with relative URLs (`fetch("/v1/me")`, `authClient` with `baseURL: window.location.origin`). Never call the API's own origin: the raw `*.run.app` URL is a different site from the frontend, and the `SameSite=Lax` session cookie is not sent to it. `credentials: "include"` is harmless but not needed for same-origin calls.
+- Be served from an origin listed in the API's `ALLOWED_ORIGINS` environment variable, which holds the web origin only. Better Auth's `BETTER_AUTH_URL` is the same web origin, so the Google callback is `<web origin>/api/auth/callback/google`.
+- Treat the session cookie as unreadable. Script cannot see an `HttpOnly` cookie: ask the API (`GET /api/auth/get-session`) who is signed in.
 
-**Cookie scope in production.** The session cookie Better Auth sets is `SameSite=Lax`, so the browser only attaches it to requests that are same-site with the page that set it. In production this means the browser must reach the API on the same site as the frontend — there are two ways to arrange that:
-
-1. **The SvelteKit server proxies `/api/auth/*` and `/v1/*` to the API (recommended).** The browser only ever talks to the frontend's own origin; the SvelteKit server forwards those paths to the API over a trusted, server-to-server connection. `credentials: "include"` is not needed for this path, since the request never leaves the app's origin from the browser's point of view.
-2. **The frontend and the API share a custom domain** (e.g. `app.example.com` and `api.example.com`, both under `example.com` with matching `SameSite=Lax` eligibility), so the cookie set by the API is still sent on requests the browser makes to the frontend's origin family.
-
-A cross-site call straight to the raw `*.run.app` Cloud Run URL (a different site from the frontend's origin) will not carry the cookie, regardless of `credentials: "include"` or CORS configuration — `SameSite=Lax` blocks it at the browser level before CORS is even evaluated.
-
-Local development (`http://localhost:5173` calling `http://localhost:8787`) is same-site (same registrable domain, different port), so `credentials: "include"` works there with no proxy needed.
+The proxy passes `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host`, and streams Server-Sent Events and uploads without buffering. `/dev/*` is proxied too, for the development upload page and signed local blob URLs; the API does not mount it in production.
 
 ```http
 GET /v1/me HTTP/1.1
-Host: localhost:8787
+Host: localhost:5173
 Cookie: maester.session_token=<opaque-session-value>
 ```
 
 ## 2. Authentication endpoints
 
-Authentication is [Better Auth](https://www.better-auth.com/) mounted at `/api/auth/*` with the email/password provider enabled. Use its Svelte client (`better-auth/svelte`) to call these rather than hand-rolling `fetch` calls — the client manages the cookie and exposes a reactive session store. The raw HTTP shapes are:
+Authentication is [Better Auth](https://www.better-auth.com/) mounted at `/api/auth/*`, with Google and email/password with email confirmation enabled, behind a waitlist (see [sign-in](../../docs/SIGN_IN.md)). Use its Svelte client (`better-auth/svelte`) to call these rather than hand-rolling `fetch` calls — the client manages the cookie and exposes a reactive session store.
+
+The endpoints the web uses, all under `/api/auth`:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/sign-in/social` | Start Google sign-in; returns the Google URL to go to |
+| GET | `/callback/google` | Google returns here; Better Auth sets the session and redirects |
+| POST | `/sign-in/email` | Email and password sign-in |
+| POST | `/sign-up/email` | Create an account for an approved email |
+| GET | `/verify-email` | The emailed confirmation link |
+| POST | `/send-verification-email` | Send a fresh confirmation link |
+| POST | `/request-password-reset` | Email a reset link |
+| POST | `/reset-password` | Set a new password with the emailed token |
+| GET | `/get-session` | The current session, or `null` |
+| POST | `/sign-out` | End the session |
+
+The raw HTTP shapes of the main calls:
+
+```http
+POST /api/auth/sign-in/social
+Content-Type: application/json
+
+{ "provider": "google", "callbackURL": "/terminal", "errorCallbackURL": "/login" }
+```
 
 ```http
 POST /api/auth/sign-up/email
 Content-Type: application/json
 
-{ "name": "Dev User", "email": "dev@example.com", "password": "correct-horse-battery" }
+{ "name": "Dev User", "email": "dev@example.com", "password": "correct-horse-battery", "callbackURL": "/verify-email" }
 ```
 
 ```http
 POST /api/auth/sign-in/email
 Content-Type: application/json
 
-{ "email": "dev@example.com", "password": "correct-horse-battery" }
+{ "email": "dev@example.com", "password": "correct-horse-battery", "callbackURL": "/verify-email" }
 ```
 
 ```http
@@ -57,9 +74,23 @@ POST /api/auth/sign-out
 GET /api/auth/get-session
 ```
 
-`sign-up` and `sign-in` set the `maester.session_token` cookie on a successful response; `sign-out` clears it. `get-session` returns the current session (or `null`) using whatever cookie is attached to the request. The API creates a personal workspace for the new user during sign-up itself — call `GET /v1/me` after the session is established to read it.
+A successful sign-in sets the `maester.session_token` cookie; `sign-out` clears it. `get-session` returns the current session (or `null`) using whatever cookie is attached to the request. The API creates a personal workspace for the new user during account creation itself — call `GET /v1/me` after the session is established to read it. Passwords are at least 8 characters, and confirmation and reset links last one hour; a reset link works once.
 
-These four are the only endpoints the frontend calls directly on `/api/auth/*`; everything else in this guide is under `/v1`.
+**Email sign-up never reveals the waitlist.** A sign-up for an email that is not approved answers the same `200` as one that is. It records a pending waitlist row and creates no user, so no error code distinguishes the two, and an approved address is the only one that is sent a confirmation link. Sign-in with an unconfirmed email answers `403 EMAIL_NOT_VERIFIED` and sends a fresh link.
+
+**Google-callback errors.** When Google sign-in cannot finish, Better Auth redirects to the `errorCallbackURL` with `?error=<code>`:
+
+| Code | Meaning |
+| --- | --- |
+| `WAITLISTED` | The Google email is not approved. It is recorded as pending, and no account, session or workspace is created. A Google-callback code only: email sign-up never returns it |
+| `GOOGLE_EMAIL_NOT_VERIFIED` | Google has not verified the email on the Google account; nothing is linked or created |
+| `access_denied` | The person cancelled at Google |
+
+Any other `?error=` value is a generic failure. Treat unknown codes as such and never show the raw string.
+
+The JSON endpoints answer other Better Auth codes the web maps to copy: `INVALID_EMAIL_OR_PASSWORD` (401), `EMAIL_NOT_VERIFIED` (403), `INVALID_TOKEN` and `TOKEN_EXPIRED` (an expired confirmation link, or an expired or used reset link), and `429` when the auth rate limit is hit.
+
+Everything else in this guide is under `/v1`.
 
 ## 3. Error envelope
 

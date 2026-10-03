@@ -59,7 +59,7 @@ Product owns scope and release acceptance; Design owns task flows and interactio
 | Launch market | India first; global-capable IDs/currency model | Security directory and broker format selection | Product + Data |
 | Initial assets | Listed cash equities and cash | Ledger design | Product + Data |
 | Initial price mode | Manual dated prices for R1; authorized EOD for R2 | Performance release | Product + Data |
-| Identity provider/hosting region | Not selected; GCP-compatible approach proposed | Hosted user data | Platform |
+| Identity provider/hosting region | Identity provider chosen: Better Auth with Google and email/password, behind a waitlist ([ADR 0005](decisions/0005-sign-in-google-email-waitlist.md)). Hosting region not selected; GCP-compatible approach proposed | Hosted user data | Platform |
 | Market-data provider and permitted uses | No selection or entitlement assumed | F20 and public quote display | Product + Data |
 | Broker import format | Generic CSV plus one actual pilot format | F18 | Data |
 | Accounting conventions | Proposed trade-date treatment, FIFO display, daily TWR, XIRR | F17–F23 fixtures | Backend + financial reviewer |

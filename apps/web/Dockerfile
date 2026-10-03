@@ -9,7 +9,9 @@ COPY apps/web ./
 RUN pnpm build
 
 FROM nginx:1.27-alpine
-# Defaults for Cloud Run; docker-compose overrides them for the local stack.
+# API_PROXY_TARGET and API_PROXY_HOST are local placeholders so the image renders and passes
+# `nginx -t` on its own: infra/deploy.sh overrides them for Cloud Run and docker-compose for the
+# local stack. NGINX_RESOLVER is the resolver Cloud Run provides; compose overrides it too.
 ENV NGINX_RESOLVER=169.254.169.254 \
     API_PROXY_TARGET=http://localhost:8787 \
     API_PROXY_HOST=localhost:8787
