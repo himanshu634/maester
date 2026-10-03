@@ -3,7 +3,7 @@
 	import { authContent as copy } from '$lib/content/auth';
 	import { authClient } from '$lib/auth/client';
 	import { messageFor, type AuthMessage } from '$lib/auth/messages';
-	import { focusFirstInvalid, validateEmail } from '$lib/auth/validate';
+	import { focusAfterFailure, focusFirstInvalid, validateEmail } from '$lib/auth/validate';
 	import AuthLayout from '$lib/components/auth/AuthLayout.svelte';
 	import Notice from '$lib/components/auth/Notice.svelte';
 	import TextField from '$lib/components/auth/TextField.svelte';
@@ -14,6 +14,7 @@
 	let status = $state('');
 	let sentTo = $state<string | null>(null);
 	let message = $state<AuthMessage | null>(null);
+	let submitButton = $state<HTMLButtonElement>();
 
 	async function send(event: SubmitEvent) {
 		event.preventDefault();
@@ -49,6 +50,7 @@
 			sending = false;
 			status = '';
 		}
+		if (message) await focusAfterFailure(() => submitButton);
 	}
 </script>
 
@@ -78,7 +80,7 @@
 			{error}
 		/>
 		<div>
-			<button class="button" type="submit" disabled={sending}>
+			<button class="button" type="submit" disabled={sending} bind:this={submitButton}>
 				{sending ? copy.forgot.sending : copy.forgot.send}
 			</button>
 		</div>

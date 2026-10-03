@@ -5,13 +5,18 @@
 	interface Props {
 		title: string;
 		id?: string;
+		/**
+		 * `alert` (the default) announces a message that appears in answer to something the
+		 * person did. `note` is for standing text that is there when the page loads.
+		 */
+		role?: 'alert' | 'note';
 		children?: Snippet;
 	}
 
-	let { title, id, children }: Props = $props();
+	let { title, id, role = 'alert', children }: Props = $props();
 </script>
 
-<div class="notice" role="alert" {id}>
+<div class="notice" {role} {id}>
 	<p class="title">{title}</p>
 	{#if children}
 		<div class="body">{@render children()}</div>

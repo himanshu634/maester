@@ -18,6 +18,10 @@ export const authContent = {
 		alreadySignedIn: 'You are already signed in. Taking you to the terminal.',
 		email: 'Email',
 		password: 'Password',
+		// Sign-in checks only that a password was typed: a stored one may predate today's rules.
+		passwordMissing: 'Enter your password.',
+		// "Try again, or reset your password." with the last words linking to /forgot-password.
+		wrongPassword: { before: 'Try again, or ', link: 'reset your password', after: '.' },
 		signIn: 'Sign in',
 		signingIn: 'Signing in…',
 		forgot: 'Forgot your password?',
@@ -35,7 +39,7 @@ export const authContent = {
 		// The same words whether or not the address has an account.
 		sentTitle: 'Check your email',
 		sent: (email: string) =>
-			`If ${email} has a Maester account, a reset link is on its way. It works for one hour.`,
+			`If ${email} has a Maester account, a reset link is on its way. It works once, for one hour.`,
 		failedTitle: 'We couldn’t send the link',
 		backToSignIn: 'Back to sign in'
 	},
@@ -51,6 +55,7 @@ export const authContent = {
 		requestNew: 'Request a new link'
 	},
 	waitlisted: {
+		title: 'You’re on the list. Maester',
 		heading: 'You’re on the list',
 		bodyGoogle:
 			'Maester is open to invited investors for now. We’ve added your Google email address to the list.',
@@ -89,10 +94,22 @@ export const authContent = {
 		sentAgain: 'Sent. Check your email for a new link.',
 		differentEmail: 'Wrong address?',
 		useDifferent: 'Use a different email',
+		expiredTitle: 'That link has expired. Maester',
 		expiredHeading: 'That link has expired',
 		expiredLede: 'Confirmation links last one hour. Send a new one to your email.',
 		sendNew: 'Send a new link',
 		confirmed: 'Email confirmed. Taking you to the terminal.'
+	},
+	// Field checks before anything is sent: each says the fix.
+	fields: {
+		emailInvalid: 'Enter a full email address, like name@example.com.',
+		passwordMissing: 'Enter a password.',
+		passwordTooShort: (length: number) => `Use at least 8 characters. This one has ${length}.`,
+		passwordTooLong: 'Use 128 characters or fewer.',
+		nameMissing: 'Enter your name.',
+		// The password field's toggle: the name stays the same and aria-pressed carries the state.
+		show: 'Show',
+		showPassword: 'Show password'
 	},
 	messages: {
 		cancelled: {

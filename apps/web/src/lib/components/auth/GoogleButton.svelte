@@ -13,6 +13,8 @@
 		busyLabel?: string;
 		describedby?: string;
 		onclick: () => void;
+		/** The button itself, so a page can return focus to it after a failed request. */
+		element?: HTMLButtonElement;
 	}
 
 	let {
@@ -22,11 +24,13 @@
 		disabled = false,
 		busyLabel,
 		describedby,
-		onclick
+		onclick,
+		element = $bindable()
 	}: Props = $props();
 </script>
 
 <button
+	bind:this={element}
 	class={['button', 'google', { outline: !primary }]}
 	type="button"
 	disabled={busy || disabled}

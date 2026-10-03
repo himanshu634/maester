@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { authContent as copy } from '$lib/content/auth';
 	import { authClient } from '$lib/auth/client';
 	import { messageFor, type AuthMessage } from '$lib/auth/messages';
-	import { validateEmail, focusFirstInvalid } from '$lib/auth/validate';
+	import { validateEmail, focusAfterFailure, focusFirstInvalid } from '$lib/auth/validate';
 	import { readSession, safeNext, verifyCallback } from '$lib/session';
 	import AuthLayout from '$lib/components/auth/AuthLayout.svelte';
 	import GoogleButton from '$lib/components/auth/GoogleButton.svelte';
@@ -19,6 +19,11 @@
 	let message = $state<AuthMessage | null>(null);
 	let googleBusy = $state(false);
 	let status = $state('');
+	let waitlistedHeading = $state<HTMLHeadingElement>();
+	let googleButton = $state<HTMLButtonElement>();
+	let submitButton = $state<HTMLButtonElement>();
+
+	const waitlisted = $derived(message?.kind === 'waitlisted');
 
 	onMount(async () => {
 		next = safeNext(page.url.searchParams.get('next'));
@@ -26,6 +31,11 @@
 		// Back from /reset-password. The status line is the one live region; no Notice, so it is
 		// announced once.
 		if (page.url.searchParams.get('reset') === 'done') status = copy.login.passwordChanged;
+		if (waitlisted) {
+			// The page swapped to the waitlist view: put focus on its heading, so the change is announced.
+			await tick();
+			waitlistedHeading?.focus();
+		}
 		const session = await readSession(authClient());
 		if (session.status === 'signed-in') {
 			status = copy.login.alreadySignedIn;
@@ -35,6 +45,7 @@
 	});
 
 	async function continueWithGoogle() {
+		if (busy) return;
 		message = null;
 		googleBusy = true;
 		status = copy.login.googleStatus;
@@ -45,17 +56,18 @@
 				callbackURL: next,
 				errorCallbackURL
 			});
-			if (error) fail(messageFor(error.code || 'generic', error.status));
+			if (error) await fail(messageFor(error.code || 'generic', error.status));
 		} catch {
 			// Network failure: the request never got an answer.
-			fail(messageFor('generic'));
+			await fail(messageFor('generic'));
 		}
 	}
 
-	function fail(shown: AuthMessage | null) {
+	async function fail(shown: AuthMessage | null) {
 		googleBusy = false;
 		status = '';
 		message = shown;
+		await focusAfterFailure(() => googleButton);
 	}
 
 	let email = $state('');
@@ -67,13 +79,17 @@
 	let submitting = $state(false);
 	let resending = $state(false);
 
+	// One action at a time: Google and the form lock each other out.
+	const busy = $derived(googleBusy || submitting);
+
 	async function signIn(event: SubmitEvent) {
 		event.preventDefault();
+		if (busy) return;
 		message = null;
 		errors = {
 			email: validateEmail(email),
 			// Only emptiness is checked: a stored password may predate today's length rule.
-			password: password ? null : 'Enter your password.'
+			password: password ? null : copy.login.passwordMissing
 		};
 		if (errors.email || errors.password) {
 			focusFirstInvalid(errors, { email: 'email', password: 'password' });
@@ -81,29 +97,26 @@
 		}
 		submitting = true;
 		status = copy.login.signingIn;
+		let shown: AuthMessage | null;
 		try {
 			const { error } = await authClient().signIn.email({
 				email: email.trim(),
 				password,
 				callbackURL: verifyCallback(next)
 			});
-			if (error) {
-				message = messageFor(error.code || 'generic', error.status);
-				password = '';
-				submitting = false;
-				status = '';
-				return;
-			}
+			shown = error ? messageFor(error.code || 'generic', error.status) : null;
 		} catch {
 			// Network failure: the request never got an answer.
-			message = messageFor('generic');
-			password = '';
-			submitting = false;
-			status = '';
-			return;
+			shown = messageFor('generic');
 		}
 		submitting = false;
 		status = '';
+		if (shown) {
+			message = shown;
+			password = '';
+			await focusAfterFailure(() => submitButton);
+			return;
+		}
 		// eslint-disable-next-line svelte/no-navigation-without-resolve -- next is a same-site path checked by safeNext
 		goto(next, { replaceState: true });
 	}
@@ -142,13 +155,13 @@
 <svelte:window {onpageshow} />
 
 <svelte:head>
-	<title>{copy.login.title}</title>
+	<title>{waitlisted ? copy.waitlisted.title : copy.login.title}</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
 <AuthLayout illustration>
-	{#if message?.kind === 'waitlisted'}
-		<h1>{copy.waitlisted.heading}</h1>
+	{#if waitlisted}
+		<h1 tabindex="-1" bind:this={waitlistedHeading}>{copy.waitlisted.heading}</h1>
 		<p class="measure">{copy.waitlisted.bodyGoogle}</p>
 		<p class="measure">{copy.waitlisted.nothingCreated}</p>
 		<p class="links">
@@ -161,7 +174,11 @@
 		{#if message}
 			<Notice title={message.title}>
 				{#if message.kind === 'wrong-password'}
-					<p>Try again, or <a href={resolve('/forgot-password')}>reset your password</a>.</p>
+					<p>
+						{copy.login.wrongPassword.before}<a href={resolve('/forgot-password')}
+							>{copy.login.wrongPassword.link}</a
+						>{copy.login.wrongPassword.after}
+					</p>
 				{:else if message.kind === 'not-verified'}
 					<p>{message.body}</p>
 					<button class="button outline" type="button" disabled={resending} onclick={resend}>
@@ -176,9 +193,11 @@
 			label={copy.login.google}
 			busyLabel={copy.login.googleBusy}
 			busy={googleBusy}
+			disabled={busy}
 			primary
 			describedby="login-status"
 			onclick={continueWithGoogle}
+			bind:element={googleButton}
 		/>
 		<OrRule label={copy.login.or} />
 		<form class="form" method="post" onsubmit={signIn} novalidate>
@@ -198,7 +217,7 @@
 				error={errors.password}
 			/>
 			<div class="actions">
-				<button class="button outline" type="submit" disabled={submitting}>
+				<button class="button outline" type="submit" disabled={busy} bind:this={submitButton}>
 					{submitting ? copy.login.signingIn : copy.login.signIn}
 				</button>
 				<a href={resolve('/forgot-password')}>{copy.login.forgot}</a>

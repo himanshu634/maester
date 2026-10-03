@@ -5,14 +5,14 @@
 	 * when it is spent. A successful email sign-in on /login also names this page as its
 	 * callback. Whoever arrives signed in goes on to ?next=.
 	 */
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { authContent as copy } from '$lib/content/auth';
 	import { authClient } from '$lib/auth/client';
 	import { messageFor, type AuthMessage } from '$lib/auth/messages';
-	import { focusFirstInvalid, validateEmail } from '$lib/auth/validate';
+	import { focusAfterFailure, focusFirstInvalid, validateEmail } from '$lib/auth/validate';
 	import { readSession, safeNext, verifyCallback } from '$lib/session';
 	import AuthLayout from '$lib/components/auth/AuthLayout.svelte';
 	import Notice from '$lib/components/auth/Notice.svelte';
@@ -25,6 +25,9 @@
 	let message = $state<AuthMessage | null>(null);
 	let sending = $state(false);
 	let status = $state('');
+	let expiredHeading = $state<HTMLHeadingElement>();
+	// The one button that sends: "Send a new link" in the expired view, "Send it again" otherwise.
+	let sendButton = $state<HTMLButtonElement>();
 
 	// A usable address came in the query string, so "send it again" has somewhere to send.
 	const canResend = $derived(email.trim() !== '' && validateEmail(email) === null);
@@ -32,17 +35,22 @@
 	onMount(async () => {
 		next = safeNext(page.url.searchParams.get('next'));
 		email = page.url.searchParams.get('email') ?? '';
-		// Any non-empty error means the link did not work: INVALID_TOKEN, TOKEN_EXPIRED or
-		// anything else. The value is never shown.
-		if (page.url.searchParams.get('error')) {
-			view = 'expired';
-			return;
-		}
+		// Whoever is signed in goes on, even from a link that was already spent: an expired
+		// link must not strand someone the first visit already signed in.
 		const session = await readSession(authClient());
 		if (session.status === 'signed-in') {
 			status = copy.verify.confirmed;
 			// eslint-disable-next-line svelte/no-navigation-without-resolve -- next is a same-site path checked by safeNext
 			goto(next, { replaceState: true });
+			return;
+		}
+		// Any non-empty error means the link did not work: INVALID_TOKEN, TOKEN_EXPIRED or
+		// anything else. The value is never shown.
+		if (page.url.searchParams.get('error')) {
+			view = 'expired';
+			// Put focus on the new heading, so the change is announced.
+			await tick();
+			expiredHeading?.focus();
 		}
 	});
 
@@ -58,6 +66,7 @@
 		}
 		sending = true;
 		status = copy.verify.sending;
+		let failed = false;
 		try {
 			const { error } = await authClient().sendVerificationEmail({
 				email: email.trim(),
@@ -66,6 +75,7 @@
 			if (error) {
 				message = messageFor(error.code || 'generic', error.status);
 				status = '';
+				failed = true;
 			} else {
 				status = copy.verify.sentAgain;
 			}
@@ -73,20 +83,22 @@
 			// Network failure: the request never got an answer.
 			message = messageFor('generic');
 			status = '';
+			failed = true;
 		} finally {
 			sending = false;
 		}
+		if (failed) await focusAfterFailure(() => sendButton);
 	}
 </script>
 
 <svelte:head>
-	<title>{copy.verify.title}</title>
+	<title>{view === 'expired' ? copy.verify.expiredTitle : copy.verify.title}</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
 <AuthLayout>
 	{#if view === 'expired'}
-		<h1>{copy.verify.expiredHeading}</h1>
+		<h1 tabindex="-1" bind:this={expiredHeading}>{copy.verify.expiredHeading}</h1>
 		<p class="measure">{copy.verify.expiredLede}</p>
 		{#if message}
 			<Notice title={message.title}><p>{message.body}</p></Notice>
@@ -101,7 +113,7 @@
 				error={emailError}
 			/>
 			<div>
-				<button class="button" type="submit" disabled={sending}>
+				<button class="button" type="submit" disabled={sending} bind:this={sendButton}>
 					{sending ? copy.verify.sending : copy.verify.sendNew}
 				</button>
 			</div>
@@ -113,9 +125,15 @@
 			<Notice title={message.title}><p>{message.body}</p></Notice>
 		{/if}
 		{#if canResend}
-			<Notice title={copy.verify.notArrived}>
+			<Notice title={copy.verify.notArrived} role="note">
 				<p>{copy.verify.notArrivedBody}</p>
-				<button class="button outline" type="button" disabled={sending} onclick={() => send()}>
+				<button
+					class="button outline"
+					type="button"
+					disabled={sending}
+					onclick={() => send()}
+					bind:this={sendButton}
+				>
 					{sending ? copy.verify.sending : copy.verify.sendAgain}
 				</button>
 			</Notice>

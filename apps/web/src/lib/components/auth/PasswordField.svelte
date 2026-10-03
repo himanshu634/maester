@@ -1,5 +1,10 @@
 <script lang="ts">
-	/** A password field with a real Show button (44px, aria-pressed) attached to its right. */
+	/**
+	 * A password field with a real Show button (44px) attached to its right. The button's name
+	 * never changes ("Show password"); aria-pressed says whether the password is showing.
+	 */
+	import { authContent } from '$lib/content/auth';
+
 	interface Props {
 		id: string;
 		label: string;
@@ -33,10 +38,10 @@
 		<button
 			class="show"
 			type="button"
+			aria-label={authContent.fields.showPassword}
 			aria-pressed={shown}
 			aria-controls={id}
-			onclick={() => (shown = !shown)}
-			>{shown ? 'Hide' : 'Show'}<span class="visually-hidden"> {label.toLowerCase()}</span></button
+			onclick={() => (shown = !shown)}>{authContent.fields.show}</button
 		>
 	</div>
 	{#if error}<p class="error" id="{id}-error">{error}</p>{/if}
@@ -97,7 +102,9 @@
 		cursor: pointer;
 	}
 
-	.show:hover {
+	/* Pressed: an ink block, as the current page is in the terminal's rail. */
+	.show:hover,
+	.show[aria-pressed='true'] {
 		background: var(--ink);
 		color: var(--paper);
 	}

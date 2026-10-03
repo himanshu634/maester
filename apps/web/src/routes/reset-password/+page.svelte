@@ -11,7 +11,7 @@
 	import { authContent as copy } from '$lib/content/auth';
 	import { authClient } from '$lib/auth/client';
 	import { messageFor, type AuthMessage } from '$lib/auth/messages';
-	import { focusFirstInvalid, validatePassword } from '$lib/auth/validate';
+	import { focusAfterFailure, focusFirstInvalid, validatePassword } from '$lib/auth/validate';
 	import { safeNext } from '$lib/session';
 	import AuthLayout from '$lib/components/auth/AuthLayout.svelte';
 	import Notice from '$lib/components/auth/Notice.svelte';
@@ -26,6 +26,7 @@
 	let status = $state('');
 	let message = $state<AuthMessage | null>(null);
 	let expiredHeading = $state<HTMLHeadingElement>();
+	let submitButton = $state<HTMLButtonElement>();
 
 	/** Switch to the expired view and put focus on its heading, so the change is announced. */
 	async function showExpired() {
@@ -85,8 +86,12 @@
 				const shown = messageFor(failure.code || 'generic', failure.status);
 				saving = false;
 				status = '';
-				if (shown?.kind === 'link-expired') await showExpired();
-				else message = shown;
+				if (shown?.kind === 'link-expired') {
+					await showExpired();
+				} else {
+					message = shown;
+					await focusAfterFailure(() => submitButton);
+				}
 				return;
 			}
 		} catch {
@@ -94,6 +99,7 @@
 			message = messageFor('generic');
 			saving = false;
 			status = '';
+			await focusAfterFailure(() => submitButton);
 			return;
 		}
 		// Stay busy until /login has loaded, so a second click cannot spend the link again.
@@ -136,7 +142,7 @@
 				{error}
 			/>
 			<div>
-				<button class="button" type="submit" disabled={saving}>
+				<button class="button" type="submit" disabled={saving} bind:this={submitButton}>
 					{saving ? copy.reset.setting : copy.reset.set}
 				</button>
 			</div>

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
@@ -7,6 +7,7 @@
 	import { authClient } from '$lib/auth/client';
 	import { messageFor, type AuthMessage } from '$lib/auth/messages';
 	import {
+		focusAfterFailure,
 		focusFirstInvalid,
 		validateEmail,
 		validateName,
@@ -34,13 +35,23 @@
 		password: null
 	});
 
+	let waitlistedHeading = $state<HTMLHeadingElement>();
+	let googleButton = $state<HTMLButtonElement>();
+	let submitButton = $state<HTMLButtonElement>();
+
 	// One action at a time: Google and the form lock each other out.
 	const busy = $derived(googleBusy || submitting);
+	const waitlisted = $derived(message?.kind === 'waitlisted');
 
 	onMount(async () => {
 		next = safeNext(page.url.searchParams.get('next'));
 		// Google sends a refused sign-up back here with ?error=.
 		message = messageFor(page.url.searchParams.get('error'));
+		if (waitlisted) {
+			// The page swapped to the waitlist view: put focus on its heading, so the change is announced.
+			await tick();
+			waitlistedHeading?.focus();
+		}
 		const session = await readSession(authClient());
 		if (session.status === 'signed-in') {
 			// eslint-disable-next-line svelte/no-navigation-without-resolve -- next is a same-site path checked by safeNext
@@ -48,11 +59,13 @@
 		}
 	});
 
-	function fail(shown: AuthMessage | null) {
+	/** Show what went wrong and return focus to the button that sent the request. */
+	async function fail(shown: AuthMessage | null, sentBy: () => HTMLButtonElement | undefined) {
 		googleBusy = false;
 		submitting = false;
 		status = '';
 		message = shown;
+		await focusAfterFailure(sentBy);
 	}
 
 	async function continueWithGoogle() {
@@ -67,10 +80,10 @@
 				callbackURL: next,
 				errorCallbackURL
 			});
-			if (error) fail(messageFor(error.code || 'generic', error.status));
+			if (error) await fail(messageFor(error.code || 'generic', error.status), () => googleButton);
 		} catch {
 			// Network failure: the request never got an answer.
-			fail(messageFor('generic'));
+			await fail(messageFor('generic'), () => googleButton);
 		}
 	}
 
@@ -99,12 +112,12 @@
 				callbackURL: verifyCallback(next)
 			});
 			if (error) {
-				fail(messageFor(error.code || 'generic', error.status));
+				await fail(messageFor(error.code || 'generic', error.status), () => submitButton);
 				return;
 			}
 		} catch {
 			// Network failure: the request never got an answer.
-			fail(messageFor('generic'));
+			await fail(messageFor('generic'), () => submitButton);
 			return;
 		}
 		// The answer is the same whether or not the address is on the invitation list,
@@ -132,13 +145,13 @@
 <svelte:window {onpageshow} />
 
 <svelte:head>
-	<title>{copy.signup.title}</title>
+	<title>{waitlisted ? copy.waitlisted.title : copy.signup.title}</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
 <AuthLayout>
-	{#if message?.kind === 'waitlisted'}
-		<h1>{copy.waitlisted.heading}</h1>
+	{#if waitlisted}
+		<h1 tabindex="-1" bind:this={waitlistedHeading}>{copy.waitlisted.heading}</h1>
 		<p class="measure">{copy.waitlisted.bodyGoogle}</p>
 		<p class="measure">{copy.waitlisted.nothingCreated}</p>
 		<p class="links">
@@ -159,6 +172,7 @@
 			primary
 			describedby="signup-status"
 			onclick={continueWithGoogle}
+			bind:element={googleButton}
 		/>
 		<OrRule label={copy.signup.or} />
 		<form class="form" method="post" onsubmit={create} novalidate>
@@ -186,7 +200,7 @@
 				error={errors.password}
 			/>
 			<div>
-				<button class="button outline" type="submit" disabled={busy}>
+				<button class="button outline" type="submit" disabled={busy} bind:this={submitButton}>
 					{submitting ? copy.signup.creating : copy.signup.create}
 				</button>
 			</div>
