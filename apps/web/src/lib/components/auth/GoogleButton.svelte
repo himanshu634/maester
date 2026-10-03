@@ -8,18 +8,28 @@
 		label: string;
 		primary?: boolean;
 		busy?: boolean;
+		/** Another action on the page is running: disabled, with the label unchanged. */
+		disabled?: boolean;
 		busyLabel?: string;
 		describedby?: string;
 		onclick: () => void;
 	}
 
-	let { label, primary = false, busy = false, busyLabel, describedby, onclick }: Props = $props();
+	let {
+		label,
+		primary = false,
+		busy = false,
+		disabled = false,
+		busyLabel,
+		describedby,
+		onclick
+	}: Props = $props();
 </script>
 
 <button
 	class={['button', 'google', { outline: !primary }]}
 	type="button"
-	disabled={busy}
+	disabled={busy || disabled}
 	aria-describedby={describedby}
 	{onclick}
 >

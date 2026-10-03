@@ -29,12 +29,45 @@ export const authContent = {
 		heading: 'You’re on the list',
 		bodyGoogle:
 			'Maester is open to invited investors for now. We’ve added your Google email address to the list.',
-		bodyEmail: (email: string) =>
-			`Maester is open to invited investors for now. We’ve added ${email} to the list.`,
 		nothingCreated:
 			'Nothing else to do. No account or workspace was created, and nothing was kept from Google but your email address.',
 		wrongAccount: 'Signed in with the wrong Google account?',
 		useAnother: 'Use another account'
+	},
+	signup: {
+		title: 'Create your account. Maester',
+		heading: 'Create your account',
+		lede: 'Maester is open to invited investors for now. Use the email your invitation went to.',
+		google: 'Sign up with Google',
+		or: 'or use your email',
+		name: 'Name',
+		passwordHint: 'At least 8 characters.',
+		create: 'Create account',
+		creating: 'Creating your account…',
+		googleStatus: 'Taking you to Google to sign up.',
+		haveAccount: 'Already have an account?',
+		signIn: 'Sign in'
+	},
+	verify: {
+		title: 'Check your email. Maester',
+		heading: 'Check your email',
+		// The same words whether or not the address was on the invitation list: the
+		// page never says which, so it cannot be used to probe the list.
+		sent: (email: string) =>
+			`If ${email} is on the invitation list, we sent it a link to confirm your account. Open it on this device. It works for one hour. If it isn’t on the list yet, we’ve added it. There’s nothing else to do.`,
+		sentNoEmail:
+			'If your email is on the invitation list, we sent it a link to confirm your account. Open it on this device. It works for one hour. If it isn’t on the list yet, we’ve added it. There’s nothing else to do.',
+		notArrived: 'Didn’t get it?',
+		notArrivedBody: 'Check spam, or send it again. Links can take a minute to arrive.',
+		sendAgain: 'Send it again',
+		sending: 'Sending…',
+		sentAgain: 'Sent. Check your email for a new link.',
+		differentEmail: 'Wrong address?',
+		useDifferent: 'Use a different email',
+		expiredHeading: 'That link has expired',
+		expiredLede: 'Confirmation links last one hour. Send a new one to your email.',
+		sendNew: 'Send a new link',
+		confirmed: 'Email confirmed. Taking you to the terminal.'
 	},
 	messages: {
 		cancelled: {

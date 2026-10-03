@@ -26,10 +26,10 @@ export default defineConfig({
 				strict: true
 			}),
 			prerender: {
-				// TEMPORARY: /login links to pages that Tasks 10 and 11 add. Remove this once
-				// /signup and /forgot-password exist; any other broken link still fails the build.
+				// TEMPORARY: /login and /signup link to /forgot-password, which Task 11 adds. Remove
+				// this hook once it exists; any other broken link still fails the build.
 				handleHttpError: ({ path, referrer, message }) => {
-					if (referrer === '/login' && ['/signup', '/forgot-password'].includes(path)) return;
+					if (['/login', '/signup'].includes(referrer ?? '') && path === '/forgot-password') return;
 					throw new Error(message);
 				}
 			},

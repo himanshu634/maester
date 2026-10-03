@@ -206,8 +206,10 @@
 		<p class="status" id="login-status" role="status" aria-live="polite">{status}</p>
 		<p class="links">
 			{copy.login.newHere}
-			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- /signup arrives in Task 10; next is checked by safeNext -->
-			<a href="/signup?next={encodeURIComponent(next)}">{copy.login.createAccount}</a>
+			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the query string is built from an encodeURIComponent value; next is checked by safeNext -->
+			<a href={`${resolve('/signup')}?next=${encodeURIComponent(next)}`}
+				>{copy.login.createAccount}</a
+			>
 		</p>
 		<noscript><p>{copy.login.noScript}</p></noscript>
 	{/if}
