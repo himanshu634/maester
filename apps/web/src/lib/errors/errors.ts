@@ -9,7 +9,7 @@ export type ErrorKind =
 
 export interface ErrorView {
 	kind: ErrorKind;
-	/** Draw it inside the terminal's shell. Only the demo has a shell today. */
+	/** Draw it inside the demo terminal's shell. The error page does not read the session, so it never draws the signed-in shell. */
 	shell: boolean;
 }
 

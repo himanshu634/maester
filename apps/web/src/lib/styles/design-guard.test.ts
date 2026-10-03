@@ -255,6 +255,14 @@ describe('design guard (docs/DESIGN.md)', () => {
 		expect(readFileSync(TOKENS, 'utf8')).toMatch(/--font-sans:[^;]*Archivo/);
 	});
 
+	it('keeps the Google mark colours inside GoogleButton', () => {
+		const users = files
+			.filter((f) => !isTokensFile(f))
+			.filter((f) => readFileSync(f, 'utf8').includes('--brand-google-'))
+			.map((f) => relative(SRC, f));
+		expect(users).toEqual([join('lib', 'components', 'auth', 'GoogleButton.svelte')]);
+	});
+
 	it('has the global reduced-motion kill switch', () => {
 		const app = readFileSync(APP_CSS, 'utf8');
 		const block = app.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*?\}\s*\}/);

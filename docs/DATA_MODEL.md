@@ -34,6 +34,7 @@ Company research exists independently of holdings. A security may be held in mul
 | --- | --- | --- |
 | Workspace | ID, name, owner, locale, created_at | Every private object resolves to one workspace |
 | Membership | workspace_id, user_id, role, state | R1 owner-only personal workspace; later sharing uses explicit roles |
+| WaitlistEntry (`waitlist_entry`) | email (primary key, lower-cased), status (`pending` or `approved`), source (`google`, `email` or `admin`), requested_at, approved_at | Who may create an account. Approved emails get one; every other email is recorded as pending. A repeat request never moves `requested_at` and an approved row is never downgraded |
 | Company | ID, legal/display name, country, identifiers | Never keyed only by ticker; reference vs private records have explicit ownership |
 | Security | ID, company_id, identifier/ISIN, exchange, ticker, currency, type, validity interval | Ticker reuse and dual listings do not merge distinct securities |
 | Portfolio | ID, workspace_id, name, base_currency, benchmark_id, valuation_policy | Currency/boundary changes create recalculation context |
@@ -57,6 +58,8 @@ Company research exists independently of holdings. A security may be held in mul
 | Note | workspace/company/portfolio, author, content, thesis/risks, references, review_at, revision | User assumptions distinct from reported facts |
 | Conversation/Answer | workspace, scope, evidence cutoff, fact/calculation references, text, state | Does not widen authorization; old inputs can mark answer outdated |
 | Alert | workspace/scope, condition, event identity, prior/current state, occurred/detected times | New transition creates notification; unchanged value does not |
+
+`rate_limit` is not a domain entity: it is Better Auth's database-backed rate limiter (a key, a count and the last request time), written only by the auth layer. Identity tables (`user`, `session`, `account`, `verification`) belong to Better Auth as well; the sign-in design is in [SIGN_IN.md](SIGN_IN.md).
 
 ## 4. Financial fact identity and presentation
 

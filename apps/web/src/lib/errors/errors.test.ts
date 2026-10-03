@@ -25,7 +25,7 @@ describe('errorView', () => {
 			kind: 'not-found',
 			shell: false
 		});
-		// The signed-in terminal has no shell yet, so its missing pages stay public.
+		// The error page does not read the session, so signed-in terminal errors stay public.
 		expect(errorView({ status: 404, path: '/terminal/holdings', online: true }).shell).toBe(false);
 		expect(errorView({ status: 404, path: '/terminal/demoish', online: true }).kind).toBe(
 			'not-found'

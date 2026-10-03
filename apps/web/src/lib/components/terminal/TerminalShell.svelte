@@ -15,15 +15,27 @@
 	interface Props {
 		demo: boolean;
 		/** The overview the rail links to (and marks as current, unless `current` is false). */
-		overview: '/terminal/demo' | '/terminal/demo/quiet';
+		overview: '/terminal' | '/terminal/demo' | '/terminal/demo/quiet';
 		/** False on a page the rail does not list (an error page), so nothing is marked current. */
 		current?: boolean;
 		/** False where the page itself says the device is offline, so it isn't said twice. */
 		offlineBanner?: boolean;
+		/** Shown in the context header; without it the workspace name is. */
+		portfolio?: string;
+		/** Who is signed in. Absent in the demo, which has no session. */
+		account?: { email: string; signingOut: boolean; failed?: boolean; onSignOut: () => void };
 		children: Snippet;
 	}
 
-	let { demo, overview, current = true, offlineBanner = true, children }: Props = $props();
+	let {
+		demo,
+		overview,
+		current = true,
+		offlineBanner = true,
+		portfolio,
+		account,
+		children
+	}: Props = $props();
 
 	const shell = terminalContent.shell;
 	let open = $state(false);
@@ -64,12 +76,29 @@
 					>{shell.overview}</a
 				>
 			</nav>
+			{#if account}
+				<div class="account">
+					<span class="muted">{shell.signedInAs}</span>
+					<span class="email">{account.email}</span>
+					<button
+						class="button outline"
+						type="button"
+						disabled={account.signingOut}
+						onclick={account.onSignOut}
+					>
+						{account.signingOut ? shell.signingOut : shell.signOut}
+					</button>
+					<p class="status" role="status" aria-live="polite">
+						{account.failed ? shell.signOutFailed : ''}
+					</p>
+				</div>
+			{/if}
 		</div>
 	</header>
 
 	<!-- A region, not a second <header>: the rail is already the page's banner landmark. -->
 	<section class="context" aria-label={shell.contextLabel}>
-		<span class="portfolio">{shell.portfolio(terminalContent.workspace)}</span>
+		<span class="portfolio">{portfolio ? shell.portfolio(portfolio) : shell.workspaceName}</span>
 		{#if demo}
 			<a href={resolve('/')}>{terminalContent.leaveDemo}</a>
 		{/if}
@@ -161,6 +190,34 @@
 		text-decoration: none;
 	}
 
+	.account {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+		padding: var(--space-4) var(--space-6) var(--space-6);
+		border-top: var(--rule) solid var(--ink);
+	}
+
+	.account .muted {
+		font-size: var(--text-sm);
+		line-height: var(--leading-small);
+	}
+
+	.status {
+		font-size: var(--text-sm);
+		line-height: var(--leading-small);
+	}
+
+	.status:empty {
+		display: none;
+	}
+
+	.email {
+		font-weight: 700;
+		font-size: 1rem;
+		overflow-wrap: anywhere;
+	}
+
 	.context {
 		display: flex;
 		align-items: center;
@@ -209,6 +266,11 @@
 		.drawer.open {
 			display: flex;
 			border-bottom: 0;
+			min-height: calc(100dvh - var(--space-14));
+		}
+
+		.account {
+			margin-top: auto;
 		}
 
 		.context {

@@ -67,6 +67,15 @@
 	--illus-red: #e0483a;
 	--illus-blue: #2f5fd0;
 
+	/*
+	 * Google's mark, in Google's own colours. Used only inside GoogleButton's mark;
+	 * Google's branding rules forbid a monochrome G. See docs/DESIGN.md section 2.
+	 */
+	--brand-google-blue: #4285f4; /* design-guard: allow */
+	--brand-google-red: #ea4335; /* design-guard: allow */
+	--brand-google-yellow: #fbbc05; /* design-guard: allow */
+	--brand-google-green: #34a853; /* design-guard: allow */
+
 	--focus-ring: 3px solid var(--ink);
 	--focus-offset: 2px;
 

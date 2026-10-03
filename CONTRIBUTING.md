@@ -49,7 +49,7 @@ The hosted stack — Postgres, the API, the worker and the web client — starts
 docker compose up --build
 ```
 
-Then open <http://localhost:8787/dev/upload> to run the upload and verification flow end to end, and <http://localhost:5173> for the public pages. [Development](docs/DEVELOPMENT.md) explains what is running, how to work on the services without Docker, and how to troubleshoot.
+Then open <http://localhost:5173/dev/upload> to run the upload and verification flow end to end, and <http://localhost:5173> for the public pages and sign-in. Everything is served through the web origin, which proxies the API. [Development](docs/DEVELOPMENT.md) explains what is running, how to work on the services without Docker, and how to troubleshoot.
 
 The Python CLI is independent of that stack:
 

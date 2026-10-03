@@ -15,7 +15,7 @@ docker compose up --build
 | HTTP API | `apps/api` | TypeScript, Hono | Running: identity, workspaces, document uploads, jobs, SSE ([README](../apps/api/README.md)) |
 | Job worker | `apps/worker` | TypeScript, Hono | Running: leased job execution, `document.verify`, `document.extract` ([README](../apps/worker/README.md)) |
 | Extractor | `apps/extractor` | Python, FastAPI | Running: stateless extraction service the worker calls ([README](../apps/extractor/README.md)) |
-| Web client | `apps/web` | SvelteKit, static | Running: public pages at `/`, `/login`, `/terminal`; investor journeys planned ([README](../apps/web/README.md)) |
+| Web client | `apps/web` | SvelteKit, static | Running: public pages at `/`, sign-in and recovery pages (`/login`, `/signup`, `/verify-email`, `/forgot-password`, `/reset-password`), `/terminal`; investor journeys planned ([README](../apps/web/README.md)) |
 | CLI | `apps/cli` | Python, Typer | Running: `maester ingest`, `list-docs`, `ask` |
 | Document engine | `packages/financial-engine` | Python | Running: the LangGraph extraction workflow ([spec](EXTRACTION.md)), plus the CLI's extraction, checks, cache and Q&A |
 | API contracts | `packages/contracts` | TypeScript, Zod | Running: shared request and response shapes ([README](../packages/contracts/README.md)) |
@@ -48,9 +48,9 @@ That single command builds four images, starts Postgres, applies database migrat
 
 | Service | Address | What it is |
 | --- | --- | --- |
-| Web | <http://localhost:5173> | The public pages, built statically and served by nginx |
-| API | <http://localhost:8787> | Hono service, Better Auth, documents and jobs |
-| Dev upload page | <http://localhost:8787/dev/upload> | The working upload flow, end to end in a browser |
+| Web | <http://localhost:5173> | The public pages and sign-in, built statically and served by nginx, which proxies `/api/auth`, `/v1` and `/dev` to the API |
+| API | <http://localhost:8787> | Hono service, Better Auth, documents and jobs. Browsers reach it through the web origin; use this address for direct health checks (`/healthz`) |
+| Dev upload page | <http://localhost:5173/dev/upload> | The working upload flow, end to end in a browser, through the web origin |
 | Worker | <http://localhost:8788> | Job execution; the API dispatches to it over HTTP |
 | Extractor | <http://localhost:8790> | Python extraction service; the worker streams PDFs to it |
 | Postgres | `localhost:5433` | User `maester`, password `maester`, database `maester` |
@@ -72,7 +72,7 @@ The Python CLI is not containerised; run it with uv (section 9). Cloud Tasks and
 
 ## 4. Try it
 
-**In a browser.** Open <http://localhost:8787/dev/upload>, sign up with the pre-filled credentials, keep or change the company, choose a PDF, and press *Upload, verify and extract*. The page picks or creates the company, creates a document for it, uploads the bytes to a signed URL, finalises it, and streams job progress over Server-Sent Events until the document reaches `stored`. Verification then enqueues `document.extract`; the page follows that job too and, when it succeeds, prints the revision, its coverage and checks, and the first facts with their page numbers. Without Vertex AI configured the extract job fails with `EXTRACTOR_NOT_CONFIGURED`, which is expected.
+**In a browser.** Open <http://localhost:5173/dev/upload> (the web origin, so the session cookie is first-party), sign up with the pre-filled credentials (the page approves the email and confirms the account for you), keep or change the company, choose a PDF, and press *Upload, verify and extract*. The page picks or creates the company, creates a document for it, uploads the bytes to a signed URL, finalises it, and streams job progress over Server-Sent Events until the document reaches `stored`. Verification then enqueues `document.extract`; the page follows that job too and, when it succeeds, prints the revision, its coverage and checks, and the first facts with their page numbers. Without Vertex AI configured the extract job fails with `EXTRACTOR_NOT_CONFIGURED`, which is expected.
 
 **From the terminal.** The same journey, scripted:
 
@@ -80,7 +80,7 @@ The Python CLI is not containerised; run it with uv (section 9). Cloud Tasks and
 pnpm smoke path/to/file.pdf
 ```
 
-It signs up a throwaway user, creates a company, uploads, polls the verify job, and exits non-zero unless the document ends up `stored`.
+It approves and signs up a throwaway user through the web origin (`API_URL` defaults to <http://localhost:5173>), creates a company, uploads, polls the verify job, and exits non-zero unless the document ends up `stored`. It needs the stack or the API and `pnpm --dir apps/web dev` running, with `NODE_ENV=development`, because it uses the development-only `/dev/auth/admit` route.
 
 **In the database.**
 
@@ -89,7 +89,23 @@ psql postgres://maester:maester@localhost:5433/maester -c 'table document'
 psql postgres://maester:maester@localhost:5433/maester -c 'select type, state, last_error_code from job order by created_at desc limit 5'
 ```
 
-**The web pages.** <http://localhost:5173> serves the index, `/login` and `/terminal`. They are static marketing and entry pages; they do not call the API yet. The visual contract they follow is [DESIGN.md](DESIGN.md).
+**The web pages.** <http://localhost:5173> serves the index, `/login`, `/signup`, `/verify-email`, `/forgot-password`, `/reset-password` and `/terminal`. The pages are static, but sign-in and recovery call the API: they sign in through the web origin's proxy, so the session cookie is first-party and `/terminal` can read the session. See "Signing in locally" below. The visual contract they follow is [DESIGN.md](DESIGN.md).
+
+### Signing in locally
+
+Maester is invite-only, so an email must be approved before it can create an account. With the stack running (or the API and `pnpm --dir apps/web dev`):
+
+1. Approve your email: `pnpm --filter @maester/db waitlist:approve you@example.com`. The script upserts an approved row in `waitlist_entry`; it reads `DATABASE_URL` from `.env`.
+2. Open <http://localhost:5173/signup>, create the account, and read the confirmation link from the API log: `pnpm stack:logs` (or `docker compose logs api`) in the stack, or the terminal running `pnpm dev:api`. The console mail driver (`MAIL_DRIVER=console`) logs each message, link included, instead of sending it. Open the link in the same browser; it lasts one hour.
+3. Sign in at <http://localhost:5173/login>. An email that is not approved gets no account: its sign-up looks the same as an approved one's, and the address is recorded as pending in `waitlist_entry`.
+
+To use Google sign-in locally, add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to `.env` (both or neither). The three setup steps are the ones in [SIGN_IN.md](SIGN_IN.md) section 6:
+
+1. In Google Cloud, set up the OAuth consent screen: External, scopes `openid email profile`, published to Production (in Testing only listed test users can sign in).
+2. Create an OAuth client of type Web application with the origin `http://localhost:5173` and the redirect URI `http://localhost:5173/api/auth/callback/google` (add the deployed web URL and its callback for production).
+3. For real email delivery, verify a sending domain in Resend (SPF and DKIM on a domain you own) and create an API key, then set `MAIL_DRIVER=resend`, `RESEND_API_KEY` and `MAIL_FROM`. Locally the console driver is enough.
+
+Google only signs in an approved email too, and refuses an account whose email Google has not confirmed.
 
 ## 5. Run the services without Docker
 
@@ -117,18 +133,26 @@ pnpm --dir apps/web install --frozen-lockfile
 pnpm --dir apps/web dev          # http://localhost:5173
 ```
 
+The dev server proxies `/api/auth`, `/v1` and `/dev` to `API_PROXY_TARGET` (default `http://localhost:8787`), so start the API first and always browse at <http://localhost:5173>, never at the API's own port: the session cookie and `BETTER_AUTH_URL` are the web origin's.
+
 Do not run both this and the full compose stack at once: they compete for ports 8787, 8788, 8790 and 5173.
 
 ## 6. Configuration
 
-Copy [`.env.example`](../.env.example) to `.env`. The TypeScript services validate their environment at boot and refuse to start on anything invalid, so a typo is a clear error rather than a runtime surprise. The compose file sets its own values inline; from `.env` it reads only `GOOGLE_CLOUD_PROJECT`, `GCLOUD_CONFIG_DIR`, `VERTEX_LOCATION` and `GEMINI_MODEL`, for the extractor.
+Copy [`.env.example`](../.env.example) to `.env`. The TypeScript services validate their environment at boot and refuse to start on anything invalid, so a typo is a clear error rather than a runtime surprise. The compose file sets its own values inline; from `.env` it reads only `GOOGLE_CLOUD_PROJECT`, `GCLOUD_CONFIG_DIR`, `VERTEX_LOCATION` and `GEMINI_MODEL`, for the extractor, and `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, for Google sign-in.
 
 | Variable | Used by | Required | Local default |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | api, worker | Always | `postgres://maester:maester@localhost:5433/maester` |
 | `BETTER_AUTH_SECRET` | api | Always, at least 32 characters | A placeholder; replace it anywhere shared |
-| `BETTER_AUTH_URL` | api | Always | `http://localhost:8787` |
-| `ALLOWED_ORIGINS` | api | Always | The API and web origins, comma separated |
+| `BETTER_AUTH_URL` | api | Always | `http://localhost:5173`; the web origin, not the API's, because the browser reaches the API through the web origin's proxy |
+| `ALLOWED_ORIGINS` | api | Always | The web origins (`http://localhost:5173,http://localhost:4173`), comma separated |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | api | Both or neither; required in production | Unset (Google sign-in is off) |
+| `MAIL_DRIVER` | api | Defaults to `console`; `console` is refused in production | `console` (logs each message and its link) or `resend` |
+| `RESEND_API_KEY`, `MAIL_FROM` | api | When `MAIL_DRIVER=resend` | Unset; `MAIL_FROM` looks like `Maester <hello@your-domain>` |
+| `AUTH_RATE_LIMIT` | api | Defaults to `off`; `on` turns the auth rate limiter on outside production (it is always on in production) | `off` |
+| `TRUSTED_PROXIES` | api | Required in production (the API refuses to boot without it); comma-separated addresses or CIDR ranges of proxies to skip when reading `X-Forwarded-For` | Unset |
+| `API_PROXY_TARGET` | web (Vite dev and preview, the nginx image) | Defaults to `http://localhost:8787`; the compose stack sets `http://api:8787` | `http://localhost:8787` |
 | `STORAGE_DRIVER` | api, worker | Defaults to `gcs` | `disk` |
 | `STORAGE_DIR` | api, worker | When the driver is `disk` | `../../data/blobs` |
 | `GCS_BUCKET` | api, worker | When the driver is `gcs` | Unset |
@@ -293,8 +317,8 @@ The document engine and CLI carry the prototype's limits, and the hosted service
 - The correction guard checks changed values against the page's text layer, so it cannot protect scanned pages, and it does not stop a correction from changing which components a subtotal lists.
 - There is no review or correction flow for facts yet (F06), and the web client does not show them (F07).
 - Extraction is not deployed: the Cloud Run steps are listed in [document extraction](EXTRACTION.md) section 7.
-- Identity is email and password only. Every user gets one personal workspace; there is no invitation or role management.
-- The web client is a set of static pages. It does not call the API, and sign-in is not connected.
+- Identity is Google or email and password, behind a waitlist: approval is a script, with no admin screen, and nothing is emailed on approval. Every user gets one personal workspace; there is no invitation or role management. [SIGN_IN.md](SIGN_IN.md) section 3.8 lists the known limits, including pre-registration through the email link.
+- The web client is a set of static pages. Sign-in and recovery call the API through the web origin; `/terminal` shows a placeholder under a real session, and the overview is a synthetic demo that does not read the API.
 - Local dispatch does not retry a failed job automatically.
 - There is no ledger, market data, portfolio accounting, evidence-backed Analyst or autonomous loop. Extraction accuracy is not measured.
 
