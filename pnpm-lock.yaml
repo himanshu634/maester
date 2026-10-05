@@ -231,6 +231,9 @@ importers:
       '@google-cloud/tasks':
         specifier: ^7.1.0
         version: 7.1.0
+      '@maester/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@maester/db':
         specifier: workspace:*
         version: link:../db

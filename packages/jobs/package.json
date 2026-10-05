@@ -7,6 +7,7 @@
   "scripts": { "lint": "eslint .", "typecheck": "tsc -p tsconfig.json", "test": "vitest run" },
   "dependencies": {
     "@google-cloud/tasks": "^7.1.0",
+    "@maester/contracts": "workspace:*",
     "@maester/db": "workspace:*",
     "drizzle-orm": "^0.45.2"
   },
