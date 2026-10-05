@@ -173,7 +173,8 @@ def create_app(settings: Settings | None = None, model_factory: ModelFactory | N
                 yield _line(ErrorEvent(code=err.code, retryable=err.retryable, message=err.message))
                 return
             except Exception as exc:  # a bug, not a document problem; the job system retries
-                log.exception("extraction crashed document=%s", x_document_id)
+                # The type only: an exception's message or traceback can carry the document's text.
+                log.error("extraction crashed document=%s error=%s", x_document_id, type(exc).__name__)
                 yield _line(ErrorEvent(code="EXTRACTION_FAILED", retryable=True, message=f"unexpected {type(exc).__name__}"))
                 return
             log.info("extraction finished document=%s state=%s facts=%d warnings=%d seconds=%.1f", x_document_id,
@@ -195,7 +196,8 @@ def create_app(settings: Settings | None = None, model_factory: ModelFactory | N
             log.info("classification failed document=%s code=%s", x_document_id, err.code)
             return JSONResponse(ClassifyError(code=err.code, retryable=err.retryable, message=err.message).to_wire())
         except Exception as exc:  # a bug, not a document problem; the job system retries
-            log.exception("classification crashed document=%s", x_document_id)
+            # The type only: an exception's message or traceback can carry the document's text.
+            log.error("classification crashed document=%s error=%s", x_document_id, type(exc).__name__)
             return JSONResponse(ClassifyError(code="CLASSIFICATION_FAILED", retryable=True,
                                               message=f"unexpected {type(exc).__name__}").to_wire())
         log.info("classification finished document=%s kind=%s evidence=%d warnings=%d seconds=%.1f", x_document_id,

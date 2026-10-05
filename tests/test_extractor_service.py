@@ -3,6 +3,7 @@
 import json
 import time
 import unittest
+from unittest import mock
 from urllib.parse import quote
 
 from fastapi.testclient import TestClient
@@ -87,6 +88,15 @@ class ExtractorServiceTests(unittest.TestCase):
         stream = events(post(client(Broken())))
         self.assertEqual((stream[-1].code, stream[-1].retryable), ("EXTRACTION_FAILED", True))
 
+    def test_a_crash_logs_the_error_type_but_never_its_message(self):
+        boom = ValueError("Revenue from operations 1,234 on page 4")
+        with mock.patch("maester_extractor.app.run_extraction", side_effect=boom), \
+                self.assertLogs("maester_extractor", "ERROR") as logs:
+            stream = events(post(client()))
+        self.assertEqual((stream[-1].code, stream[-1].retryable), ("EXTRACTION_FAILED", True))
+        self.assertEqual(logs.output, ["ERROR:maester_extractor:extraction crashed document=doc-1 error=ValueError"])
+        self.assertTrue(all(r.exc_info is None for r in logs.records))
+
     def test_rejects_a_wrong_or_missing_secret(self):
         c = client()
         self.assertEqual(post(c, headers={"x-extractor-secret": "wrong"}).status_code, 401)
@@ -145,6 +155,15 @@ class ClassifyEndpointTests(unittest.TestCase):
             raise ExtractionError("EXTRACTOR_NOT_CONFIGURED", "GOOGLE_CLOUD_PROJECT is not set", retryable=False)
         body = CLASSIFY_RESPONSE.validate_python(classify_post(classify_client(missing)).json())
         self.assertEqual((body.result.kind, [w.code for w in body.result.warnings]), ("not_sure", ["MODEL_UNAVAILABLE"]))
+
+    def test_a_crash_is_retryable_and_logs_the_error_type_but_never_its_message(self):
+        boom = ValueError("Synthetic Cements Limited, CIN L26940MH2001PLC123456")
+        with mock.patch("maester_extractor.app.run_classification", side_effect=boom), \
+                self.assertLogs("maester_extractor", "ERROR") as logs:
+            body = CLASSIFY_RESPONSE.validate_python(classify_post(classify_client()).json())
+        self.assertEqual((body.code, body.retryable), ("CLASSIFICATION_FAILED", True))
+        self.assertEqual(logs.output, ["ERROR:maester_extractor:classification crashed document=doc-1 error=ValueError"])
+        self.assertTrue(all(r.exc_info is None for r in logs.records))
 
     def test_wrong_secret_is_401_and_too_large_is_413(self):
         self.assertEqual(classify_post(classify_client(), secret="wrong").status_code, 401)
