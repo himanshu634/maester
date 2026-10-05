@@ -162,4 +162,21 @@ describe("classification", () => {
     const [d] = await ctx.db.select().from(schema.document).where(eq(schema.document.id, doc));
     expect(d!.intakeState).toBe("identifying");
   });
+
+  it("another workspace can neither change the answers nor re-run classification", async () => {
+    const a = await ctx.signUp("owner-x@example.com");
+    const b = await ctx.signUp("intruder-x@example.com");
+    const doc = await seedDocument(a.workspaceId, a.userId, "kept");
+    const cid = await seedClassification(a.workspaceId, doc, { kind: "other", otherType: "announcement" });
+    const jobsBefore = await ctx.db.select().from(schema.job).where(eq(schema.job.subjectId, doc));
+    const change = await ctx.app.request(url(b.workspaceId, doc), send("POST", b.cookie, { basedOn: cid, kind: "annual_report" }));
+    expect(change.status).toBe(404);
+    const rerun = await ctx.app.request(url(b.workspaceId, doc, "classify"), send("POST", b.cookie, {}));
+    expect(rerun.status).toBe(404);
+    const [d] = await ctx.db.select().from(schema.document).where(eq(schema.document.id, doc));
+    expect(d!.intakeState).toBe("kept");
+    const rows = await ctx.db.select().from(schema.documentClassification).where(eq(schema.documentClassification.documentId, doc));
+    expect(rows.map((r) => r.id)).toEqual([cid]);
+    expect(await ctx.db.select().from(schema.job).where(eq(schema.job.subjectId, doc))).toHaveLength(jobsBefore.length);
+  });
 });
