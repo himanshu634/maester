@@ -1,6 +1,6 @@
 # Web application
 
-Status: a static index page is implemented at `/`, with sign-in (`/login`, `/signup`, `/verify-email`, `/forgot-password`, `/reset-password`) connected to the API and a signed-in `/terminal`. The investor journeys (research workspace, holdings snapshot, evidence review) are still planned; see the [delivery plan](../../docs/DELIVERY_PLAN.md). The sign-in design is in [SIGN_IN.md](../../docs/SIGN_IN.md).
+Status: a static index page is implemented at `/`, with sign-in (`/login`, `/signup`, `/verify-email`, `/forgot-password`, `/reset-password`) connected to the API and the signed-in terminal's pages under `/terminal`, which say what each will do until it works. The investor journeys (research workspace, holdings snapshot, evidence review) are still planned; see the [delivery plan](../../docs/DELIVERY_PLAN.md). The sign-in design is in [SIGN_IN.md](../../docs/SIGN_IN.md).
 
 Stack: SvelteKit 2, Svelte 5 (runes), TypeScript, `@sveltejs/adapter-static`, pnpm 11, Node 22. The visual system is specified in [DESIGN.md](../../docs/DESIGN.md) and enforced by `src/lib/styles/design-guard.test.ts`. The decision record is [ADR 0002](../../docs/decisions/0002-web-sveltekit-brutalist-design-system.md).
 
@@ -37,7 +37,11 @@ nginx.conf.template                  serves the build and proxies /api/auth, /v1
 src/lib/components/                  Register, Masthead, Hero, Problem, EvidenceTrace, Ledger,
                                      Comparison, AccuracySpec, StatusBoard, SiteFooter
 src/routes/+page.svelte              index page
-src/routes/terminal/+page.svelte     reads the session; hands off to /login when there is none
+src/routes/terminal/                 the signed-in pages (overview, holdings, research, watchlist,
+                                     documents, analyst, activity, settings), coming soon for now
+src/lib/terminal/pages.ts            the signed-in page list the rail and the not-found page read
+src/lib/components/terminal/         TerminalShell, SignedInPage (reads the session; hands off to
+                                     /login when there is none), ComingSoon, sketches/
 src/routes/login/+page.svelte        Google and email sign-in
 src/routes/signup/+page.svelte       create an account, then go on to /verify-email
 src/routes/verify-email/+page.svelte check your email, resend, confirmed or expired link

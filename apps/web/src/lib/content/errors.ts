@@ -22,10 +22,11 @@ export const errorContent = {
 		title: 'No page here. Maester',
 		tag: 'Not found',
 		heading: 'There’s no page here in the terminal.',
-		body: 'The terminal has one page so far: the overview.',
+		body: 'The demo has one page, the overview. With an account, the terminal lists every page of the first release; most of them are coming soon.',
 		asked: 'You asked for',
-		pages: 'Pages in the terminal',
-		pageList: 'Overview',
+		demoPages: 'In the demo',
+		demoPageList: 'Overview',
+		accountPages: 'With an account',
 		primary: 'Go to the overview'
 	},
 	failed: {

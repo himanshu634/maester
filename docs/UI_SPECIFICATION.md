@@ -27,7 +27,7 @@ The rail header contains Maester and the workspace picker. The context header co
 | Activity | `/activity` | R1 basic | Jobs, imports, edits |
 | Settings | `/settings` | R1 | Preferences, data, account |
 
-Group portfolio navigation together; group Research, Watchlist, Documents and Analyst together. Activity and Settings stay at the bottom. Do not expose future routes as empty menu items. R1 without any portfolio opens Research onboarding. Remember the last workspace, but validate access before restoring a deep link.
+Group portfolio navigation together; group Research, Watchlist, Documents and Analyst together. Activity and Settings stay at the bottom. Do not expose future routes as empty menu items. Until an R1 page works, the web client may list it marked "Soon" and open a coming-soon page that says what it will do and what it needs first ([design specification](DESIGN.md) sections 7 and 10); a page outside R1 is not listed. R1 without any portfolio opens Research onboarding. Remember the last workspace, but validate access before restoring a deep link.
 
 Global search returns companies, securities, documents and saved notes in named groups. Results show exchange, company name and source/period metadata. It must never silently choose the first result for an ambiguous ticker. Search text is not automatically submitted to an AI model.
 

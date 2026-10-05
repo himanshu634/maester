@@ -318,7 +318,7 @@ The document engine and CLI carry the prototype's limits, and the hosted service
 - There is no review or correction flow for facts yet (F06), and the web client does not show them (F07).
 - Extraction is not deployed: the Cloud Run steps are listed in [document extraction](EXTRACTION.md) section 7.
 - Identity is Google or email and password, behind a waitlist: approval is a script, with no admin screen, and nothing is emailed on approval. Every user gets one personal workspace; there is no invitation or role management. [SIGN_IN.md](SIGN_IN.md) section 3.8 lists the known limits, including pre-registration through the email link.
-- The web client is a set of static pages. Sign-in and recovery call the API through the web origin; `/terminal` shows a placeholder under a real session, and the overview is a synthetic demo that does not read the API.
+- The web client is a set of static pages. Sign-in and recovery call the API through the web origin; under a real session the terminal's first-release pages (`/terminal` and seven more) are coming-soon pages, and the overview is a synthetic demo that does not read the API.
 - Local dispatch does not retry a failed job automatically.
 - There is no ledger, market data, portfolio accounting, evidence-backed Analyst or autonomous loop. Extraction accuracy is not measured.
 

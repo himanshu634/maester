@@ -2,15 +2,15 @@
 	import { terminalContent } from '$lib/content/terminal';
 	import SignedInPage from '$lib/components/terminal/SignedInPage.svelte';
 	import ComingSoon from '$lib/components/terminal/ComingSoon.svelte';
-	import RollerSketch from '$lib/components/terminal/sketches/RollerSketch.svelte';
+	import CraneSketch from '$lib/components/terminal/sketches/CraneSketch.svelte';
 
-	const copy = terminalContent.comingSoon.pages.overview;
+	const copy = terminalContent.comingSoon.pages.holdings;
 </script>
 
-<SignedInPage page="overview">
-	<ComingSoon page="overview">
+<SignedInPage page="holdings">
+	<ComingSoon page="holdings">
 		{#snippet sketch()}
-			<RollerSketch label={copy.sketch.label} lines={copy.sketch} />
+			<CraneSketch label={copy.sketch.label} name="Holdings" lines={copy.sketch} />
 		{/snippet}
 	</ComingSoon>
 </SignedInPage>

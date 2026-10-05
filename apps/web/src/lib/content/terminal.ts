@@ -11,7 +11,9 @@ export const terminalContent = {
 	quietPageTitle: 'Overview, quiet week (synthetic demo). Maester',
 	shell: {
 		navLabel: 'Terminal',
+		footNavLabel: 'Activity and settings',
 		overview: 'Overview',
+		soon: 'Soon',
 		menu: 'Menu',
 		workspaceLabel: 'Workspace',
 		workspaceName: 'Personal',
@@ -23,7 +25,6 @@ export const terminalContent = {
 		signOutFailed: 'Sign-out didn’t finish. Try again.'
 	},
 	readOnlyNote: 'Read-only demo. Decisions and updates arrive with your account.',
-	enterDemo: 'Explore the synthetic demo',
 	leaveDemo: 'Leave the demo',
 	actions: {
 		updateHoldings: 'Update holdings',
@@ -75,5 +76,96 @@ export const terminalContent = {
 	research: {
 		heading: 'Research updates',
 		aside: 'Companies you own'
+	},
+	/**
+	 * The signed-in pages that do not work yet (ComingSoon). Each says what the page will do
+	 * for the investor, then what it needs first. The sketch lines are the hand lettering inside
+	 * each page's drawing, which carries no information: `label` is its text alternative.
+	 */
+	comingSoon: {
+		tag: 'Coming soon',
+		pages: {
+			overview: {
+				what: 'Your portfolio on one page: what needs your decision this week, what each holding is worth and where the money sits.',
+				needs: 'It opens once your holdings are in Maester.',
+				sketch: {
+					label:
+						'A sketch of a paint roller on a half-painted wall. Dragging the roller paints the wall, but the paint runs out halfway across.',
+					idle: 'roll it across the wall',
+					rolling: 'nice and even…',
+					dry: 'out of paint. needs another coat'
+				}
+			},
+			holdings: {
+				what: 'Every position you own, with its weight, cost and the date of its price. We’re still building it.',
+				needs: 'It opens once you can add your holdings.',
+				sketch: {
+					label:
+						'A sketch of a crane holding a block labelled Holdings over a half-built wall. Dragging the block down lowers it, but the wall is not finished.',
+					idle: 'drag the load down',
+					lower: 'a little lower…',
+					landed: 'not yet! the walls are still going up'
+				}
+			},
+			research: {
+				what: 'Each company you own or follow, with the figures from its filings and the page each figure came from.',
+				needs: 'It fills in as the filings for your companies are read.',
+				sketch: {
+					label:
+						'A sketch of a filing cabinet. Dragging the top drawer open shows it holds a single note that says being sorted.',
+					idle: 'pull the drawer open',
+					open: 'just one note so far',
+					note: ['being', 'sorted']
+				}
+			},
+			watchlist: {
+				what: 'Companies you’re watching but don’t own yet, each with the date you meant to look again and what has changed since.',
+				needs: 'It opens with the research pages.',
+				sketch: {
+					label:
+						'A sketch of a pair of binoculars over a quiet horizon. Dragging sweeps their view along the horizon, and there is nothing in it yet.',
+					idle: 'sweep the horizon',
+					empty: 'nothing in view yet'
+				}
+			},
+			documents: {
+				what: 'The annual reports and results for your companies, each with what was read from it and anything left for you to check.',
+				needs: 'Adding your own filings opens here first.'
+			},
+			analyst: {
+				what: 'Ask about a company you own and get an answer that shows its working and the page behind every figure.',
+				needs: 'It answers from your filings, so it starts once they are read.',
+				sketch: {
+					label:
+						'A sketch of a desk lamp beside an empty chair. Pulling the lamp’s cord switches the light on, and it shows the chair is still empty.',
+					idle: 'pull the cord',
+					on: 'the analyst starts soon',
+					off: 'pull it again'
+				}
+			},
+			activity: {
+				what: 'A log of everything done for you: each filing read, each figure changed and who changed it.',
+				needs: 'The first entries arrive with your first filing.',
+				sketch: {
+					label:
+						'A sketch of an open logbook and a pencil. Dragging the pencil along the first line writes first entry soon.',
+					idle: 'drag the pencil along the line',
+					writing: 'keep going…',
+					written: 'that’s the only line for now',
+					entry: 'first entry soon'
+				}
+			},
+			settings: {
+				what: 'Your account, your preferences and what happens to your data, in one place.',
+				needs: 'Until it opens, you can sign out below the page list.',
+				sketch: {
+					label:
+						'A sketch of a spanner on a bolt in a half-assembled bracket. Dragging around the bolt turns the spanner; some parts are still missing.',
+					idle: 'turn the spanner',
+					turning: 'a little tighter…',
+					done: 'still fitting the parts'
+				}
+			}
+		}
 	}
 } as const;

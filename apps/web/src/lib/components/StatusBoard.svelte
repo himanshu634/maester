@@ -7,9 +7,11 @@
 		heading: string;
 		paragraphs: readonly string[];
 		cta: Link;
+		/** The read-only demo, the one place it is linked from. */
+		demo: Link;
 	}
 
-	let { headingId, heading, paragraphs, cta }: Props = $props();
+	let { headingId, heading, paragraphs, cta, demo }: Props = $props();
 </script>
 
 <h2 id={headingId}>{heading}</h2>
@@ -18,7 +20,10 @@
 		<p class="measure">{paragraph}</p>
 	{/each}
 </div>
-<a class="button" href={resolve(cta.href)}>{cta.label}</a>
+<div class="actions">
+	<a class="button" href={resolve(cta.href)}>{cta.label}</a>
+	<a href={resolve(demo.href)}>{demo.label}</a>
+</div>
 
 <style>
 	h2 {
@@ -27,6 +32,13 @@
 		font-size: var(--text-xl);
 		line-height: var(--leading-heading);
 		letter-spacing: var(--tracking-heading);
+	}
+
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-4) var(--space-6);
 	}
 
 	.body {

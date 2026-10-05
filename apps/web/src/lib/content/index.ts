@@ -13,7 +13,7 @@ import type { Pathname } from '$app/types';
  * routes the public copy links to, because resolve() cannot take a union of every route once
  * there are more than 25 (the compiler stops matching the argument against its overloads).
  */
-export type Href = Extract<Pathname, '/' | '/terminal'> | `/#${string}`;
+export type Href = Extract<Pathname, '/' | '/terminal' | '/terminal/demo'> | `/#${string}`;
 
 export interface Link {
 	label: string;
@@ -71,10 +71,10 @@ export interface SiteContent {
 	};
 	week: { heading: string; intro: string; columns: [string, string]; rows: ComparisonRow[] };
 	trust: { heading: string; intro: string; principles: Principle[]; measured: string };
-	status: { heading: string; paragraphs: string[]; cta: Link };
+	status: { heading: string; paragraphs: string[]; cta: Link; demo: Link };
 	footer: { note: string; links: ExternalLink[] };
 	login: { heading: string; lede: string };
-	terminal: { heading: string; checking: string; noScript: string; placeholder: string };
+	terminal: { checking: string; noScript: string };
 }
 
 export const content = {
@@ -297,7 +297,8 @@ export const content = {
 			'Maester is early and built in the open. The part that reads annual reports and answers questions about them works today. The watching loop, the ledger and the terminal are being built next, starting with Indian markets and long-term equity investors.',
 			'We would rather tell you what works than what we hope will. Nothing on this page is a promise of a date.'
 		],
-		cta: { label: 'Enter the terminal', href: '/terminal' }
+		cta: { label: 'Enter the terminal', href: '/terminal' },
+		demo: { label: 'Explore the synthetic demo', href: '/terminal/demo' }
 	},
 	footer: {
 		note: 'Maester is a working name. Every company, figure and event on this page is synthetic. Maester is free and open source under the GNU Affero General Public License, version 3 or later. Built in public by Himanshu Mendapara.',
@@ -312,10 +313,7 @@ export const content = {
 		lede: 'The terminal is where your holdings, your thesis and your suggestions live.'
 	},
 	terminal: {
-		heading: 'The terminal',
 		checking: 'Checking your session.',
-		noScript: 'Sign in to enter the terminal.',
-		placeholder:
-			'You are in. Your holdings and the filings behind them arrive with the first release.'
+		noScript: 'Sign in to enter the terminal.'
 	}
 } as const satisfies SiteContent;

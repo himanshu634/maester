@@ -34,3 +34,13 @@ or rule and the notice. The sign-in illustration SVG and the round-1 boards are
 read from `../prev/Main.dc.html` and `../prev/Mobile.dc.html`: save them there
 from the published canvas first (`project/Main.dc.html`, `project/Mobile.dc.html`).
 Run `node signin.mjs signin-heights.json`.
+
+## Terminal pages round (2026-10-05)
+
+`documents.mjs`, `documents-notes.json` and `documents-heights.json` built round 1 of the
+"Maester Terminal Pages" canvas (https://claude.ai/artifact/DZZwTXu6q7c68hfL8MSaJC):
+Today, A · Every page has a door, B · The intake desk (picked), C · Blueprints, and the
+shared upload states. They add the full signed-in rail with "Soon", coming-soon pages
+with the crate, crane (interactive) and blueprint sketches, the drop zone, the stage
+ladder, the intake slip and the cover-page evidence view.
+Run `node documents.mjs --measure`, measure, then `node documents.mjs documents-heights.json`.

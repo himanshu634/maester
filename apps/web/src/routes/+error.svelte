@@ -19,6 +19,7 @@
 		errorView,
 		signInAgainHref
 	} from '$lib/errors/errors';
+	import { listLabels, terminalPages } from '$lib/terminal/pages';
 	import Masthead from '$lib/components/Masthead.svelte';
 	import TerminalShell from '$lib/components/terminal/TerminalShell.svelte';
 	import LedgerSketch from '$lib/components/errors/LedgerSketch.svelte';
@@ -121,7 +122,8 @@
 				</div>
 				{@render facts([
 					[c.terminalNotFound.asked, path],
-					[c.terminalNotFound.pages, c.terminalNotFound.pageList]
+					[c.terminalNotFound.demoPages, c.terminalNotFound.demoPageList],
+					[c.terminalNotFound.accountPages, listLabels(terminalPages)]
 				])}
 				<div class="actions">
 					<a class="button" href={resolve('/terminal/demo')}>{c.terminalNotFound.primary}</a>
