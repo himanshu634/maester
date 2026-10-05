@@ -64,9 +64,11 @@ def _apply(a: rules.RuleAnswers, output: ClassifyOutput, asked: list[Question], 
            texts: list[str]) -> tuple[list[Evidence], int]:
     allowed = {q.field: q.allowed for q in asked}
     kept: list[Evidence] = []
+    settled: set[str] = set()
     dropped = 0
     for answer in output.answers:
-        if answer.field not in allowed:
+        if answer.field not in allowed or answer.field in settled:
+            dropped += 1  # not asked, or already answered: the first valid answer wins
             continue
         value = " ".join(answer.value.split())
         checked = _checked(answer, pages, texts)
@@ -78,6 +80,7 @@ def _apply(a: rules.RuleAnswers, output: ClassifyOutput, asked: list[Question], 
             dropped += 1
             continue
         index, quote, match = checked
+        settled.add(answer.field)
         if answer.field == "kind":
             a.kind = value
         elif answer.field == "other_type":
@@ -123,11 +126,12 @@ def run_classification(pdf: bytes, *, model_factory: ModelFactory | None,
         pages = sorted(set(range(min(rules.TITLE_PAGES, doc.page_count))) | set(a.pointed_pages))[:MAX_MODEL_PAGES]
         try:
             model = model_factory()
+            name = model.name
             output = _call(model, doc.subset(pages), len(pages), questions, settings)
         except Exception as exc:  # a model problem never fails classification
             warnings.append(ExtractionWarning(code="MODEL_UNAVAILABLE", message=f"the model could not be used: {_reason(exc)}"))
         else:
-            model_name, prompt_version = model.name, PROMPT_VERSION
+            model_name, prompt_version = name, PROMPT_VERSION
             model_evidence, dropped = _apply(a, output, questions, pages, doc.page_texts)
             if dropped:
                 warnings.append(ExtractionWarning(
@@ -141,6 +145,10 @@ def run_classification(pdf: bytes, *, model_factory: ModelFactory | None,
                          text_layer_match=True) for h in a.evidence] + model_evidence
     if not read:
         evidence = [e for e in evidence if e.field not in ("period", "results_span")]
+    if kind != "other":
+        evidence = [e for e in evidence if e.field != "other_type"]
+    if kind != "financial_results":
+        evidence = [e for e in evidence if e.field != "results_span"]
     return ClassificationResult(
         rules_version=rules.RULES_VERSION, model=model_name, prompt_version=prompt_version, page_count=doc.page_count,
         kind=kind, other_type=other_type,

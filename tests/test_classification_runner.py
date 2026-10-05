@@ -61,11 +61,15 @@ class RunnerTests(unittest.TestCase):
 
     def test_a_page_outside_the_subset_is_dropped(self):
         model = ScriptedClassifier([Answer(field="kind", value="other", page=9, quote="Kind words")])
-        self.assertEqual(run_classification(UNKNOWN, model_factory=lambda: model, settings=FAST).kind, "not_sure")
+        r = run_classification(UNKNOWN, model_factory=lambda: model, settings=FAST)
+        self.assertEqual(r.kind, "not_sure")
+        self.assertIn("MODEL_ANSWER_DROPPED", [w.code for w in r.warnings])
 
     def test_a_value_outside_the_allowed_set_is_dropped(self):
         model = ScriptedClassifier([Answer(field="kind", value="brochure", page=1, quote="Kind words about the year gone by")])
-        self.assertEqual(run_classification(UNKNOWN, model_factory=lambda: model, settings=FAST).kind, "not_sure")
+        r = run_classification(UNKNOWN, model_factory=lambda: model, settings=FAST)
+        self.assertEqual(r.kind, "not_sure")
+        self.assertIn("MODEL_ANSWER_DROPPED", [w.code for w in r.warnings])
 
     def test_a_company_not_in_its_quote_is_dropped(self):
         pdf = make_pdf([["Kind words about the year gone by"]])
@@ -98,6 +102,65 @@ class RunnerTests(unittest.TestCase):
         r = run_classification(UNKNOWN, model_factory=lambda: model, settings=FAST)
         self.assertEqual((len(model.calls), r.kind), (2, "other"))
         self.assertEqual(r.other_type, "unlisted_type")
+
+    def test_a_second_answer_for_the_same_field_is_dropped(self):
+        quote = "Kind words about the year gone by"
+        model = ScriptedClassifier([Answer(field="kind", value="other", page=1, quote=quote),
+                                    Answer(field="kind", value="annual_report", page=1, quote=quote)])
+        r = run_classification(UNKNOWN, model_factory=lambda: model, settings=FAST)
+        self.assertEqual(r.kind, "other")
+        self.assertEqual([e.field for e in r.evidence].count("kind"), 1)
+        self.assertIn("MODEL_ANSWER_DROPPED", [w.code for w in r.warnings])
+
+    def test_an_answer_for_a_field_not_asked_is_dropped(self):
+        quote = "Kind words about the year gone by"
+        model = ScriptedClassifier([Answer(field="kind", value="other", page=1, quote=quote),
+                                    Answer(field="company", value="Synthetic Textiles Limited", page=1, quote=quote)])
+        r = run_classification(UNKNOWN, model_factory=lambda: model, settings=FAST)
+        self.assertNotIn("company", model.calls[0])  # the rules already read the company
+        self.assertEqual([e.source for e in r.evidence if e.field == "company"], ["rule"])
+        self.assertIn("MODEL_ANSWER_DROPPED", [w.code for w in r.warnings])
+
+    def test_other_type_and_span_evidence_follow_the_kind(self):
+        quote = "Kind words about the year gone by"
+        model = ScriptedClassifier([Answer(field="kind", value="annual_report", page=1, quote=quote),
+                                    Answer(field="other_type", value="announcement", page=1, quote=quote),
+                                    Answer(field="results_span", value="quarter", page=1, quote=quote)])
+        r = run_classification(UNKNOWN, model_factory=lambda: model, settings=FAST)
+        self.assertEqual(r.kind, "annual_report")
+        self.assertEqual({e.field for e in r.evidence} & {"other_type", "results_span"}, set())
+
+    def test_a_model_without_a_name_degrades_to_rules(self):
+        class Nameless:
+            def classify(self, pdf, page_count, questions):
+                return ClassifyOutput(answers=[])
+        r = run_classification(UNKNOWN, model_factory=Nameless, settings=FAST)
+        self.assertEqual(([w.code for w in r.warnings], r.model), (["MODEL_UNAVAILABLE"], None))
+
+    def test_a_transient_error_twice_degrades_to_rules(self):
+        class Always(ScriptedClassifier):
+            def classify(self, pdf, page_count, questions):
+                self.calls.append([q.field for q in questions])
+                raise TimeoutError()
+        model = Always()
+        r = run_classification(UNKNOWN, model_factory=lambda: model, settings=FAST)
+        self.assertEqual((len(model.calls), r.kind, r.model), (2, "not_sure", None))
+        self.assertEqual([w.code for w in r.warnings], ["MODEL_UNAVAILABLE"])
+
+    def test_a_non_transient_model_error_degrades_to_rules(self):
+        model = ScriptedClassifier(fail_first=ValueError("bad"))
+        r = run_classification(UNKNOWN, model_factory=lambda: model, settings=FAST)
+        self.assertEqual((len(model.calls), r.kind, r.model), (1, "not_sure", None))
+        self.assertEqual([w.code for w in r.warnings], ["MODEL_UNAVAILABLE"])
+
+    def test_a_later_page_maps_back_to_its_original_index(self):
+        quote = "Standalone Balance Sheet as at 31 March 2026"
+        pdf = make_pdf([["Filler text"]] * 6 + [[quote]])
+        model = ScriptedClassifier([Answer(field="kind", value="annual_report", page=6, quote=quote)])
+        r = run_classification(pdf, model_factory=lambda: model, settings=FAST)
+        self.assertEqual(r.kind, "annual_report")
+        kind = next(e for e in r.evidence if e.field == "kind")
+        self.assertEqual((kind.source, kind.page_index), ("model", 6))
 
     def test_an_unreadable_pdf_is_a_permanent_error(self):
         with self.assertRaises(ExtractionError) as caught:
