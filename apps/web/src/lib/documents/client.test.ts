@@ -54,6 +54,15 @@ describe('documentsApi', () => {
 		]);
 	});
 
+	it('reads one company', async () => {
+		const { fetcher, calls } = scripted(
+			json(200, { id: 'co-1', displayName: 'Synthetic Cements' })
+		);
+		const company = await documentsApi(fetcher, WS).getCompany('co-1');
+		expect(company.displayName).toBe('Synthetic Cements');
+		expect(calls[0].url).toBe(`/v1/workspaces/${WS}/companies/co-1`);
+	});
+
 	it('reads one document', async () => {
 		const { fetcher, calls } = scripted(json(200, { id: DOC }));
 		const doc = await documentsApi(fetcher, WS).getDocument(DOC);

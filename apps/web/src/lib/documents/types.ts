@@ -95,6 +95,8 @@ export interface Evidence {
 	/** 0-based; null for the investor's own answers. */
 	pageIndex: number | null;
 	quote: string | null;
+	/** Whether the quote was found in the page's text layer; null when the page has none (a scan). */
+	textLayerMatch: boolean | null;
 }
 
 export interface DocumentClassification {

@@ -147,6 +147,10 @@ export function documentsApi(fetcher: Fetcher, workspaceId: string) {
 			return postJson(fetcher, `${doc(id)}/extract`);
 		},
 
+		getCompany(id: string): Promise<Company> {
+			return getJson(fetcher, `${base}/companies/${encodeURIComponent(id)}`);
+		},
+
 		listCompanies(): Promise<Page<Company>> {
 			return getJson(fetcher, `${base}/companies?limit=${COMPANY_PAGE}`);
 		},

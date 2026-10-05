@@ -4,8 +4,11 @@ import {
 	changeFailure,
 	checkFile,
 	companyAnswer,
+	companyCandidates,
 	identifiers,
 	isLive,
+	kindSaveLabel,
+	normalizeCompanyName,
 	ladder,
 	MAX_UPLOAD_BYTES,
 	pickSlip,
@@ -16,7 +19,7 @@ import {
 	whatItIs
 } from './intake';
 import { ApiError } from './client';
-import type { Classification, DocumentRecord, Evidence, Job } from './types';
+import type { Classification, Company, DocumentRecord, Evidence, Job } from './types';
 
 function job(type: string, state: Job['state']): Job {
 	return { id: `job-${type}-${state}`, type, state, lastErrorCode: null };
@@ -57,14 +60,33 @@ const annualReport: Classification = {
 	setBy: 'maester'
 };
 const annualEvidence: Evidence[] = [
-	{ field: 'kind', source: 'rule', pageIndex: 0, quote: 'Integrated Annual Report 2025-26' },
-	{ field: 'company', source: 'rule', pageIndex: 0, quote: 'Synthetic Cements Limited' },
-	{ field: 'identifier', source: 'rule', pageIndex: 0, quote: 'CIN: L26940MH2001PLC123456' },
+	{
+		field: 'kind',
+		source: 'rule',
+		pageIndex: 0,
+		quote: 'Integrated Annual Report 2025-26',
+		textLayerMatch: true
+	},
+	{
+		field: 'company',
+		source: 'rule',
+		pageIndex: 0,
+		quote: 'Synthetic Cements Limited',
+		textLayerMatch: true
+	},
+	{
+		field: 'identifier',
+		source: 'rule',
+		pageIndex: 0,
+		quote: 'CIN: L26940MH2001PLC123456',
+		textLayerMatch: true
+	},
 	{
 		field: 'period',
 		source: 'rule',
 		pageIndex: 1,
-		quote: 'Standalone Balance Sheet as at 31 March 2026'
+		quote: 'Standalone Balance Sheet as at 31 March 2026',
+		textLayerMatch: true
 	}
 ];
 
@@ -265,20 +287,122 @@ describe('sourceOf', () => {
 
 	it('says so when the answer is the investor’s', () => {
 		const changed: Evidence[] = [
-			{ field: 'company', source: 'investor', pageIndex: null, quote: null },
+			{ field: 'company', source: 'investor', pageIndex: null, quote: null, textLayerMatch: null },
 			...annualEvidence
 		];
 		expect(sourceOf(changed, 'company')).toBe('You said so');
 	});
 
 	it('gives the page alone without a quote, and nothing without either', () => {
-		expect(sourceOf([{ field: 'kind', source: 'model', pageIndex: 4, quote: null }], 'kind')).toBe(
-			'Page 5'
-		);
 		expect(
-			sourceOf([{ field: 'kind', source: 'model', pageIndex: null, quote: 'x' }], 'kind')
+			sourceOf(
+				[{ field: 'kind', source: 'model', pageIndex: 4, quote: null, textLayerMatch: true }],
+				'kind'
+			)
+		).toBe('Page 5');
+		expect(
+			sourceOf(
+				[{ field: 'kind', source: 'model', pageIndex: null, quote: 'x', textLayerMatch: true }],
+				'kind'
+			)
 		).toBe(null);
 		expect(sourceOf(annualEvidence, 'results_span')).toBeNull();
+	});
+
+	it('marks a quote that was not found in the page’s text layer as read from a scan', () => {
+		expect(
+			sourceOf(
+				[
+					{
+						field: 'period',
+						source: 'model',
+						pageIndex: 2,
+						quote: 'Year ended',
+						textLayerMatch: null
+					}
+				],
+				'period'
+			)
+		).toBe('Page 3 (scanned): “Year ended”');
+		expect(
+			sourceOf(
+				[
+					{
+						field: 'period',
+						source: 'model',
+						pageIndex: 2,
+						quote: 'Year ended',
+						textLayerMatch: false
+					}
+				],
+				'period'
+			)
+		).toBe('Page 3: “Year ended”');
+	});
+});
+
+describe('normalizeCompanyName', () => {
+	it('ignores case, punctuation, a leading “the” and a trailing limited', () => {
+		expect(normalizeCompanyName('The Synthetic Cements Ltd.')).toBe('synthetic cements');
+		expect(normalizeCompanyName('SYNTHETIC CEMENTS LIMITED')).toBe('synthetic cements');
+		expect(normalizeCompanyName('Synthetic Cements Pvt. Ltd')).toBe('synthetic cements');
+		expect(normalizeCompanyName('Synthetic Cements Private Limited')).toBe('synthetic cements');
+		expect(normalizeCompanyName('Harbour & Sons')).toBe('harbour and sons');
+	});
+});
+
+describe('companyCandidates', () => {
+	const company = (over: Partial<Company> & { id: string; displayName: string }): Company => ({
+		country: 'IN',
+		cin: null,
+		bseCode: null,
+		nseSymbol: null,
+		...over
+	});
+	const cement = company({
+		id: 'co-1',
+		displayName: 'Synthetic Cements Limited',
+		cin: 'L26940MH2001PLC123456'
+	});
+	const cementCopy = company({ id: 'co-2', displayName: 'The Synthetic Cements Ltd' });
+	const listed = company({ id: 'co-3', displayName: 'Coastal Power', bseCode: '500123' });
+	const other = company({ id: 'co-4', displayName: 'Meridian Bank', nseSymbol: 'MERIDIAN' });
+
+	it('matches the printed CIN first', () => {
+		expect(companyCandidates(annualReport, [other, cementCopy, cement]).map((c) => c.id)).toEqual([
+			'co-1'
+		]);
+	});
+
+	it('then the exchange codes', () => {
+		const printed = { ...annualReport, cin: null, bseCode: '500123', nseSymbol: 'MERIDIAN' };
+		expect(companyCandidates(printed, [cement, listed, other]).map((c) => c.id)).toEqual([
+			'co-3',
+			'co-4'
+		]);
+	});
+
+	it('then the name, normalised, and every company that shares it', () => {
+		const printed = { ...annualReport, cin: 'L99999MH2001PLC999999' };
+		expect(companyCandidates(printed, [cement, cementCopy, other]).map((c) => c.id)).toEqual([
+			'co-1',
+			'co-2'
+		]);
+	});
+
+	it('finds none for a company not in the workspace', () => {
+		const printed = { ...annualReport, cin: null, companyNameAsPrinted: 'Quill Software Limited' };
+		expect(companyCandidates(printed, [cement, other])).toEqual([]);
+		expect(companyCandidates({ ...printed, companyNameAsPrinted: null }, [cement])).toEqual([]);
+	});
+});
+
+describe('kindSaveLabel', () => {
+	it('promises a read only for the kinds Maester reads', () => {
+		expect(kindSaveLabel('annual_report')).toBe('Save and read it');
+		expect(kindSaveLabel('financial_results')).toBe('Save and read it');
+		expect(kindSaveLabel('other')).toBe('Save');
+		expect(kindSaveLabel(null)).toBe('Save and read it');
 	});
 });
 

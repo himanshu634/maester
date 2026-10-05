@@ -7,8 +7,10 @@
 import { documentsContent as copy } from '$lib/content/documents';
 import { ApiError } from './client';
 import type {
+	ChosenKind,
 	Classification,
 	ClassificationSummary,
+	Company,
 	CompanyAnswer,
 	DocumentRecord,
 	Evidence,
@@ -21,6 +23,9 @@ export const MAX_UPLOAD_BYTES = 52_428_800;
 
 /** How often an open slip asks again while Maester is working on its document. */
 export const POLL_MS = 2_000;
+
+/** How often the Earlier list is read again while any document in it is being worked on. */
+export const LIST_POLL_MS = 5_000;
 
 export type StepStatus = 'done' | 'now' | 'next' | 'needs-you' | 'stopped' | 'not-read';
 
@@ -184,7 +189,10 @@ export function sourceOf(evidence: Evidence[], field: EvidenceField): string | n
 	if (forField.some((e) => e.source === 'investor')) return copy.slip.youSaidSo;
 	const found = forField.find((e) => e.pageIndex !== null);
 	if (!found || found.pageIndex === null) return null;
-	const page = `Page ${found.pageIndex + 1}`;
+	const page =
+		found.textLayerMatch === null && found.source !== 'investor'
+			? copy.slip.scannedPage(found.pageIndex + 1)
+			: `Page ${found.pageIndex + 1}`;
 	return found.quote ? `${page}: “${found.quote}”` : page;
 }
 
@@ -260,6 +268,53 @@ export function companyAnswer(
 			...(answer.nseSymbol && NSE.test(answer.nseSymbol) ? { nseSymbol: answer.nseSymbol } : {})
 		}
 	};
+}
+
+/**
+ * A company name reduced to what identifies it: case, punctuation, a leading "the" and a trailing
+ * "ltd", "limited" or "pvt ltd" ignored. Mirrors normalizeCompanyName in
+ * packages/db/src/queries/classification.ts, so the page finds the companies the worker found.
+ */
+export function normalizeCompanyName(name: string): string {
+	return name
+		.toLowerCase()
+		.replace(/&/g, ' and ')
+		.replace(/[^a-z0-9 ]+/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim()
+		.replace(/^the /, '')
+		.replace(/ (?:pvt |private )?(?:ltd|limited)$/, '');
+}
+
+/**
+ * The workspace's companies this filing could belong to, as the worker matches them
+ * (matchCompanies in packages/db): by the printed CIN, else the exchange codes, else the name.
+ * Several matches are why a document holds for the investor even when the company is known.
+ */
+export function companyCandidates(
+	answer: Pick<Classification, 'companyNameAsPrinted' | 'cin' | 'bseCode' | 'nseSymbol'>,
+	companies: Company[]
+): Company[] {
+	if (answer.cin) {
+		const byCin = companies.filter((c) => c.cin === answer.cin);
+		if (byCin.length) return byCin;
+	}
+	if (answer.bseCode || answer.nseSymbol) {
+		const byCode = companies.filter(
+			(c) =>
+				(!!answer.bseCode && c.bseCode === answer.bseCode) ||
+				(!!answer.nseSymbol && c.nseSymbol === answer.nseSymbol)
+		);
+		if (byCode.length) return byCode;
+	}
+	if (!answer.companyNameAsPrinted) return [];
+	const wanted = normalizeCompanyName(answer.companyNameAsPrinted);
+	return companies.filter((c) => normalizeCompanyName(c.displayName) === wanted);
+}
+
+/** The button that saves "what is it?": only the kinds Maester reads promise a read. */
+export function kindSaveLabel(kind: ChosenKind | null): string {
+	return kind === 'other' ? copy.kind.saveKept : copy.kind.save;
 }
 
 const MIB = 1024 * 1024;
