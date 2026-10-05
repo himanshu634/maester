@@ -153,8 +153,8 @@ describe("document.classify", () => {
     const jobId = await seedJob(ctx.db, d.workspaceId, { type: JobTypes.DOCUMENT_CLASSIFY, subjectType: "document", subjectId: d.id });
     const [job] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, jobId));
     const result = JSON.parse(ANNUAL).result;
-    const a = await writeClassification(ctx.db, job!, { id: d.id, companyId: null }, result, null);
-    const b = await writeClassification(ctx.db, job!, { id: d.id, companyId: null }, result, null);
+    const a = await writeClassification(ctx.db, job!, { id: d.id, investorCompanyId: null }, result, null);
+    const b = await writeClassification(ctx.db, job!, { id: d.id, investorCompanyId: null }, result, null);
     expect(b.id).toBe(a.id);
     const evidence = await ctx.db.select().from(schema.classificationEvidence).where(eq(schema.classificationEvidence.classificationId, a.id));
     expect(evidence).toHaveLength(5);
@@ -163,13 +163,28 @@ describe("document.classify", () => {
     const d = await seedStored({ companies: ["Synthetic Cements Ltd"] });
     const jobId = await seedJob(ctx.db, d.workspaceId, { type: JobTypes.DOCUMENT_CLASSIFY, subjectType: "document", subjectId: d.id });
     const [job] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, jobId));
-    await writeClassification(ctx.db, job!, { id: d.id, companyId: null }, JSON.parse(ANNUAL).result, d.companyIds[0]!);
+    await writeClassification(ctx.db, job!, { id: d.id, investorCompanyId: null }, JSON.parse(ANNUAL).result, d.companyIds[0]!);
     const [before] = await ctx.db.select().from(schema.document).where(eq(schema.document.id, d.id));
     expect(before!.intakeState).toBe("identifying");
     await runJob(ctx, JobTypes.DOCUMENT_CLASSIFY, jobId);
     const [doc] = await ctx.db.select().from(schema.document).where(eq(schema.document.id, d.id));
     expect(doc!.intakeState).toBe("reading");
     expect(ctx.dispatcher.enqueued.filter((j) => j.subjectId === d.id && j.type === JobTypes.DOCUMENT_EXTRACT)).toHaveLength(1);
+    expect(seen).toHaveLength(0);
+  });
+
+  it("re-running a job whose document has since been read leaves it read and starts no read", async () => {
+    const d = await seedStored({ companies: ["Synthetic Cements Ltd"] });
+    const jobId = await seedJob(ctx.db, d.workspaceId, { type: JobTypes.DOCUMENT_CLASSIFY, subjectType: "document", subjectId: d.id });
+    const [job] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, jobId));
+    await writeClassification(ctx.db, job!, { id: d.id, investorCompanyId: null }, JSON.parse(ANNUAL).result, d.companyIds[0]!);
+    await ctx.db.update(schema.document).set({ intakeState: "read" }).where(eq(schema.document.id, d.id));
+    await runJob(ctx, JobTypes.DOCUMENT_CLASSIFY, jobId);
+    const [after] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, jobId));
+    const [doc] = await ctx.db.select().from(schema.document).where(eq(schema.document.id, d.id));
+    expect(after!.state).toBe("succeeded");
+    expect(doc!.intakeState).toBe("read");
+    expect(ctx.dispatcher.enqueued.filter((j) => j.subjectId === d.id)).toHaveLength(0);
     expect(seen).toHaveLength(0);
   });
 });

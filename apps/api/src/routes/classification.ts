@@ -120,6 +120,8 @@ export function classificationRoutes(deps: AppDeps) {
             model: prev.model,
             promptVersion: prev.promptVersion,
             warnings: prev.warnings,
+            // Taken under the document lock, so the classification written last is the newest.
+            createdAt: sql`clock_timestamp()`,
           })
           .returning();
 

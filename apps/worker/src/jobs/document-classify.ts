@@ -9,16 +9,23 @@ import { JobFailure, type JobContext, type JobHandler } from "./types.js";
 /**
  * Store one classifier answer as an immutable classification with its evidence,
  * in one transaction. Unique per job, so a retry after a crash writes nothing new.
- * A company given at upload is the investor's answer and is recorded as such.
+ * A company the investor gave is recorded as their answer. The document row is
+ * locked first and the row stamped with the commit-ordered clock, so the
+ * classification written last is always the current one.
  */
 export async function writeClassification(
   db: Db,
   job: JobRow,
-  doc: { id: string; companyId: string | null },
+  doc: { id: string; investorCompanyId: string | null },
   result: ClassificationResult,
   companyId: string | null,
 ): Promise<ClassificationRow> {
   return db.transaction(async (tx) => {
+    await tx
+      .select({ id: schema.document.id })
+      .from(schema.document)
+      .where(and(eq(schema.document.id, doc.id), eq(schema.document.workspaceId, job.workspaceId)))
+      .for("update");
     const id = crypto.randomUUID();
     const reads = READ_KINDS.has(result.kind) && companyId !== null;
     const [row] = await tx
@@ -45,6 +52,7 @@ export async function writeClassification(
         model: result.model,
         promptVersion: result.promptVersion,
         warnings: result.warnings,
+        createdAt: sql`clock_timestamp()`,
       })
       .onConflictDoNothing({ target: schema.documentClassification.jobId })
       .returning();
@@ -56,7 +64,7 @@ export async function writeClassification(
       id: crypto.randomUUID(), workspaceId: job.workspaceId, classificationId: row.id, field: e.field, source: e.source,
       ruleId: e.ruleId, pageIndex: e.pageIndex, quote: e.quote, textLayerMatch: e.textLayerMatch,
     }));
-    if (doc.companyId) {
+    if (doc.investorCompanyId) {
       evidence.push({
         id: crypto.randomUUID(), workspaceId: job.workspaceId, classificationId: row.id, field: "company", source: "investor",
         ruleId: null, pageIndex: null, quote: null, textLayerMatch: null,
@@ -84,8 +92,9 @@ async function classify(job: JobRow, ctx: JobContext): Promise<DocumentClassifyR
 
   const [done] = await ctx.db.select().from(schema.documentClassification).where(eq(schema.documentClassification.jobId, job.id));
   if (done) {
-    // A crash after the write but before the decision left the document identifying; decide again (idempotent).
-    const intakeState = await decideIntake(ctx.db, ctx.dispatcher, done, { read: true });
+    // A crash after the write but before the decision left the document identifying; decide again.
+    // Only from identifying: a retry after the read started or finished must not move the document back.
+    const intakeState = await decideIntake(ctx.db, ctx.dispatcher, done, { read: true, onlyFrom: ["identifying"] });
     return { outcome: "classified", classificationId: done.id, kind: done.kind, intakeState };
   }
 
@@ -103,7 +112,7 @@ async function classify(job: JobRow, ctx: JobContext): Promise<DocumentClassifyR
   await ctx.progress({ stage: "identifying", percent: 0 });
   const result = await ctx.extractor.classify({ pdf, documentId: doc.id });
   const companyId = doc.companyId ?? (await uniqueMatch(ctx.db, job.workspaceId, result));
-  const row = await writeClassification(ctx.db, job, doc, result, companyId);
+  const row = await writeClassification(ctx.db, job, { id: doc.id, investorCompanyId: doc.companyId }, result, companyId);
   const intakeState = await decideIntake(ctx.db, ctx.dispatcher, row, { read: true });
   await ctx.progress({ stage: "identified", percent: 100 });
   ctx.logger.info({ documentId: doc.id, kind: row.kind, intakeState }, "document classified");

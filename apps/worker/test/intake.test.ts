@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { JobTypes } from "@maester/contracts";
-import { schema, type ClassificationRow } from "@maester/db";
-import { classificationIdOfReadJob, decideIntake, readVersion } from "@maester/jobs";
+import { schema, type ClassificationRow, type JobRow } from "@maester/db";
+import { classificationIdOfReadJob, decideIntake, readVersion, type Dispatcher } from "@maester/jobs";
 import { createWorkerContext, seedWorkspace } from "./context.js";
 
 let ctx: Awaited<ReturnType<typeof createWorkerContext>>;
@@ -59,6 +59,40 @@ describe("decideIntake", () => {
     const { row, documentId } = await seed({ companyId: "SET" }, "read");
     expect(await decideIntake(ctx.db, ctx.dispatcher, row, { read: false })).toBeNull();
     expect((await doc(documentId)).intakeState).toBe("read");
+  });
+
+  it("a classification that is no longer current changes nothing and starts no read", async () => {
+    const { row, documentId } = await seed({ companyId: "SET", createdAt: new Date(Date.now() - 60_000) });
+    const { workspaceId } = row;
+    await ctx.db.insert(schema.documentClassification).values({ id: crypto.randomUUID(), workspaceId, documentId, kind: "not_sure", setBy: "maester" });
+    const before = ctx.dispatcher.enqueued.length;
+    expect(await decideIntake(ctx.db, ctx.dispatcher, row, { read: true })).toBeNull();
+    expect(ctx.dispatcher.enqueued.length).toBe(before);
+    expect(await doc(documentId)).toMatchObject({ intakeState: "identifying", companyId: null });
+    const jobs = await ctx.db.select().from(schema.job).where(eq(schema.job.subjectId, documentId));
+    expect(jobs).toHaveLength(0);
+  });
+
+  it("onlyFrom leaves a document in any other state as it is", async () => {
+    const { row, documentId } = await seed({ companyId: "SET" }, "read");
+    const before = ctx.dispatcher.enqueued.length;
+    expect(await decideIntake(ctx.db, ctx.dispatcher, row, { read: true, onlyFrom: ["identifying"] })).toBeNull();
+    expect(ctx.dispatcher.enqueued.length).toBe(before);
+    expect(await doc(documentId)).toMatchObject({ intakeState: "read", companyId: null });
+  });
+
+  it("the read job is dispatched only once it is committed", async () => {
+    const { row, documentId } = await seed({ companyId: "SET" });
+    const visible: boolean[] = [];
+    const checking: Dispatcher = {
+      async enqueue(job: JobRow) {
+        // Another connection sees the job only after the transaction that wrote it has committed.
+        visible.push((await ctx.db.select().from(schema.job).where(eq(schema.job.id, job.id))).length === 1);
+      },
+    };
+    expect(await decideIntake(ctx.db, checking, row, { read: true })).toBe("reading");
+    expect(visible).toEqual([true]);
+    expect((await doc(documentId)).intakeState).toBe("reading");
   });
 
   it("classificationIdOfReadJob ignores other keys", () => {
