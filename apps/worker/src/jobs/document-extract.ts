@@ -6,7 +6,7 @@ import { JobFailure, type JobHandler } from "./types.js";
 
 const INSERT_BATCH = 500;
 
-async function readAll(store: ObjectStore, key: string): Promise<Uint8Array> {
+export async function readAll(store: ObjectStore, key: string): Promise<Uint8Array> {
   const chunks: Buffer[] = [];
   for await (const chunk of await store.readStream(key)) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));

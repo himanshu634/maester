@@ -32,7 +32,7 @@ Loaded from the root `.env` (see `.env.example`) via `loadWorkerEnv()` in `src/e
 | `EXTRACTOR_URL` | Base URL of `apps/extractor`. Unset: documents are verified but not extracted |
 | `EXTRACTOR_AUTH` | `secret` (default, sends `x-extractor-secret`) or `oidc` (Cloud Run ID token for `EXTRACTOR_URL`) |
 | `EXTRACTOR_SECRET` | Required with `EXTRACTOR_URL` and `EXTRACTOR_AUTH=secret`; must match the extractor's |
-| `EXTRACTOR_TIMEOUT_SECONDS`, `EXTRACT_MAX_BYTES` | Whole-request timeout (900 s) and largest PDF sent for extraction (30 MiB) |
+| `EXTRACTOR_TIMEOUT_SECONDS`, `EXTRACT_MAX_BYTES` | Whole-request timeout (900 s) and largest PDF sent for extraction (50 MiB) |
 | `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `CLOUD_TASKS_QUEUE`, `WORKER_INVOKER_SA`, `TASK_DISPATCH_DEADLINE_SECONDS` | Required with `EXTRACTOR_URL` when `DISPATCH_MODE=cloud-tasks`, to enqueue `document.extract` |
 | `PORT`, `LOG_LEVEL`, `NODE_ENV` | Server basics (defaulted) |
 

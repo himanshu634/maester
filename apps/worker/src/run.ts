@@ -75,6 +75,13 @@ export async function runJob(deps: WorkerDeps, type: string, jobId: string): Pro
     const permanent = err instanceof JobFailure && !err.retryable;
     const final = permanent || job.attempt >= job.maxAttempts;
     await failAttempt(deps.db, job, leaseToken, { code, message }, final);
+    if (final && handler.onFinalFailure) {
+      try {
+        await handler.onFinalFailure(job, deps.db);
+      } catch (hookErr) {
+        log.error({ err: (hookErr as Error).message }, "final-failure hook failed");
+      }
+    }
     log.error({ durationMs: Date.now() - startedAt, attempt: job.attempt, final, code, err: message }, "job attempt failed");
     return final ? { status: 200, body: { jobId, outcome: "failed" } } : { status: 500, body: { jobId, outcome: "retry" } };
   }

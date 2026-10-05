@@ -18,7 +18,10 @@ export interface JobContext {
   heartbeat(): Promise<void>;
 }
 
-export type JobHandler = (job: JobRow, ctx: JobContext) => Promise<unknown>;
+export type JobHandler = ((job: JobRow, ctx: JobContext) => Promise<unknown>) & {
+  /** Runs once when the job fails for good, to leave its subject in a stated failure. */
+  onFinalFailure?: (job: JobRow, db: Db) => Promise<void>;
+};
 
 /**
  * A failure with a stable code. The runner records the code and, when

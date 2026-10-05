@@ -1,5 +1,5 @@
 import { GoogleAuth } from "google-auth-library";
-import { ExtractorEvent, type ExtractionResult } from "@maester/contracts";
+import { ClassifyResponse, ExtractorEvent, type ClassificationResult, type ExtractionResult } from "@maester/contracts";
 import { JobFailure } from "./jobs/types.js";
 
 export interface ExtractRequest {
@@ -8,12 +8,19 @@ export interface ExtractRequest {
   companyName: string | null;
 }
 
+export interface ClassifyRequest {
+  pdf: Uint8Array;
+  documentId: string;
+}
+
 export interface ExtractorClient {
   /**
    * Stream an extraction. `onEvent` sees every line, including heartbeats;
    * the promise resolves with the result or rejects with a JobFailure.
    */
   extract(input: ExtractRequest, onEvent: (event: ExtractorEvent) => Promise<void>): Promise<ExtractionResult>;
+  /** Work out what a PDF is. Resolves with the answers or rejects with a JobFailure. */
+  classify(input: ClassifyRequest): Promise<ClassificationResult>;
 }
 
 export type ExtractorAuth = { kind: "secret"; secret: string } | { kind: "oidc" };
@@ -38,17 +45,12 @@ export class HttpExtractorClient implements ExtractorClient {
     return { authorization };
   }
 
-  async extract(input: ExtractRequest, onEvent: (event: ExtractorEvent) => Promise<void>): Promise<ExtractionResult> {
+  private async post(path: string, input: { pdf: Uint8Array; documentId: string }, headers: Record<string, string>): Promise<Response> {
     let res: Response;
     try {
-      res = await fetch(`${this.baseUrl.replace(/\/$/, "")}/v1/extract`, {
+      res = await fetch(`${this.baseUrl.replace(/\/$/, "")}${path}`, {
         method: "POST",
-        headers: {
-          "content-type": "application/pdf",
-          "x-document-id": input.documentId,
-          ...(input.companyName ? { "x-company-name": encodeURIComponent(input.companyName) } : {}),
-          ...(await this.authHeaders()),
-        },
+        headers: { "content-type": "application/pdf", "x-document-id": input.documentId, ...headers, ...(await this.authHeaders()) },
         body: input.pdf,
         signal: AbortSignal.timeout(this.timeoutMs),
       });
@@ -56,7 +58,6 @@ export class HttpExtractorClient implements ExtractorClient {
       if (err instanceof JobFailure) throw err;
       throw new JobFailure("EXTRACTOR_UNAVAILABLE", `extractor request failed: ${(err as Error).message}`, true);
     }
-
     if (res.status === 401 || res.status === 403) {
       throw new JobFailure("EXTRACTOR_UNAUTHORIZED", `extractor refused the request (${res.status})`, false);
     }
@@ -64,6 +65,23 @@ export class HttpExtractorClient implements ExtractorClient {
     if (!res.ok || !res.body) {
       throw new JobFailure(`EXTRACTOR_HTTP_${res.status}`, `extractor answered ${res.status}`, res.status >= 500);
     }
+    return res;
+  }
+
+  async classify(input: ClassifyRequest): Promise<ClassificationResult> {
+    const res = await this.post("/v1/classify", input, {});
+    let parsed: ClassifyResponse;
+    try {
+      parsed = ClassifyResponse.parse(await res.json());
+    } catch (err) {
+      throw new JobFailure("INVALID_CLASSIFIER_RESULT", `unreadable classifier answer: ${(err as Error).message.slice(0, 500)}`, false);
+    }
+    if (parsed.type === "error") throw new JobFailure(parsed.code, parsed.message, parsed.retryable);
+    return parsed.result;
+  }
+
+  async extract(input: ExtractRequest, onEvent: (event: ExtractorEvent) => Promise<void>): Promise<ExtractionResult> {
+    const res = await this.post("/v1/extract", input, input.companyName ? { "x-company-name": encodeURIComponent(input.companyName) } : {});
 
     const decoder = new TextDecoder();
     let buffer = "";

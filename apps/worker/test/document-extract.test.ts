@@ -162,7 +162,7 @@ describe("document.extract", () => {
   });
 
   it("refuses oversized and missing documents without calling the extractor", async () => {
-    const big = await seedStoredDocument({ sizeBytes: 31457281 });
+    const big = await seedStoredDocument({ sizeBytes: 52428801 });
     expect((await extract(big.workspaceId, big.id)).job).toMatchObject({ state: "failed", lastErrorCode: "TOO_LARGE_FOR_EXTRACTION" });
     const missing = await seedStoredDocument({ put: false });
     expect((await extract(missing.workspaceId, missing.id)).job).toMatchObject({ state: "failed", lastErrorCode: "OBJECT_MISSING" });

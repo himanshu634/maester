@@ -17,7 +17,7 @@ describe("worker env: extraction", () => {
 
   it("requires a secret for secret auth", () => {
     expect(() => loadWorkerEnv({ ...base, EXTRACTOR_URL: "http://extractor:8790" })).toThrow("EXTRACTOR_SECRET");
-    expect(loadWorkerEnv({ ...base, EXTRACTOR_URL: "http://extractor:8790", EXTRACTOR_SECRET: "x" }).EXTRACT_MAX_BYTES).toBe(31457280);
+    expect(loadWorkerEnv({ ...base, EXTRACTOR_URL: "http://extractor:8790", EXTRACTOR_SECRET: "x" }).EXTRACT_MAX_BYTES).toBe(52428800);
   });
 
   it("requires Cloud Tasks settings to enqueue extraction in cloud-tasks mode", () => {

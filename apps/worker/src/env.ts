@@ -19,7 +19,7 @@ const Schema = z.object({
   EXTRACTOR_AUTH: z.enum(["secret", "oidc"]).default("secret"),
   EXTRACTOR_SECRET: z.string().optional(),
   EXTRACTOR_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
-  EXTRACT_MAX_BYTES: z.coerce.number().int().positive().default(31457280),
+  EXTRACT_MAX_BYTES: z.coerce.number().int().positive().default(52428800),
   // Needed only to enqueue follow-up jobs through Cloud Tasks.
   GOOGLE_CLOUD_PROJECT: z.string().min(1).optional(),
   GOOGLE_CLOUD_LOCATION: z.string().default("asia-south1"),
