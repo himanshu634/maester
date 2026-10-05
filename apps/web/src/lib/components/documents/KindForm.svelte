@@ -23,7 +23,8 @@
 			otherType: OtherType | null;
 			resultsSpan: ResultsSpan | null;
 		};
-		submitLabel: string;
+		/** The submit button's words, or a function of the choice ("Save and read it" or "Save"). */
+		submitLabel: string | ((kind: ChosenKind | null) => string);
 		/** The screen's one primary action: filled. Otherwise outlined. */
 		primary?: boolean;
 		busy?: boolean;
@@ -42,11 +43,15 @@
 	let otherType = $state<OtherType>(start?.otherType ?? 'unlisted_type');
 	let resultsSpan = $state<ResultsSpan | ''>(start?.resultsSpan ?? '');
 	let missing = $state(false);
+	let form = $state<HTMLFormElement>();
+
+	let label = $derived(typeof submitLabel === 'function' ? submitLabel(kind) : submitLabel);
 
 	function submit(event: SubmitEvent) {
 		event.preventDefault();
 		if (!kind) {
 			missing = true;
+			form?.querySelector<HTMLInputElement>('input[type="radio"]')?.focus();
 			return;
 		}
 		onsubmit({
@@ -57,8 +62,8 @@
 	}
 </script>
 
-<form class="kind-form" onsubmit={submit} novalidate>
-	<fieldset aria-describedby={missing ? `${id}-missing` : undefined}>
+<form class="kind-form" bind:this={form} onsubmit={submit} novalidate>
+	<fieldset>
 		<legend>{copy.kind.legend}</legend>
 		{#each kinds as choice (choice)}
 			<label class="choice">
@@ -67,6 +72,7 @@
 					name="{id}-kind"
 					value={choice}
 					bind:group={kind}
+					aria-describedby={missing ? `${id}-missing` : undefined}
 					onchange={() => (missing = false)}
 				/>
 				<span class="text">
@@ -103,7 +109,7 @@
 
 	<div class="actions">
 		<button class={['button', { outline: !primary }]} type="submit" disabled={busy}>
-			{submitLabel}
+			{label}
 		</button>
 		{#if oncancel}
 			<button class="button outline" type="button" onclick={oncancel}>{copy.slip.cancel}</button>

@@ -1,7 +1,7 @@
 <!--
 	Where a document stands, as an ordered sequence: Uploaded, Worked out what it is, Reading the
 	statements, Ready. Each step says its state in a word (Done, Now, Next, Needs you, Stopped,
-	Not read), never a colour; the step Maester is on is an ink block. Four across when there is
+	Not read), never a colour; the current step (Now or Needs you) is an ink block. Four across when there is
 	room, one under another when there is not.
 -->
 <script lang="ts">
@@ -75,28 +75,29 @@
 	}
 
 	.done .word,
-	.needs-you .word,
 	.stopped .word {
 		color: var(--ink);
 	}
 
-	.needs-you .word,
 	.stopped .word {
 		font-weight: 700;
 	}
 
-	/* The step Maester is on: an ink block. */
-	.now {
+	/* The current step, whether Maester is on it or it waits for the investor: an ink block. */
+	.now,
+	.needs-you {
 		padding-inline: var(--space-3);
 		background: var(--ink);
 		color: var(--paper);
 	}
 
-	.now .number {
+	.now .number,
+	.needs-you .number {
 		color: var(--paper-muted);
 	}
 
-	.now .word {
+	.now .word,
+	.needs-you .word {
 		color: var(--paper);
 		font-weight: 700;
 	}
@@ -113,7 +114,7 @@
 			padding: var(--space-3);
 		}
 
-		.step:first-child:not(.now) {
+		.step:first-child:not(.now, .needs-you) {
 			padding-left: 0;
 		}
 

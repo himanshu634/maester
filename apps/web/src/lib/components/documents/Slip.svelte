@@ -12,10 +12,13 @@
 </script>
 
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { documentsContent as copy } from '$lib/content/documents';
 	import {
 		addedAt,
+		companyCandidates,
 		identifiers,
+		kindSaveLabel,
 		ladder,
 		periodWords,
 		sourceOf,
@@ -44,6 +47,10 @@
 		uploading?: boolean;
 		/** What happened to the investor's last action here, when it did not work. */
 		message?: string | null;
+		/** Maester has answers for this document but they did not load. */
+		answersFailed?: boolean;
+		/** Load the document and its answers again. */
+		onreload: () => Promise<void>;
 		/** Resolves true when the change was saved. */
 		onchange: (change: Change) => Promise<boolean>;
 		onclassify: () => Promise<void>;
@@ -59,6 +66,8 @@
 		companies,
 		uploading = false,
 		message = null,
+		answersFailed = false,
+		onreload,
 		onchange,
 		onclassify,
 		onextract,
@@ -70,6 +79,8 @@
 	/** The answer being changed, and the set of answers the form was opened on. */
 	let editingFor = $state<{ field: 'kind' | 'company'; answerId: string } | null>(null);
 	let busy = $state(false);
+	/** The Change buttons, so focus can go back to the one that opened a form. */
+	let changeButtons = $state<Partial<Record<'kind' | 'company', HTMLButtonElement>>>({});
 
 	let steps = $derived(ladder(doc, { uploading }));
 	let current = $derived(answers?.classification ?? null);
@@ -103,6 +114,18 @@
 		editingFor && editingFor.answerId === current?.id ? editingFor.field : null
 	);
 	let printedIds = $derived(current ? identifiers(current, evidence) : []);
+	/** Companies already added that match what is printed: several is why Maester asks. */
+	let candidates = $derived(
+		doc.intakeState === 'needs_company' && current ? companyCandidates(current, companies) : []
+	);
+	let companyQuestion = $derived(
+		candidates.length > 0
+			? copy.company.questionCandidates
+			: printed
+				? copy.company.question(printed)
+				: copy.company.questionUnnamed
+	);
+	let retrying = $derived(busy ? copy.retrying : null);
 
 	async function run<T>(work: () => Promise<T>): Promise<T | undefined> {
 		if (busy) return undefined;
@@ -114,14 +137,27 @@
 		}
 	}
 
-	async function change(next: Change) {
+	/**
+	 * Save a change. Focus then goes back to the Change button that opened the form, or to the
+	 * slip's heading when the question that held the form has been answered and is gone.
+	 */
+	async function change(next: Change, from: 'kind' | 'company' | 'question') {
 		const saved = await run(() => onchange(next));
-		if (saved) editingFor = null;
+		if (!saved) return;
+		editingFor = null;
+		await tick();
+		const button = from === 'question' ? undefined : changeButtons[from];
+		if (button?.isConnected) button.focus();
+		else heading?.focus();
 	}
 
-	const changeKind = (answer: KindAnswer) =>
-		change({ kind: answer.kind, otherType: answer.otherType, resultsSpan: answer.resultsSpan });
-	const changeCompany = (company: CompanyAnswer) => change({ company });
+	const kindFrom = (from: 'kind' | 'question') => (answer: KindAnswer) =>
+		change(
+			{ kind: answer.kind, otherType: answer.otherType, resultsSpan: answer.resultsSpan },
+			from
+		);
+	const companyFrom = (from: 'company' | 'question') => (company: CompanyAnswer) =>
+		change({ company }, from);
 
 	function toggle(field: 'kind' | 'company') {
 		editingFor = editing === field || !current ? null : { field, answerId: current.id };
@@ -151,6 +187,7 @@
 			aria-expanded={editing === field}
 			aria-controls="{id}-{field}-form"
 			aria-label={copy.slip.changeLabel(term)}
+			bind:this={changeButtons[field]}
 			onclick={() => toggle(field)}>{copy.slip.change}</button
 		>
 	{/if}
@@ -168,17 +205,27 @@
 		<StageLadder {steps} label={copy.slip.stepsLabel} />
 
 		{#if doc.state === 'pending_upload' && !uploading}
-			<SectionIssue title={copy.uploadUnfinished.title} detail={copy.uploadUnfinished.detail} />
+			<SectionIssue
+				role="note"
+				title={copy.uploadUnfinished.title}
+				detail={copy.uploadUnfinished.detail}
+			/>
 		{:else if doc.state === 'rejected'}
 			{@const said = copy.rejected[doc.rejectionCode ?? 'OBJECT_MISSING']}
-			<SectionIssue title={said.title} detail={said.detail} />
+			<SectionIssue role="note" title={said.title} detail={said.detail} />
 		{:else if doc.state !== 'stored' && doc.latestJob?.type === 'document.verify' && doc.latestJob.state === 'failed'}
-			<SectionIssue title={copy.checkFailed.title} detail={copy.checkFailed.detail} />
-		{:else if doc.intakeState === 'needs_company' && current}
-			<Notice
+			<SectionIssue role="note" title={copy.checkFailed.title} detail={copy.checkFailed.detail} />
+		{:else if answersFailed && !current && doc.classification}
+			<SectionIssue
 				role="note"
-				title={printed ? copy.company.question(printed) : copy.company.questionUnnamed}
-			>
+				title={copy.answersFailed.title}
+				detail={copy.answersFailed.detail}
+				retryLabel={copy.answersFailed.retry}
+				busy={retrying}
+				onretry={() => run(onreload)}
+			/>
+		{:else if doc.intakeState === 'needs_company' && current}
+			<Notice role="note" title={companyQuestion}>
 				{#if printedIds.length > 0}
 					<p class="printed num">
 						{#each printedIds as printedId, index (printedId.label)}
@@ -189,13 +236,20 @@
 						{/each}
 					</p>
 				{/if}
-				<p>{printed ? copy.company.newCompany : copy.company.noName}</p>
+				<p>
+					{candidates.length > 0
+						? copy.company.candidates(candidates.length)
+						: printed
+							? copy.company.newCompany
+							: copy.company.noName}
+				</p>
 				<CompanyForm
 					mode="ask"
 					classification={current}
 					{companies}
+					{candidates}
 					{busy}
-					onsubmit={changeCompany}
+					onsubmit={companyFrom('question')}
 				/>
 			</Notice>
 		{:else if doc.intakeState === 'needs_kind' && current}
@@ -203,14 +257,14 @@
 				<p>{copy.needsKind.detail}</p>
 				<KindForm
 					initial={current}
-					submitLabel={copy.kind.save}
+					submitLabel={kindSaveLabel}
 					primary
 					{busy}
-					onsubmit={changeKind}
+					onsubmit={kindFrom('question')}
 				/>
 			</Notice>
 		{:else if doc.intakeState === 'kept'}
-			<Notice role="note" title={copy.kept(companyName ?? printed)} />
+			<Notice role="note" title={copy.kept(companyName)} />
 		{:else if doc.intakeState === 'duplicate'}
 			<Notice role="note" title={copy.duplicate.title}>
 				<div class="actions">
@@ -234,14 +288,18 @@
 			<SectionIssue
 				title={copy.identifyFailed.title}
 				detail={copy.identifyFailed.detail}
+				role="note"
 				retryLabel={copy.identifyFailed.retry}
+				busy={retrying}
 				onretry={() => run(onclassify)}
 			/>
 		{:else if doc.intakeState === 'read_failed' && !jobRunning}
 			<SectionIssue
 				title={copy.readFailed.title}
 				detail={copy.readFailed.detail}
+				role="note"
 				retryLabel={copy.readFailed.retry}
+				busy={retrying}
 				onretry={() => run(onextract)}
 			/>
 		{/if}
@@ -250,76 +308,78 @@
 			<Notice title={message} />
 		{/if}
 
-		<section class="read-as" aria-labelledby="{id}-read-as">
-			<h3 id="{id}-read-as">{copy.slip.readAs}</h3>
-			{#if !current}
-				<p class="muted not-yet">{copy.slip.notYet}</p>
-			{/if}
-			<dl class="spec">
-				<div class="entry">
-					<dt>{copy.slip.terms.kind}</dt>
-					<dd>
-						<span class="value">{values.kind}</span>
-						<span class="meta">
-							{#if current && values.kind !== '—'}{@render sourceLine(source('kind'))}{/if}
-							{@render changeButton('kind', copy.slip.terms.kind)}
-						</span>
-						{#if editing === 'kind' && current}
-							<div class="edit" id="{id}-kind-form">
-								<KindForm
-									initial={current}
-									submitLabel={copy.kind.saveChange}
-									{busy}
-									onsubmit={changeKind}
-									oncancel={() => (editingFor = null)}
-								/>
-							</div>
-						{/if}
-					</dd>
-				</div>
-				<div class="entry">
-					<dt>{copy.slip.terms.company}</dt>
-					<dd>
-						<span class="value">{values.company}</span>
-						{#if current && !companyName && printed}
-							<span class="source">{copy.slip.notConfirmed}</span>
-						{/if}
-						<span class="meta">
-							{#if current && values.company !== '—'}{@render sourceLine(source('company'))}{/if}
-							{@render changeButton('company', copy.slip.terms.company)}
-						</span>
-						{#if editing === 'company' && current}
-							<div class="edit" id="{id}-company-form">
-								<CompanyForm
-									mode="change"
-									classification={current}
-									{companies}
-									{busy}
-									onsubmit={changeCompany}
-									oncancel={() => (editingFor = null)}
-								/>
-							</div>
-						{/if}
-					</dd>
-				</div>
-				<div class="entry">
-					<dt>{copy.slip.terms.period}</dt>
-					<dd>
-						<span class="value">{values.period}</span>
-						{#if current && values.period !== '—'}{@render sourceLine(source('period'))}{/if}
-					</dd>
-				</div>
-				<div class="entry">
-					<dt>{copy.slip.terms.statements}</dt>
-					<dd>
-						<span class="value">{values.statements}</span>
-						{#if current && values.statements !== '—'}{@render sourceLine(
-								source('statements')
-							)}{/if}
-					</dd>
-				</div>
-			</dl>
-		</section>
+		{#if doc.intakeState !== 'duplicate'}
+			<section class="read-as" aria-labelledby="{id}-read-as">
+				<h3 id="{id}-read-as">{copy.slip.readAs}</h3>
+				{#if !current && !answersFailed}
+					<p class="muted not-yet">{copy.slip.notYet}</p>
+				{/if}
+				<dl class="spec">
+					<div class="entry">
+						<dt>{copy.slip.terms.kind}</dt>
+						<dd>
+							<span class="value">{values.kind}</span>
+							<span class="meta">
+								{#if current && values.kind !== '—'}{@render sourceLine(source('kind'))}{/if}
+								{@render changeButton('kind', copy.slip.terms.kind)}
+							</span>
+							{#if editing === 'kind' && current}
+								<div class="edit" id="{id}-kind-form">
+									<KindForm
+										initial={current}
+										submitLabel={copy.kind.saveChange}
+										{busy}
+										onsubmit={kindFrom('kind')}
+										oncancel={() => (editingFor = null)}
+									/>
+								</div>
+							{/if}
+						</dd>
+					</div>
+					<div class="entry">
+						<dt>{copy.slip.terms.company}</dt>
+						<dd>
+							<span class="value">{values.company}</span>
+							{#if current && !companyName && printed}
+								<span class="source">{copy.slip.notConfirmed}</span>
+							{/if}
+							<span class="meta">
+								{#if current && values.company !== '—'}{@render sourceLine(source('company'))}{/if}
+								{@render changeButton('company', copy.slip.terms.company)}
+							</span>
+							{#if editing === 'company' && current}
+								<div class="edit" id="{id}-company-form">
+									<CompanyForm
+										mode="change"
+										classification={current}
+										{companies}
+										{busy}
+										onsubmit={companyFrom('company')}
+										oncancel={() => (editingFor = null)}
+									/>
+								</div>
+							{/if}
+						</dd>
+					</div>
+					<div class="entry">
+						<dt>{copy.slip.terms.period}</dt>
+						<dd>
+							<span class="value">{values.period}</span>
+							{#if current && values.period !== '—'}{@render sourceLine(source('period'))}{/if}
+						</dd>
+					</div>
+					<div class="entry">
+						<dt>{copy.slip.terms.statements}</dt>
+						<dd>
+							<span class="value">{values.statements}</span>
+							{#if current && values.statements !== '—'}{@render sourceLine(
+									source('statements')
+								)}{/if}
+						</dd>
+					</div>
+				</dl>
+			</section>
+		{/if}
 	</div>
 </article>
 

@@ -15,6 +15,7 @@
 		checkFile,
 		isLive,
 		pickSlip,
+		LIST_POLL_MS,
 		POLL_MS,
 		stateLabel,
 		uploadFailure
@@ -44,6 +45,12 @@
 	let announcement = $state('');
 	let hidden = $state(false);
 	let pollFailures = $state(0);
+	let listFailures = $state(0);
+	/** The document whose answers did not load, so the slip can say so and offer to try again. */
+	let answersFailed = $state<string | null>(null);
+	/** Companies already asked for by id, so a missing one is fetched once. */
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, never drawn; a reactive set would re-run the effect that fills it
+	const askedCompanies = new Set<string>();
 	let slipHeading = $state<HTMLHeadingElement>();
 
 	const newestFirst = (a: DocumentRecord, b: DocumentRecord) =>
@@ -55,14 +62,38 @@
 		answers && slip && answers.classification.documentId === slip.id ? answers : null
 	);
 
+	/** Say once, politely, that the slip's document has moved on. */
+	function announceIfMoved(before: DocumentRecord | undefined, next: DocumentRecord) {
+		if (slip?.id !== next.id) return;
+		const was = before ? stateLabel(before) : null;
+		const now = stateLabel(next);
+		if (was !== now) announcement = copy.announce(next.originalName, now);
+	}
+
 	/** Put the API's latest copy of a document in the list; say so when the slip's has moved on. */
 	function replace(next: DocumentRecord, announce = false) {
 		const before = docs.find((doc) => doc.id === next.id);
 		docs = before ? docs.map((doc) => (doc.id === next.id ? next : doc)) : [next, ...docs];
-		if (announce && slip?.id === next.id) {
-			const was = before ? stateLabel(before) : null;
-			const now = stateLabel(next);
-			if (was !== now) announcement = copy.announce(next.originalName, now);
+		if (announce) announceIfMoved(before, next);
+	}
+
+	/**
+	 * Read the first page of documents again. Documents this page holds that are not on it (the
+	 * file being sent, a first copy opened from a duplicate) are kept.
+	 */
+	async function refreshList() {
+		if (!api) return;
+		try {
+			const page = await api.listDocuments();
+			const fresh = new Set(page.items.map((doc) => doc.id));
+			const before = slip ? docs.find((doc) => doc.id === slip?.id) : undefined;
+			docs = [...page.items, ...docs.filter((doc) => !fresh.has(doc.id))];
+			more = page.nextCursor !== null;
+			const after = before && page.items.find((doc) => doc.id === before.id);
+			if (after) announceIfMoved(before, after);
+			listFailures = 0;
+		} catch {
+			listFailures += 1;
 		}
 	}
 
@@ -81,7 +112,15 @@
 				client.listCompanies()
 			]);
 			const first = pickSlip(page.items, opened);
-			answers = first?.classification ? await client.getClassification(first.id) : null;
+			answers = null;
+			answersFailed = null;
+			if (first?.classification) {
+				try {
+					answers = await client.getClassification(first.id);
+				} catch {
+					answersFailed = first.id;
+				}
+			}
 			docs = page.items;
 			more = page.nextCursor !== null;
 			companies = companyPage.items;
@@ -108,21 +147,46 @@
 		client
 			.getClassification(current.id)
 			.then((next) => {
-				if (!stale) answers = next;
+				if (stale) return;
+				answers = next;
+				answersFailed = null;
 			})
 			.catch(() => {
-				// The slip keeps what it has; the next change to the document asks again.
+				// The slip says so and offers to try again; a later change to the document asks again too.
+				if (!stale) answersFailed = current.id;
 			});
 		return () => {
 			stale = true;
 		};
 	});
 
+	// A company the slip names but this page has not read (beyond the first page, or added
+	// elsewhere) is read by id, once.
+	$effect(() => {
+		const client = api;
+		const wanted = slipAnswers?.classification.companyId ?? slip?.companyId ?? null;
+		if (!client || !wanted || askedCompanies.has(wanted)) return;
+		if (companies.some((company) => company.id === wanted)) return;
+		askedCompanies.add(wanted);
+		client
+			.getCompany(wanted)
+			.then((company) => {
+				if (!companies.some((c) => c.id === company.id)) companies = [...companies, company];
+			})
+			.catch(() => {
+				// The slip shows the printed name meanwhile.
+			});
+	});
+
 	async function refresh(docId: string) {
 		if (!api) return;
 		try {
-			replace(await api.getDocument(docId), true);
+			const before = docs.find((doc) => doc.id === docId);
+			const next = await api.getDocument(docId);
+			replace(next, true);
 			pollFailures = 0;
+			// When the slip's work stops, the rest of the list may have moved on too.
+			if (before && isLive(before) && !isLive(next)) await refreshList();
 		} catch {
 			pollFailures += 1;
 		}
@@ -134,6 +198,16 @@
 		if (!current || !api || hidden || current.id === uploadingId || !isLive(current)) return;
 		const wait = POLL_MS * Math.min(1 + pollFailures, 5);
 		const timer = window.setTimeout(() => refresh(current.id), wait);
+		return () => window.clearTimeout(timer);
+	});
+
+	// While anything in Earlier is being worked on, read the list again every 5 seconds, so a
+	// document that needs the investor or stopped says so there without a reload.
+	$effect(() => {
+		const watching = earlier.some((doc) => doc.id !== uploadingId && isLive(doc));
+		if (!api || hidden || !watching) return;
+		const wait = LIST_POLL_MS * Math.min(1 + listFailures, 5);
+		const timer = window.setTimeout(refreshList, wait);
 		return () => window.clearTimeout(timer);
 	});
 
@@ -153,6 +227,8 @@
 					uploadingId = doc.id;
 					opened = doc.id;
 					replace(doc);
+					// The new slip is where the file now stands.
+					tick().then(() => slipHeading?.focus());
 				}
 			});
 			uploadingId = null;
@@ -184,15 +260,16 @@
 
 	async function reloadSlip(docId: string) {
 		if (!api) return;
-		try {
-			const [doc, latest] = await Promise.all([
-				api.getDocument(docId),
-				api.getClassification(docId)
-			]);
-			answers = latest;
-			replace(doc, true);
-		} catch {
-			// The message already says what happened; the slip keeps what it has.
+		const [doc, latest] = await Promise.allSettled([
+			api.getDocument(docId),
+			api.getClassification(docId)
+		]);
+		if (doc.status === 'fulfilled') replace(doc.value, true);
+		if (latest.status === 'fulfilled') {
+			answers = latest.value;
+			answersFailed = null;
+		} else {
+			answersFailed = docId;
 		}
 	}
 
@@ -216,6 +293,9 @@
 			const failure = changeFailure(error);
 			message = failure.message;
 			if (failure.reload) await reloadSlip(current.id);
+			// A clash with a company added elsewhere: offer the latest list to pick from.
+			else if (change.company && 'new' in change.company)
+				companies = (await api.listCompanies().catch(() => null))?.items ?? companies;
 			return false;
 		}
 	}
@@ -302,6 +382,8 @@
 							{companies}
 							uploading={slip.id === uploadingId}
 							{message}
+							answersFailed={answersFailed === slip.id}
+							onreload={() => reloadSlip(slip.id)}
 							onchange={changeAnswers}
 							onclassify={() => again('classify')}
 							onextract={() => again('extract')}

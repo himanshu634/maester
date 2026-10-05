@@ -13,9 +13,7 @@ export const documentsContent = {
 		or: 'or',
 		choose: 'Choose a file',
 		note: 'Annual reports, quarterly results or any other company document. PDF, up to 50 MB.',
-		uploading: (name: string) => `Uploading ${name}…`,
-		waiting: 'Loading your documents.',
-		dropAnywhere: 'Drop it on the box to add it.'
+		uploading: (name: string) => `Uploading ${name}…`
 	},
 	loading: 'Loading your documents.',
 	loadFailed: {
@@ -52,6 +50,7 @@ export const documentsContent = {
 			statements: 'Statements'
 		},
 		youSaidSo: 'You said so',
+		scannedPage: (page: number) => `Page ${page} (scanned)`,
 		notConfirmed: 'Not confirmed yet',
 		noSource: 'No page given',
 		change: 'Change',
@@ -85,6 +84,12 @@ export const documentsContent = {
 	company: {
 		question: (name: string) => `Is this ${name}?`,
 		questionUnnamed: 'Which company is this?',
+		questionCandidates: 'Which of your companies is this?',
+		candidates: (count: number) =>
+			count === 1
+				? 'A company you’ve added matches what is printed. Check it is the same one.'
+				: `${count} companies you’ve added match what is printed. Say which one it is.`,
+		candidateLabel: 'Your companies that match',
 		newCompany:
 			'Maester hasn’t seen this company in your workspace. Add it and Maester reads the filing.',
 		noName: 'Maester couldn’t find the company’s name on the first pages.',
@@ -107,15 +112,22 @@ export const documentsContent = {
 		title: 'Maester couldn’t tell what this is.',
 		detail: 'The first pages have no title it could read. Say what it is and it carries on.'
 	},
+	/** Names the company only once it is confirmed; a printed name alone is not enough. */
 	kept: (company: string | null) =>
 		company
 			? `Kept with ${company}. Maester reads annual reports and financial results for now.`
-			: 'Kept, not read. Maester reads annual reports and financial results for now.',
+			: 'Kept. Company not confirmed yet.',
 	duplicate: {
-		title: 'You added this file before.',
+		title: 'Not worked out: you added this file before.',
 		open: 'Open the first copy',
 		again: 'Read it again'
 	},
+	answersFailed: {
+		title: 'What Maester worked out didn’t load.',
+		detail: 'The file and the answers are safe. Try loading them again.',
+		retry: 'Try again'
+	},
+	retrying: 'Asking Maester to try again…',
 	identifyFailed: {
 		title: 'Maester couldn’t work out what this is.',
 		detail: 'The file is safe. Try again, and if it stops again, tell us which file it was.',

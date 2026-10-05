@@ -1,7 +1,9 @@
 <!--
-	Which company a filing belongs to. As a question (`ask`), when Maester found a company that
-	is not in the workspace: add it as printed, which is the screen's one primary action, or pick
-	one already added. As a change, from the slip's "Change": pick a company or add a new one.
+	Which company a filing belongs to. As a question (`ask`), when Maester holds a filing for the
+	investor: with companies in the workspace that match what is printed (`candidates`), using one
+	of them is the screen's one primary action and adding a new company is the other way; with no
+	match, adding it as printed is the primary action and picking one already added is the other.
+	As a change, from the slip's "Change": pick a company or add a new one.
 -->
 <script lang="ts">
 	import { untrack } from 'svelte';
@@ -14,29 +16,54 @@
 		mode: 'ask' | 'change';
 		classification: Classification;
 		companies: Company[];
+		/** Companies in the workspace that match what is printed on the filing. */
+		candidates?: Company[];
 		busy?: boolean;
 		onsubmit: (answer: CompanyAnswer) => void;
 		oncancel?: () => void;
 	}
 
-	let { mode, classification, companies, busy = false, onsubmit, oncancel }: Props = $props();
+	let {
+		mode,
+		classification,
+		companies,
+		candidates = [],
+		busy = false,
+		onsubmit,
+		oncancel
+	}: Props = $props();
 
 	const id = $props.id();
 	const NEW = 'new';
 
 	// Each form starts from the current answer and is the investor's from then on.
-	const start = untrack(() => ({ classification, companies }));
-	let picked = $state(start.classification.companyId ?? (start.companies.length === 0 ? NEW : ''));
+	const start = untrack(() => ({ classification, companies, candidates }));
+	let picked = $state(
+		start.classification.companyId ??
+			start.candidates[0]?.id ??
+			(start.companies.length === 0 ? NEW : '')
+	);
 	let name = $state(start.classification.companyNameAsPrinted ?? '');
 	let nameError = $state<string | null>(null);
 	let pickError = $state<string | null>(null);
 
 	let printed = $derived(classification.companyNameAsPrinted?.trim() || null);
+	/** The matching companies first, then the rest. */
+	let ordered = $derived([
+		...candidates,
+		...companies.filter((c) => !candidates.some((m) => m.id === c.id))
+	]);
+
+	/** A field that is wrong takes focus, so its message is read with it. */
+	function focus(field: 'name' | 'pick') {
+		document.getElementById(`${id}-${field}`)?.focus();
+	}
 
 	function addNew(event?: SubmitEvent) {
 		event?.preventDefault();
 		if (!name.trim()) {
 			nameError = copy.company.nameMissing;
+			focus('name');
 			return;
 		}
 		nameError = null;
@@ -48,6 +75,7 @@
 		if (picked === NEW) return addNew();
 		if (!picked) {
 			pickError = copy.company.pickMissing;
+			focus('pick');
 			return;
 		}
 		pickError = null;
@@ -55,9 +83,9 @@
 	}
 </script>
 
-{#snippet picker(withNew: boolean)}
+{#snippet picker(withNew: boolean, label: string)}
 	<div class="field">
-		<label for="{id}-pick">{withNew ? copy.company.changeLabel : copy.company.pickLabel}</label>
+		<label for="{id}-pick">{label}</label>
 		<select
 			id="{id}-pick"
 			bind:value={picked}
@@ -67,7 +95,7 @@
 			{#if !withNew}
 				<option value="" disabled>{copy.company.pickPlaceholder}</option>
 			{/if}
-			{#each companies as company (company.id)}
+			{#each ordered as company (company.id)}
 				<option value={company.id}>{company.displayName}</option>
 			{/each}
 			{#if withNew}
@@ -78,35 +106,54 @@
 	</div>
 {/snippet}
 
+{#snippet addCompany(primary: boolean)}
+	{#if printed}
+		<button
+			class={['button', { outline: !primary }]}
+			type="button"
+			disabled={busy}
+			onclick={() => addNew()}
+		>
+			{copy.company.add(printed)}
+		</button>
+	{:else}
+		<form class="row" onsubmit={addNew} novalidate>
+			<TextField
+				id="{id}-name"
+				label={copy.company.nameLabel}
+				hint={copy.company.nameHint}
+				autocomplete="organization"
+				bind:value={name}
+				error={nameError}
+			/>
+			<button class={['button', { outline: !primary }]} type="submit" disabled={busy}>
+				{copy.company.addNamed}
+			</button>
+		</form>
+	{/if}
+{/snippet}
+
 {#if mode === 'ask'}
 	<div class="ask">
-		{#if printed}
-			<button class="button" type="button" disabled={busy} onclick={() => addNew()}>
-				{copy.company.add(printed)}
-			</button>
-		{:else}
-			<form class="row" onsubmit={addNew} novalidate>
-				<TextField
-					id="{id}-name"
-					label={copy.company.nameLabel}
-					hint={copy.company.nameHint}
-					autocomplete="organization"
-					bind:value={name}
-					error={nameError}
-				/>
-				<button class="button" type="submit" disabled={busy}>{copy.company.addNamed}</button>
-			</form>
-		{/if}
-		{#if companies.length > 0}
+		{#if candidates.length > 0}
 			<form class="row" onsubmit={usePicked} novalidate>
-				{@render picker(false)}
-				<button class="button outline" type="submit" disabled={busy}>{copy.company.use}</button>
+				{@render picker(false, copy.company.candidateLabel)}
+				<button class="button" type="submit" disabled={busy}>{copy.company.use}</button>
 			</form>
+			{@render addCompany(false)}
+		{:else}
+			{@render addCompany(true)}
+			{#if companies.length > 0}
+				<form class="row" onsubmit={usePicked} novalidate>
+					{@render picker(false, copy.company.pickLabel)}
+					<button class="button outline" type="submit" disabled={busy}>{copy.company.use}</button>
+				</form>
+			{/if}
 		{/if}
 	</div>
 {:else}
 	<form class="change" onsubmit={usePicked} novalidate>
-		{@render picker(true)}
+		{@render picker(true, copy.company.changeLabel)}
 		{#if picked === NEW}
 			<TextField
 				id="{id}-name"
