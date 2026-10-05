@@ -139,7 +139,7 @@ Do not run both this and the full compose stack at once: they compete for ports 
 
 ## 6. Configuration
 
-Copy [`.env.example`](../.env.example) to `.env`. The TypeScript services validate their environment at boot and refuse to start on anything invalid, so a typo is a clear error rather than a runtime surprise. The compose file sets its own values inline; from `.env` it reads only `GOOGLE_CLOUD_PROJECT`, `GCLOUD_CONFIG_DIR`, `VERTEX_LOCATION` and `GEMINI_MODEL`, for the extractor, and `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, for Google sign-in.
+Copy [`.env.example`](../.env.example) to `.env`. The TypeScript services validate their environment at boot and refuse to start on anything invalid, so a typo is a clear error rather than a runtime surprise. The compose file sets its own values inline; from `.env` it reads only `GOOGLE_CLOUD_PROJECT`, `GCLOUD_CONFIG_DIR`, `VERTEX_LOCATION`, `GEMINI_MODEL` and `GEMINI_CLASSIFY_MODEL`, for the extractor, and `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, for Google sign-in.
 
 | Variable | Used by | Required | Local default |
 | --- | --- | --- | --- |
@@ -163,9 +163,9 @@ Copy [`.env.example`](../.env.example) to `.env`. The TypeScript services valida
 | `API_SERVICE_ACCOUNT_EMAIL` | worker | When the mode is `cloud-tasks` | Unset |
 | `EXTRACTOR_URL` | worker | To extract facts; unset disables extraction | `http://localhost:8790` |
 | `EXTRACTOR_AUTH`, `EXTRACTOR_SECRET` | worker | `secret` (default) needs the secret, which must match the extractor's; `oidc` uses Cloud Run IAM | `secret`, `local-extractor-secret` |
-| `EXTRACTOR_TIMEOUT_SECONDS`, `EXTRACT_MAX_BYTES` | worker | Defaulted | 900 s, 30 MiB |
+| `EXTRACTOR_TIMEOUT_SECONDS`, `EXTRACT_MAX_BYTES` | worker | Defaulted | 900 s, 50 MiB |
 | `GOOGLE_CLOUD_PROJECT`, `WORKER_INVOKER_SA`, `CLOUD_TASKS_QUEUE`, `TASK_DISPATCH_DEADLINE_SECONDS` | worker | To enqueue extraction when the mode is `cloud-tasks` | Unset |
-| `EXTRACTOR_SECRET`, `GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION`, `GEMINI_MODEL` | extractor | The project and Application Default Credentials for any extraction | See the [extractor README](../apps/extractor/README.md) |
+| `EXTRACTOR_SECRET`, `GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION`, `GEMINI_MODEL`, `GEMINI_CLASSIFY_MODEL` | extractor | The project and Application Default Credentials for any extraction | See the [extractor README](../apps/extractor/README.md) |
 | `MAX_UPLOAD_BYTES`, `UPLOAD_URL_TTL_SECONDS`, `DOWNLOAD_URL_TTL_SECONDS`, `LEASE_SECONDS` | api, worker | Defaulted | 50 MiB, 900 s, 300 s, 600 s |
 | `PORT`, `LOG_LEVEL`, `NODE_ENV` | api, worker | Defaulted | `8787`/`8788`, `info`, `development` |
 | `GOOGLE_CLOUD_PROJECT`, `GEMINI_MODEL`, `GOOGLE_APPLICATION_CREDENTIALS` | Python CLI | For `ingest` and `ask` | See section 9 |

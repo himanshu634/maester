@@ -15,11 +15,12 @@ Out of scope here: the source reader and review/corrections (F06), the financial
 - `source_reference.printed_page_label` and `excerpt` were dropped until the source reader (F06) needs them.
 - Added codes: `CORRECTION_FAILED` (warning), `MODEL_REQUEST_REJECTED`, `NO_STATEMENTS_EXTRACTED`, `DEADLINE_EXCEEDED`, `CANCELLED`.
 - Job creation and dispatch moved to `@maester/jobs` so the worker can enqueue `document.extract`.
+- Document intake (5 October 2026): verify now hands over to `document.classify`, which works out what the PDF is before anything is read; see the [intake spec](superpowers/specs/2026-10-05-document-intake-classification-design.md). `EXTRACT_MAX_BYTES` defaults to 50 MiB.
 
 ## 2. Architecture
 
 ```text
-upload (companyId) → document.verify ──stored──► enqueue document.extract   (only when EXTRACTOR_URL is set)
+upload (company optional) → document.verify ─stored─► document.classify ─decide─► document.extract
                                                      │
 apps/worker (TypeScript)                             ▼
   lease job → read PDF from object store → POST /v1/extract ──► apps/extractor (Python: FastAPI + LangGraph)
@@ -30,7 +31,7 @@ apps/worker (TypeScript)                             ▼
 
 - `apps/extractor` is a FastAPI service over the LangGraph workflow in `packages/financial-engine` (`pdf_financial_qa.workflow`). It holds no database or storage credentials: the PDF arrives as the request body and the result leaves in the response stream.
 - The worker owns job state, leasing, retries and all writes. Drizzle remains the only schema authority.
-- `document.verify` enqueues `document.extract` with the idempotency key `document.extract:<documentId>:auto`, so a repeated verify never enqueues twice. `POST …/documents/:id/extract` enqueues a fresh job with a unique key and produces a new revision.
+- `document.verify` enqueues `document.classify` with the idempotency key `document.classify:<documentId>:auto`, so a repeated verify never enqueues twice; a copy of a file already stored in the workspace is marked `duplicate` instead. When the classification says the document is one to read (an annual report or financial results) and its company is known, `document.classify` enqueues `document.extract` with the key `document.extract:<documentId>:classification-<classificationId>`, so each set of answers is read once. `POST …/documents/:id/extract` enqueues a fresh job with a unique key and produces a new revision.
 - Job creation and dispatch move from `apps/api` to a shared `@maester/jobs` package so the worker can enqueue the follow-up job. Behaviour is unchanged.
 - Service authentication: `EXTRACTOR_AUTH=secret` sends `x-extractor-secret` (local and Compose); `EXTRACTOR_AUTH=oidc` sends a Google ID token for the extractor URL (Cloud Run IAM, worker service account as invoker).
 - Lease renewal: every stream line received renews the job lease, so an extraction longer than `LEASE_SECONDS` is never re-leased mid-run.
@@ -101,7 +102,7 @@ Decimals travel as plain decimal strings (`DecimalString`, never exponent notati
 | --- | --- | --- |
 | `EXTRACTOR_NOT_CONFIGURED` (no Vertex project or credentials) | extractor error event | permanent failure |
 | `UNREADABLE_PDF`, `NO_STATEMENTS_FOUND`, `NO_STATEMENTS_EXTRACTED`, `MODEL_REQUEST_REJECTED` (Vertex 4xx other than 429), `MODEL_CALL_BUDGET_EXCEEDED`, `DEADLINE_EXCEEDED` | extractor error event | permanent failure |
-| `TOO_LARGE_FOR_EXTRACTION` (over `EXTRACT_MAX_BYTES`, default 30 MiB) | worker before calling, or extractor `413` | permanent failure |
+| `TOO_LARGE_FOR_EXTRACTION` (over `EXTRACT_MAX_BYTES`, default 50 MiB) | worker before calling, or extractor `413` | permanent failure |
 | `EXTRACTOR_UNAUTHORIZED` (`401`/`403`) | worker | permanent failure |
 | `EXTRACTION_FAILED`, `MODEL_UNAVAILABLE`, `EXTRACTOR_UNAVAILABLE`, `EXTRACTOR_HTTP_5xx`, `EXTRACTOR_STREAM_INTERRUPTED` (stream ended without a terminal event), timeout | worker or extractor | retry with the job's attempt budget |
 | Result fails Zod validation | worker | permanent failure, `INVALID_EXTRACTOR_RESULT` |
@@ -128,4 +129,4 @@ The write is idempotent per job: `extraction_revision.job_id` is unique, and a r
 ## 7. Local and deployed operation
 
 - Docker Compose adds `extractor` (port 8790). Extraction needs `GOOGLE_CLOUD_PROJECT` and Application Default Credentials; without them extract jobs fail with `EXTRACTOR_NOT_CONFIGURED` and uploads still work.
-- Deployment is a follow-up and is not part of this change. Before enabling extraction in Cloud Run: deploy `maester-extractor` with internal ingress and `--timeout` above 15 minutes; grant the worker service account `run.invoker` on it; grant the worker `cloudtasks.enqueuer` and `iam.serviceAccountUser` on the invoker service account so it can enqueue `document.extract`; give the extract task a `dispatchDeadline` above the extraction budget (the worker sets one from `TASK_DISPATCH_DEADLINE_SECONDS`, but the API's dispatcher sets none, so manual `POST …/extract` tasks get Cloud Tasks' default until it does); raise the worker's Cloud Run `--timeout` above `EXTRACTOR_TIMEOUT_SECONDS` (both are 900 s today, so Cloud Run could end the request first); set `EXTRACTOR_URL`, `EXTRACTOR_AUTH=oidc`, `GOOGLE_CLOUD_PROJECT`, `CLOUD_TASKS_QUEUE` and `WORKER_INVOKER_SA` on the worker. Cloud Run's 32 MiB HTTP/1 request limit is why `EXTRACT_MAX_BYTES` defaults to 30 MiB.
+- Deployment is a follow-up and is not part of this change. Before enabling extraction in Cloud Run: deploy `maester-extractor` with internal ingress and `--timeout` above 15 minutes; grant the worker service account `run.invoker` on it; grant the worker `cloudtasks.enqueuer` and `iam.serviceAccountUser` on the invoker service account so it can enqueue `document.extract`; give the extract task a `dispatchDeadline` above the extraction budget (the worker sets one from `TASK_DISPATCH_DEADLINE_SECONDS`, but the API's dispatcher sets none, so manual `POST …/extract` tasks get Cloud Tasks' default until it does); raise the worker's Cloud Run `--timeout` above `EXTRACTOR_TIMEOUT_SECONDS` (both are 900 s today, so Cloud Run could end the request first); set `EXTRACTOR_URL`, `EXTRACTOR_AUTH=oidc`, `GOOGLE_CLOUD_PROJECT`, `CLOUD_TASKS_QUEUE` and `WORKER_INVOKER_SA` on the worker. `EXTRACT_MAX_BYTES` defaults to 50 MiB, matching `MAX_UPLOAD_BYTES`.

@@ -23,6 +23,7 @@ Working now:
 - Extract a financial-statement PDF into structured statements with Gemini on Vertex AI, from the command line.
 - Store structured data and a text rendition in a local JSON cache, run heuristic arithmetic checks on subtotals and the balance-sheet identity, and ask questions about a cached document.
 - Sign up, get a personal workspace, create a company, upload a document for it to object storage, and watch a durable verification job run to completion over Server-Sent Events.
+- Upload a PDF without choosing a company; Maester works out whether it is an annual report, financial results or another company document, for which company and period, with the page each answer came from, then reads it, holds it for you or keeps it.
 - Extract the uploaded statements into versioned facts with page references and arithmetic checks, through a LangGraph workflow with self-correction ([document extraction](docs/EXTRACTION.md)). This needs a Google Cloud project with Vertex AI.
 - Sign in with Google or email and password behind an invite waitlist, through the web client, which proxies the API.
 - Serve the public pages, the sign-in pages and the error pages, which carry the design system in [DESIGN.md](docs/DESIGN.md), and the portfolio overview as a read-only demo on a synthetic portfolio at `/terminal/demo`.
