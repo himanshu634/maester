@@ -66,9 +66,11 @@ describe("classification queries", () => {
   });
 
   it("normalizes company names", () => {
-    expect(normalizeCompanyName("The Synthetic Cements Ltd.")).toBe("synthetic cements limited");
-    expect(normalizeCompanyName("SYNTHETIC CEMENTS LIMITED")).toBe("synthetic cements limited");
-    expect(normalizeCompanyName("Synthetic & Sons Pvt. Ltd")).toBe("synthetic and sons limited");
+    expect(normalizeCompanyName("The Synthetic Cements Ltd.")).toBe("synthetic cements");
+    expect(normalizeCompanyName("SYNTHETIC CEMENTS LIMITED")).toBe("synthetic cements");
+    expect(normalizeCompanyName("Synthetic Cements")).toBe("synthetic cements");
+    expect(normalizeCompanyName("Synthetic & Sons Pvt. Ltd")).toBe("synthetic and sons");
+    expect(normalizeCompanyName("Synthetic Private Limited")).toBe("synthetic");
   });
 
   it("matches by CIN, then exchange code, then name; ambiguity returns every candidate", async () => {
@@ -87,6 +89,10 @@ describe("classification queries", () => {
     expect((await matchCompanies(db, workspaceId, { name: "SYNTHETIC CEMENTS LIMITED" })).map((c) => c.id)).toEqual([cem]);
     expect(await matchCompanies(db, workspaceId, { name: "Twin Foods Limited" })).toHaveLength(2);
     expect(await matchCompanies(db, workspaceId, { name: "Nobody Limited" })).toEqual([]);
+    // The suffix does not tell companies apart, either way round.
+    expect((await matchCompanies(db, workspaceId, { name: "Synthetic Cements" })).map((c) => c.id)).toEqual([cem]);
+    const bare = await add("Synthetic Steel");
+    expect((await matchCompanies(db, workspaceId, { name: "Synthetic Steel Limited" })).map((c) => c.id)).toEqual([bare]);
     expect(await matchCompanies(db, crypto.randomUUID(), { cin: "L26940MH2001PLC123456" })).toEqual([]);
   });
 

@@ -41,7 +41,10 @@ export async function getCurrentRevision(db: Db, workspaceId: string, documentId
   return rows[0] ?? null;
 }
 
-/** Case, punctuation, a leading "the" and Ltd/Limited/Pvt Ltd do not tell companies apart. */
+/**
+ * Case, punctuation, a leading "the" and a trailing Ltd/Limited/Pvt Ltd do not tell
+ * companies apart, so the suffix is dropped: "Synthetic Cements" matches "Synthetic Cements Limited".
+ */
 export function normalizeCompanyName(name: string): string {
   return name
     .toLowerCase()
@@ -50,7 +53,7 @@ export function normalizeCompanyName(name: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/^the /, "")
-    .replace(/ (?:pvt |private )?(?:ltd|limited)$/, " limited");
+    .replace(/ (?:pvt |private )?(?:ltd|limited)$/, "");
 }
 
 /** Companies a document's identity points at: by CIN, else exchange code, else name. */
