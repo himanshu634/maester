@@ -16,7 +16,7 @@ Before starting significant work, open an issue referencing the feature ID from 
 
 ## What exists today
 
-Maester is a two-language monorepo: a Python document engine, extraction service and CLI, and a TypeScript platform of an HTTP API, a job worker and a static SvelteKit web client. The investor journeys, the ledger and portfolio accounting are specified in the docs and not implemented.
+Maester is a two-language monorepo: a Python document engine, extraction service and CLI, and a TypeScript platform of an HTTP API, a job worker and a SvelteKit web client. The investor journeys, the ledger and portfolio accounting are specified in the docs and not implemented.
 
 Working now:
 
@@ -24,11 +24,12 @@ Working now:
 - Store structured data and a text rendition in a local JSON cache, run heuristic arithmetic checks on subtotals and the balance-sheet identity, and ask questions about a cached document.
 - Sign up, get a personal workspace, create a company, upload a document for it to object storage, and watch a durable verification job run to completion over Server-Sent Events.
 - Extract the uploaded statements into versioned facts with page references and arithmetic checks, through a LangGraph workflow with self-correction ([document extraction](docs/EXTRACTION.md)). This needs a Google Cloud project with Vertex AI.
-- Serve the static public pages, which carry the design system in [DESIGN.md](docs/DESIGN.md).
+- Sign in with Google or email and password behind an invite waitlist, through the web client, which proxies the API.
+- Serve the public pages, the sign-in pages and the error pages, which carry the design system in [DESIGN.md](docs/DESIGN.md), and the portfolio overview as a read-only demo on a synthetic portfolio at `/terminal/demo`.
 
 The whole hosted stack runs locally in Docker with no Google Cloud account, apart from fact extraction itself; see [setup](#setup).
 
-Not yet implemented: fact review and correction, verified citations, a deterministic calculation engine, a ledger, market data, a deployed extractor, or a web client connected to the API. Extraction accuracy is not measured. See [known limitations](docs/DEVELOPMENT.md).
+Not yet implemented: fact review and correction, verified citations, a deterministic calculation engine, a ledger, market data, a deployed extractor, or web screens for documents, facts and holdings. Extraction accuracy is not measured. See [known limitations](docs/DEVELOPMENT.md).
 
 ## Prerequisites
 

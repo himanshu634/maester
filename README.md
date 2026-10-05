@@ -91,25 +91,47 @@ Every suggestion is traceable: from the action, to the trigger, to the financial
 
 These are design principles, not marketing lines. The [product requirements](docs/PRD.md) spell out the full list.
 
-## Where we are today
-
-Maester is pre-alpha. A working document engine can already extract a financial-statement PDF into structured statements, run arithmetic sanity checks, and answer questions about it from the command line. A static web index page in `apps/web` explains the workflow and the accuracy approach and carries the design system every later screen follows ([DESIGN.md](docs/DESIGN.md)). The autonomous loop, the ledger, the web application's investor journeys and the hosted runtime are fully specified and not yet built.
-
-We say this plainly because trust is the whole product. The [contributing guide](CONTRIBUTING.md) lists exactly what works, what does not, and how to run it.
-
 ## Roadmap
 
-Priorities are ordered by investor value and dependency, not by calendar. Each release has an explicit exit gate in the [delivery plan](docs/DELIVERY_PLAN.md).
+Maester ships one complete investor journey at a time, ordered by investor value and dependency, not by calendar. Each step has an explicit exit gate in the [delivery plan](docs/DELIVERY_PLAN.md).
 
-| Priority | Investor outcome | Scope |
-| --- | --- | --- |
-| **P0 · R1** | Know what you own and inspect the evidence behind it | Identity, holdings snapshot, durable uploads, versioned facts with page provenance, source reader, financial tables, deterministic calculations, evidence-backed Analyst, thesis notes and watchlists |
-| **P1 · R2** | Know what the portfolio actually earned, kept current without manual entry | Decimal ledger, tradebook import, reconciliation, dividends and corporate actions, TWR and XIRR, benchmarks |
-| **P1 · R3** | Autonomous monitoring and suggested actions | Filing and fact-change detection, thesis review triggers, alerts and digests, portfolio-scoped Analyst, income calendar, concentration and drawdown, exports |
-| **P2 · R4** | Broader decision support | Rebalancing simulation, valuation scenarios, peer comparison, screener, broker connections, multi-currency, funds and ETFs, US filings, sharing, reports, paid plans |
-| **P3** | Specialist operating models | Adviser workflows, tax reporting, factor attribution, backtesting, and execution only as a separately scoped initiative |
+| Step | Investor outcome | Scope | Status |
+| --- | --- | --- | --- |
+| **R0** | A codebase anyone can run and build on | Workspace, checks, local stack, deploy scripts, design system | Done |
+| **R1 · A** (P0) | Upload a filing and see the page behind any number | Sign-in and private workspaces, company records, durable uploads, versioned facts with page provenance, financial tables, source reader | **In progress** |
+| **R1 · B** (P0) | Save a research conclusion you can trust | Deterministic calculations, evidence-backed Analyst, thesis notes | Not started |
+| **R1 · C** (P0) | See what you own, linked to the evidence | Watchlists, portfolios and accounts, holdings snapshot, portfolio overview, activity and data controls | Overview designed on a synthetic portfolio; the rest not started |
+| **R1 gate** (P0) | Know the evidence is right before anyone relies on it | Extraction evaluation, release checklist, five moderated usability sessions, an invited cohort | Not started |
+| **R2** (P1) | Know what the portfolio actually earned, kept current without manual entry | Decimal ledger, tradebook import, reconciliation, dividends and corporate actions, TWR and XIRR, benchmarks | Planned |
+| **R3** (P1) | Autonomous monitoring and suggested actions | Filing and fact-change detection, thesis review triggers, alerts and digests, portfolio-scoped Analyst, income calendar, concentration and drawdown, exports | Planned |
+| **R4** (P2) | Broader decision support | Rebalancing simulation, valuation scenarios, peer comparison, screener, broker connections, multi-currency, funds and ETFs, US filings, sharing, reports, paid plans | Planned |
+| **P3** | Specialist operating models | Adviser workflows, tax reporting, factor attribution, backtesting, and execution only as a separately scoped initiative | Not scheduled |
 
 The [feature roadmap](docs/FEATURE_ROADMAP.md) lists every feature with acceptance criteria and dependencies.
+
+## Where we are today
+
+Maester is pre-alpha, part-way through **R1 · A**. Nothing is hosted for investors yet; everything below runs on your own machine, as the [contributing guide](CONTRIBUTING.md) explains.
+
+**Working now**
+
+- Sign in with Google or with email and password, behind an invite waitlist. Each account gets a private workspace, and no other workspace can see its companies, documents or jobs.
+- Upload a financial-statement PDF for a company. It is stored privately and checked by a background job that survives restarts, can be retried and reports its progress live.
+- Extract the statements into versioned facts. Each fact keeps the page it was read from, its period, unit and reporting basis, and the arithmetic checks it passed or failed. This step needs a Google Cloud project.
+- The public site, the sign-in pages and the error pages, all built on the design system in [DESIGN.md](docs/DESIGN.md).
+- The portfolio overview (what is due, headline figures, holdings and allocation) as a read-only demo on a synthetic portfolio.
+- The original command-line engine, which extracts a PDF and answers questions about it.
+
+**Not yet**
+
+- No screen shows an uploaded document, its facts or its source page. Today that runs through the API and a developer upload page.
+- Companies have a name and a country only, with no exchange-listed security. A running job cannot be cancelled.
+- Extraction accuracy is not measured.
+- No calculations, Analyst, notes, holdings, ledger, market data or autonomous monitoring.
+
+**Next:** close R1 · A with the screens that complete it. Upload a filing, watch the job finish, read the company's financial table, and open the exact source page from any cell.
+
+We say this plainly because trust is the whole product.
 
 ## Join the build
 
