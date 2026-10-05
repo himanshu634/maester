@@ -90,7 +90,7 @@ describe("classification queries", () => {
     expect(await matchCompanies(db, crypto.randomUUID(), { cin: "L26940MH2001PLC123456" })).toEqual([]);
   });
 
-  it("finds the oldest stored document with the same content in the workspace", async () => {
+  it("finds the older stored copy of the same content, and the oldest copy finds none", async () => {
     const { workspaceId, documentId } = await seed();
     const second = crypto.randomUUID();
     await db.insert(schema.document).values({
@@ -98,6 +98,7 @@ describe("classification queries", () => {
       storageKey: `workspaces/${workspaceId}/documents/${second}/original.pdf`, state: "stored", contentSha256: "a".repeat(64), createdByUserId: "u1",
     });
     expect((await findStoredDuplicate(db, workspaceId, second, "a".repeat(64)))!.id).toBe(documentId);
+    expect(await findStoredDuplicate(db, workspaceId, documentId, "a".repeat(64))).toBeNull();
     expect(await findStoredDuplicate(db, workspaceId, documentId, "b".repeat(64))).toBeNull();
   });
 

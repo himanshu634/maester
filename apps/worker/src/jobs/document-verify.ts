@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { JobTypes, type DocumentVerifyResult, type RejectionCode } from "@maester/contracts";
 import { findStoredDuplicate, schema, type JobRow } from "@maester/db";
 import { createJob } from "@maester/jobs";
@@ -13,21 +13,28 @@ import type { JobContext, JobHandler } from "./types.js";
  * fails with CLASSIFIER_NOT_CONFIGURED, which the investor sees).
  */
 async function chainIntake(job: JobRow, ctx: JobContext, sha256: string): Promise<void> {
-  const [doc] = await ctx.db.select().from(schema.document).where(eq(schema.document.id, job.subjectId)).limit(1);
+  const [doc] = await ctx.db
+    .select()
+    .from(schema.document)
+    .where(and(eq(schema.document.id, job.subjectId), eq(schema.document.workspaceId, job.workspaceId)))
+    .limit(1);
   if (!doc || doc.intakeState === "duplicate") return;
-  if (doc.intakeState === null) {
+  let intakeState = doc.intakeState;
+  if (intakeState === null) {
+    const untouched = and(eq(schema.document.id, doc.id), eq(schema.document.workspaceId, job.workspaceId), isNull(schema.document.intakeState));
     const duplicate = await findStoredDuplicate(ctx.db, job.workspaceId, doc.id, sha256);
     if (duplicate) {
       await ctx.db
         .update(schema.document)
         .set({ intakeState: "duplicate", duplicateOfDocumentId: duplicate.id, updatedAt: sql`now()` })
-        .where(eq(schema.document.id, doc.id));
+        .where(untouched);
       ctx.logger.info({ documentId: doc.id, duplicateOf: duplicate.id }, "duplicate document");
       return;
     }
-    await ctx.db.update(schema.document).set({ intakeState: "identifying", updatedAt: sql`now()` }).where(eq(schema.document.id, doc.id));
+    await ctx.db.update(schema.document).set({ intakeState: "identifying", updatedAt: sql`now()` }).where(untouched);
+    intakeState = "identifying";
   }
-  if (doc.intakeState !== null && doc.intakeState !== "identifying") return;
+  if (intakeState !== "identifying") return;
   const next = await createJob(ctx.db, ctx.dispatcher, {
     workspaceId: job.workspaceId,
     type: JobTypes.DOCUMENT_CLASSIFY,

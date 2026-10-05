@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, ne, or, sql } from "drizzle-orm";
 import type { Db } from "../client.js";
 import { classificationEvidence, documentClassification, type ClassificationRow, type EvidenceRow } from "../schema/classification.js";
 import { extractionRevision, type ExtractionRevisionRow } from "../schema/extraction.js";
@@ -77,11 +77,26 @@ export async function matchCompanies(
   return rows.filter((c) => normalizeCompanyName(c.displayName) === wanted);
 }
 
+/**
+ * The stored document this one is a copy of: same workspace and content hash,
+ * strictly older (earlier createdAt, or equal createdAt and smaller id). The
+ * oldest copy is always the original, so two copies verified together cannot
+ * mark each other duplicate.
+ */
 export async function findStoredDuplicate(db: Db, workspaceId: string, documentId: string, sha256: string): Promise<DocumentRow | null> {
+  // Compared in SQL, so timestamps keep their microseconds.
   const rows = await db
     .select()
     .from(document)
-    .where(and(eq(document.workspaceId, workspaceId), eq(document.contentSha256, sha256), eq(document.state, "stored"), ne(document.id, documentId)))
+    .where(
+      and(
+        eq(document.workspaceId, workspaceId),
+        eq(document.contentSha256, sha256),
+        eq(document.state, "stored"),
+        ne(document.id, documentId),
+        sql`(${document.createdAt}, ${document.id}) < (select d.created_at, d.id from document d where d.id = ${documentId} and d.workspace_id = ${workspaceId})`,
+      ),
+    )
     .orderBy(asc(document.createdAt), asc(document.id))
     .limit(1);
   return rows[0] ?? null;

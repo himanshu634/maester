@@ -245,4 +245,35 @@ describe("document.verify hands over to classification", () => {
       await chained.close();
     }
   });
+
+  it("two copies stored together: only the newer becomes a duplicate", async () => {
+    const chained = await createWorkerContext({ [JobTypes.DOCUMENT_VERIFY]: documentVerify });
+    try {
+      const { workspaceId, userId } = await seedWorkspace(chained.db);
+      const sha = "c".repeat(64);
+      const make = async (name: string, createdAt: Date) => {
+        const id = crypto.randomUUID();
+        await chained.db.insert(schema.document).values({
+          id, workspaceId, originalName: name, declaredSize: 8, declaredMime: "application/pdf",
+          storageKey: `workspaces/${workspaceId}/documents/${id}/original.pdf`, state: "stored", contentSha256: sha, sizeBytes: 8,
+          createdByUserId: userId, createdAt,
+        });
+        return id;
+      };
+      const older = await make("older.pdf", new Date(Date.now() - 60_000));
+      const newer = await make("newer.pdf", new Date());
+      for (const id of [newer, older]) {
+        const jobId = await seedJob(chained.db, workspaceId, { type: JobTypes.DOCUMENT_VERIFY, subjectType: "document", subjectId: id });
+        await runJob(chained, JobTypes.DOCUMENT_VERIFY, jobId);
+      }
+      const [n] = await chained.db.select().from(schema.document).where(eq(schema.document.id, newer));
+      const [o] = await chained.db.select().from(schema.document).where(eq(schema.document.id, older));
+      expect(n).toMatchObject({ intakeState: "duplicate", duplicateOfDocumentId: older });
+      expect(o).toMatchObject({ intakeState: "identifying", duplicateOfDocumentId: null });
+      const classifyJobs = await chained.db.select().from(schema.job).where(eq(schema.job.type, JobTypes.DOCUMENT_CLASSIFY));
+      expect(classifyJobs.map((j) => j.subjectId)).toEqual([older]);
+    } finally {
+      await chained.close();
+    }
+  });
 });
