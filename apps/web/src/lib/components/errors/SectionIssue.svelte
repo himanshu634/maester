@@ -80,7 +80,8 @@
 		margin-top: var(--space-2);
 	}
 
+	/* Always rendered, so the live region exists before its text arrives; empty, it takes no room. */
 	.outcome:empty {
-		display: none;
+		margin-top: calc(-1 * var(--space-2));
 	}
 </style>

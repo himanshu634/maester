@@ -54,6 +54,13 @@
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, never drawn; a reactive set would re-run the effect that fills it
 	const askedCompanies = new Set<string>();
 	/**
+	 * Companies whose read failed. Not asked for again until the slip names another company or
+	 * the companies list is read again, so a company that keeps failing is not fetched on every poll.
+	 */
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, never drawn
+	const failedCompanies = new Set<string>();
+	let lastWantedCompany: string | null = null;
+	/**
 	 * How many times each document has been written from a fresher source (the slip's poll, a
 	 * change, a retry). A list read that began before a write must not undo it.
 	 */
@@ -184,7 +191,11 @@
 	$effect(() => {
 		const client = api;
 		const wanted = slipAnswers?.classification.companyId ?? slip?.companyId ?? null;
-		if (!client || !wanted || askedCompanies.has(wanted)) return;
+		if (wanted !== lastWantedCompany) {
+			failedCompanies.clear();
+			lastWantedCompany = wanted;
+		}
+		if (!client || !wanted || askedCompanies.has(wanted) || failedCompanies.has(wanted)) return;
 		if (companies.some((company) => company.id === wanted)) return;
 		askedCompanies.add(wanted);
 		client
@@ -194,9 +205,19 @@
 			})
 			.catch(() => {
 				// The slip shows "—" for the name meanwhile.
+				failedCompanies.add(wanted);
 			})
 			.finally(() => askedCompanies.delete(wanted));
 	});
+
+	/** Read the companies list again; a company whose read failed may be asked for once more. */
+	async function reloadCompanies() {
+		if (!api) return;
+		const page = await api.listCompanies().catch(() => null);
+		if (!page) return;
+		failedCompanies.clear();
+		companies = page.items;
+	}
 
 	async function refresh(docId: string) {
 		if (!api) return;
@@ -318,7 +339,7 @@
 				...change
 			});
 			if (change.company && 'new' in change.company) {
-				companies = (await api.listCompanies().catch(() => null))?.items ?? companies;
+				await reloadCompanies();
 			}
 			answers = { classification: result.classification, evidence: result.evidence };
 			replace(result.document, true);
@@ -328,8 +349,7 @@
 			message = failure.message;
 			if (failure.reload) await reloadSlip(current.id);
 			// A clash with a company added elsewhere: offer the latest list to pick from.
-			else if (change.company && 'new' in change.company)
-				companies = (await api.listCompanies().catch(() => null))?.items ?? companies;
+			else if (change.company && 'new' in change.company) await reloadCompanies();
 			return false;
 		}
 	}

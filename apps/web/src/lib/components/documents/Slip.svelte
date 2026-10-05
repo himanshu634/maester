@@ -306,10 +306,12 @@
 						class="button outline"
 						type="button"
 						disabled={retryBusy}
+						aria-describedby={retryBusy ? `${id}-again-busy` : undefined}
 						onclick={() => retry(onclassify)}
 					>
 						{copy.duplicate.again}
 					</button>
+					{#if retrying}<p class="busy-note" id="{id}-again-busy">{retrying}</p>{/if}
 				</div>
 			</Notice>
 		{:else if doc.intakeState === 'identify_failed' && !jobRunning}
@@ -552,6 +554,13 @@
 	/* Keeps its 44px target without spacing out the line it sits on. */
 	.meta .text-button {
 		margin-block: calc((var(--target) - 1.5rem) / -2);
+	}
+
+	.busy-note {
+		flex-basis: 100%;
+		font-size: 1rem;
+		line-height: var(--leading-small);
+		color: var(--ink-muted);
 	}
 
 	.actions .text-button {
