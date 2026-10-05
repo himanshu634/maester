@@ -18,9 +18,22 @@
 		role?: 'status' | 'note';
 		/** The retry is running: the button is disabled and points at this visible line. */
 		busy?: string | null;
+		/**
+		 * What the last retry came to, said politely, so a retry that changed nothing is still
+		 * heard. When given, its status line is always in the page, empty until there is news.
+		 */
+		outcome?: string;
 	}
 
-	let { title, detail, retryLabel, onretry, role = 'status', busy = null }: Props = $props();
+	let {
+		title,
+		detail,
+		retryLabel,
+		onretry,
+		role = 'status',
+		busy = null,
+		outcome
+	}: Props = $props();
 
 	const id = $props.id();
 </script>
@@ -37,6 +50,9 @@
 			onclick={onretry}>{retryLabel}</button
 		>
 		{#if busy}<p class="detail muted" id="{id}-busy">{busy}</p>{/if}
+	{/if}
+	{#if outcome !== undefined}
+		<p class="detail outcome" role="status" aria-live="polite">{outcome}</p>
 	{/if}
 </div>
 
@@ -62,5 +78,9 @@
 
 	.button {
 		margin-top: var(--space-2);
+	}
+
+	.outcome:empty {
+		display: none;
 	}
 </style>

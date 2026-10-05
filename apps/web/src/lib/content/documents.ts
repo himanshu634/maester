@@ -112,11 +112,16 @@ export const documentsContent = {
 		title: 'Maester couldn’t tell what this is.',
 		detail: 'The first pages have no title it could read. Say what it is and it carries on.'
 	},
-	/** Names the company only once it is confirmed; a printed name alone is not enough. */
-	kept: (company: string | null) =>
+	/**
+	 * Names the company only once it is confirmed and read; a printed name alone is not enough,
+	 * and a confirmed company whose name has not loaded yet is not called unconfirmed.
+	 */
+	kept: (company: string | null, confirmed: boolean) =>
 		company
 			? `Kept with ${company}. Maester reads annual reports and financial results for now.`
-			: 'Kept. Company not confirmed yet.',
+			: confirmed
+				? 'Kept, not read. Maester reads annual reports and financial results for now.'
+				: 'Kept. Company not confirmed yet.',
 	duplicate: {
 		title: 'Not worked out: you added this file before.',
 		open: 'Open the first copy',
@@ -125,7 +130,8 @@ export const documentsContent = {
 	answersFailed: {
 		title: 'What Maester worked out didn’t load.',
 		detail: 'The file and the answers are safe. Try loading them again.',
-		retry: 'Try again'
+		retry: 'Try again',
+		again: 'Still didn’t load. Try again in a moment.'
 	},
 	retrying: 'Asking Maester to try again…',
 	identifyFailed: {
@@ -164,8 +170,7 @@ export const documentsContent = {
 	earlier: {
 		heading: 'Earlier',
 		empty: 'Nothing added yet.',
-		more: (count: number) => `Showing the ${count} most recent.`,
-		open: (name: string) => `Open ${name}`
+		more: (count: number) => `Showing the ${count} most recent.`
 	},
 
 	/** What it is, in plain words. */

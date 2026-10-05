@@ -49,8 +49,8 @@
 		message?: string | null;
 		/** Maester has answers for this document but they did not load. */
 		answersFailed?: boolean;
-		/** Load the document and its answers again. */
-		onreload: () => Promise<void>;
+		/** Load the document and its answers again. Resolves true when the answers loaded. */
+		onreload: () => Promise<boolean>;
 		/** Resolves true when the change was saved. */
 		onchange: (change: Change) => Promise<boolean>;
 		onclassify: () => Promise<void>;
@@ -79,6 +79,10 @@
 	/** The answer being changed, and the set of answers the form was opened on. */
 	let editingFor = $state<{ field: 'kind' | 'company'; answerId: string } | null>(null);
 	let busy = $state(false);
+	/** A retry ("Try again", "Read it again") is running; scoped apart from saving a change. */
+	let retryBusy = $state(false);
+	/** What the last "Try again" on unloaded answers came to. */
+	let reloadOutcome = $state('');
 	/** The Change buttons, so focus can go back to the one that opened a form. */
 	let changeButtons = $state<Partial<Record<'kind' | 'company', HTMLButtonElement>>>({});
 
@@ -88,11 +92,11 @@
 	let jobRunning = $derived(
 		!!doc.latestJob && (doc.latestJob.state === 'queued' || doc.latestJob.state === 'running')
 	);
-	let companyName = $derived.by(() => {
-		const companyId = current?.companyId ?? doc.companyId;
-		if (!companyId) return null;
-		return companies.find((c) => c.id === companyId)?.displayName ?? null;
-	});
+	/** The confirmed company, if any; its name may not have loaded yet. */
+	let companyId = $derived(current?.companyId ?? doc.companyId);
+	let companyName = $derived(
+		companyId ? (companies.find((c) => c.id === companyId)?.displayName ?? null) : null
+	);
 	let printed = $derived(current?.companyNameAsPrinted?.trim() || null);
 	/** The answer the slip is already asking for above, so it is not offered twice. */
 	let asking = $derived(
@@ -104,7 +108,7 @@
 	);
 	let values = $derived({
 		kind: whatItIs(current ?? doc.classification),
-		company: companyName ?? printed ?? '—',
+		company: companyName ?? (companyId ? '—' : (printed ?? '—')),
 		period: current ? periodWords(current) : '—',
 		statements: current ? statementsWords(current.statementsFound) : '—'
 	});
@@ -125,7 +129,7 @@
 				? copy.company.question(printed)
 				: copy.company.questionUnnamed
 	);
-	let retrying = $derived(busy ? copy.retrying : null);
+	let retrying = $derived(retryBusy ? copy.retrying : null);
 
 	async function run<T>(work: () => Promise<T>): Promise<T | undefined> {
 		if (busy) return undefined;
@@ -134,6 +138,29 @@
 			return await work();
 		} finally {
 			busy = false;
+		}
+	}
+
+	async function retry(work: () => Promise<unknown>) {
+		if (retryBusy) return;
+		retryBusy = true;
+		try {
+			await work();
+		} finally {
+			retryBusy = false;
+		}
+	}
+
+	/** Try loading the answers again; say so when they still did not load, even if nothing else moved. */
+	async function reload() {
+		reloadOutcome = '';
+		let loaded = false;
+		await retry(async () => {
+			loaded = await onreload();
+		});
+		if (!loaded) {
+			await tick();
+			reloadOutcome = copy.answersFailed.again;
 		}
 	}
 
@@ -222,7 +249,8 @@
 				detail={copy.answersFailed.detail}
 				retryLabel={copy.answersFailed.retry}
 				busy={retrying}
-				onretry={() => run(onreload)}
+				outcome={reloadOutcome}
+				onretry={reload}
 			/>
 		{:else if doc.intakeState === 'needs_company' && current}
 			<Notice role="note" title={companyQuestion}>
@@ -264,7 +292,7 @@
 				/>
 			</Notice>
 		{:else if doc.intakeState === 'kept'}
-			<Notice role="note" title={copy.kept(companyName)} />
+			<Notice role="note" title={copy.kept(companyName, !!companyId)} />
 		{:else if doc.intakeState === 'duplicate'}
 			<Notice role="note" title={copy.duplicate.title}>
 				<div class="actions">
@@ -277,8 +305,8 @@
 					<button
 						class="button outline"
 						type="button"
-						disabled={busy}
-						onclick={() => run(onclassify)}
+						disabled={retryBusy}
+						onclick={() => retry(onclassify)}
 					>
 						{copy.duplicate.again}
 					</button>
@@ -291,7 +319,7 @@
 				role="note"
 				retryLabel={copy.identifyFailed.retry}
 				busy={retrying}
-				onretry={() => run(onclassify)}
+				onretry={() => retry(onclassify)}
 			/>
 		{:else if doc.intakeState === 'read_failed' && !jobRunning}
 			<SectionIssue
@@ -300,7 +328,7 @@
 				role="note"
 				retryLabel={copy.readFailed.retry}
 				busy={retrying}
-				onretry={() => run(onextract)}
+				onretry={() => retry(onextract)}
 			/>
 		{/if}
 
@@ -340,7 +368,7 @@
 						<dt>{copy.slip.terms.company}</dt>
 						<dd>
 							<span class="value">{values.company}</span>
-							{#if current && !companyName && printed}
+							{#if current && !companyId && printed}
 								<span class="source">{copy.slip.notConfirmed}</span>
 							{/if}
 							<span class="meta">

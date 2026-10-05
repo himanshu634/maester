@@ -7,7 +7,7 @@
 	stops, while the tab is hidden and when the page is left. Leaving never cancels anything.
 -->
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { documentsContent as copy } from '$lib/content/documents';
 	import { documentsApi, readMe, type DocumentsApi, type Fetcher } from '$lib/documents/client';
 	import {
@@ -15,7 +15,9 @@
 		checkFile,
 		isLive,
 		pickSlip,
+		anyLive,
 		LIST_POLL_MS,
+		mergeList,
 		POLL_MS,
 		stateLabel,
 		uploadFailure
@@ -48,9 +50,14 @@
 	let listFailures = $state(0);
 	/** The document whose answers did not load, so the slip can say so and offer to try again. */
 	let answersFailed = $state<string | null>(null);
-	/** Companies already asked for by id, so a missing one is fetched once. */
+	/** Companies being asked for by id, so one is not asked for twice at once. */
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, never drawn; a reactive set would re-run the effect that fills it
 	const askedCompanies = new Set<string>();
+	/**
+	 * How many times each document has been written from a fresher source (the slip's poll, a
+	 * change, a retry). A list read that began before a write must not undo it.
+	 */
+	const writes: Record<string, number> = {};
 	let slipHeading = $state<HTMLHeadingElement>();
 
 	const newestFirst = (a: DocumentRecord, b: DocumentRecord) =>
@@ -58,6 +65,11 @@
 
 	let slip = $derived(pickSlip(docs, opened));
 	let earlier = $derived(docs.filter((doc) => doc.id !== slip?.id).sort(newestFirst));
+	/**
+	 * Something in Earlier is being worked on. A boolean, so the list poll below re-arms only when
+	 * it flips, not each time the slip's poll replaces `docs`.
+	 */
+	let watchingEarlier = $derived(anyLive(docs, [slip?.id ?? null, uploadingId]));
 	let slipAnswers = $derived(
 		answers && slip && answers.classification.documentId === slip.id ? answers : null
 	);
@@ -74,6 +86,7 @@
 	function replace(next: DocumentRecord, announce = false) {
 		const before = docs.find((doc) => doc.id === next.id);
 		docs = before ? docs.map((doc) => (doc.id === next.id ? next : doc)) : [next, ...docs];
+		writes[next.id] = (writes[next.id] ?? 0) + 1;
 		if (announce) announceIfMoved(before, next);
 	}
 
@@ -83,14 +96,20 @@
 	 */
 	async function refreshList() {
 		if (!api) return;
+		const seen = { ...writes };
 		try {
 			const page = await api.listDocuments();
-			const fresh = new Set(page.items.map((doc) => doc.id));
+			// Fresher than this read: anything written meanwhile, and the slip's document while its
+			// own poll is following it.
+			const keep = docs
+				.filter((doc) => (writes[doc.id] ?? 0) !== (seen[doc.id] ?? 0))
+				.map((doc) => doc.id);
+			if (slip && isLive(slip)) keep.push(slip.id);
 			const before = slip ? docs.find((doc) => doc.id === slip?.id) : undefined;
-			docs = [...page.items, ...docs.filter((doc) => !fresh.has(doc.id))];
+			docs = mergeList(docs, page.items, keep);
 			more = page.nextCursor !== null;
-			const after = before && page.items.find((doc) => doc.id === before.id);
-			if (after) announceIfMoved(before, after);
+			const after = before && docs.find((doc) => doc.id === before.id);
+			if (after && after !== before) announceIfMoved(before, after);
 			listFailures = 0;
 		} catch {
 			listFailures += 1;
@@ -161,7 +180,7 @@
 	});
 
 	// A company the slip names but this page has not read (beyond the first page, or added
-	// elsewhere) is read by id, once.
+	// elsewhere) is read by id. A failed read is tried again the next time the slip changes.
 	$effect(() => {
 		const client = api;
 		const wanted = slipAnswers?.classification.companyId ?? slip?.companyId ?? null;
@@ -174,8 +193,9 @@
 				if (!companies.some((c) => c.id === company.id)) companies = [...companies, company];
 			})
 			.catch(() => {
-				// The slip shows the printed name meanwhile.
-			});
+				// The slip shows "—" for the name meanwhile.
+			})
+			.finally(() => askedCompanies.delete(wanted));
 	});
 
 	async function refresh(docId: string) {
@@ -202,13 +222,25 @@
 	});
 
 	// While anything in Earlier is being worked on, read the list again every 5 seconds, so a
-	// document that needs the investor or stopped says so there without a reload.
+	// document that needs the investor or stopped says so there without a reload. One
+	// self-rescheduling timer per run of this effect; it re-runs only when `watchingEarlier`,
+	// `hidden` or `api` change, and the back-off is read when each wait is set, not tracked.
 	$effect(() => {
-		const watching = earlier.some((doc) => doc.id !== uploadingId && isLive(doc));
-		if (!api || hidden || !watching) return;
-		const wait = LIST_POLL_MS * Math.min(1 + listFailures, 5);
-		const timer = window.setTimeout(refreshList, wait);
-		return () => window.clearTimeout(timer);
+		if (!api || hidden || !watchingEarlier) return;
+		let stopped = false;
+		let timer: number | undefined;
+		const next = () => {
+			const wait = LIST_POLL_MS * Math.min(1 + untrack(() => listFailures), 5);
+			timer = window.setTimeout(async () => {
+				await refreshList();
+				if (!stopped) next();
+			}, wait);
+		};
+		next();
+		return () => {
+			stopped = true;
+			window.clearTimeout(timer);
+		};
 	});
 
 	async function addFile(file: File) {
@@ -258,8 +290,9 @@
 		slipHeading?.focus();
 	}
 
-	async function reloadSlip(docId: string) {
-		if (!api) return;
+	/** Read the document and its answers again. True when the answers loaded. */
+	async function reloadSlip(docId: string): Promise<boolean> {
+		if (!api) return false;
 		const [doc, latest] = await Promise.allSettled([
 			api.getDocument(docId),
 			api.getClassification(docId)
@@ -268,9 +301,10 @@
 		if (latest.status === 'fulfilled') {
 			answers = latest.value;
 			answersFailed = null;
-		} else {
-			answersFailed = docId;
+			return true;
 		}
+		answersFailed = docId;
+		return false;
 	}
 
 	async function changeAnswers(change: Change): Promise<boolean> {

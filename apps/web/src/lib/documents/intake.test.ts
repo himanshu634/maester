@@ -8,6 +8,8 @@ import {
 	identifiers,
 	isLive,
 	kindSaveLabel,
+	anyLive,
+	mergeList,
 	normalizeCompanyName,
 	ladder,
 	MAX_UPLOAD_BYTES,
@@ -548,5 +550,40 @@ describe('uploadFailure', () => {
 		expect(uploadFailure(new ApiError(0, 'NETWORK', 'down'), { size: 10 }).message).toBe(
 			'The upload didn’t finish. Check your connection and add it again.'
 		);
+	});
+});
+
+describe('anyLive', () => {
+	it('is true while a document other than the ones left out is being worked on', () => {
+		const reading = doc({ id: 'reading', intakeState: 'reading' });
+		const kept = doc({ id: 'kept', intakeState: 'kept' });
+		expect(anyLive([kept, reading], [])).toBe(true);
+		expect(anyLive([kept, reading], ['reading'])).toBe(false);
+		expect(anyLive([kept], [null])).toBe(false);
+		expect(anyLive([], [])).toBe(false);
+	});
+});
+
+describe('mergeList', () => {
+	const older = doc({ id: 'slip', intakeState: 'needs_company' });
+	const newer = doc({ id: 'slip', intakeState: 'reading' });
+	const other = doc({ id: 'other', intakeState: 'identifying' });
+	const otherNow = doc({ id: 'other', intakeState: 'needs_kind' });
+	const sending = doc({ id: 'sending', state: 'pending_upload', intakeState: null });
+
+	it('takes the list’s copies, in the list’s order', () => {
+		expect(mergeList([other], [otherNow], [])).toEqual([otherNow]);
+	});
+
+	it('keeps the copies it is told to keep, which are fresher than the list', () => {
+		const merged = mergeList([newer, other], [older, otherNow], ['slip']);
+		expect(merged.map((d) => d.intakeState)).toEqual(['reading', 'needs_kind']);
+	});
+
+	it('keeps documents the list does not have, after it', () => {
+		expect(mergeList([sending, other], [otherNow], []).map((d) => d.id)).toEqual([
+			'other',
+			'sending'
+		]);
 	});
 });

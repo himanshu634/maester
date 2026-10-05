@@ -136,6 +136,33 @@ export function isLive(doc: DocumentRecord): boolean {
 }
 
 /**
+ * Whether any document, apart from those left out (the slip's, which polls on its own, and the
+ * file being sent), is being worked on, so the list is worth reading again.
+ */
+export function anyLive(docs: DocumentRecord[], except: (string | null)[]): boolean {
+	return docs.some((doc) => !except.includes(doc.id) && isLive(doc));
+}
+
+/**
+ * The list as the API now has it, merged into what the page holds. Copies named in `keep` are
+ * fresher than the list (written while it was being fetched, or polled by the slip), so they
+ * stay. Documents the list does not have (the file being sent, a first copy opened from a
+ * duplicate) follow it.
+ */
+export function mergeList(
+	current: DocumentRecord[],
+	page: DocumentRecord[],
+	keep: (string | null)[]
+): DocumentRecord[] {
+	const listed = new Set(page.map((doc) => doc.id));
+	const held = (id: string) => current.find((doc) => doc.id === id);
+	return [
+		...page.map((doc) => (keep.includes(doc.id) ? (held(doc.id) ?? doc) : doc)),
+		...current.filter((doc) => !listed.has(doc.id))
+	];
+}
+
+/**
  * A document the slip should open by itself: anything Maester is still working on or that
  * needs the investor. Read and kept documents are settled. An upload that never finished or a
  * refused file cannot be acted on from here, so it never takes the slip by itself either.
