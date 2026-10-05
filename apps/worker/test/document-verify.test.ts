@@ -195,39 +195,54 @@ describe("document.verify storage error handling and streaming", () => {
   });
 });
 
-describe("document.verify chains extraction", () => {
-  it("enqueues one document.extract per document when an extractor is configured", async () => {
-    const chained = await createWorkerContext({ [JobTypes.DOCUMENT_VERIFY]: documentVerify }, {}, {
-      EXTRACTOR_URL: "http://localhost:8790", EXTRACTOR_SECRET: "s",
-    });
+describe("document.verify hands over to classification", () => {
+  it("enqueues document.classify once, even when the extractor is not configured, and marks identifying", async () => {
+    const chained = await createWorkerContext({ [JobTypes.DOCUMENT_VERIFY]: documentVerify });
     try {
       const { workspaceId, userId } = await seedWorkspace(chained.db);
       const id = crypto.randomUUID();
       const storageKey = `workspaces/${workspaceId}/documents/${id}/original.pdf`;
       await chained.db.insert(schema.document).values({
-        id, workspaceId, originalName: "x.pdf", declaredSize: 9, declaredMime: "application/pdf", storageKey, state: "uploaded", createdByUserId: userId,
+        id, workspaceId, originalName: "a.pdf", declaredSize: 8, declaredMime: "application/pdf", storageKey, state: "uploaded", createdByUserId: userId,
       });
       await chained.store.put(storageKey, new TextEncoder().encode("%PDF-1.7"), "application/pdf");
       for (let i = 0; i < 2; i++) {
         const jobId = await seedJob(chained.db, workspaceId, { type: JobTypes.DOCUMENT_VERIFY, subjectType: "document", subjectId: id });
         await runJob(chained, JobTypes.DOCUMENT_VERIFY, jobId);
       }
-      const extractJobs = await chained.db.select().from(schema.job).where(eq(schema.job.type, JobTypes.DOCUMENT_EXTRACT));
-      expect(extractJobs).toHaveLength(1);
-      expect(extractJobs[0]).toMatchObject({ subjectId: id, workspaceId, state: "queued", idempotencyKey: `document.extract:${id}:auto` });
-      expect(chained.dispatcher.enqueued.map((j) => j.id)).toEqual([extractJobs[0]!.id]);
+      const classifyJobs = await chained.db.select().from(schema.job).where(eq(schema.job.type, JobTypes.DOCUMENT_CLASSIFY));
+      expect(classifyJobs).toHaveLength(1);
+      expect(classifyJobs[0]!.idempotencyKey).toBe(`${JobTypes.DOCUMENT_CLASSIFY}:${id}:auto`);
+      expect(await chained.db.select().from(schema.job).where(eq(schema.job.type, JobTypes.DOCUMENT_EXTRACT))).toHaveLength(0);
+      const [doc] = await chained.db.select().from(schema.document).where(eq(schema.document.id, id));
+      expect(doc!.intakeState).toBe("identifying");
     } finally {
       await chained.close();
     }
   });
 
-  it("does not enqueue extraction without an extractor", async () => {
-    const { workspaceId, userId } = await seedWorkspace(ctx.db);
-    const { id, storageKey } = await seedDocument(workspaceId, userId);
-    await ctx.store.put(storageKey, new TextEncoder().encode("%PDF-1.7"), "application/pdf");
-    await verify(workspaceId, id);
-    const extractJobs = await ctx.db.select().from(schema.job).where(eq(schema.job.subjectId, id));
-    expect(extractJobs.map((j) => j.type)).toEqual([JobTypes.DOCUMENT_VERIFY]);
-    expect(ctx.dispatcher.enqueued).toHaveLength(0);
+  it("marks a second copy of a stored file as a duplicate and does not classify it", async () => {
+    const chained = await createWorkerContext({ [JobTypes.DOCUMENT_VERIFY]: documentVerify });
+    try {
+      const { workspaceId, userId } = await seedWorkspace(chained.db);
+      const ids: string[] = [];
+      for (const name of ["first.pdf", "second.pdf"]) {
+        const id = crypto.randomUUID();
+        const storageKey = `workspaces/${workspaceId}/documents/${id}/original.pdf`;
+        await chained.db.insert(schema.document).values({
+          id, workspaceId, originalName: name, declaredSize: 8, declaredMime: "application/pdf", storageKey, state: "uploaded", createdByUserId: userId,
+        });
+        await chained.store.put(storageKey, new TextEncoder().encode("%PDF-1.7"), "application/pdf");
+        const jobId = await seedJob(chained.db, workspaceId, { type: JobTypes.DOCUMENT_VERIFY, subjectType: "document", subjectId: id });
+        await runJob(chained, JobTypes.DOCUMENT_VERIFY, jobId);
+        ids.push(id);
+      }
+      const [second] = await chained.db.select().from(schema.document).where(eq(schema.document.id, ids[1]!));
+      expect(second).toMatchObject({ intakeState: "duplicate", duplicateOfDocumentId: ids[0] });
+      const classifyJobs = await chained.db.select().from(schema.job).where(eq(schema.job.type, JobTypes.DOCUMENT_CLASSIFY));
+      expect(classifyJobs.map((j) => j.subjectId)).toEqual([ids[0]]);
+    } finally {
+      await chained.close();
+    }
   });
 });

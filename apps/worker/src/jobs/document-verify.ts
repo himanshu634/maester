@@ -1,25 +1,41 @@
 import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { JobTypes, type DocumentVerifyResult, type RejectionCode } from "@maester/contracts";
-import { schema, type JobRow } from "@maester/db";
+import { findStoredDuplicate, schema, type JobRow } from "@maester/db";
 import { createJob } from "@maester/jobs";
 import { ObjectNotFoundError } from "@maester/storage";
 import type { JobContext, JobHandler } from "./types.js";
 
 /**
- * Enqueue extraction for a stored document when the worker can reach an
- * extractor. The fixed idempotency key means a verify retry never enqueues twice.
+ * Hand a stored document to intake: a second copy of a stored file is marked a
+ * duplicate; anything else is classified. Keyed "auto", so a verify retry never
+ * enqueues twice, and a classify job runs even without an extractor (it then
+ * fails with CLASSIFIER_NOT_CONFIGURED, which the investor sees).
  */
-async function chainExtraction(job: JobRow, ctx: JobContext): Promise<void> {
-  if (!ctx.env.EXTRACTOR_URL) return;
+async function chainIntake(job: JobRow, ctx: JobContext, sha256: string): Promise<void> {
+  const [doc] = await ctx.db.select().from(schema.document).where(eq(schema.document.id, job.subjectId)).limit(1);
+  if (!doc || doc.intakeState === "duplicate") return;
+  if (doc.intakeState === null) {
+    const duplicate = await findStoredDuplicate(ctx.db, job.workspaceId, doc.id, sha256);
+    if (duplicate) {
+      await ctx.db
+        .update(schema.document)
+        .set({ intakeState: "duplicate", duplicateOfDocumentId: duplicate.id, updatedAt: sql`now()` })
+        .where(eq(schema.document.id, doc.id));
+      ctx.logger.info({ documentId: doc.id, duplicateOf: duplicate.id }, "duplicate document");
+      return;
+    }
+    await ctx.db.update(schema.document).set({ intakeState: "identifying", updatedAt: sql`now()` }).where(eq(schema.document.id, doc.id));
+  }
+  if (doc.intakeState !== null && doc.intakeState !== "identifying") return;
   const next = await createJob(ctx.db, ctx.dispatcher, {
     workspaceId: job.workspaceId,
-    type: JobTypes.DOCUMENT_EXTRACT,
+    type: JobTypes.DOCUMENT_CLASSIFY,
     subjectType: "document",
     subjectId: job.subjectId,
     pipelineVersion: "auto",
   });
-  ctx.logger.info({ documentId: job.subjectId, extractJobId: next.id }, "extraction enqueued");
+  ctx.logger.info({ documentId: job.subjectId, classifyJobId: next.id }, "classification enqueued");
 }
 
 const PDF_MAGIC = Buffer.from("%PDF-");
@@ -32,7 +48,7 @@ export const documentVerify: JobHandler = async (job, ctx) => {
     .limit(1);
   if (!doc) throw new Error(`document ${job.subjectId} not found in workspace ${job.workspaceId}`);
   if (doc.state === "stored") {
-    await chainExtraction(job, ctx);
+    await chainIntake(job, ctx, doc.contentSha256!);
     return { outcome: "stored", sha256: doc.contentSha256!, sizeBytes: doc.sizeBytes! } satisfies DocumentVerifyResult;
   }
   if (doc.state === "rejected") {
@@ -81,6 +97,6 @@ export const documentVerify: JobHandler = async (job, ctx) => {
     .where(eq(schema.document.id, doc.id));
   await ctx.progress({ stage: "stored", percent: 100 });
   ctx.logger.info({ documentId: doc.id, sizeBytes: size }, "document stored");
-  await chainExtraction(job, ctx);
+  await chainIntake(job, ctx, sha256);
   return { outcome: "stored", sha256, sizeBytes: size } satisfies DocumentVerifyResult;
 };

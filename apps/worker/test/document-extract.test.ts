@@ -112,8 +112,8 @@ describe("document.extract", () => {
     const doc = await seedStoredDocument();
     const jobId = await seedJob(ctx.db, doc.workspaceId, { type: JobTypes.DOCUMENT_EXTRACT, subjectType: "document", subjectId: doc.id });
     const [job] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, jobId));
-    const first = await writeRevision(ctx.db, job!, doc, RESULT_LINE.result);
-    const second = await writeRevision(ctx.db, job!, doc, RESULT_LINE.result);
+    const first = await writeRevision(ctx.db, job!, doc, RESULT_LINE.result, null);
+    const second = await writeRevision(ctx.db, job!, doc, RESULT_LINE.result, null);
     expect(second).toEqual(first);
     const revisions = await ctx.db.select().from(schema.extractionRevision).where(eq(schema.extractionRevision.documentId, doc.id));
     expect(revisions).toHaveLength(1);
@@ -191,6 +191,44 @@ describe("document.extract", () => {
     release();
     expect((await running).status).toBe(200);
   });
+  it("links the revision to the classification in its job key and marks the document read", async () => {
+    const doc = await seedStoredDocument();
+    const cid = crypto.randomUUID();
+    await ctx.db.insert(schema.documentClassification).values({ id: cid, workspaceId: doc.workspaceId, documentId: doc.id, kind: "annual_report", setBy: "maester", companyId: doc.companyId, readsUnderId: cid });
+    await ctx.db.update(schema.document).set({ intakeState: "reading" }).where(eq(schema.document.id, doc.id));
+    const jobId = await seedJob(ctx.db, doc.workspaceId, { type: JobTypes.DOCUMENT_EXTRACT, subjectType: "document", subjectId: doc.id, idempotencyKey: `${JobTypes.DOCUMENT_EXTRACT}:${doc.id}:classification-${cid}` });
+    await runJob(ctx, JobTypes.DOCUMENT_EXTRACT, jobId);
+    const [rev] = await ctx.db.select().from(schema.extractionRevision).where(eq(schema.extractionRevision.jobId, jobId));
+    expect(rev!.classificationId).toBe(cid);
+    const [d] = await ctx.db.select().from(schema.document).where(eq(schema.document.id, doc.id));
+    expect(d!.intakeState).toBe("read");
+  });
+
+  it("a superseded read does not mark the document read", async () => {
+    const doc = await seedStoredDocument();
+    const old = crypto.randomUUID();
+    await ctx.db.insert(schema.documentClassification).values({ id: old, workspaceId: doc.workspaceId, documentId: doc.id, kind: "annual_report", setBy: "maester", companyId: doc.companyId, readsUnderId: old, createdAt: new Date(Date.now() - 60_000) });
+    const now = crypto.randomUUID();
+    await ctx.db.insert(schema.documentClassification).values({ id: now, workspaceId: doc.workspaceId, documentId: doc.id, kind: "annual_report", setBy: "investor", companyId: doc.companyId, readsUnderId: now });
+    await ctx.db.update(schema.document).set({ intakeState: "reading" }).where(eq(schema.document.id, doc.id));
+    const jobId = await seedJob(ctx.db, doc.workspaceId, { type: JobTypes.DOCUMENT_EXTRACT, subjectType: "document", subjectId: doc.id, idempotencyKey: `${JobTypes.DOCUMENT_EXTRACT}:${doc.id}:classification-${old}` });
+    await runJob(ctx, JobTypes.DOCUMENT_EXTRACT, jobId);
+    const [d] = await ctx.db.select().from(schema.document).where(eq(schema.document.id, doc.id));
+    expect(d!.intakeState).toBe("reading");
+  });
+
+  it("a read that fails for good marks read_failed when it is the current read", async () => {
+    reply = streamLines(fixture("stream-error.ndjson"));
+    const doc = await seedStoredDocument();
+    const cid = crypto.randomUUID();
+    await ctx.db.insert(schema.documentClassification).values({ id: cid, workspaceId: doc.workspaceId, documentId: doc.id, kind: "annual_report", setBy: "maester", companyId: doc.companyId, readsUnderId: cid });
+    await ctx.db.update(schema.document).set({ intakeState: "reading" }).where(eq(schema.document.id, doc.id));
+    const jobId = await seedJob(ctx.db, doc.workspaceId, { type: JobTypes.DOCUMENT_EXTRACT, subjectType: "document", subjectId: doc.id, idempotencyKey: `${JobTypes.DOCUMENT_EXTRACT}:${doc.id}:classification-${cid}` });
+    await runJob(ctx, JobTypes.DOCUMENT_EXTRACT, jobId);
+    const [d] = await ctx.db.select().from(schema.document).where(eq(schema.document.id, doc.id));
+    expect(d!.intakeState).toBe("read_failed");
+  });
+
 });
 
 describe("document.extract without an extractor", () => {

@@ -1,8 +1,9 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { DocumentExtractResult, ExtractionResult } from "@maester/contracts";
-import { schema, type Db, type ExtractionRevisionRow, type JobRow } from "@maester/db";
+import { getCurrentClassification, schema, type Db, type ExtractionRevisionRow, type JobRow } from "@maester/db";
+import { classificationIdOfReadJob } from "@maester/jobs";
 import { ObjectNotFoundError, type ObjectStore } from "@maester/storage";
-import { JobFailure, type JobHandler } from "./types.js";
+import { JobFailure, type JobContext, type JobHandler } from "./types.js";
 
 const INSERT_BATCH = 500;
 
@@ -37,6 +38,7 @@ export async function writeRevision(
   job: JobRow,
   document: { id: string; companyId: string | null },
   result: ExtractionResult,
+  classificationId: string | null,
 ): Promise<DocumentExtractResult> {
   return db.transaction(async (tx) => {
     const [revision] = await tx
@@ -46,6 +48,7 @@ export async function writeRevision(
         workspaceId: job.workspaceId,
         documentId: document.id,
         jobId: job.id,
+        classificationId,
         state: result.state,
         pipelineVersion: result.pipelineVersion,
         model: result.model,
@@ -124,7 +127,18 @@ export async function writeRevision(
   });
 }
 
-export const documentExtract: JobHandler = async (job, ctx) => {
+/** Mark the document only when this read is the one its current answers point at. */
+async function setIntakeIfCurrent(db: Db, workspaceId: string, documentId: string, classificationId: string | null, state: "read" | "read_failed"): Promise<void> {
+  if (!classificationId) return;
+  const current = await getCurrentClassification(db, workspaceId, documentId);
+  if (current?.readsUnderId !== classificationId) return;
+  await db
+    .update(schema.document)
+    .set({ intakeState: state, updatedAt: sql`now()` })
+    .where(and(eq(schema.document.id, documentId), eq(schema.document.workspaceId, workspaceId)));
+}
+
+async function extract(job: JobRow, ctx: JobContext): Promise<DocumentExtractResult> {
   if (!ctx.extractor) throw new JobFailure("EXTRACTOR_NOT_CONFIGURED", "EXTRACTOR_URL is not set on the worker", false);
 
   const [doc] = await ctx.db
@@ -159,8 +173,19 @@ export const documentExtract: JobHandler = async (job, ctx) => {
     if (event.type === "progress") await ctx.progress({ stage: event.stage, percent: event.percent });
   });
 
-  const written = await writeRevision(ctx.db, job, doc, result);
+  const classificationId =
+    classificationIdOfReadJob(job.idempotencyKey) ?? (await getCurrentClassification(ctx.db, job.workspaceId, doc.id))?.readsUnderId ?? null;
+  const written = await writeRevision(ctx.db, job, doc, result, classificationId);
+  await setIntakeIfCurrent(ctx.db, job.workspaceId, doc.id, classificationId, "read");
   await ctx.progress({ stage: "stored", percent: 100 });
   ctx.logger.info({ documentId: doc.id, ...written }, "extraction stored");
   return written;
-};
+}
+
+export const documentExtract: JobHandler = Object.assign(extract, {
+  async onFinalFailure(job: JobRow, db: Db): Promise<void> {
+    const classificationId =
+      classificationIdOfReadJob(job.idempotencyKey) ?? (await getCurrentClassification(db, job.workspaceId, job.subjectId))?.readsUnderId ?? null;
+    await setIntakeIfCurrent(db, job.workspaceId, job.subjectId, classificationId, "read_failed");
+  },
+});
