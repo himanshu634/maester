@@ -38,7 +38,7 @@ KIND_RULES: list[tuple[str, str, re.Pattern[str]]] = [
         r"(?:and\s+(?:standalone|consolidated)\s+)?financial\s+results\s+for\s+the\s+"
         r"(?:quarter|half[\s-]year|six\s+months|nine\s+months|year|period)", _I | re.M)),
     ("financial_results", "title.integrated_filing_financial", re.compile(r"\bintegrated\s+filing\s*\(?\s*financial", _I)),
-    ("other:shareholding_pattern", "title.shareholding_pattern", re.compile(r"\bshareholding\s+pattern\b|\bregulation\s+31\b", _I)),
+    ("other:shareholding_pattern", "title.shareholding_pattern", re.compile(r"\bshareholding\s+pattern\b", _I)),
     ("other:shareholder_notice", "title.shareholder_notice", re.compile(
         r"\bnotice\s+is\s+hereby\s+given\b.{0,200}?\b(?:annual\s+general\s+meeting|extra[\s-]?ordinary\s+general\s+meeting|postal\s+ballot)",
         _I | re.DOTALL)),
@@ -140,11 +140,18 @@ def _span_value(words: str) -> str:
     return SPAN_VALUES[key]
 
 
+_CONTINUATION_WORDS = frozenset(
+    {"the", "of", "to", "and", "for", "a", "an", "its", "our", "approve", "consider", "adopt"})
+
+
 def _is_wrapped(text: str, match: re.Match[str]) -> bool:
-    """A heading-shaped match whose previous non-empty line ends mid-sentence is a wrapped line, not a heading."""
+    """A heading-shaped match whose previous non-empty line ends in a comma or a continuation word is a wrapped line, not a heading."""
     heading_start = match.start() + (len(match.group(0)) - len(match.group(0).lstrip()))
     before = [line.strip() for line in text[:heading_start].splitlines() if line.strip()]
-    return bool(before) and (before[-1][-1].islower() or before[-1].endswith(","))
+    if not before:
+        return False
+    words = before[-1].rstrip(".;:!?)").split()
+    return before[-1].endswith(",") or bool(words) and words[-1].lower() in _CONTINUATION_WORDS
 
 
 def _label(text: str) -> str:

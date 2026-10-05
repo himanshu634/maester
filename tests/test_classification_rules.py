@@ -118,6 +118,11 @@ class RulesTests(unittest.TestCase):
         self.assertEqual((a.kind, a.other_type), ("other", "board_meeting"))
         self.assertEqual(a.statements, {})
 
+    def test_company_name_line_above_a_results_heading(self):
+        a = classify_text(["Synthetic Foods Limited\nStatement of Unaudited Financial Results for the quarter ended 30 June 2026"])
+        self.assertEqual(a.kind, "financial_results")
+        self.assertTrue(any(k[0] == "income_statement" and v == [0] for k, v in a.statements.items()))
+
     def test_exchange_ltd_variants_are_not_the_company(self):
         a = classify_text(["To,\nBSE Ltd.\nNSE Limited\nSynthetic Foods Limited\nPress Release"])
         self.assertEqual(a.company_name, "Synthetic Foods Limited")
