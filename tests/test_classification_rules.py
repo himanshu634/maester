@@ -18,7 +18,7 @@ class RulesTests(unittest.TestCase):
             "Standalone Balance Sheet as at 31 March 2026\nStatement of Profit and Loss for the year ended 31 March 2026",
         ]
         a = classify_text(pages)
-        self.assertEqual(RULES_VERSION, "classify-rules-1")
+        self.assertEqual(RULES_VERSION, "classify-rules-2")
         self.assertEqual(a.kind, "annual_report")
         self.assertFalse(a.kind_conflict)
         self.assertEqual(a.company_name, "Synthetic Cements Limited")
@@ -30,6 +30,28 @@ class RulesTests(unittest.TestCase):
         kind = evidence_for(a, "kind")[0]
         self.assertEqual((kind.rule_id, kind.page_index), ("title.annual_report", 0))
         self.assertIn(normalise(kind.quote), normalise(pages[0]))
+
+    def test_the_registrars_cin_is_not_the_companys(self):
+        pages = ["Registrar: Link Intime India Private Limited, CIN: U67190MH1999PTC118368",
+                 "Synthetic Cements Limited\nCIN: L26940MH2001PLC123456\nIntegrated Annual Report 2025-26"]
+        a = classify_text(pages)
+        self.assertEqual(a.cin, "L26940MH2001PLC123456")
+        self.assertEqual(a.company_name, "Synthetic Cements Limited")
+        cin = evidence_for(a, "identifier")
+        self.assertEqual([(h.value, h.page_index) for h in cin], [("L26940MH2001PLC123456", 1)])
+
+    def test_a_listed_cin_beats_an_unlisted_one(self):
+        a = classify_text(["Synthetic Holdings Limited\nSubsidiary CIN: U12345MH2010PTC123456\nCIN: L26940MH2001PLC123456"])
+        self.assertEqual(a.cin, "L26940MH2001PLC123456")
+
+    def test_among_listed_cins_the_one_beside_the_company_wins(self):
+        pages = ["Contents\nParent CIN: L11111MH1990PLC111111", "Synthetic Cements Limited\nCIN: L26940MH2001PLC123456"]
+        a = classify_text(pages)
+        self.assertEqual(a.cin, "L26940MH2001PLC123456")
+
+    def test_an_unlisted_company_keeps_its_own_cin(self):
+        a = classify_text(["Synthetic Private Limited\nCIN: U26940MH2001PTC123456"])
+        self.assertEqual(a.cin, "U26940MH2001PTC123456")
 
     def test_quarterly_results_with_exchange_codes(self):
         pages = ["Synthetic Power Limited\nScrip Code: 532123\nSymbol: SYNPOWER\n"

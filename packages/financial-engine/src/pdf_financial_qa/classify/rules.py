@@ -11,7 +11,7 @@ from datetime import date
 
 from pdf_financial_qa.workflow.values import parse_label_date
 
-RULES_VERSION = "classify-rules-1"
+RULES_VERSION = "classify-rules-2"
 TITLE_PAGES = 5
 QUOTE_MAX = 300
 READ_KINDS = ("annual_report", "financial_results")
@@ -108,11 +108,16 @@ def normalise(text: str) -> str:
     return " ".join(text.split()).casefold()
 
 
-def _quote(text: str, match: re.Match[str]) -> str:
-    """The line the match sits on, whitespace collapsed; the match alone if the line is too long."""
+def _line(text: str, match: re.Match[str]) -> str:
+    """The whole line the match sits on, whitespace collapsed."""
     start = text.rfind("\n", 0, match.start()) + 1
     end = text.find("\n", match.end())
-    line = " ".join(text[start:end if end != -1 else len(text)].split())
+    return " ".join(text[start:end if end != -1 else len(text)].split())
+
+
+def _quote(text: str, match: re.Match[str]) -> str:
+    """The line the match sits on, whitespace collapsed; the match alone if the line is too long."""
+    line = _line(text, match)
     if len(line) > QUOTE_MAX:
         line = " ".join(match.group(0).split())[:QUOTE_MAX]
     return line
@@ -159,9 +164,34 @@ def _label(text: str) -> str:
     return text[:1].upper() + text[1:]
 
 
+def _cover_pages(pages: list[str]) -> list[int]:
+    """Title pages that carry a company's name line (not an exchange's, depository's or registrar's)."""
+    return [index for index, page in enumerate(pages[:TITLE_PAGES])
+            if any(not NOT_A_COMPANY.search(m.group(1)) for m in COMPANY.finditer(page))]
+
+
+def _cin(pages: list[str], a: RuleAnswers) -> None:
+    """The company's own CIN: never one on a registrar's or exchange's line; a listed (L) CIN
+    before an unlisted (U) one; then the one on, or nearest to, the company's name line."""
+    candidates = [(index, match) for index, page in enumerate(pages) for match in CIN.finditer(page)
+                  if not NOT_A_COMPANY.search(_line(page, match))]
+    if not candidates:
+        return
+    cover = _cover_pages(pages)
+
+    def rank(candidate: tuple[int, re.Match[str]]) -> tuple[int, int, int, int]:
+        index, match = candidate
+        distance = min((abs(index - c) for c in cover), default=0)
+        return (0 if match.group(1).startswith("L") else 1, distance, index, match.start())
+
+    index, match = min(candidates, key=rank)
+    a.cin = match.group(1)
+    a.evidence.append(Hit("identifier", a.cin, "identifier.cin", index, _quote(pages[index], match)))
+
+
 def _identifiers(pages: list[str], a: RuleAnswers) -> None:
-    for attr, rule_id, pattern in (("cin", "identifier.cin", CIN), ("bse_code", "identifier.bse", BSE),
-                                   ("nse_symbol", "identifier.nse", NSE)):
+    _cin(pages, a)
+    for attr, rule_id, pattern in (("bse_code", "identifier.bse", BSE), ("nse_symbol", "identifier.nse", NSE)):
         for index, page in enumerate(pages):
             match = pattern.search(page)
             if match:
