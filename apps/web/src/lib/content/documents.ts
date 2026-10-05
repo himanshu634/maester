@@ -29,7 +29,7 @@ export const documentsContent = {
 	},
 	leaving: 'Leaving this page doesn’t stop anything. The slip is here when you come back.',
 	leavingWhileSending:
-		'Your file is still being sent. Leaving now stops the upload; add it again afterwards.',
+		'Your file is still being sent. Moving to another page doesn’t stop it, but closing or reloading this tab does.',
 
 	slip: {
 		/** "Uploaded" step and the rest, in order. */
