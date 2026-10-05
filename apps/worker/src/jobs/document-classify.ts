@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { ClassificationResult, DocumentClassifyResult } from "@maester/contracts";
-import { matchCompanies, schema, type ClassificationRow, type Db, type JobRow } from "@maester/db";
+import { getCurrentClassification, listEvidence, matchCompanies, schema, type ClassificationRow, type Db, type DocumentRow, type JobRow } from "@maester/db";
 import { decideIntake, READ_KINDS } from "@maester/jobs";
 import { ObjectNotFoundError } from "@maester/storage";
 import { readAll } from "./document-extract.js";
@@ -80,6 +80,19 @@ async function uniqueMatch(db: Db, workspaceId: string, r: ClassificationResult)
   return matches.length === 1 ? matches[0]!.id : null;
 }
 
+/**
+ * The company the investor gave, if any. Once the document has answers, they say:
+ * the current company counts only when its evidence is the investor's. Before the
+ * first answers, a company on the document was given at upload.
+ */
+async function investorCompany(db: Db, doc: DocumentRow): Promise<string | null> {
+  const current = await getCurrentClassification(db, doc.workspaceId, doc.id);
+  if (!current) return doc.companyId;
+  if (!current.companyId) return null;
+  const evidence = await listEvidence(db, doc.workspaceId, current.id);
+  return evidence.some((e) => e.field === "company" && e.source === "investor") ? current.companyId : null;
+}
+
 async function classify(job: JobRow, ctx: JobContext): Promise<DocumentClassifyResult> {
   if (!ctx.extractor) throw new JobFailure("CLASSIFIER_NOT_CONFIGURED", "EXTRACTOR_URL is not set on the worker", false);
   const [doc] = await ctx.db
@@ -111,8 +124,9 @@ async function classify(job: JobRow, ctx: JobContext): Promise<DocumentClassifyR
 
   await ctx.progress({ stage: "identifying", percent: 0 });
   const result = await ctx.extractor.classify({ pdf, documentId: doc.id });
-  const companyId = doc.companyId ?? (await uniqueMatch(ctx.db, job.workspaceId, result));
-  const row = await writeClassification(ctx.db, job, { id: doc.id, investorCompanyId: doc.companyId }, result, companyId);
+  const investorCompanyId = await investorCompany(ctx.db, doc);
+  const companyId = investorCompanyId ?? (await uniqueMatch(ctx.db, job.workspaceId, result));
+  const row = await writeClassification(ctx.db, job, { id: doc.id, investorCompanyId }, result, companyId);
   const intakeState = await decideIntake(ctx.db, ctx.dispatcher, row, { read: true });
   await ctx.progress({ stage: "identified", percent: 100 });
   ctx.logger.info({ documentId: doc.id, kind: row.kind, intakeState }, "document classified");

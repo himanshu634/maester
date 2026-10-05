@@ -96,6 +96,41 @@ describe("document.classify", () => {
     expect(investor.some((e) => e.classificationId === rows[0]!.id && e.field === "company")).toBe(true);
   });
 
+  it("on a re-run, a company Maester matched before is matched again, not taken as the investor's", async () => {
+    // The document's company came from Maester's earlier match (rule evidence), not from the investor.
+    const d = await seedStored({ companies: ["Somebody Else Ltd", "Synthetic Cements Ltd"], uploadCompany: true });
+    const [earlier, matched] = d.companyIds as [string, string];
+    const prev = crypto.randomUUID();
+    await ctx.db.insert(schema.documentClassification).values({
+      id: prev, workspaceId: d.workspaceId, documentId: d.id, kind: "annual_report", setBy: "maester", companyId: earlier, createdAt: new Date(Date.now() - 60_000),
+    });
+    await ctx.db.insert(schema.classificationEvidence).values({
+      id: crypto.randomUUID(), workspaceId: d.workspaceId, classificationId: prev, field: "company", source: "rule", ruleId: "company.cover_line", pageIndex: 0, quote: "Somebody Else Ltd", textLayerMatch: true,
+    });
+    const { rows } = await classify(d.workspaceId, d.id);
+    const row = rows.find((r) => r.id !== prev)!;
+    expect(row.companyId).toBe(matched);
+    const evidence = await ctx.db.select().from(schema.classificationEvidence).where(eq(schema.classificationEvidence.classificationId, row.id));
+    expect(evidence.filter((e) => e.source === "investor")).toEqual([]);
+  });
+
+  it("on a re-run, a company the investor gave is kept as their answer", async () => {
+    const d = await seedStored({ companies: ["Somebody Else Ltd", "Synthetic Cements Ltd"] });
+    const [given] = d.companyIds as [string, string];
+    const prev = crypto.randomUUID();
+    await ctx.db.insert(schema.documentClassification).values({
+      id: prev, workspaceId: d.workspaceId, documentId: d.id, kind: "annual_report", setBy: "investor", companyId: given, createdAt: new Date(Date.now() - 60_000),
+    });
+    await ctx.db.insert(schema.classificationEvidence).values({
+      id: crypto.randomUUID(), workspaceId: d.workspaceId, classificationId: prev, field: "company", source: "investor", ruleId: null, pageIndex: null, quote: null, textLayerMatch: null,
+    });
+    const { rows } = await classify(d.workspaceId, d.id);
+    const row = rows.find((r) => r.id !== prev)!;
+    expect(row.companyId).toBe(given);
+    const evidence = await ctx.db.select().from(schema.classificationEvidence).where(eq(schema.classificationEvidence.classificationId, row.id));
+    expect(evidence.filter((e) => e.source === "investor").map((e) => e.field)).toEqual(["company"]);
+  });
+
   it("keeps other documents and holds not_sure", async () => {
     reply = json(withKind("other", "shareholding_pattern"));
     const other = await seedStored({ companies: ["Synthetic Cements Ltd"] });
