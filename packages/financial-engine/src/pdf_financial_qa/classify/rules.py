@@ -21,9 +21,10 @@ DATE = r"(?:\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+,?\s+\d{4}|[A-Za-z]+\s+\d{1,2},?\
 
 CIN = re.compile(r"\b([LU]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6})\b")
 BSE = re.compile(r"(?i:scrip\s+code|security\s+code|bse(?:\s+(?:scrip\s+)?code)?)\s*(?:no\.?)?\s*[:\-–]?\s*(\d{6})\b")
-NSE = re.compile(r"(?i:nse\s+symbol|symbol|nse)\s*[:\-–]\s*([A-Z][A-Z0-9&\-]{1,19})\b")
+NSE = re.compile(r"\b(?i:nse\s+symbol|symbol|nse)\s*[:\-–]\s*([A-Z][A-Z0-9&\-]{1,19})\b")
 COMPANY = re.compile(r"^\s*([A-Z][A-Za-z0-9&.,'()\- ]{1,80}?\s(?:Limited|LIMITED|Ltd\.?|LTD\.?))\s*$", re.MULTILINE)
-NOT_A_COMPANY = re.compile(r"stock\s+exchange|\bbse\s+limited\b|depository|registrar|link\s+intime|kfin", _I)
+NOT_A_COMPANY = re.compile(r"stock\s+exchange|\bbse\s+limited\b|depository|registrar|link\s+intime|mufg\s+intime|kfin|bigshare"
+                           r"|national\s+stock\s+exchange|\b(?:bse|nse)\s+(?:limited|ltd\.?)", _I)
 
 # (value, rule_id, pattern). A value is a kind, or "other:<other_type>".
 KIND_RULES: list[tuple[str, str, re.Pattern[str]]] = [
@@ -36,14 +37,15 @@ KIND_RULES: list[tuple[str, str, re.Pattern[str]]] = [
         r"^\s*statement\s+of\s+(?:audited|unaudited|reviewed)?\s*(?:standalone|consolidated)?\s*"
         r"(?:and\s+(?:standalone|consolidated)\s+)?financial\s+results\s+for\s+the\s+"
         r"(?:quarter|half[\s-]year|six\s+months|nine\s+months|year|period)", _I | re.M)),
-    ("financial_results", "title.regulation_33", re.compile(r"\bregulation\s+33\b", _I)),
     ("financial_results", "title.integrated_filing_financial", re.compile(r"\bintegrated\s+filing\s*\(?\s*financial", _I)),
     ("other:shareholding_pattern", "title.shareholding_pattern", re.compile(r"\bshareholding\s+pattern\b|\bregulation\s+31\b", _I)),
     ("other:shareholder_notice", "title.shareholder_notice", re.compile(
         r"\bnotice\s+is\s+hereby\s+given\b.{0,200}?\b(?:annual\s+general\s+meeting|extra[\s-]?ordinary\s+general\s+meeting|postal\s+ballot)",
         _I | re.DOTALL)),
     ("other:board_meeting", "title.board_meeting_intimation", re.compile(
-        r"\bintimation\s+of\s+(?:the\s+)?board\s+meeting\b|\bregulation\s+29\b", _I)),
+        r"\bintimation\s+of\s+(?:the\s+)?board\s+meeting\b|\bregulation\s+29\b"
+        r"|\bnotice\s+of\s+(?:the\s+)?board\s+meeting\b|\bboard\s+meeting\s+notice\b|\bprior\s+intimation\b"
+        r"|\bboard\s+meeting\b.{0,60}?\bto\s+be\s+held", _I | re.DOTALL)),
     ("other:board_meeting", "title.board_meeting_outcome", re.compile(r"\boutcome\s+of\s+(?:the\s+)?board\s+meeting\b", _I)),
     ("other:investor_presentation", "title.investor_presentation", re.compile(r"\binvestor\s+presentation\b", _I)),
     ("other:earnings_call", "title.earnings_call", re.compile(
@@ -127,11 +129,22 @@ def _basis(match: re.Match[str], page: str) -> str:
     return "unknown"
 
 
+def _span_key(words: str) -> str:
+    return re.sub(r"[\s-]+", " ", words.lower()).strip()
+
+
 def _span_value(words: str) -> str:
-    key = re.sub(r"[\s-]+", " ", words.lower()).strip()
+    key = _span_key(words)
     if key.startswith("quarter and"):
         return "full_year"
     return SPAN_VALUES[key]
+
+
+def _is_wrapped(text: str, match: re.Match[str]) -> bool:
+    """A heading-shaped match whose previous non-empty line ends mid-sentence is a wrapped line, not a heading."""
+    heading_start = match.start() + (len(match.group(0)) - len(match.group(0).lstrip()))
+    before = [line.strip() for line in text[:heading_start].splitlines() if line.strip()]
+    return bool(before) and (before[-1][-1].islower() or before[-1].endswith(","))
 
 
 def _label(text: str) -> str:
@@ -182,6 +195,8 @@ def _kind(pages: list[str], a: RuleAnswers) -> list[Hit]:
     for index, page in enumerate(pages[:TITLE_PAGES]):
         for value, rule_id, pattern in KIND_RULES:
             match = pattern.search(page)
+            if match and rule_id == "title.financial_results" and _is_wrapped(page, match):
+                continue
             if match:
                 hits.append(Hit("kind", value, rule_id, index, _quote(page, match)))
                 if value == "financial_results" and rule_id == "title.financial_results":
@@ -226,7 +241,7 @@ def _period(pages: list[str], a: RuleAnswers) -> None:
     if a.kind == "annual_report":
         matches = [(i, m) for i, m in matches if _span_value(m.group(1)) == "full_year"]
     else:
-        full = [(i, m) for i, m in matches if m.group(1).lower().startswith("quarter and")]
+        full = [(i, m) for i, m in matches if _span_key(m.group(1)).startswith("quarter and")]
         matches = full or matches
     if matches:
         index, match = matches[0]

@@ -106,6 +106,26 @@ class RulesTests(unittest.TestCase):
             self.assertLessEqual(len(hit.quote), 300)
             self.assertNotIn("\n", hit.quote)
 
+    def test_board_meeting_notice_citing_regulation_33_is_kept(self):
+        a = classify_text(["Synthetic Foods Limited\nSub: Board Meeting Notice\nPursuant to Regulation 33 of SEBI (LODR), "
+                           "the Board will meet to consider the unaudited financial results for the quarter ended 30 June 2026"])
+        self.assertEqual((a.kind, a.other_type), ("other", "board_meeting"))
+        self.assertEqual(a.statements, {})
+
+    def test_wrapped_sentence_is_not_a_results_heading(self):
+        a = classify_text(["Notice of Board Meeting\nThe Board will meet to approve the\n"
+                           "Statement of Unaudited Financial Results for the quarter ended 30 June 2026"])
+        self.assertEqual((a.kind, a.other_type), ("other", "board_meeting"))
+        self.assertEqual(a.statements, {})
+
+    def test_exchange_ltd_variants_are_not_the_company(self):
+        a = classify_text(["To,\nBSE Ltd.\nNSE Limited\nSynthetic Foods Limited\nPress Release"])
+        self.assertEqual(a.company_name, "Synthetic Foods Limited")
+
+    def test_nse_needs_a_word_boundary(self):
+        a = classify_text(["Synthetic Foods Limited\nTotal Expense: INR 500 crore\nPress Release"])
+        self.assertIsNone(a.nse_symbol)
+
 
 if __name__ == "__main__":
     unittest.main()
