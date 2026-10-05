@@ -1,0 +1,27 @@
+{
+  "type": "result",
+  "result": {
+    "rulesVersion": "classify-rules-1",
+    "model": null,
+    "promptVersion": null,
+    "pageCount": 3,
+    "kind": "annual_report",
+    "otherType": null,
+    "resultsSpan": null,
+    "periodEnd": "2026-03-31",
+    "periodLabel": "Year ended 31 March 2026",
+    "companyNameAsPrinted": "Synthetic Cements Limited",
+    "cin": "L26940MH2001PLC123456",
+    "bseCode": "532123",
+    "nseSymbol": "SYNCEM",
+    "statementsFound": [{ "statement": "balance_sheet", "basis": "standalone", "pages": [2] }],
+    "evidence": [
+      { "field": "kind", "source": "rule", "ruleId": "title.annual_report", "pageIndex": 0, "quote": "Integrated Annual Report 2025-26", "textLayerMatch": true },
+      { "field": "company", "source": "rule", "ruleId": "company.cover_line", "pageIndex": 0, "quote": "Synthetic Cements Limited", "textLayerMatch": true },
+      { "field": "identifier", "source": "rule", "ruleId": "identifier.cin", "pageIndex": 0, "quote": "CIN: L26940MH2001PLC123456", "textLayerMatch": true },
+      { "field": "period", "source": "rule", "ruleId": "period.span", "pageIndex": 2, "quote": "Statement of Profit and Loss for the year ended 31 March 2026", "textLayerMatch": true },
+      { "field": "statements", "source": "rule", "ruleId": "statement.balance_sheet", "pageIndex": 2, "quote": "Standalone Balance Sheet as at 31 March 2026", "textLayerMatch": true }
+    ],
+    "warnings": []
+  }
+}

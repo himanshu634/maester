@@ -1,0 +1,1 @@
+{ "type": "error", "code": "UNREADABLE_PDF", "retryable": false, "message": "the PDF could not be read: PdfReadError" }

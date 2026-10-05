@@ -1,0 +1,21 @@
+{
+  "type": "result",
+  "result": {
+    "rulesVersion": "classify-rules-1",
+    "model": "scripted-model",
+    "promptVersion": "classify-000000000000",
+    "pageCount": 1,
+    "kind": "not_sure",
+    "otherType": null,
+    "resultsSpan": null,
+    "periodEnd": null,
+    "periodLabel": null,
+    "companyNameAsPrinted": null,
+    "cin": null,
+    "bseCode": null,
+    "nseSymbol": null,
+    "statementsFound": [],
+    "evidence": [],
+    "warnings": [{ "code": "MODEL_ANSWER_DROPPED", "message": "1 answer(s) could not be checked against the document and were left open" }]
+  }
+}

@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { IsoTimestamp, Uuid } from "./common.js";
 
-export const JobTypes = { DOCUMENT_VERIFY: "document.verify", DOCUMENT_EXTRACT: "document.extract" } as const;
+export const JobTypes = {
+  DOCUMENT_VERIFY: "document.verify",
+  DOCUMENT_CLASSIFY: "document.classify",
+  DOCUMENT_EXTRACT: "document.extract",
+} as const;
 export type JobType = (typeof JobTypes)[keyof typeof JobTypes];
 
 export const JobState = z.enum(["queued", "running", "succeeded", "failed", "cancelled"]);

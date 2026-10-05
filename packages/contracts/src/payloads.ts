@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Uuid } from "./common.js";
+import { ClassificationKind, IntakeState } from "./classification.js";
 import { RejectionCode } from "./document.js";
 import { ExtractionState } from "./extraction.js";
 
@@ -17,3 +18,11 @@ export const DocumentExtractResult = z.object({
   failedChecks: z.number().int(),
 });
 export type DocumentExtractResult = z.infer<typeof DocumentExtractResult>;
+
+export const DocumentClassifyResult = z.object({
+  outcome: z.literal("classified"),
+  classificationId: Uuid,
+  kind: ClassificationKind,
+  intakeState: IntakeState.nullable(),
+});
+export type DocumentClassifyResult = z.infer<typeof DocumentClassifyResult>;
