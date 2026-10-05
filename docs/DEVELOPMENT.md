@@ -13,7 +13,7 @@ docker compose up --build
 | Component | Path | Language | Status |
 | --- | --- | --- | --- |
 | HTTP API | `apps/api` | TypeScript, Hono | Running: identity, workspaces, document uploads, jobs, SSE ([README](../apps/api/README.md)) |
-| Job worker | `apps/worker` | TypeScript, Hono | Running: leased job execution, `document.verify`, `document.extract` ([README](../apps/worker/README.md)) |
+| Job worker | `apps/worker` | TypeScript, Hono | Running: leased job execution, `document.verify`, `document.classify`, `document.extract` ([README](../apps/worker/README.md)) |
 | Extractor | `apps/extractor` | Python, FastAPI | Running: stateless extraction service the worker calls ([README](../apps/extractor/README.md)) |
 | Web client | `apps/web` | SvelteKit, static | Running: public pages at `/`, sign-in and recovery pages (`/login`, `/signup`, `/verify-email`, `/forgot-password`, `/reset-password`), `/terminal`; investor journeys planned ([README](../apps/web/README.md)) |
 | CLI | `apps/cli` | Python, Typer | Running: `maester ingest`, `list-docs`, `ask` |
@@ -72,7 +72,7 @@ The Python CLI is not containerised; run it with uv (section 9). Cloud Tasks and
 
 ## 4. Try it
 
-**In a browser.** Open <http://localhost:5173/dev/upload> (the web origin, so the session cookie is first-party), sign up with the pre-filled credentials (the page approves the email and confirms the account for you), keep or change the company, choose a PDF, and press *Upload, verify and extract*. The page picks or creates the company, creates a document for it, uploads the bytes to a signed URL, finalises it, and streams job progress over Server-Sent Events until the document reaches `stored`. Verification then enqueues `document.extract`; the page follows that job too and, when it succeeds, prints the revision, its coverage and checks, and the first facts with their page numbers. Without Vertex AI configured the extract job fails with `EXTRACTOR_NOT_CONFIGURED`, which is expected.
+**In a browser.** Open <http://localhost:5173/dev/upload> (the web origin, so the session cookie is first-party), sign up with the pre-filled credentials (the page approves the email and confirms the account for you), keep or change the company, choose a PDF, and press *Upload, verify and extract*. The page picks or creates the company, creates a document for it, uploads the bytes to a signed URL, finalises it, and streams job progress over Server-Sent Events until the document reaches `stored`. Verification then enqueues `document.classify`, which enqueues `document.extract` for an annual report or financial results with a known company; the page follows the extract job too and, when it succeeds, prints the revision, its coverage and checks, and the first facts with their page numbers. Without Vertex AI configured the extract job fails with `EXTRACTOR_NOT_CONFIGURED`, which is expected.
 
 **From the terminal.** The same journey, scripted:
 
@@ -126,7 +126,7 @@ PORT=8788 pnpm dev:worker
 uv run --locked maester-extractor     # :8790; optional, only for extraction
 ```
 
-All three read the root `.env`. With the shipped defaults the API and worker store uploads under `data/blobs`, dispatch jobs over plain HTTP and need no cloud credentials, and the worker sends extract jobs to the extractor at `EXTRACTOR_URL`. Comment out `EXTRACTOR_URL` to verify uploads without extracting them. The web client is separate and uses pnpm from its own directory:
+All three read the root `.env`. With the shipped defaults the API and worker store uploads under `data/blobs`, dispatch jobs over plain HTTP and need no cloud credentials, and the worker sends classify and extract jobs to the extractor at `EXTRACTOR_URL`. Comment out `EXTRACTOR_URL` and uploads are verified but not identified: `document.classify` fails with `CLASSIFIER_NOT_CONFIGURED`. The web client is separate and uses pnpm from its own directory:
 
 ```bash
 pnpm --dir apps/web install --frozen-lockfile
@@ -161,7 +161,7 @@ Copy [`.env.example`](../.env.example) to `.env`. The TypeScript services valida
 | `WORKER_URL` | api, worker | Always | `http://localhost:8788` |
 | `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `CLOUD_TASKS_QUEUE`, `WORKER_INVOKER_SA` | api | When the mode is `cloud-tasks` | Unset |
 | `API_SERVICE_ACCOUNT_EMAIL` | worker | When the mode is `cloud-tasks` | Unset |
-| `EXTRACTOR_URL` | worker | To extract facts; unset disables extraction | `http://localhost:8790` |
+| `EXTRACTOR_URL` | worker | To classify and extract; unset: `document.classify` fails with `CLASSIFIER_NOT_CONFIGURED` | `http://localhost:8790` |
 | `EXTRACTOR_AUTH`, `EXTRACTOR_SECRET` | worker | `secret` (default) needs the secret, which must match the extractor's; `oidc` uses Cloud Run IAM | `secret`, `local-extractor-secret` |
 | `EXTRACTOR_TIMEOUT_SECONDS`, `EXTRACT_MAX_BYTES` | worker | Defaulted | 900 s, 50 MiB |
 | `GOOGLE_CLOUD_PROJECT`, `WORKER_INVOKER_SA`, `CLOUD_TASKS_QUEUE`, `TASK_DISPATCH_DEADLINE_SECONDS` | worker | To enqueue extraction when the mode is `cloud-tasks` | Unset |
@@ -180,7 +180,7 @@ Two settings decide whether a service talks to Google Cloud or to something loca
 
 **`DISPATCH_MODE=local`** makes the API `POST` to the worker's `/tasks/:type` endpoint with a shared secret header, in place of enqueueing a Cloud Tasks task authenticated with an OIDC token. Retries are not automatic in this mode: a failed job stays failed until you call the retry endpoint. Everything else — leasing, progress, state transitions — behaves the same, because it lives in the database rather than in the queue.
 
-**Extraction.** When `document.verify` stores a document and the worker has an `EXTRACTOR_URL`, it enqueues `document.extract`. That job streams the PDF to the extractor, which answers with NDJSON progress, heartbeats and finally a result; the worker writes the result as a new `extraction_revision` with its facts, page references and checks, in one transaction. The extractor runs a LangGraph workflow: locate the statements, extract each from its own pages, check the arithmetic, and re-read only failing sections. The design is in [document extraction](EXTRACTION.md). To let the compose stack call Gemini, run `gcloud auth application-default login`, then set in `.env`:
+**Extraction.** When `document.verify` stores a document it enqueues `document.classify`, which sends the PDF to the extractor to work out what it is (this needs the worker's `EXTRACTOR_URL`; without it the job fails with `CLASSIFIER_NOT_CONFIGURED` and the document is `identify_failed`). For an annual report or financial results with a known company it then enqueues `document.extract`. That job streams the PDF to the extractor, which answers with NDJSON progress, heartbeats and finally a result; the worker writes the result as a new `extraction_revision` with its facts, page references and checks, in one transaction. The extractor runs a LangGraph workflow: locate the statements, extract each from its own pages, check the arithmetic, and re-read only failing sections. The design is in [document extraction](EXTRACTION.md). To let the compose stack call Gemini, run `gcloud auth application-default login`, then set in `.env`:
 
 ```bash
 GOOGLE_CLOUD_PROJECT=your-project-id
@@ -272,7 +272,7 @@ Uninstall any older `pdf-financial-qa` distribution first; it owned the same con
 | Code changes do nothing | Containers do not hot-reload. Rebuild the service, or run it as a local process. |
 | Extract jobs fail with `EXTRACTOR_NOT_CONFIGURED` | The extractor has no `GOOGLE_CLOUD_PROJECT` or cannot find Application Default Credentials. See section 7; the job does not retry. |
 | Extract jobs fail with `MODEL_REQUEST_REJECTED` | Vertex AI refused the request: wrong project, Vertex AI not enabled, or `GEMINI_MODEL` unavailable in `VERTEX_LOCATION`. |
-| No `document.extract` job appears after verify | The worker has no `EXTRACTOR_URL`. |
+| After verify a `document.classify` job appears but no `document.extract` | Extract follows only when the document is an annual report or financial results with a known company. Without `EXTRACTOR_URL` on the worker, classify fails with `CLASSIFIER_NOT_CONFIGURED`. |
 | Extract jobs fail with `EXTRACTOR_UNAUTHORIZED` | `EXTRACTOR_SECRET` differs between the worker and the extractor. |
 | `pnpm test` fails to connect | The three test databases only exist on a freshly initialised Postgres volume. `pnpm stack:reset`, start again, and export the `DATABASE_URL_TEST_*` variables. |
 

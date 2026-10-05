@@ -30,7 +30,7 @@ Loaded from the root `.env` (see `.env.example`) via `loadWorkerEnv()` in `src/e
 | `API_SERVICE_ACCOUNT_EMAIL` | Required when `DISPATCH_MODE=cloud-tasks`; expected OIDC token issuer/subject |
 | `MAX_UPLOAD_BYTES` | Upload size limit enforced during verification (defaulted) |
 | `LEASE_SECONDS` | How long a job stays leased before it is eligible for retry (defaulted) |
-| `EXTRACTOR_URL` | Base URL of `apps/extractor`. Unset: documents are verified but not extracted |
+| `EXTRACTOR_URL` | Base URL of `apps/extractor`. Unset: documents are verified, but classification fails with `CLASSIFIER_NOT_CONFIGURED` (the document is `identify_failed`), so nothing is read |
 | `EXTRACTOR_AUTH` | `secret` (default, sends `x-extractor-secret`) or `oidc` (Cloud Run ID token for `EXTRACTOR_URL`) |
 | `EXTRACTOR_SECRET` | Required with `EXTRACTOR_URL` and `EXTRACTOR_AUTH=secret`; must match the extractor's |
 | `EXTRACTOR_TIMEOUT_SECONDS`, `EXTRACT_MAX_BYTES` | Whole-request timeout (900 s) and largest PDF sent for extraction (50 MiB) |

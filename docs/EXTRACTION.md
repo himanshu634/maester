@@ -4,7 +4,7 @@ Status: implemented, 1 October 2026. Sections 2–4 (architecture, data model, w
 
 ## 1. Outcome
 
-An investor uploads a financial-statement PDF for a company they chose. Without further action, Maester stores a new extraction revision: every reported value as printed, its parsed decimal, its unit and scale, its period and basis, and the page of the original PDF it was read from. Arithmetic checks record what passed, what failed and what could not be checked. Re-running extraction creates another revision and never overwrites an earlier one.
+An investor uploads a financial-statement PDF, optionally for a company they chose. Maester first works out what the document is; for an annual report or financial results with a known company, and without further action, Maester stores a new extraction revision: every reported value as printed, its parsed decimal, its unit and scale, its period and basis, and the page of the original PDF it was read from. Arithmetic checks record what passed, what failed and what could not be checked. Re-running extraction creates another revision and never overwrites an earlier one.
 
 Out of scope here: the source reader and review/corrections (F06), the financial table UI (F07), calculations (F08), the Analyst (F09), shared reference companies, securities and tickers, dimensions and restatement links.
 
@@ -31,11 +31,11 @@ apps/worker (TypeScript)                             ▼
 
 - `apps/extractor` is a FastAPI service over the LangGraph workflow in `packages/financial-engine` (`pdf_financial_qa.workflow`). It holds no database or storage credentials: the PDF arrives as the request body and the result leaves in the response stream.
 - The worker owns job state, leasing, retries and all writes. Drizzle remains the only schema authority.
-- `document.verify` enqueues `document.classify` with the idempotency key `document.classify:<documentId>:auto`, so a repeated verify never enqueues twice; a copy of a file already stored in the workspace is marked `duplicate` instead. When the classification says the document is one to read (an annual report or financial results) and its company is known, `document.classify` enqueues `document.extract` with the key `document.extract:<documentId>:classification-<classificationId>`, so each set of answers is read once. `POST …/documents/:id/extract` enqueues a fresh job with a unique key and produces a new revision.
+- `document.verify` enqueues `document.classify` with the idempotency key `document.classify:<documentId>:auto`, so a repeated verify never enqueues twice; a copy of a file already stored in the workspace is marked `duplicate` instead. When the classification says the document is one to read (an annual report or financial results) and its company is known, `document.classify` enqueues `document.extract` with the key `document.extract:<documentId>:classification-<classificationId>`, so each set of answers is read once. `POST …/documents/:id/extract` enqueues a fresh job with a unique key and produces a new revision. `POST …/documents/:id/classify` runs identification again.
 - Job creation and dispatch move from `apps/api` to a shared `@maester/jobs` package so the worker can enqueue the follow-up job. Behaviour is unchanged.
 - Service authentication: `EXTRACTOR_AUTH=secret` sends `x-extractor-secret` (local and Compose); `EXTRACTOR_AUTH=oidc` sends a Google ID token for the extractor URL (Cloud Run IAM, worker service account as invoker).
 - Lease renewal: every stream line received renews the job lease, so an extraction longer than `LEASE_SECONDS` is never re-leased mid-run.
-- When `EXTRACTOR_URL` is unset the worker does not chain extraction. A deployed environment therefore keeps today's behaviour until the extractor is deployed.
+- Classification and extraction both need `EXTRACTOR_URL`. When it is unset, `document.classify` fails with `CLASSIFIER_NOT_CONFIGURED` and the document is `identify_failed`, so nothing is read until the extractor is deployed.
 - The CLI keeps its single-call path unchanged as reference behaviour.
 
 ## 3. Data model
@@ -107,12 +107,12 @@ Decimals travel as plain decimal strings (`DecimalString`, never exponent notati
 | `EXTRACTION_FAILED`, `MODEL_UNAVAILABLE`, `EXTRACTOR_UNAVAILABLE`, `EXTRACTOR_HTTP_5xx`, `EXTRACTOR_STREAM_INTERRUPTED` (stream ended without a terminal event), timeout | worker or extractor | retry with the job's attempt budget |
 | Result fails Zod validation | worker | permanent failure, `INVALID_EXTRACTOR_RESULT` |
 
-Permanent failures are raised as a typed `JobFailure` (code, retryable) that the job runner honours: it records the code instead of `HANDLER_ERROR` and does not retry. The worker enqueues `document.extract` through `@maester/jobs`; in `cloud-tasks` mode it needs `GOOGLE_CLOUD_PROJECT`, `CLOUD_TASKS_QUEUE` and `WORKER_INVOKER_SA`, and sets the task's dispatch deadline from `TASK_DISPATCH_DEADLINE_SECONDS` (default 1800).
+Permanent failures are raised as a typed `JobFailure` (code, retryable) that the job runner honours: it records the code instead of `HANDLER_ERROR` and does not retry. The worker enqueues `document.classify` and `document.extract` through `@maester/jobs`; in `cloud-tasks` mode it needs `GOOGLE_CLOUD_PROJECT`, `CLOUD_TASKS_QUEUE` and `WORKER_INVOKER_SA`, and sets the task's dispatch deadline from `TASK_DISPATCH_DEADLINE_SECONDS` (default 1800).
 
 API additions (all under `/v1/workspaces/:ws`):
 
 - `POST /companies`, `GET /companies`, `GET /companies/:id`. A duplicate name returns `409 CONFLICT`.
-- `POST /documents/uploads` now requires `companyId`; an unknown company is `400 VALIDATION_FAILED` on `companyId`. `Document` gains `companyId`.
+- `POST /documents/uploads` takes an optional `companyId`; an unknown company is `400 VALIDATION_FAILED` on `companyId`. When given, it counts as the investor's company answer. `Document` gains `companyId` (nullable).
 - `POST /documents/:id/extract` → `202` with the new job. The document must be `stored`.
 - `GET /documents/:id/extraction` → the latest revision with its checks, or `404`.
 - `GET /documents/:id/facts?revisionId=` → a revision's facts with their source references (latest revision by default).
@@ -123,7 +123,7 @@ The write is idempotent per job: `extraction_revision.job_id` is unique, and a r
 
 - Python (unittest, offline, no model calls): number parsing, unit scales, period dates, text-layer matching, Decimal checks, PDF page subsetting on a synthetic text-layer PDF built in the test, and the whole graph driven by a scripted `ExtractionModel` — including the self-correction loop, the rejected-correction guard, the attempt cap, partial results and permanent errors. The extractor's stream (heartbeat, terminal events, auth, size limit) is tested through FastAPI's test client.
 - Contracts: golden fixtures validated by Zod and Pydantic.
-- TypeScript: company routes and the upload contract; the extract handler against a fake extractor HTTP server (success, partial, permanent and retryable errors, interrupted stream, idempotent rewrite, lease renewal); chaining from verify; the facts and extraction read endpoints, including cross-workspace isolation.
+- TypeScript: company routes and the upload contract; the extract handler against a fake extractor HTTP server (success, partial, permanent and retryable errors, interrupted stream, idempotent rewrite, lease renewal); chaining from verify to classify and from classify to extract; the facts and extraction read endpoints, including cross-workspace isolation.
 - A live Vertex run is manual and never part of CI.
 
 ## 7. Local and deployed operation

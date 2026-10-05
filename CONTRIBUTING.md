@@ -90,7 +90,7 @@ The pip path resolves package constraints independently. Use uv for the shared l
 apps/
   cli/                      Working Typer application: maester and pdf-financial-qa
   api/                      Working Hono HTTP service: auth, workspaces, documents, jobs
-  worker/                   Working Hono job runner: leasing, document.verify, document.extract
+  worker/                   Working Hono job runner: leasing, document.verify, document.classify, document.extract
   extractor/                Working FastAPI extraction sidecar over the engine's LangGraph workflow
   web/                      SvelteKit static pages; investor journeys planned
 packages/
