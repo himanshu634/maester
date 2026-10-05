@@ -261,5 +261,5 @@ export const documentsContent = {
 		other: 'That didn’t save. Try again.'
 	},
 	/** Announced once, politely, when the open slip's document moves on. */
-	announce: (name: string, state: string) => `${name}: ${state}.`
+	announce: (name: string, state: string) => `${name}: ${state}${/[.?!]$/.test(state) ? '' : '.'}`
 } as const;
