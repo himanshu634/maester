@@ -150,7 +150,11 @@ async function extract(job: JobRow, ctx: JobContext): Promise<DocumentExtractRes
   if (doc.state !== "stored") throw new JobFailure("INVALID_STATE", `document is ${doc.state}; only stored documents are extracted`, false);
 
   const [done] = await ctx.db.select().from(schema.extractionRevision).where(eq(schema.extractionRevision.jobId, job.id));
-  if (done) return existingSummary(ctx.db, done);
+  if (done) {
+    // A crash after the revision committed but before the document was marked; mark it again (idempotent).
+    await setIntakeIfCurrent(ctx.db, job.workspaceId, doc.id, done.classificationId, "read");
+    return existingSummary(ctx.db, done);
+  }
 
   if ((doc.sizeBytes ?? 0) > ctx.env.EXTRACT_MAX_BYTES) {
     throw new JobFailure("TOO_LARGE_FOR_EXTRACTION", `documents over ${ctx.env.EXTRACT_MAX_BYTES} bytes are not extracted`, false);

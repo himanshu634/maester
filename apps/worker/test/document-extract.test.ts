@@ -204,6 +204,24 @@ describe("document.extract", () => {
     expect(d!.intakeState).toBe("read");
   });
 
+  it("a read re-run after its revision was written marks the document read without calling the extractor", async () => {
+    const doc = await seedStoredDocument();
+    const cid = crypto.randomUUID();
+    await ctx.db.insert(schema.documentClassification).values({ id: cid, workspaceId: doc.workspaceId, documentId: doc.id, kind: "annual_report", setBy: "maester", companyId: doc.companyId, readsUnderId: cid });
+    await ctx.db.update(schema.document).set({ intakeState: "reading" }).where(eq(schema.document.id, doc.id));
+    const jobId = await seedJob(ctx.db, doc.workspaceId, { type: JobTypes.DOCUMENT_EXTRACT, subjectType: "document", subjectId: doc.id, idempotencyKey: `${JobTypes.DOCUMENT_EXTRACT}:${doc.id}:classification-${cid}` });
+    const [job] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, jobId));
+    // A crash after the revision committed but before the document was marked.
+    const written = await writeRevision(ctx.db, job!, doc, RESULT_LINE.result, cid);
+    await runJob(ctx, JobTypes.DOCUMENT_EXTRACT, jobId);
+    const [after] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, jobId));
+    expect(after).toMatchObject({ state: "succeeded", result: written });
+    const [d] = await ctx.db.select().from(schema.document).where(eq(schema.document.id, doc.id));
+    expect(d!.intakeState).toBe("read");
+    expect(seen).toHaveLength(0);
+    expect(await ctx.db.select().from(schema.extractionRevision).where(eq(schema.extractionRevision.documentId, doc.id))).toHaveLength(1);
+  });
+
   it("a superseded read does not mark the document read", async () => {
     const doc = await seedStoredDocument();
     const old = crypto.randomUUID();
