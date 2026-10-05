@@ -145,8 +145,11 @@ All routes below except `/healthz` and `/api/auth/*` are under `/v1` and require
 | GET | `/v1/workspaces/{ws}/documents/{id}` | Document detail, including its latest job |
 | GET | `/v1/workspaces/{ws}/documents/{id}/download` | Signed, time-limited read URL |
 | POST | `/v1/workspaces/{ws}/documents/{id}/extract` | Enqueue a new extraction of a stored document |
-| GET | `/v1/workspaces/{ws}/documents/{id}/extraction` | The latest extraction revision and its checks |
-| GET | `/v1/workspaces/{ws}/documents/{id}/facts` | A revision's facts with page references |
+| GET | `/v1/workspaces/{ws}/documents/{id}/extraction` | The current extraction revision (the one the current answers read under) and its checks |
+| GET | `/v1/workspaces/{ws}/documents/{id}/facts` | A revision's facts with page references (the current revision by default) |
+| GET | `/v1/workspaces/{ws}/documents/{id}/classification` | The current answers about what the document is (`DocumentClassification`: kind, company, period, with the evidence for each) |
+| POST | `/v1/workspaces/{ws}/documents/{id}/classification` | Change those answers (`ChangeClassificationRequest`, `basedOn` is the classification id you loaded; `409` if it is no longer current); returns `ClassificationChanged` |
+| POST | `/v1/workspaces/{ws}/documents/{id}/classify` | Identify the document again (`202`, `ClassifyJobResponse`) |
 | GET | `/v1/workspaces/{ws}/jobs/{id}` | Job state |
 | POST | `/v1/workspaces/{ws}/jobs/{id}/retry` | Re-enqueue a `failed` or stuck `queued` job |
 | GET | `/v1/workspaces/{ws}/jobs/{id}/events` | Server-Sent Events stream of job progress (see §6) |
@@ -184,7 +187,7 @@ All routes below except `/healthz` and `/api/auth/*` are under `/v1` and require
 
 ### `POST /v1/workspaces/{ws}/companies`
 
-Every document belongs to a company the user chose. Names are unique per workspace, ignoring case (`409 CONFLICT` otherwise); `country` is an ISO 3166-1 alpha-2 code.
+A document is linked to a company once its company is identified from the PDF and confirmed (or when `companyId` is given at upload); until then its `companyId` is `null`. Names are unique per workspace, ignoring case (`409 CONFLICT` otherwise); `country` is an ISO 3166-1 alpha-2 code.
 
 <!-- schema: CreateCompanyRequest -->
 ```json
@@ -374,9 +377,9 @@ Only valid once the document is `stored`; otherwise `409 INVALID_STATE`.
 
 ### Extraction: `POST …/documents/{id}/extract`, `GET …/extraction`, `GET …/facts`
 
-When a document is verified and extraction is enabled, the worker runs a `document.extract` job automatically; `POST …/extract` runs another (`202`, body `ExtractResponse` with the new `job`, which can be followed over SSE like any job). Only `stored` documents can be extracted (`409 INVALID_STATE` otherwise). Every successful run creates a new, immutable revision; the latest one is current.
+When a document is verified and extraction is enabled, the worker runs a `document.extract` job automatically; `POST …/extract` runs another (`202`, body `ExtractResponse` with the new `job`, which can be followed over SSE like any job). Only `stored` documents can be extracted (`409 INVALID_STATE` otherwise). Every successful run creates a new, immutable revision. The current revision is the one the document's current answers read under; for a document with no answers yet it is the latest.
 
-`GET …/extraction` returns the latest revision and its arithmetic checks (`404` before the first extraction). `coverage` lists each statement found, its 0-based page indexes and whether it was extracted; `state` is `partial` when any statement failed.
+`GET …/extraction` returns the current revision and its arithmetic checks (`404` before the first extraction). `coverage` lists each statement found, its 0-based page indexes and whether it was extracted; `state` is `partial` when any statement failed.
 
 <!-- schema: DocumentExtraction -->
 ```json
@@ -413,7 +416,7 @@ When a document is verified and extraction is enabled, the worker runs a `docume
 }
 ```
 
-`GET …/facts?revisionId=` returns one revision's facts (the latest by default). Each fact keeps the value exactly as printed (`reportedText`), its parsed decimal (`reportedValue`, `null` for a dash or unparseable text, see `valueStatus`), the unit and scale, and `normalizedValue` in actual currency units when the unit is recognised. `periodEnd` (income and cash flow) or `asOfDate` (balance sheet) is set only when the period label names an unambiguous date. `source.pageIndex` is the 0-based page of the original PDF; `source.textLayerMatch` says whether the value was found in that page's text (`null` for a scanned page). All decimals are strings.
+`GET …/facts?revisionId=` returns one revision's facts (the current revision by default). Each fact keeps the value exactly as printed (`reportedText`), its parsed decimal (`reportedValue`, `null` for a dash or unparseable text, see `valueStatus`), the unit and scale, and `normalizedValue` in actual currency units when the unit is recognised. `periodEnd` (income and cash flow) or `asOfDate` (balance sheet) is set only when the period label names an unambiguous date. `source.pageIndex` is the 0-based page of the original PDF; `source.textLayerMatch` says whether the value was found in that page's text (`null` for a scanned page). All decimals are strings.
 
 <!-- schema: DocumentFacts -->
 ```json

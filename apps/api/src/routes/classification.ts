@@ -124,12 +124,21 @@ export function classificationRoutes(deps: AppDeps) {
           .returning();
 
         // Evidence for an answer the investor changed no longer supports it; the rest carries over.
+        const answered: Partial<Record<EvidenceField, boolean>> = {
+          kind: true,
+          other_type: otherType !== null,
+          company: companyId !== null,
+          period: periodEnd !== null || periodLabel !== null,
+          results_span: resultsSpan !== null,
+        };
+        const given = (field: EvidenceField) => answered[field] === true;
         const dropped = new Set<string>(changed);
         if (changed.has("company")) dropped.add("identifier");
         const carried = (await listEvidence(db, workspace.id, prev.id)).filter((e) => !dropped.has(e.field));
         const rows = [
           ...carried.map((e) => ({ ...e, id: crypto.randomUUID(), classificationId: id })),
-          ...[...changed].map((field) => ({
+          // Only answers actually given; a field cleared as a side effect (e.g. results span) has no investor row.
+          ...[...changed].filter(given).map((field) => ({
             id: crypto.randomUUID(),
             workspaceId: workspace.id,
             classificationId: id,

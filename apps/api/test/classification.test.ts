@@ -27,7 +27,7 @@ async function seedClassification(workspaceId: string, documentId: string, value
     cin: "L26940MH2001PLC123456", periodLabel: "Year ended 31 March 2026", periodEnd: "2026-03-31",
     statementsFound: [{ statement: "balance_sheet", basis: "standalone", pages: [2] }], ...values,
   });
-  for (const [field, quote] of [["kind", "Annual Report 2025-26"], ["company", "Synthetic Cements Limited"], ["statements", "Standalone Balance Sheet as at 31 March 2026"]] as const) {
+  for (const [field, quote] of [["kind", "Annual Report 2025-26"], ["company", "Synthetic Cements Limited"], ["identifier", "CIN: L26940MH2001PLC123456"], ["statements", "Standalone Balance Sheet as at 31 March 2026"]] as const) {
     await ctx.db.insert(schema.classificationEvidence).values({ id: crypto.randomUUID(), workspaceId, classificationId: id, field, source: "rule", ruleId: `r.${field}`, pageIndex: 0, quote, textLayerMatch: true });
   }
   return id;
@@ -55,7 +55,7 @@ describe("classification", () => {
     expect(res.status).toBe(200);
     const body = DocumentClassification.parse(await res.json());
     expect(body.classification).toMatchObject({ id: cid, kind: "annual_report", cin: "L26940MH2001PLC123456" });
-    expect(body.evidence).toHaveLength(3);
+    expect(body.evidence).toHaveLength(4);
     expect((await ctx.app.request(url(b.workspaceId, doc), { headers: { cookie: b.cookie } })).status).toBe(404);
     const listed = await ctx.app.request(`/v1/workspaces/${a.workspaceId}/documents`, { headers: { cookie: a.cookie } });
     const items = ((await listed.json()) as { items: Document[] }).items;
@@ -128,6 +128,20 @@ describe("classification", () => {
     expect(body.classification).toMatchObject({ kind: "other", otherType: "investor_presentation", readsUnderId: null });
     expect(body.document.intakeState).toBe("kept");
     expect((await ctx.app.request(`/v1/workspaces/${a.workspaceId}/documents/${doc}/facts`, { headers: { cookie: a.cookie } })).status).toBe(404);
+  });
+
+  it("changing the kind away from financial_results leaves no results_span evidence", async () => {
+    const a = await ctx.signUp("span@example.com");
+    const companyId = await ctx.createCompany(a.workspaceId, a.cookie, "Span Co Limited");
+    const doc = await seedDocument(a.workspaceId, a.userId, "read");
+    const cid = await seedClassification(a.workspaceId, doc, { kind: "financial_results", resultsSpan: "quarter", companyId });
+    await ctx.db.insert(schema.classificationEvidence).values({ id: crypto.randomUUID(), workspaceId: a.workspaceId, classificationId: cid, field: "results_span", source: "rule", ruleId: "r.span", pageIndex: 0, quote: "Quarter ended", textLayerMatch: true });
+    const res = await ctx.app.request(url(a.workspaceId, doc), send("POST", a.cookie, { basedOn: cid, kind: "annual_report" }));
+    expect(res.status).toBe(200);
+    const body = ClassificationChanged.parse(await res.json());
+    expect(body.classification.resultsSpan).toBeNull();
+    expect(body.evidence.some((e) => e.field === "results_span")).toBe(false);
+    expect(body.evidence.find((e) => e.field === "kind")!.source).toBe("investor");
   });
 
   it("refuses not_sure and an empty change", async () => {
