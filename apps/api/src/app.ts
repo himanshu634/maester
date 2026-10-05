@@ -10,6 +10,7 @@ import type { Logger } from "./logger.js";
 import { requireSession } from "./middleware/session.js";
 import { requireWorkspace } from "./middleware/workspace.js";
 import { requestId } from "./middleware/request-id.js";
+import { classificationRoutes } from "./routes/classification.js";
 import { companyRoutes } from "./routes/companies.js";
 import { devRoutes } from "./routes/dev.js";
 import { documentRoutes } from "./routes/documents.js";
@@ -73,6 +74,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}) {
   ws.route("/jobs", jobRoutes(deps));
   ws.route("/companies", companyRoutes(deps));
   ws.route("/documents", documentRoutes(deps));
+  ws.route("/documents", classificationRoutes(deps));
   v1.route("/workspaces/:ws", ws);
 
   app.route("/v1", v1);

@@ -139,7 +139,7 @@ All routes below except `/healthz` and `/api/auth/*` are under `/v1` and require
 | POST | `/v1/workspaces/{ws}/companies` | Create a company in the workspace |
 | GET | `/v1/workspaces/{ws}/companies` | List companies (cursor pagination) |
 | GET | `/v1/workspaces/{ws}/companies/{id}` | One company |
-| POST | `/v1/workspaces/{ws}/documents/uploads` | Create a pending document for a company and a signed upload URL |
+| POST | `/v1/workspaces/{ws}/documents/uploads` | Create a pending document (the company is optional; it is identified from the PDF) and a signed upload URL |
 | POST | `/v1/workspaces/{ws}/documents/{id}/finalize` | Mark a document uploaded and enqueue verification |
 | GET | `/v1/workspaces/{ws}/documents` | List documents (cursor pagination) |
 | GET | `/v1/workspaces/{ws}/documents/{id}` | Document detail, including its latest job |
@@ -200,6 +200,9 @@ Response (`201 Created`), also the shape of `GET …/companies/{id}` and of each
   "workspaceId": "3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f",
   "displayName": "Synthetic Industries Limited",
   "country": "IN",
+  "cin": null,
+  "bseCode": null,
+  "nseSymbol": null,
   "createdAt": "2026-09-10T08:14:00Z"
 }
 ```
@@ -211,7 +214,6 @@ Request:
 <!-- schema: CreateUploadRequest -->
 ```json
 {
-  "companyId": "c0a8012e-5b6f-4c3d-9e2a-1f0b2c3d4e5f",
   "originalName": "fy24-annual-report.pdf",
   "size": 245678,
   "mimeType": "application/pdf"
@@ -234,6 +236,9 @@ Response (`201 Created`):
     "contentSha256": null,
     "sizeBytes": null,
     "rejectionCode": null,
+    "intakeState": null,
+    "duplicateOfDocumentId": null,
+    "classification": null,
     "createdAt": "2026-09-10T08:15:30Z",
     "storedAt": null,
     "latestJob": null
@@ -265,6 +270,9 @@ No request body. Response:
     "contentSha256": null,
     "sizeBytes": null,
     "rejectionCode": null,
+    "intakeState": null,
+    "duplicateOfDocumentId": null,
+    "classification": null,
     "createdAt": "2026-09-10T08:15:30Z",
     "storedAt": null,
     "latestJob": {
@@ -324,6 +332,9 @@ A document once verification has finished, with its terminal job attached:
   "contentSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "sizeBytes": 245678,
   "rejectionCode": null,
+  "intakeState": null,
+  "duplicateOfDocumentId": null,
+  "classification": null,
   "createdAt": "2026-09-10T08:15:30Z",
   "storedAt": "2026-09-10T08:16:05Z",
   "latestJob": {
@@ -485,7 +496,7 @@ Both return a `Job`:
 
 Uploading and verifying a PDF is a five-step round trip:
 
-1. **Create the upload.** `POST /v1/workspaces/{ws}/documents/uploads` with `CreateUploadRequest` (`companyId`, `originalName`, `size`, `mimeType: "application/pdf"`). An unknown `companyId` is `400 VALIDATION_FAILED` on that field. The response's `document` is `pending_upload`; `upload` carries a signed `PUT` URL, the exact headers required, and an expiry.
+1. **Create the upload.** `POST /v1/workspaces/{ws}/documents/uploads` with `CreateUploadRequest` (`originalName`, `size`, `mimeType: "application/pdf"`, and optionally `companyId`). An unknown `companyId` is `400 VALIDATION_FAILED` on that field. The response's `document` is `pending_upload`; `upload` carries a signed `PUT` URL, the exact headers required, and an expiry.
 2. **PUT the bytes.** `fetch(upload.url, { method: "PUT", headers: upload.headers, body: file })` — send *exactly* the headers in `upload.headers` (`Content-Type` and `Content-Length`, in that exact casing — the API returns them as-is) and nothing else; a mismatched header invalidates the signature. Do not send the session cookie or `credentials: "include"` on this request — it goes straight to object storage, not the API.
 3. **Finalize.** `POST /v1/workspaces/{ws}/documents/{id}/finalize` with no body. This confirms the object landed, flips the document to `uploaded`, and enqueues a `document.verify` job. The response is `FinalizeResponse` (`document`, `job`).
 4. **Subscribe to progress.** Open `GET /v1/workspaces/{ws}/jobs/{job.id}/events` (see §6) to watch the job move through `queued` → `running` → `succeeded`/`failed`.
@@ -543,6 +554,9 @@ GET /v1/workspaces/3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f/documents?limit=25
       "contentSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "sizeBytes": 245678,
       "rejectionCode": null,
+      "intakeState": null,
+      "duplicateOfDocumentId": null,
+      "classification": null,
       "createdAt": "2026-09-10T08:15:30Z",
       "storedAt": "2026-09-10T08:16:05Z",
       "latestJob": null

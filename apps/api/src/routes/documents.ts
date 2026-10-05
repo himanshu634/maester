@@ -14,9 +14,10 @@ import {
 } from "@maester/contracts";
 import {
   getCompany,
+  getCurrentClassification,
+  getCurrentRevision,
   getDocument,
   getLatestJobForSubject,
-  getLatestRevision,
   getRevision,
   listChecks,
   listDocuments,
@@ -49,7 +50,7 @@ export function documentRoutes(deps: AppDeps) {
     if (input.size > deps.env.MAX_UPLOAD_BYTES) {
       throw new HttpError("UPLOAD_TOO_LARGE", `uploads are limited to ${deps.env.MAX_UPLOAD_BYTES} bytes`, [{ path: "size", message: "too large" }]);
     }
-    if (!(await getCompany(deps.db, workspace.id, input.companyId))) {
+    if (input.companyId && !(await getCompany(deps.db, workspace.id, input.companyId))) {
       throw new HttpError("VALIDATION_FAILED", "company not found in this workspace", [{ path: "companyId", message: "unknown company" }]);
     }
     const id = crypto.randomUUID();
@@ -59,7 +60,7 @@ export function documentRoutes(deps: AppDeps) {
       .values({
         id,
         workspaceId: workspace.id,
-        companyId: input.companyId,
+        companyId: input.companyId ?? null,
         originalName: sanitiseName(input.originalName),
         declaredSize: input.size,
         declaredMime: input.mimeType,
@@ -114,7 +115,13 @@ export function documentRoutes(deps: AppDeps) {
     const workspace = c.get("workspace");
     const page = await listDocuments(deps.db, workspace.id, { cursor: q.cursor, limit: q.limit });
     const items = await Promise.all(
-      page.items.map(async (d) => toDocument(d, await getLatestJobForSubject(deps.db, workspace.id, "document", d.id))),
+      page.items.map(async (d) =>
+        toDocument(
+          d,
+          await getLatestJobForSubject(deps.db, workspace.id, "document", d.id),
+          await getCurrentClassification(deps.db, workspace.id, d.id),
+        ),
+      ),
     );
     return c.json({ items, nextCursor: page.nextCursor });
   });
@@ -124,7 +131,7 @@ export function documentRoutes(deps: AppDeps) {
     const doc = await getDocument(deps.db, workspace.id, uuidParam(c, "id"));
     if (!doc) throw new HttpError("NOT_FOUND", "document not found");
     const job = await getLatestJobForSubject(deps.db, workspace.id, "document", doc.id);
-    return c.json(toDocument(doc, job));
+    return c.json(toDocument(doc, job, await getCurrentClassification(deps.db, workspace.id, doc.id)));
   });
 
   r.get("/:id/download", async (c) => {
@@ -158,7 +165,7 @@ export function documentRoutes(deps: AppDeps) {
     const workspace = c.get("workspace");
     const doc = await getDocument(deps.db, workspace.id, uuidParam(c, "id"));
     if (!doc) throw new HttpError("NOT_FOUND", "document not found");
-    const revision = await getLatestRevision(deps.db, workspace.id, doc.id);
+    const revision = await getCurrentRevision(deps.db, workspace.id, doc.id);
     if (!revision) throw new HttpError("NOT_FOUND", "document has no extraction yet");
     const checks = await listChecks(deps.db, workspace.id, revision.id);
     const body: DocumentExtraction = { revision: toRevision(revision), checks: checks.map(toCheck) };
@@ -172,7 +179,7 @@ export function documentRoutes(deps: AppDeps) {
     if (!doc) throw new HttpError("NOT_FOUND", "document not found");
     const revision = q.revisionId
       ? await getRevision(deps.db, workspace.id, doc.id, q.revisionId)
-      : await getLatestRevision(deps.db, workspace.id, doc.id);
+      : await getCurrentRevision(deps.db, workspace.id, doc.id);
     if (!revision) throw new HttpError("NOT_FOUND", q.revisionId ? "revision not found" : "document has no extraction yet");
     const facts = await listFactsWithSources(deps.db, workspace.id, revision.id);
     const body: DocumentFacts = { revision: toRevision(revision), facts: facts.map(toFact) };

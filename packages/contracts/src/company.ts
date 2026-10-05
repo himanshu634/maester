@@ -9,6 +9,9 @@ export const Company = z.object({
   workspaceId: Uuid,
   displayName: z.string(),
   country: CountryCode,
+  cin: z.string().nullable(),
+  bseCode: z.string().nullable(),
+  nseSymbol: z.string().nullable(),
   createdAt: IsoTimestamp,
 });
 export type Company = z.infer<typeof Company>;

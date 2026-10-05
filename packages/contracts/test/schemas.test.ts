@@ -51,6 +51,9 @@ describe("common", () => {
       contentSha256: "a".repeat(64),
       sizeBytes: 1024,
       rejectionCode: null,
+      intakeState: null,
+      duplicateOfDocumentId: null,
+      classification: null,
       createdAt: "2026-09-10T00:00:00.000Z",
       storedAt: "2026-09-10T01:00:00.000Z",
       latestJob: null,
@@ -63,10 +66,11 @@ describe("common", () => {
 });
 
 describe("document", () => {
-  it("CreateUploadRequest requires a company and only allows PDF with a positive size", () => {
+  it("CreateUploadRequest takes an optional company and only allows PDF with a positive size", () => {
     const companyId = "6d5d1b0a-1e5e-4f6b-9f5d-2a4e1c9b7f12";
     expect(CreateUploadRequest.parse({ companyId, originalName: "a.pdf", size: 10, mimeType: "application/pdf" }).size).toBe(10);
-    expect(() => CreateUploadRequest.parse({ originalName: "a.pdf", size: 10, mimeType: "application/pdf" })).toThrow();
+    expect(CreateUploadRequest.parse({ originalName: "a.pdf", size: 10, mimeType: "application/pdf" }).companyId).toBeUndefined();
+    expect(() => CreateUploadRequest.parse({ companyId: "not-a-uuid", originalName: "a.pdf", size: 10, mimeType: "application/pdf" })).toThrow();
     expect(() => CreateUploadRequest.parse({ companyId, originalName: "a.png", size: 10, mimeType: "image/png" })).toThrow();
     expect(() => CreateUploadRequest.parse({ companyId, originalName: "a.pdf", size: 0, mimeType: "application/pdf" })).toThrow();
   });

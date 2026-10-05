@@ -1,7 +1,9 @@
-import type { Company, Document, ExtractionCheck, ExtractionRevision, FinancialFact, Job, Workspace } from "@maester/contracts";
+import type { Classification, ClassificationSummary, Company, Document, Evidence, ExtractionCheck, ExtractionRevision, FinancialFact, Job, Workspace } from "@maester/contracts";
 import type {
+  ClassificationRow,
   CompanyRow,
   DocumentRow,
+  EvidenceRow,
   ExtractionCheckRow,
   ExtractionRevisionRow,
   FactWithSource,
@@ -36,7 +38,7 @@ export function toJob(row: JobRow): Job {
   };
 }
 
-export function toDocument(row: DocumentRow, latestJob: JobRow | null): Document {
+export function toDocument(row: DocumentRow, latestJob: JobRow | null, classification: ClassificationRow | null = null): Document {
   return {
     id: row.id,
     workspaceId: row.workspaceId,
@@ -48,6 +50,9 @@ export function toDocument(row: DocumentRow, latestJob: JobRow | null): Document
     contentSha256: row.contentSha256,
     sizeBytes: row.sizeBytes,
     rejectionCode: (row.rejectionCode as Document["rejectionCode"]) ?? null,
+    intakeState: row.intakeState,
+    duplicateOfDocumentId: row.duplicateOfDocumentId,
+    classification: classification ? toClassificationSummary(classification) : null,
     createdAt: row.createdAt.toISOString(),
     storedAt: iso(row.storedAt),
     latestJob: latestJob ? toJob(latestJob) : null,
@@ -55,7 +60,56 @@ export function toDocument(row: DocumentRow, latestJob: JobRow | null): Document
 }
 
 export function toCompany(row: CompanyRow): Company {
-  return { id: row.id, workspaceId: row.workspaceId, displayName: row.displayName, country: row.country, createdAt: row.createdAt.toISOString() };
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    displayName: row.displayName,
+    country: row.country,
+    cin: row.cin,
+    bseCode: row.bseCode,
+    nseSymbol: row.nseSymbol,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export function toClassification(row: ClassificationRow): Classification {
+  return {
+    id: row.id,
+    documentId: row.documentId,
+    kind: row.kind,
+    otherType: row.otherType,
+    resultsSpan: row.resultsSpan,
+    periodEnd: row.periodEnd,
+    periodLabel: row.periodLabel,
+    companyId: row.companyId,
+    companyNameAsPrinted: row.companyNameAsPrinted,
+    cin: row.cin,
+    bseCode: row.bseCode,
+    nseSymbol: row.nseSymbol,
+    statementsFound: row.statementsFound as Classification["statementsFound"],
+    setBy: row.setBy,
+    readsUnderId: row.readsUnderId,
+    warnings: row.warnings,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export function toClassificationSummary(row: ClassificationRow): ClassificationSummary {
+  const c = toClassification(row);
+  return {
+    id: c.id,
+    kind: c.kind,
+    otherType: c.otherType,
+    resultsSpan: c.resultsSpan,
+    periodLabel: c.periodLabel,
+    companyId: c.companyId,
+    companyNameAsPrinted: c.companyNameAsPrinted,
+    setBy: c.setBy,
+  };
+}
+
+export function toEvidence(row: EvidenceRow): Evidence {
+  return { field: row.field, source: row.source, ruleId: row.ruleId, pageIndex: row.pageIndex, quote: row.quote, textLayerMatch: row.textLayerMatch };
 }
 
 export function toRevision(row: ExtractionRevisionRow): ExtractionRevision {

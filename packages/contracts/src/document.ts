@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Classification, ClassificationSummary, Evidence, IntakeState } from "./classification.js";
 import { IsoTimestamp, Uuid } from "./common.js";
 import { Job } from "./job.js";
 
@@ -19,6 +20,9 @@ export const Document = z.object({
   contentSha256: z.string().length(64).nullable(),
   sizeBytes: z.number().int().nullable(),
   rejectionCode: RejectionCode.nullable(),
+  intakeState: IntakeState.nullable(),
+  duplicateOfDocumentId: Uuid.nullable(),
+  classification: ClassificationSummary.nullable(),
   createdAt: IsoTimestamp,
   storedAt: IsoTimestamp.nullable(),
   latestJob: Job.nullable(),
@@ -26,7 +30,7 @@ export const Document = z.object({
 export type Document = z.infer<typeof Document>;
 
 export const CreateUploadRequest = z.object({
-  companyId: Uuid,
+  companyId: Uuid.optional(),
   originalName: z.string().min(1).max(255),
   size: z.number().int().positive(),
   mimeType: z.literal("application/pdf"),
@@ -49,3 +53,6 @@ export type FinalizeResponse = z.infer<typeof FinalizeResponse>;
 
 export const DownloadResponse = z.object({ url: z.string(), expiresAt: IsoTimestamp });
 export type DownloadResponse = z.infer<typeof DownloadResponse>;
+
+export const ClassificationChanged = z.object({ document: Document, classification: Classification, evidence: z.array(Evidence) });
+export type ClassificationChanged = z.infer<typeof ClassificationChanged>;

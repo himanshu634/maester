@@ -2,15 +2,10 @@ import { Hono } from "hono";
 import { CreateCompanyRequest, ListQuery } from "@maester/contracts";
 import { getCompany, listCompanies, schema } from "@maester/db";
 import type { AppDeps, AppEnv } from "../app.js";
-import { HttpError } from "../errors.js";
+import { HttpError, isUniqueViolation } from "../errors.js";
 import { uuidParam } from "../middleware/params.js";
 import { toCompany } from "../serialize.js";
 import { validate } from "../validation.js";
-
-function isUniqueViolation(err: unknown): boolean {
-  const e = err as { code?: string; cause?: { code?: string } };
-  return e.code === "23505" || e.cause?.code === "23505";
-}
 
 export function companyRoutes(deps: AppDeps) {
   const r = new Hono<AppEnv>();

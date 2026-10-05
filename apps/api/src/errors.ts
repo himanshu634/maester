@@ -29,3 +29,8 @@ export class HttpError extends Error {
 export function errorBody(code: ErrorCode, message: string, traceId: string, fields?: FieldError[]) {
   return { error: { code, message, ...(fields && fields.length ? { fields } : {}), traceId } };
 }
+
+export function isUniqueViolation(err: unknown): boolean {
+  const e = err as { code?: string; cause?: { code?: string } };
+  return e.code === "23505" || e.cause?.code === "23505";
+}
