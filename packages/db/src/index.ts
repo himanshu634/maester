@@ -9,6 +9,7 @@ export type {
   SourceReferenceRow,
   ExtractionCheckRow,
 } from "./schema/extraction.js";
+export type { ClassificationRow, EvidenceRow, StatementsFoundJson, ClassificationWarningJson } from "./schema/classification.js";
 export type { WaitlistEntryRow } from "./schema/waitlist.js";
 export { runMigrations, DEFAULT_MIGRATIONS_FOLDER } from "./migrate.js";
 export { encodeCursor, decodeCursor, type CursorValue } from "./pagination.js";
@@ -18,3 +19,6 @@ export { getJob, getLatestJobForSubject } from "./queries/jobs.js";
 export { getCompany, listCompanies } from "./queries/companies.js";
 export { getLatestRevision, getRevision, listChecks, listFactsWithSources, type FactWithSource } from "./queries/extraction.js";
 export { admitOrWaitlist, approveWaitlistEmail, normalizeEmail, type WaitlistSource } from "./queries/waitlist.js";
+export {
+  getCurrentClassification, listEvidence, getCurrentRevision, normalizeCompanyName, matchCompanies, findStoredDuplicate,
+} from "./queries/classification.js";

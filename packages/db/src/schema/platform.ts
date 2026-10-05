@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigint, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, type AnyPgColumn, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { user } from "./auth.js";
 
 export const membershipRole = pgEnum("membership_role", ["owner"]);
@@ -31,6 +31,10 @@ export const membership = pgTable(
   (t) => [uniqueIndex("membership_workspace_user").on(t.workspaceId, t.userId)],
 );
 
+export const intakeState = pgEnum("intake_state", [
+  "identifying", "duplicate", "needs_company", "needs_kind", "kept", "reading", "read", "identify_failed", "read_failed",
+]);
+
 export const company = pgTable(
   "company",
   {
@@ -38,6 +42,9 @@ export const company = pgTable(
     workspaceId: uuid("workspace_id").notNull().references(() => workspace.id),
     displayName: text("display_name").notNull(),
     country: text("country").notNull(),
+    cin: text("cin"),
+    bseCode: text("bse_code"),
+    nseSymbol: text("nse_symbol"),
     createdByUserId: text("created_by_user_id").notNull().references(() => user.id),
     createdAt: ts("created_at").notNull().defaultNow(),
     updatedAt: ts("updated_at").notNull().defaultNow(),
@@ -45,6 +52,9 @@ export const company = pgTable(
   (t) => [
     uniqueIndex("company_workspace_name").on(t.workspaceId, sql`lower(${t.displayName})`),
     index("company_workspace_created").on(t.workspaceId, t.createdAt),
+    uniqueIndex("company_workspace_cin").on(t.workspaceId, t.cin).where(sql`${t.cin} is not null`),
+    uniqueIndex("company_workspace_bse").on(t.workspaceId, t.bseCode).where(sql`${t.bseCode} is not null`),
+    uniqueIndex("company_workspace_nse").on(t.workspaceId, t.nseSymbol).where(sql`${t.nseSymbol} is not null`),
   ],
 );
 
@@ -62,6 +72,9 @@ export const document = pgTable(
     sizeBytes: bigint("size_bytes", { mode: "number" }),
     state: documentState("state").notNull(),
     rejectionCode: text("rejection_code"),
+    /** Where the document stands after it is stored; null before. */
+    intakeState: intakeState("intake_state"),
+    duplicateOfDocumentId: uuid("duplicate_of_document_id").references((): AnyPgColumn => document.id),
     createdByUserId: text("created_by_user_id").notNull().references(() => user.id),
     createdAt: ts("created_at").notNull().defaultNow(),
     updatedAt: ts("updated_at").notNull().defaultNow(),

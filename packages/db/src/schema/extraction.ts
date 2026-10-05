@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { boolean, date, index, integer, jsonb, numeric, pgEnum, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { documentClassification } from "./classification.js";
 import { company, document, job, ts, workspace } from "./platform.js";
 
 export const extractionState = pgEnum("extraction_state", ["complete", "partial"]);
@@ -22,6 +23,8 @@ export const extractionRevision = pgTable(
     workspaceId: uuid("workspace_id").notNull().references(() => workspace.id),
     documentId: uuid("document_id").notNull().references(() => document.id),
     jobId: uuid("job_id").notNull().unique().references(() => job.id),
+    /** The classification this revision was read under; null for revisions made before intake. */
+    classificationId: uuid("classification_id").references(() => documentClassification.id),
     state: extractionState("state").notNull(),
     pipelineVersion: text("pipeline_version").notNull(),
     model: text("model").notNull(),
