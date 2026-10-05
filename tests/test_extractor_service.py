@@ -11,6 +11,9 @@ from test_extraction_workflow import PAGES, ScriptedModel
 
 from maester_extractor.app import create_app
 from maester_extractor.settings import Settings
+from pdf_financial_qa.classify import ClassifySettings
+from pdf_financial_qa.classify.contracts import CLASSIFY_RESPONSE, ClassifyError, ClassifyResult
+from pdf_financial_qa.classify.model import Answer, ClassifyOutput
 from pdf_financial_qa.workflow import ExtractionError, WorkflowSettings
 from pdf_financial_qa.workflow.contracts import EXTRACTOR_EVENT, ErrorEvent, HeartbeatEvent, ResultEvent
 
@@ -100,6 +103,56 @@ class ExtractorServiceTests(unittest.TestCase):
 
     def test_health(self):
         self.assertEqual(client().get("/healthz").json(), {"status": "ok"})
+
+
+CLASSIFY_PDF = make_pdf([["Synthetic Textiles Limited", "Kind words about the year gone by"]])
+
+
+class FixedClassifier:
+    name = "fixed-classifier"
+
+    def classify(self, pdf, page_count, questions):
+        return ClassifyOutput(answers=[Answer(field="kind", value="other", page=1, quote="Kind words about the year gone by")])
+
+
+def classify_client(factory=None, **overrides):
+    settings = Settings(secret=SECRET, **overrides)
+    return TestClient(create_app(settings, lambda: ScriptedModel(), workflow=FAST,
+                                 classify_model_factory=factory or (lambda: FixedClassifier()),
+                                 classify_settings=ClassifySettings(retry_interval=0.0)))
+
+
+def classify_post(c, body=CLASSIFY_PDF, secret=SECRET):
+    return c.post("/v1/classify", content=body, headers={"x-extractor-secret": secret, "content-type": "application/pdf",
+                                                          "x-document-id": "doc-1"})
+
+
+class ClassifyEndpointTests(unittest.TestCase):
+    def test_answers_one_json_result(self):
+        response = classify_post(classify_client())
+        self.assertEqual(response.status_code, 200)
+        body = CLASSIFY_RESPONSE.validate_python(response.json())
+        self.assertIsInstance(body, ClassifyResult)
+        self.assertEqual((body.result.kind, body.result.model), ("other", "fixed-classifier"))
+
+    def test_an_unreadable_pdf_is_an_error_body(self):
+        body = CLASSIFY_RESPONSE.validate_python(classify_post(classify_client(), body=b"%PDF-1.4 broken").json())
+        self.assertIsInstance(body, ClassifyError)
+        self.assertEqual((body.code, body.retryable), ("UNREADABLE_PDF", False))
+
+    def test_a_missing_model_still_classifies_with_a_warning(self):
+        def missing():
+            raise ExtractionError("EXTRACTOR_NOT_CONFIGURED", "GOOGLE_CLOUD_PROJECT is not set", retryable=False)
+        body = CLASSIFY_RESPONSE.validate_python(classify_post(classify_client(missing)).json())
+        self.assertEqual((body.result.kind, [w.code for w in body.result.warnings]), ("not_sure", ["MODEL_UNAVAILABLE"]))
+
+    def test_wrong_secret_is_401_and_too_large_is_413(self):
+        self.assertEqual(classify_post(classify_client(), secret="wrong").status_code, 401)
+        self.assertEqual(classify_post(classify_client(max_bytes=10)).status_code, 413)
+
+    def test_default_limit_is_50_mib(self):
+        self.assertEqual(Settings().max_bytes, 50 * 1024 * 1024)
+        self.assertEqual(Settings.from_env({}).max_bytes, 50 * 1024 * 1024)
 
 
 if __name__ == "__main__":

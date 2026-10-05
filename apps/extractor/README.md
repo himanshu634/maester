@@ -6,6 +6,7 @@ Status: implemented. A stateless Python HTTP service ([FastAPI](https://fastapi.
 
 - `GET /healthz` — liveness.
 - `POST /v1/extract` — PDF as the `application/pdf` body; optional `x-document-id` (logged) and `x-company-name` (URI-encoded, compared with the printed name). Answers `200` with an `application/x-ndjson` stream: `started`, then `progress` and `heartbeat` lines, then exactly one `result` or `error`. `401` for a wrong secret, `413` over `EXTRACT_MAX_BYTES`. The line formats are the `ExtractorEvent` schemas in `@maester/contracts`.
+- `POST /v1/classify` — PDF as the `application/pdf` body; optional `x-document-id` (logged). Answers `200` with one JSON document, `{"type":"result",...}` or `{"type":"error",...}`: what kind of filing it is, from rules first and a short model check for what the rules leave open. A missing or failing model still classifies, with a `MODEL_UNAVAILABLE` warning. `401` and `413` as for `/v1/extract`.
 
 ## Configuration
 
@@ -16,7 +17,9 @@ Status: implemented. A stateless Python HTTP service ([FastAPI](https://fastapi.
 | `GOOGLE_CLOUD_PROJECT` | Vertex AI project. Without it, or without Application Default Credentials, every request ends with `EXTRACTOR_NOT_CONFIGURED` |
 | `VERTEX_LOCATION` | Vertex AI region for Gemini, default `us-central1` |
 | `GEMINI_MODEL` | Default `gemini-2.5-pro` |
-| `EXTRACT_MAX_BYTES` | Largest accepted PDF, default 30 MiB |
+| `GEMINI_CLASSIFY_MODEL` | Model for `/v1/classify`, default `gemini-2.5-flash` |
+| `CLASSIFY_MODEL_TIMEOUT_SECONDS` | Time allowed for one classification model call, default `60` |
+| `EXTRACT_MAX_BYTES` | Largest accepted PDF, default 50 MiB |
 | `EXTRACT_HEARTBEAT_SECONDS` | Heartbeat interval while a model call runs, default `15` |
 | `EXTRACT_DEADLINE_SECONDS` | Time budget per request, default `840` |
 

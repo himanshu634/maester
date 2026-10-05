@@ -2,7 +2,9 @@
 
 ``POST /v1/extract`` takes a PDF body and answers ``200`` immediately with an
 NDJSON stream: ``started``, then ``progress`` and ``heartbeat`` lines, then
-exactly one ``result`` or ``error``. The service stores nothing.
+exactly one ``result`` or ``error``. ``POST /v1/classify`` takes a PDF body and
+answers one JSON document: ``{"type":"result",...}`` or ``{"type":"error",...}``.
+The service stores nothing.
 """
 
 import asyncio
@@ -13,13 +15,15 @@ import os
 import threading
 import time
 from collections.abc import AsyncIterator, Callable
-from typing import Annotated
+from typing import Annotated, TypeVar
 from urllib.parse import unquote
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from maester_extractor.settings import Settings
+from pdf_financial_qa.classify import ClassificationModel, ClassifySettings, run_classification
+from pdf_financial_qa.classify.contracts import ClassifyError, ClassifyResult
 from pdf_financial_qa.workflow import PIPELINE_VERSION, ExtractionError, ExtractionModel, WorkflowSettings, run_extraction
 from pdf_financial_qa.workflow.contracts import ErrorEvent, HeartbeatEvent, ProgressEvent, ResultEvent, StartedEvent, WireModel
 from pdf_financial_qa.workflow.prompts import PROMPT_VERSION
@@ -27,6 +31,8 @@ from pdf_financial_qa.workflow.prompts import PROMPT_VERSION
 log = logging.getLogger("maester_extractor")
 
 ModelFactory = Callable[[], ExtractionModel]
+ClassifyModelFactory = Callable[[], ClassificationModel]
+T = TypeVar("T")
 
 
 class NDJSONResponse(StreamingResponse):
@@ -37,13 +43,13 @@ def _line(event: WireModel) -> bytes:
     return (json.dumps(event.to_wire(), ensure_ascii=False, separators=(",", ":")) + "\n").encode()
 
 
-def vertex_model_factory(settings: Settings) -> ModelFactory:
-    """Build the Gemini model on first use and reuse it; report missing configuration
+def _vertex_factory(settings: Settings, build: Callable[[], T]) -> Callable[[], T]:
+    """Build a Vertex model on first use and reuse it; report missing configuration
     as a permanent, typed error rather than failing at startup."""
-    cached: list[ExtractionModel] = []
+    cached: list[T] = []
     lock = threading.Lock()
 
-    def factory() -> ExtractionModel:
+    def factory() -> T:
         with lock:
             if cached:
                 return cached[0]
@@ -52,23 +58,39 @@ def vertex_model_factory(settings: Settings) -> ModelFactory:
             import google.auth
             from google.auth.exceptions import DefaultCredentialsError
 
-            from pdf_financial_qa.workflow.model import GeminiExtractionModel
-
             try:
                 google.auth.default()
             except DefaultCredentialsError as exc:
                 raise ExtractionError("EXTRACTOR_NOT_CONFIGURED", "no Google Cloud credentials are available",
                                       retryable=False) from exc
-            cached.append(GeminiExtractionModel(project=settings.project, location=settings.location, model=settings.model))
+            cached.append(build())
             return cached[0]
 
     return factory
 
 
+def vertex_model_factory(settings: Settings) -> ModelFactory:
+    def build() -> ExtractionModel:
+        from pdf_financial_qa.workflow.model import GeminiExtractionModel
+        return GeminiExtractionModel(project=settings.project, location=settings.location, model=settings.model)
+    return _vertex_factory(settings, build)
+
+
+def vertex_classify_factory(settings: Settings) -> ClassifyModelFactory:
+    def build() -> ClassificationModel:
+        from pdf_financial_qa.classify.model import GeminiClassificationModel
+        return GeminiClassificationModel(project=settings.project, location=settings.location,
+                                         model=settings.classify_model, timeout_seconds=settings.classify_model_seconds)
+    return _vertex_factory(settings, build)
+
+
 def create_app(settings: Settings | None = None, model_factory: ModelFactory | None = None,
-               workflow: WorkflowSettings | None = None) -> FastAPI:
+               workflow: WorkflowSettings | None = None, classify_model_factory: ClassifyModelFactory | None = None,
+               classify_settings: ClassifySettings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     model_factory = model_factory or vertex_model_factory(settings)
+    classify_model_factory = classify_model_factory or vertex_classify_factory(settings)
+    classify_settings = classify_settings or ClassifySettings()
     workflow = workflow or WorkflowSettings(deadline_seconds=settings.deadline_seconds)
     # LangSmith tracing would send document contents to a third party.
     os.environ["LANGSMITH_TRACING"] = "false"
@@ -161,6 +183,24 @@ def create_app(settings: Settings | None = None, model_factory: ModelFactory | N
             # The client went away or the stream ended: stop any further model calls.
             cancel.set()
             getter.cancel()
+
+    @app.post("/v1/classify", dependencies=[Depends(authenticate)])
+    async def classify(pdf: Annotated[bytes, Depends(pdf_body)],
+                       x_document_id: Annotated[str | None, Header()] = None) -> JSONResponse:
+        started = time.monotonic()
+        try:
+            result = await asyncio.to_thread(run_classification, pdf, model_factory=classify_model_factory,
+                                             settings=classify_settings)
+        except ExtractionError as err:
+            log.info("classification failed document=%s code=%s", x_document_id, err.code)
+            return JSONResponse(ClassifyError(code=err.code, retryable=err.retryable, message=err.message).to_wire())
+        except Exception as exc:  # a bug, not a document problem; the job system retries
+            log.exception("classification crashed document=%s", x_document_id)
+            return JSONResponse(ClassifyError(code="CLASSIFICATION_FAILED", retryable=True,
+                                              message=f"unexpected {type(exc).__name__}").to_wire())
+        log.info("classification finished document=%s kind=%s evidence=%d warnings=%d seconds=%.1f", x_document_id,
+                 result.kind, len(result.evidence), len(result.warnings), time.monotonic() - started)
+        return JSONResponse(ClassifyResult(result=result).to_wire())
 
     return app
 
