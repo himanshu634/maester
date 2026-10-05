@@ -8,10 +8,10 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { terminalContent } from '$lib/content/terminal';
-	import { terminalPage, type TerminalPageKey } from '$lib/terminal/pages';
+	import { terminalPage, type ComingSoonKey } from '$lib/terminal/pages';
 
 	interface Props {
-		page: TerminalPageKey;
+		page: ComingSoonKey;
 		/** The page's sketch. */
 		sketch?: Snippet;
 		/** Anything that follows the two sentences, such as a link. */

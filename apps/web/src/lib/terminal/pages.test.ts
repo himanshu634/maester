@@ -39,8 +39,10 @@ describe('terminalPages', () => {
 		expect(terminalPages.some((page) => page.path.startsWith('/terminal/demo'))).toBe(false);
 	});
 
-	it('marks every page as coming soon until it works, Documents included', () => {
-		expect(terminalPages.every((page) => page.soon)).toBe(true);
+	it('marks every page as coming soon until it works; Documents works', () => {
+		expect(terminalPages.filter((page) => !page.soon).map((page) => page.key)).toEqual([
+			'documents'
+		]);
 	});
 
 	it('sends a signed-out visitor to sign-in and back to the page they asked for', () => {

@@ -128,10 +128,6 @@ export const terminalContent = {
 					empty: 'nothing in view yet'
 				}
 			},
-			documents: {
-				what: 'The annual reports and results for your companies, each with what was read from it and anything left for you to check.',
-				needs: 'Adding your own filings opens here first.'
-			},
 			analyst: {
 				what: 'Ask about a company you own and get an answer that shows its working and the page behind every figure.',
 				needs: 'It answers from your filings, so it starts once they are read.',
