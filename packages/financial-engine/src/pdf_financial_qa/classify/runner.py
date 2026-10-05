@@ -33,9 +33,11 @@ class ClassifySettings:
 
 def _questions(a: rules.RuleAnswers) -> list[Question]:
     questions = []
+    # A financial statement in the document makes it a read kind (precedence rule 1), so "other" is not on offer.
+    statements = bool(a.statements)
     if a.kind is None:
-        questions.append(Question(field="kind", allowed=KINDS))
-    if a.kind in (None, "other") and a.other_type is None:
+        questions.append(Question(field="kind", allowed=list(rules.READ_KINDS) if statements else KINDS))
+    if (a.kind == "other" or a.kind is None and not statements) and a.other_type is None:
         questions.append(Question(field="other_type", allowed=OTHER_TYPES))
     if a.company_name is None:
         questions.append(Question(field="company"))

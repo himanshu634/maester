@@ -45,7 +45,7 @@ class GeminiClassificationModel:
 
         self.name = model
         self._llm = ChatGoogleGenerativeAI(model=model, vertexai=True, project=project, location=location,
-                                           temperature=0, max_retries=1, timeout=timeout_seconds)
+                                           temperature=0, max_retries=0, timeout=timeout_seconds)
 
     def classify(self, pdf: bytes, page_count: int, questions: list[Question]) -> ClassifyOutput:
         text = prompts.CLASSIFY.format(questions=render_questions(questions)) + f"\nThe PDF has {page_count} pages."

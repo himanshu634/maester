@@ -1,11 +1,12 @@
 """Rules first, the model only for open answers, every model answer checked. Offline."""
 
 import unittest
+from unittest import mock
 
 from pdf_fixtures import make_pdf
 
 from pdf_financial_qa.classify import ClassifySettings, run_classification
-from pdf_financial_qa.classify.model import Answer, ClassifyOutput
+from pdf_financial_qa.classify.model import Answer, ClassifyOutput, GeminiClassificationModel
 from pdf_financial_qa.workflow import ExtractionError
 
 FAST = ClassifySettings(retry_interval=0.0)
@@ -52,6 +53,24 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue(r.prompt_version.startswith("classify-"))
         kind = next(e for e in r.evidence if e.field == "kind")
         self.assertEqual((kind.source, kind.page_index, kind.text_layer_match), ("model", 0, True))
+
+    def test_statements_found_limit_an_open_kind_to_the_read_kinds(self):
+        pdf = make_pdf([["Synthetic Textiles Limited", "Standalone Balance Sheet as at 31 March 2026"]])
+        asked = []
+
+        class Recording(ScriptedClassifier):
+            def classify(self, pdf, page_count, questions):
+                asked.extend(questions)
+                return super().classify(pdf, page_count, questions)
+
+        quote = "Standalone Balance Sheet as at 31 March 2026"
+        model = Recording([Answer(field="kind", value="other", page=1, quote=quote)])
+        r = run_classification(pdf, model_factory=lambda: model, settings=FAST)
+        kind = next(q for q in asked if q.field == "kind")
+        self.assertEqual(sorted(kind.allowed), ["annual_report", "financial_results"])
+        self.assertNotIn("other_type", [q.field for q in asked])
+        self.assertEqual(r.kind, "not_sure")
+        self.assertIn("MODEL_ANSWER_DROPPED", [w.code for w in r.warnings])
 
     def test_a_quote_not_on_the_page_is_dropped(self):
         model = ScriptedClassifier([Answer(field="kind", value="annual_report", page=1, quote="Annual Report 2025-26")])
@@ -170,3 +189,11 @@ class RunnerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GeminiModelTests(unittest.TestCase):
+    def test_the_client_does_not_retry_on_its_own(self):
+        # The runner retries a transient failure once; a client retry on top would double the wait.
+        with mock.patch("langchain_google_genai.ChatGoogleGenerativeAI") as chat:
+            GeminiClassificationModel(project="p", location="l", model="m")
+        self.assertEqual(chat.call_args.kwargs["max_retries"], 0)
