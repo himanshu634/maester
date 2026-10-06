@@ -1,10 +1,10 @@
 import {
-  finishMarketFetch, getConnection, latestMarketDay, listMarketSeries, listMarketSeriesByPrefix, markConnectionError,
+  finishMarketFetch, getConnection, latestMarketDay, listMarketSeries, listMarketValuesByPrefix, markConnectionError,
   saveConnection, startMarketFetch, upsertMarketPoints, type Db, type MarketConnectionProvider,
 } from "@maester/db";
 import {
   encryptSecret, INDIA_VIX, ist, MarketSourceError, NIFTY_50,
-  type DailyPoint, type DhanSource, type FredSource, type Instrument,
+  type DailyPoint, type DhanSource, type FredSource, type GoldContract, type Instrument,
 } from "@maester/market";
 import type { Logger } from "../logger.js";
 import { breadthOn } from "./breadth.js";
@@ -45,6 +45,10 @@ const AFTER_CLOSE_MINUTES = 15 * 60 + 45;
 const BREADTH_LOOKBACK_DAYS = 400;
 /** Share of members that may fail in a pass before breadth is held back (at least 1 may). */
 const MAX_MEMBER_FAILURE_SHARE = 0.05;
+/** A new breadth day waits until this share of the members with a close on the session before have one on it. */
+const MIN_MEMBER_COVERAGE = 0.95;
+/** Breadth days worked out per query of member closes, to cap memory on a backfill. */
+const BREADTH_CHUNK_DAYS = 250;
 
 function addDays(day: string, days: number): string {
   const d = new Date(`${day}T00:00:00Z`);
@@ -70,6 +74,7 @@ class Pass {
   readonly lastClose: string;
   readonly backfillFrom: string;
   private cleared = new Set<MarketConnectionProvider>();
+  private goldList: Promise<GoldContract[]> | undefined;
 
   constructor(private readonly deps: MarketRefresherDeps, readonly now: Date) {
     const istMs = now.getTime() + 19_800_000;
@@ -83,6 +88,12 @@ class Pass {
   async store(series: string, points: DailyPoint[], source: string): Promise<void> {
     if (points.length === 0) return;
     this.written += await upsertMarketPoints(this.deps.db, points.map((p) => ({ series, day: p.day, value: p.value, source })));
+  }
+
+  /** The scrip master's gold contracts, read at most once a pass. */
+  goldContracts(dhan: DhanSource): Promise<GoldContract[]> {
+    this.goldList ??= dhan.goldContracts();
+    return this.goldList;
   }
 
   /** After a provider's first good call in a pass, clears what it said last time. */
@@ -100,9 +111,10 @@ export class MarketRefresher {
     const { db, logger } = this.deps;
     const runId = await startMarketFetch(db);
     if (!runId) return "skipped";
-    const pass = new Pass(this.deps, this.deps.now?.() ?? new Date());
+    let pass: Pass | null = null;
     const failures: Failure[] = [];
     try {
+      pass = new Pass(this.deps, this.deps.now?.() ?? new Date());
       const sources = await this.deps.sources();
       if (sources.fred) {
         try {
@@ -123,10 +135,11 @@ export class MarketRefresher {
     }
     // An expired Dhan token is what the page tells the person about, so it wins.
     const failure = failures.find((f) => f.provider === "dhan") ?? failures[0];
+    const written = pass?.written ?? 0;
     try {
       await finishMarketFetch(db, runId, failure
-        ? { state: "failed", pointsWritten: pass.written, errorCode: failure.code, errorMessage: failure.message.slice(0, 500) }
-        : { state: "ok", pointsWritten: pass.written });
+        ? { state: "failed", pointsWritten: written, errorCode: failure.code, errorMessage: failure.message.slice(0, 500) }
+        : { state: "ok", pointsWritten: written });
     } catch (err) {
       logger.error({ message: (err as Error).message }, "market refresh could not record its run");
     }
@@ -158,7 +171,6 @@ export class MarketRefresher {
 
   private async dhan(pass: Pass, initial: DhanSource): Promise<void> {
     const dhan = await this.renewIfDue(pass, initial);
-    if (!dhan) return;
     await this.dhanSeries(pass, dhan, "nifty50", NIFTY_50);
     await this.dhanSeries(pass, dhan, "india_vix", INDIA_VIX);
     await this.gold(pass, dhan);
@@ -172,7 +184,7 @@ export class MarketRefresher {
    * returns a source built with it (renewal expires the old token). Throws only when Dhan
    * refuses the token; any other failure carries on with the current one.
    */
-  private async renewIfDue(pass: Pass, dhan: DhanSource): Promise<DhanSource | null> {
+  private async renewIfDue(pass: Pass, dhan: DhanSource): Promise<DhanSource> {
     const { db, connectionsKey, logger } = this.deps;
     if (!connectionsKey) return dhan;
     const row = await getConnection(db, "dhan");
@@ -187,19 +199,28 @@ export class MarketRefresher {
       return dhan;
     }
     const expiresAt = renewed.expiresAt ? new Date(renewed.expiresAt) : new Date(pass.now.getTime() + TOKEN_LIFE_MS);
-    await saveConnection(db, {
-      provider: "dhan",
-      clientId: row.clientId,
-      secretCiphertext: encryptSecret(renewed.accessToken, connectionsKey),
-      secretLast4: renewed.accessToken.slice(-4),
-      expiresAt,
-      checkedAt: pass.now,
-      savedByUserId: row.savedByUserId,
-      // A renewal proves the token, not the Data API subscription.
-      lastErrorCode: row.lastErrorCode === "DHAN_NO_DATA_PLAN" ? "DHAN_NO_DATA_PLAN" : null,
-    });
+    try {
+      await saveConnection(db, {
+        provider: "dhan",
+        clientId: row.clientId,
+        secretCiphertext: encryptSecret(renewed.accessToken, connectionsKey),
+        secretLast4: renewed.accessToken.slice(-4),
+        expiresAt,
+        checkedAt: pass.now,
+        savedByUserId: row.savedByUserId,
+        // A renewal proves the token, not the Data API subscription.
+        lastErrorCode: row.lastErrorCode === "DHAN_NO_DATA_PLAN" ? "DHAN_NO_DATA_PLAN" : null,
+      });
+    } catch {
+      // The old token is expired now and the new one is lost; Settings has to ask for a new one.
+      // Nothing from the error is logged: it may carry the query's parameters.
+      logger.error("renewed Dhan token could not be saved; save a new one in Settings");
+      throw new MarketSourceError("DHAN_TOKEN_EXPIRED", "the renewed Dhan token could not be saved");
+    }
     logger.info({ expiresAt: expiresAt.toISOString() }, "Dhan token renewed");
-    return (await this.deps.sources()).dhan;
+    const renewedSource = (await this.deps.sources()).dhan;
+    if (!renewedSource) throw new Error("renewed token could not be loaded");
+    return renewedSource;
   }
 
   /** Fetches from the last stored day (or the backfill start) to the last settled close. */
@@ -221,7 +242,7 @@ export class MarketRefresher {
     // Gold is read only at or before Nifty days; skip the scrip master download when the Nifty has nothing newer.
     const nifty = await latestMarketDay(db, "nifty50");
     if (latest && (!nifty || nifty <= latest)) return;
-    const [contract] = await dhan.goldContracts();
+    const [contract] = await pass.goldContracts(dhan);
     if (!contract) {
       logger.warn("no unexpired MCX gold contract in the scrip master; gold skipped");
       return;
@@ -237,7 +258,8 @@ export class MarketRefresher {
   /**
    * Member closes and the two breadth series, for every stored Nifty day after the last breadth
    * day. Keyed on breadth rather than on this pass's new Nifty days, so a pass that stopped
-   * part-way, or a member list added later, is caught up on the next pass.
+   * part-way, or a member list added later, is caught up on the next pass. A new day that too few
+   * members have a close for yet is held back, with the days after it, until a later pass.
    */
   private async breadth(pass: Pass, dhan: DhanSource): Promise<void> {
     const { db, logger, members } = this.deps;
@@ -246,8 +268,9 @@ export class MarketRefresher {
       return;
     }
     const lastBreadth = await latestMarketDay(db, "n500_above_200d_pct");
-    const nifty = (await listMarketSeries(db, ["nifty50"], lastBreadth ? addDays(lastBreadth, 1) : "0001-01-01")).nifty50 ?? [];
-    const days = nifty.map((p) => p.day);
+    // From the last breadth day itself, so the first new day has its previous session.
+    const sessions = ((await listMarketSeries(db, ["nifty50"], lastBreadth ?? "0001-01-01")).nifty50 ?? []).map((p) => p.day);
+    const days = lastBreadth ? sessions.filter((d) => d > lastBreadth) : sessions;
     const lastDay = days.at(-1);
     if (!lastDay) return;
 
@@ -264,6 +287,7 @@ export class MarketRefresher {
       withIds++;
       const series = `eq:${symbol}`;
       const latest = await latestMarketDay(db, series);
+      // Only members still missing a close for the newest day are asked again.
       if (latest && latest >= lastDay) continue;
       const from = latest ?? pass.backfillFrom;
       let points: DailyPoint[];
@@ -286,11 +310,38 @@ export class MarketRefresher {
     }
 
     const wanted = new Set(members.map((s) => `eq:${s}`));
-    const stored = await listMarketSeriesByPrefix(db, "eq:", addDays(days[0]!, -BREADTH_LOOKBACK_DAYS));
-    const closes = new Map(Object.entries(stored).filter(([series]) => wanted.has(series)));
-    const result = breadthOn(closes, days);
-    await pass.store("n500_above_200d_pct", result.flatMap((r) => (r.above200 === null ? [] : [{ day: r.day, value: r.above200 }])), BREADTH_LABEL);
-    await pass.store("n500_net_highs_pct", result.flatMap((r) => (r.netHighs === null ? [] : [{ day: r.day, value: r.netHighs }])), BREADTH_LABEL);
+    const previous = new Map(sessions.slice(1).map((d, k) => [d, sessions[k]!]));
+    for (let start = 0; start < days.length; start += BREADTH_CHUNK_DAYS) {
+      let chunk = days.slice(start, start + BREADTH_CHUNK_DAYS);
+      const stored = await listMarketValuesByPrefix(db, "eq:", addDays(chunk[0]!, -BREADTH_LOOKBACK_DAYS), chunk.at(-1)!);
+      const closes = new Map(Object.entries(stored).filter(([series]) => wanted.has(series)));
+      // Only days added after stored breadth are checked; a backfill is worked out as it stands.
+      const held = lastBreadth ? chunk.findIndex((d) => this.thin(closes, d, previous.get(d))) : -1;
+      if (held >= 0) chunk = chunk.slice(0, held);
+      const result = breadthOn(closes, chunk);
+      await pass.store("n500_above_200d_pct", result.flatMap((r) => (r.above200 === null ? [] : [{ day: r.day, value: r.above200 }])), BREADTH_LABEL);
+      await pass.store("n500_net_highs_pct", result.flatMap((r) => (r.netHighs === null ? [] : [{ day: r.day, value: r.netHighs }])), BREADTH_LABEL);
+      if (held >= 0) break;
+    }
+  }
+
+  /**
+   * True when fewer than 95% of the members with a close on the previous session have one on
+   * `day` (Dhan can publish the index candle before every member's), and logs it.
+   */
+  private thin(closes: Map<string, DailyPoint[]>, day: string, previous: string | undefined): boolean {
+    if (!previous) return false;
+    let had = 0;
+    let have = 0;
+    for (const points of closes.values()) {
+      const days = new Set(points.slice(-BREADTH_LOOKBACK_DAYS).map((p) => p.day));
+      if (!days.has(previous)) continue;
+      had++;
+      if (days.has(day)) have++;
+    }
+    if (had === 0 || have >= had * MIN_MEMBER_COVERAGE) return false;
+    this.deps.logger.info(`breadth for ${day} held back: ${have} of ${had} members have a close`);
+    return true;
   }
 
   /**

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, like, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, like, lte, sql } from "drizzle-orm";
 import type { Db } from "../client.js";
 import {
   marketConnection, marketFetch, marketPoint,
@@ -36,6 +36,16 @@ export async function listMarketSeriesByPrefix(db: Db, prefix: string, fromDay: 
     .where(and(like(marketPoint.series, `${prefix}%`), gte(marketPoint.day, fromDay)))
     .orderBy(asc(marketPoint.series), asc(marketPoint.day));
   return group(rows);
+}
+
+/** Day and value only, for series starting with `prefix`, from `fromDay` to `toDay` inclusive, oldest first. */
+export async function listMarketValuesByPrefix(db: Db, prefix: string, fromDay: string, toDay: string): Promise<Record<string, { day: string; value: number }[]>> {
+  const rows = await db.select({ series: marketPoint.series, day: marketPoint.day, value: marketPoint.value }).from(marketPoint)
+    .where(and(like(marketPoint.series, `${prefix}%`), gte(marketPoint.day, fromDay), lte(marketPoint.day, toDay)))
+    .orderBy(asc(marketPoint.series), asc(marketPoint.day));
+  const out: Record<string, { day: string; value: number }[]> = {};
+  for (const r of rows) (out[r.series] ??= []).push({ day: r.day, value: r.value });
+  return out;
 }
 
 export async function latestMarketDay(db: Db, series: string): Promise<string | null> {

@@ -42,6 +42,9 @@ class FakeDhan implements DhanSource {
   equityIdCalls = 0;
   renewCalls = 0;
   goldCalls = 0;
+  ids = IDS;
+  /** Security id → the last day Dhan has a close for it, when that is before `lastDay`. */
+  lagging = new Map<string, string>();
   /** Security ids whose daily() fails with SOURCE_UNAVAILABLE. */
   unavailable = new Set<string>();
   failDaily: MarketSourceError | null = null;
@@ -53,7 +56,8 @@ class FakeDhan implements DhanSource {
     if (this.failDaily) throw this.failDaily;
     if (this.unavailable.has(inst.securityId)) throw new MarketSourceError("SOURCE_UNAVAILABLE", "Dhan answered 400 DH-905");
     const start = inst.securityId === GOLD.securityId && from < this.goldFrom ? this.goldFrom : from;
-    const end = to < this.lastDay ? to : this.lastDay;
+    const last = this.lagging.get(inst.securityId) ?? this.lastDay;
+    const end = to < last ? to : last;
     const shape: Record<string, (i: number) => number> = {
       [NIFTY_50.securityId]: (i) => 20_000 + i,
       [INDIA_VIX.securityId]: (i) => 12 + (i % 7),
@@ -61,7 +65,7 @@ class FakeDhan implements DhanSource {
       "2885": (i) => 1000 + i, // rising
       "11536": (i) => 5000 - i, // falling
     };
-    const f = shape[inst.securityId]!;
+    const f = shape[inst.securityId] ?? ((i: number) => 1000 + i);
     return weekdays(start, end).map((day) => ({ day, value: f(Date.parse(day) / 86_400_000) }));
   }
   async putCallRatio(): Promise<number> {
@@ -70,7 +74,7 @@ class FakeDhan implements DhanSource {
   }
   async equityIds(): Promise<Map<string, string>> {
     this.equityIdCalls++;
-    return IDS;
+    return this.ids;
   }
   async goldContracts(): Promise<GoldContract[]> {
     this.goldCalls++;
@@ -158,6 +162,9 @@ describe("MarketRefresher", () => {
     const keys = ["nifty50", "india_vix", "gold_mcx", "eq:RELIANCE", "eq:TCS", "n500_above_200d_pct", "n500_net_highs_pct", "us_vix", "usd_inr", "nifty_pcr_oi"];
     const stored = await listMarketSeries(ctx.db, keys, "2000-01-01");
     for (const key of keys) expect(stored[key]!.length, key).toBeGreaterThan(0);
+    // Worked out in chunks, with no day lost between them.
+    const niftyDays = stored.nifty50!.map((p) => p.day);
+    expect(stored.n500_above_200d_pct!.map((p) => p.day)).toEqual(niftyDays.slice(niftyDays.indexOf(stored.n500_above_200d_pct![0]!.day)));
     expect(stored.nifty50![0]).toMatchObject({ day: "2022-10-06", source: "Dhan · NSE close" });
     expect(stored.gold_mcx![0]).toMatchObject({ day: "2026-01-01", source: "Dhan · MCX gold future" });
     expect(stored.us_vix![0]!.source).toBe("FRED · Cboe VIX close");
@@ -242,6 +249,33 @@ describe("MarketRefresher", () => {
     expect(await latestMarketFetch(ctx.db)).toMatchObject({ state: "failed", errorCode: "SOURCE_UNAVAILABLE" });
   });
 
+  it("holds back a new breadth day too few members have a close for, then fetches only the missing ones", async () => {
+    const symbols = Array.from({ length: 10 }, (_, i) => `S${i}`);
+    const ids = new Map(symbols.map((sym, i) => [sym, `9${i}`]));
+    const first = new FakeDhan("2026-10-06");
+    first.ids = ids;
+    await refresher({ dhan: first, members: symbols }).refresh();
+    expect(await latestMarketDay(ctx.db, "n500_above_200d_pct")).toBe("2026-10-06");
+
+    const wednesday = new Date("2026-10-07T12:00:00Z");
+    const thin = new FakeDhan("2026-10-07");
+    thin.ids = ids;
+    thin.lagging.set("99", "2026-10-06"); // 1 of 10 members has no close yet
+    const { logger, lines } = recordingLogger();
+    await refresher({ dhan: thin, members: symbols, now: wednesday, logger }).refresh();
+    expect(await latestMarketDay(ctx.db, "nifty50")).toBe("2026-10-07");
+    expect(await latestMarketDay(ctx.db, "n500_above_200d_pct")).toBe("2026-10-06");
+    expect(await latestMarketDay(ctx.db, "n500_net_highs_pct")).toBe("2026-10-06");
+    expect(lines.join("")).toContain("breadth for 2026-10-07 held back: 9 of 10 members have a close");
+    expect(await latestMarketFetch(ctx.db)).toMatchObject({ state: "ok" });
+
+    const later = new FakeDhan("2026-10-07");
+    later.ids = ids;
+    await refresher({ dhan: later, members: symbols, now: new Date("2026-10-07T12:30:00Z") }).refresh();
+    expect(later.dailyCalls.filter((c) => c.securityId.startsWith("9")).map((c) => c.securityId)).toEqual(["99"]);
+    expect(await latestMarketDay(ctx.db, "n500_above_200d_pct")).toBe("2026-10-07");
+  });
+
   it("stores the put–call ratio once a session day, only after 15:45 IST", async () => {
     // 15:30 IST: before the close; today's partial close is not fetched either.
     const dhan = new FakeDhan("2026-10-06");
@@ -323,6 +357,15 @@ describe("MarketRefresher", () => {
     expect(await latestMarketFetch(ctx.db)).toMatchObject({ state: "failed", errorCode: "UNKNOWN" });
   });
 
+  it("finishes the run failed when the clock throws, never leaving it running", async () => {
+    const r = new MarketRefresher({
+      db: ctx.db, sources: async () => ({ dhan: null, fred: null }), connectionsKey: null, members: [], logger: ctx.logger,
+      now: () => { throw new Error("no clock"); },
+    });
+    expect(await r.refresh()).toBe("ran");
+    expect(await latestMarketFetch(ctx.db)).toMatchObject({ state: "failed", errorCode: "UNKNOWN" });
+  });
+
   it("skips members and breadth when the member list is missing", async () => {
     const dhan = new FakeDhan("2026-10-06");
     const { logger, lines } = recordingLogger();
@@ -367,6 +410,32 @@ describe("MarketRefresher", () => {
       expect(row.lastErrorCode).toBeNull();
       expect(lines.join("")).not.toContain("renewed-token-abcd9999");
       expect(lines.join("")).toContain("Dhan token renewed");
+    });
+
+    it("fails the run when the renewed token cannot be loaded", async () => {
+      await seedDhan({ expiresAt: new Date("2026-10-06T13:00:00Z") });
+      const dhan = new FakeDhan("2026-10-06");
+      let asked = 0;
+      await refresher({ connectionsKey: KEY, sources: async () => (++asked === 1 ? { dhan, fred: null } : { dhan: null, fred: null }) }).refresh();
+      expect(dhan.dailyCalls).toEqual([]);
+      expect(await latestMarketFetch(ctx.db)).toMatchObject({ state: "failed", errorCode: "UNKNOWN", errorMessage: "renewed token could not be loaded" });
+    });
+
+    it("marks the token expired when the renewed one cannot be saved, logging no token", async () => {
+      await seedDhan({ expiresAt: new Date("2026-10-06T13:00:00Z") });
+      await ctx.db.execute(sql`alter table market_connection add constraint test_refuse_renewal check (secret_last4 <> '9999')`);
+      try {
+        const dhan = new FakeDhan("2026-10-06");
+        const { logger, lines } = recordingLogger();
+        await refresher({ dhan, connectionsKey: KEY, logger }).refresh();
+        expect(dhan.dailyCalls).toEqual([]);
+        expect(lines.join("")).toContain("renewed Dhan token could not be saved; save a new one in Settings");
+        expect(lines.join("")).not.toContain("renewed-token-abcd9999");
+        expect((await getConnection(ctx.db, "dhan"))!.lastErrorCode).toBe("DHAN_TOKEN_EXPIRED");
+        expect(await latestMarketFetch(ctx.db)).toMatchObject({ state: "failed", errorCode: "DHAN_TOKEN_EXPIRED" });
+      } finally {
+        await ctx.db.execute(sql`alter table market_connection drop constraint test_refuse_renewal`);
+      }
     });
 
     it("assumes 24 hours when Dhan sends no expiry", async () => {

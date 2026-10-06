@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, type Db } from "../src/client.js";
-import { finishMarketFetch, latestMarketDay, latestMarketFetch, listMarketSeries, listMarketSeriesByPrefix, startMarketFetch, upsertMarketPoints } from "../src/index.js";
+import { finishMarketFetch, latestMarketDay, latestMarketFetch, listMarketSeries, listMarketSeriesByPrefix, listMarketValuesByPrefix, startMarketFetch, upsertMarketPoints } from "../src/index.js";
 import { testDb } from "./helpers.js";
 
 let db: Db;
@@ -26,6 +26,19 @@ describe("market points", () => {
       { series: "nifty50", day: "2026-10-06", value: 24490, source: "Dhan · NSE close" },
     ]);
     expect(Object.keys(await listMarketSeriesByPrefix(db, "eq:", "2026-01-01"))).toEqual(["eq:RELIANCE"]);
+  });
+  it("lists only day and value by prefix, between two days inclusive", async () => {
+    await upsertMarketPoints(db, [
+      { series: "eq:TCS", day: "2026-10-01", value: 1, source: "Dhan · NSE close" },
+      { series: "eq:TCS", day: "2026-10-05", value: 2, source: "Dhan · NSE close" },
+      { series: "eq:TCS", day: "2026-10-06", value: 3, source: "Dhan · NSE close" },
+      { series: "eq:INFY", day: "2026-10-05", value: 4, source: "Dhan · NSE close" },
+      { series: "nifty50", day: "2026-10-05", value: 24490, source: "Dhan · NSE close" },
+    ]);
+    expect(await listMarketValuesByPrefix(db, "eq:", "2026-10-02", "2026-10-05")).toEqual({
+      "eq:INFY": [{ day: "2026-10-05", value: 4 }],
+      "eq:TCS": [{ day: "2026-10-05", value: 2 }],
+    });
   });
   it("upserts an empty list without a query", async () => {
     expect(await upsertMarketPoints(db, [])).toBe(0);
