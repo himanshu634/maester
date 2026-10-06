@@ -19,10 +19,12 @@ export class HttpError extends Error {
     readonly code: ErrorCode,
     message: string,
     readonly fields?: FieldError[],
+    /** Overrides the code's usual status, e.g. 503 for an INTERNAL that is an upstream outage. */
+    status?: number,
   ) {
     super(message);
     this.name = "HttpError";
-    this.status = STATUS[code];
+    this.status = status ?? STATUS[code];
   }
 }
 

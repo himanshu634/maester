@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Db, MembershipRow, WorkspaceRow } from "@maester/db";
+import type { DhanSource, FredSource } from "@maester/market";
 import type { ObjectStore } from "@maester/storage";
 import type { Auth } from "./auth.js";
 import type { Dispatcher } from "./dispatch/index.js";
@@ -11,6 +12,7 @@ import { requireSession } from "./middleware/session.js";
 import { requireWorkspace } from "./middleware/workspace.js";
 import { requestId } from "./middleware/request-id.js";
 import { classificationRoutes } from "./routes/classification.js";
+import { connectionRoutes } from "./routes/connections.js";
 import { companyRoutes } from "./routes/companies.js";
 import { devRoutes } from "./routes/dev.js";
 import { documentRoutes } from "./routes/documents.js";
@@ -37,6 +39,13 @@ export interface AppDeps {
   auth: Auth;
   store: ObjectStore;
   dispatcher: Dispatcher;
+  /** Builds the market data clients that check a key before Settings keeps it. Defaults to the HTTP ones. */
+  marketSources?: MarketSources;
+}
+
+export interface MarketSources {
+  dhan(creds: { clientId: string; accessToken: string }): DhanSource;
+  fred(apiKey: string): FredSource;
 }
 
 export interface AppOptions {
@@ -68,6 +77,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}) {
   v1.use("*", requireSession(deps.auth));
   v1.route("/me", meRoutes(deps));
   v1.route("/market-mood", marketMoodRoutes(deps));
+  v1.route("/settings/connections", connectionRoutes(deps));
   v1.route("/workspaces", workspaceRoutes(deps));
 
   const ws = new Hono<AppEnv>();

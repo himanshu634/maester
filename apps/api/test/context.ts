@@ -2,23 +2,23 @@ import { eq, sql } from "drizzle-orm";
 import { vi } from "vitest";
 import { approveWaitlistEmail, closeDb, createDb, runMigrations, schema } from "@maester/db";
 import { MemoryObjectStore } from "@maester/storage";
-import { createApp } from "../src/app.js";
+import { createApp, type AppDeps } from "../src/app.js";
 import { createAuth } from "../src/auth.js";
 import { RecordingDispatcher } from "../src/dispatch/index.js";
 import { silentLogger } from "../src/logger.js";
 import { RecordingMailer } from "../src/mail/index.js";
 import { testEnv } from "./env.js";
 
-export async function createTestContext(overrides: Partial<NodeJS.ProcessEnv> = {}) {
+export async function createTestContext(overrides: Partial<NodeJS.ProcessEnv> = {}, deps: Partial<Pick<AppDeps, "marketSources" | "logger">> = {}) {
   const env = testEnv(overrides);
   const db = createDb(env.DATABASE_URL);
   await runMigrations(db);
-  await db.execute(sql`TRUNCATE TABLE "job", "document", "membership", "workspace", "session", "account", "verification", "user", "waitlist_entry", "rate_limit", "market_point", "market_fetch" CASCADE`);
+  await db.execute(sql`TRUNCATE TABLE "job", "document", "membership", "workspace", "session", "account", "verification", "user", "waitlist_entry", "rate_limit", "market_point", "market_fetch", "market_connection" CASCADE`);
   const store = new MemoryObjectStore();
   const dispatcher = new RecordingDispatcher();
   const mailer = new RecordingMailer();
   const auth = createAuth({ db, env, mailer, logger: silentLogger });
-  const app = createApp({ env, logger: silentLogger, db, auth, store, dispatcher }, { sse: { pollMs: 50, heartbeatMs: 1000, maxLifetimeMs: 10000 } });
+  const app = createApp({ env, logger: silentLogger, db, auth, store, dispatcher, ...deps }, { sse: { pollMs: 50, heartbeatMs: 1000, maxLifetimeMs: 10000 } });
 
   async function signUp(email: string) {
     await approveWaitlistEmail(db, email);
