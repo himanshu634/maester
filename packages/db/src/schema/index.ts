@@ -3,3 +3,4 @@ export * from "./platform.js";
 export * from "./classification.js";
 export * from "./extraction.js";
 export * from "./waitlist.js";
+export * from "./market.js";
