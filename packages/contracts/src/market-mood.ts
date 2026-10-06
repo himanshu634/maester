@@ -46,7 +46,7 @@ export type Reading = z.infer<typeof Reading>;
 export const FetchStatus = z.object({
   state: z.enum(["never", "running", "ok", "failed"]),
   at: IsoTimestamp.nullable(),
-  errorCode: z.enum(["DHAN_TOKEN_EXPIRED", "DHAN_RATE_LIMITED", "SOURCE_UNAVAILABLE", "UNKNOWN"]).nullable(),
+  errorCode: z.enum(["DHAN_TOKEN_EXPIRED", "DHAN_RATE_LIMITED", "FRED_KEY_REFUSED", "SOURCE_UNAVAILABLE", "UNKNOWN"]).nullable(),
 });
 export type FetchStatus = z.infer<typeof FetchStatus>;
 

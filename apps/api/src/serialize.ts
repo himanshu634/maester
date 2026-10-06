@@ -1,4 +1,5 @@
-import type { FetchStatus, Classification, ClassificationSummary, Company, Document, Evidence, ExtractionCheck, ExtractionRevision, FinancialFact, Job, Workspace } from "@maester/contracts";
+import { FetchStatus } from "@maester/contracts";
+import type { Classification, ClassificationSummary, Company, Document, Evidence, ExtractionCheck, ExtractionRevision, FinancialFact, Job, Workspace } from "@maester/contracts";
 import type {
   ClassificationRow,
   CompanyRow,
@@ -172,7 +173,7 @@ export function toFact({ fact, source }: FactWithSource): FinancialFact {
   };
 }
 
-const FETCH_CODES = new Set(["DHAN_TOKEN_EXPIRED", "DHAN_RATE_LIMITED", "SOURCE_UNAVAILABLE"]);
+const FETCH_CODES = new Set<string>(FetchStatus.shape.errorCode.unwrap().options);
 
 export function toFetchStatus(row: MarketFetchRow | null): FetchStatus {
   if (!row) return { state: "never", at: null, errorCode: null };

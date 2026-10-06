@@ -62,7 +62,7 @@ function goldVsNifty(s: SeriesMap): Point[] {
     if (gi < 0 || gb < 0) continue;
     const g = (pt(gold, gi).value / pt(gold, gb).value - 1) * 100;
     const n = (pt(nifty, i).value / pt(nifty, i - 20).value - 1) * 100;
-    out.push({ day, value: g - n, source: "Worked out from Dhan · MCX gold and NSE close" });
+    out.push({ day, value: g - n, source: "Worked out from Dhan · MCX gold future and NSE close" });
   }
   return out;
 }
@@ -70,14 +70,14 @@ function goldVsNifty(s: SeriesMap): Point[] {
 export const READINGS: Def[] = [
   { key: "india_vix", family: "fear", scored: true, invert: true, previous: 5, indian: true, build: raw("india_vix"), label: "Dhan · NSE close" },
   { key: "us_vix", family: "fear", scored: true, invert: true, previous: 5, indian: false, build: raw("us_vix"), label: "FRED · Cboe VIX close" },
-  { key: "nifty_pcr", family: "fear", scored: false, invert: false, previous: 5, indian: true, build: raw("nifty_pcr_oi"), label: "Dhan · NSE close" },
+  { key: "nifty_pcr", family: "fear", scored: false, invert: false, previous: 5, indian: true, build: raw("nifty_pcr_oi"), label: "Dhan · NSE option chain, nearest expiry" },
   { key: "fpi_flows", family: "money", scored: true, invert: false, previous: 20, indian: true, build: null, label: "No source connected yet" },
   { key: "dii_flows", family: "money", scored: false, invert: false, previous: 20, indian: true, build: null, label: "No source connected yet" },
   { key: "nifty_trend", family: "breadth", scored: true, invert: false, previous: 20, indian: true, build: trend, label: "Dhan · NSE close" },
-  { key: "n500_above_200d", family: "breadth", scored: true, invert: false, previous: 20, indian: true, build: raw("n500_above_200d_pct"), label: "Dhan · NSE close" },
-  { key: "n500_net_highs", family: "breadth", scored: true, invert: false, previous: 20, indian: true, build: raw("n500_net_highs_pct"), label: "Dhan · NSE close" },
+  { key: "n500_above_200d", family: "breadth", scored: true, invert: false, previous: 20, indian: true, build: raw("n500_above_200d_pct"), label: "Worked out from Dhan · NSE closes" },
+  { key: "n500_net_highs", family: "breadth", scored: true, invert: false, previous: 20, indian: true, build: raw("n500_net_highs_pct"), label: "Worked out from Dhan · NSE closes" },
   { key: "usd_inr", family: "havens", scored: false, invert: false, previous: 20, indian: false, build: raw("usd_inr"), label: "FRED · Federal Reserve noon rate, New York" },
-  { key: "gold_vs_nifty", family: "havens", scored: true, invert: true, previous: 20, indian: true, build: goldVsNifty, label: "Worked out from Dhan · MCX gold and NSE close" },
+  { key: "gold_vs_nifty", family: "havens", scored: true, invert: true, previous: 20, indian: true, build: goldVsNifty, label: "Worked out from Dhan · MCX gold future and NSE close" },
 ];
 
 /** Share of `window` below `value`, counting equal values as half, as a whole percent (half up). */

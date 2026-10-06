@@ -29,6 +29,14 @@ describe("market mood routes", () => {
     expect(mood.fetch).toMatchObject({ state: "failed", errorCode: "DHAN_TOKEN_EXPIRED" });
   });
 
+  it("names a refused FRED key from the last run", async () => {
+    const a = await ctx.signUp("mood2b@example.com");
+    const id = await startMarketFetch(ctx.db);
+    await finishMarketFetch(ctx.db, id!, { state: "failed", pointsWritten: 0, errorCode: "FRED_KEY_REFUSED", errorMessage: "400" });
+    const mood = MarketMood.parse(await (await ctx.app.request("/v1/market-mood", { headers: { cookie: a.cookie } })).json());
+    expect(mood.fetch).toMatchObject({ state: "failed", errorCode: "FRED_KEY_REFUSED" });
+  });
+
   it("returns one reading with its series, and 404 for an unknown key", async () => {
     const a = await ctx.signUp("mood3@example.com");
     await upsertMarketPoints(ctx.db, [{ series: "india_vix", day: "2026-10-06", value: 17.8, source: "Dhan · NSE close" }]);
