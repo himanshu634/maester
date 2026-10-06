@@ -18,6 +18,13 @@ Maester's product plan connects portfolio tracking with company research and ver
 | [Document extraction](EXTRACTION.md) | Company records and versioned fact extraction with page provenance (F03, F05) | Backend, data and platform |
 | [Sign-in](SIGN_IN.md) | Google, email and password, and the waitlist: topology, flows, pages, configuration, known limits | Engineering and design |
 | [Design specification](DESIGN.md) | The visual contract for every web page: colour, type, structure, motion, copy, enforcement | Design and frontend |
+| [System: overview](systems/maester.md) | The whole system in Simplified Technical English: apps, flows, data, how to run it | Engineering |
+| [System: API](systems/api.md) | The Hono API: routes, sign-in, documents, jobs, configuration | Backend |
+| [System: worker](systems/worker.md) | The job worker: verify, classify, extract, leases and retries | Backend |
+| [System: extractor](systems/extractor.md) | The Python extraction service: workflow, model calls, page provenance | Backend and data |
+| [System: web](systems/web.md) | The SvelteKit web app: routes, API client, build and serving, checks | Frontend |
+| [System: CLI](systems/cli.md) | The command-line tool: commands, cache, model calls | Engineering |
+| [System: shared packages](systems/packages.md) | Config, contracts, database, financial engines, jobs and storage | Engineering |
 | [Monorepo decision](decisions/0001-platform-monorepo.md) | Rationale and consequences of the package split | Engineering |
 | [Web client decision](decisions/0002-web-sveltekit-brutalist-design-system.md) | SvelteKit, the brutalist design system and how it is enforced | Engineering and design |
 | [TypeScript backend decision](decisions/0003-typescript-backend.md) | Hono API and worker on Cloud Run, Zod contracts, Drizzle | Engineering |
