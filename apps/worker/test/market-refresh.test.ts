@@ -41,6 +41,9 @@ class FakeDhan implements DhanSource {
   pcrCalls = 0;
   equityIdCalls = 0;
   renewCalls = 0;
+  goldCalls = 0;
+  /** Security ids whose daily() fails with SOURCE_UNAVAILABLE. */
+  unavailable = new Set<string>();
   failDaily: MarketSourceError | null = null;
   renewResult: { accessToken: string; expiresAt: string | null } | MarketSourceError = { accessToken: "renewed-token-abcd9999", expiresAt: "2026-10-07T12:00:00.000Z" };
   constructor(public lastDay: string, public goldFrom = "2026-01-01") {}
@@ -48,6 +51,7 @@ class FakeDhan implements DhanSource {
   async daily(inst: Instrument, from: string, to: string): Promise<DailyPoint[]> {
     this.dailyCalls.push({ securityId: inst.securityId, from, to });
     if (this.failDaily) throw this.failDaily;
+    if (this.unavailable.has(inst.securityId)) throw new MarketSourceError("SOURCE_UNAVAILABLE", "Dhan answered 400 DH-905");
     const start = inst.securityId === GOLD.securityId && from < this.goldFrom ? this.goldFrom : from;
     const end = to < this.lastDay ? to : this.lastDay;
     const shape: Record<string, (i: number) => number> = {
@@ -69,6 +73,7 @@ class FakeDhan implements DhanSource {
     return IDS;
   }
   async goldContracts(): Promise<GoldContract[]> {
+    this.goldCalls++;
     return [GOLD];
   }
   async profile(): Promise<{ clientId: string; tokenExpiresAt: string | null; dataPlanActive: boolean | null }> {
@@ -195,6 +200,7 @@ describe("MarketRefresher", () => {
     const dhan = new FakeDhan("2026-10-06");
     await refresher({ dhan }).refresh();
     expect(dhan.equityIdCalls).toBe(0);
+    expect(dhan.goldCalls).toBe(0);
     expect(dhan.callsFor({ securityId: "2885" })).toEqual([]);
     expect(dhan.callsFor(NIFTY_50)).toHaveLength(1);
   });
@@ -211,6 +217,29 @@ describe("MarketRefresher", () => {
     await refresher({ dhan }).refresh();
     expect(dhan.callsFor({ securityId: "2885" })).toHaveLength(1);
     expect(await latestMarketDay(ctx.db, "n500_above_200d_pct")).toBe("2026-10-06");
+  });
+
+  it("leaves out a member Dhan will not answer for, and still stores breadth and the put–call ratio", async () => {
+    const dhan = new FakeDhan("2026-10-06");
+    dhan.unavailable.add("11536");
+    const { logger, lines } = recordingLogger();
+    await refresher({ dhan, logger }).refresh();
+    expect(await latestMarketDay(ctx.db, "eq:RELIANCE")).toBe("2026-10-06");
+    expect(await latestMarketDay(ctx.db, "eq:TCS")).toBeNull();
+    const above = (await listMarketSeries(ctx.db, ["n500_above_200d_pct"], "2026-10-06")).n500_above_200d_pct;
+    expect(above).toEqual([expect.objectContaining({ day: "2026-10-06", value: 100 })]);
+    expect(await latestMarketDay(ctx.db, "nifty_pcr_oi")).toBe("2026-10-06");
+    expect(await latestMarketFetch(ctx.db)).toMatchObject({ state: "ok" });
+    expect(lines.filter((l) => l.includes("did not answer for"))).toHaveLength(1);
+  });
+
+  it("holds breadth back when too many members fail", async () => {
+    const dhan = new FakeDhan("2026-10-06");
+    dhan.unavailable.add("11536").add("2885");
+    await refresher({ dhan }).refresh();
+    expect(await latestMarketDay(ctx.db, "n500_above_200d_pct")).toBeNull();
+    expect(await latestMarketDay(ctx.db, "nifty_pcr_oi")).toBe("2026-10-06");
+    expect(await latestMarketFetch(ctx.db)).toMatchObject({ state: "failed", errorCode: "SOURCE_UNAVAILABLE" });
   });
 
   it("stores the put–call ratio once a session day, only after 15:45 IST", async () => {

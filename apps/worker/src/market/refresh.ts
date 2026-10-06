@@ -43,6 +43,8 @@ const TOKEN_LIFE_MS = 24 * HOUR_MS;
 const AFTER_CLOSE_MINUTES = 15 * 60 + 45;
 /** Calendar days of member closes loaded before the first day needing breadth (252 sessions and holidays). */
 const BREADTH_LOOKBACK_DAYS = 400;
+/** Share of members that may fail in a pass before breadth is held back (at least 1 may). */
+const MAX_MEMBER_FAILURE_SHARE = 0.05;
 
 function addDays(day: string, days: number): string {
   const d = new Date(`${day}T00:00:00Z`);
@@ -160,8 +162,9 @@ export class MarketRefresher {
     await this.dhanSeries(pass, dhan, "nifty50", NIFTY_50);
     await this.dhanSeries(pass, dhan, "india_vix", INDIA_VIX);
     await this.gold(pass, dhan);
-    await this.breadth(pass, dhan);
+    // The option chain is live only, so it goes before the long member loop.
     await this.putCallRatio(pass, dhan);
+    await this.breadth(pass, dhan);
   }
 
   /**
@@ -214,12 +217,15 @@ export class MarketRefresher {
    */
   private async gold(pass: Pass, dhan: DhanSource): Promise<void> {
     const { db, logger } = this.deps;
+    const latest = await latestMarketDay(db, "gold_mcx");
+    // Gold is read only at or before Nifty days; skip the scrip master download when the Nifty has nothing newer.
+    const nifty = await latestMarketDay(db, "nifty50");
+    if (latest && (!nifty || nifty <= latest)) return;
     const [contract] = await dhan.goldContracts();
     if (!contract) {
       logger.warn("no unexpired MCX gold contract in the scrip master; gold skipped");
       return;
     }
-    const latest = await latestMarketDay(db, "gold_mcx");
     const from = latest ? addDays(latest, 1) : pass.backfillFrom;
     if (from > pass.lastClose) return;
     const points = (await dhan.daily(contract, from, pass.lastClose)).filter((p) => p.day <= pass.lastClose);
@@ -247,21 +253,37 @@ export class MarketRefresher {
 
     const ids = await dhan.equityIds();
     const unknown: string[] = [];
+    const failed: string[] = [];
+    let withIds = 0;
     for (const symbol of members) {
       const securityId = ids.get(symbol);
       if (!securityId) {
         unknown.push(symbol);
         continue;
       }
+      withIds++;
       const series = `eq:${symbol}`;
       const latest = await latestMarketDay(db, series);
       if (latest && latest >= lastDay) continue;
       const from = latest ?? pass.backfillFrom;
-      const points = await dhan.daily({ securityId, exchangeSegment: "NSE_EQ", instrument: "EQUITY" }, from, pass.lastClose);
+      let points: DailyPoint[];
+      try {
+        points = await dhan.daily({ securityId, exchangeSegment: "NSE_EQ", instrument: "EQUITY" }, from, pass.lastClose);
+      } catch (err) {
+        // A token or rate-limit failure stops the pass; one symbol Dhan will not answer for does not.
+        if (err instanceof MarketSourceError && (err.code === "DHAN_TOKEN_EXPIRED" || err.code === "DHAN_RATE_LIMITED")) throw err;
+        failed.push(symbol);
+        continue;
+      }
       await pass.answered("dhan");
       await pass.store(series, points.filter((p) => p.day <= pass.lastClose), NSE_CLOSE);
     }
     if (unknown.length) logger.warn({ count: unknown.length, symbols: unknown.slice(0, 50) }, "Nifty 500 members with no Dhan id; left out of breadth");
+    if (failed.length) logger.warn({ count: failed.length, symbols: failed.slice(0, 50) }, "Nifty 500 members Dhan did not answer for; left out of breadth this pass");
+    // Breadth from a thin set of members would be stored and never worked out again, so too many failures stop it.
+    if (failed.length > Math.max(1, Math.floor(withIds * MAX_MEMBER_FAILURE_SHARE))) {
+      throw new MarketSourceError("SOURCE_UNAVAILABLE", `Dhan did not answer for ${failed.length} of ${withIds} Nifty 500 members`);
+    }
 
     const wanted = new Set(members.map((s) => `eq:${s}`));
     const stored = await listMarketSeriesByPrefix(db, "eq:", addDays(days[0]!, -BREADTH_LOOKBACK_DAYS));
