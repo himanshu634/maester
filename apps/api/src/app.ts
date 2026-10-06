@@ -16,6 +16,7 @@ import { devRoutes } from "./routes/dev.js";
 import { documentRoutes } from "./routes/documents.js";
 import { DEFAULT_SSE, jobEventsRoute, type SseOptions } from "./routes/job-events.js";
 import { jobRoutes } from "./routes/jobs.js";
+import { marketMoodRoutes } from "./routes/market-mood.js";
 import { meRoutes } from "./routes/me.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
 
@@ -66,6 +67,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}) {
   const v1 = new Hono<AppEnv>();
   v1.use("*", requireSession(deps.auth));
   v1.route("/me", meRoutes(deps));
+  v1.route("/market-mood", marketMoodRoutes(deps));
   v1.route("/workspaces", workspaceRoutes(deps));
 
   const ws = new Hono<AppEnv>();

@@ -1,4 +1,4 @@
-import type { Classification, ClassificationSummary, Company, Document, Evidence, ExtractionCheck, ExtractionRevision, FinancialFact, Job, Workspace } from "@maester/contracts";
+import type { FetchStatus, Classification, ClassificationSummary, Company, Document, Evidence, ExtractionCheck, ExtractionRevision, FinancialFact, Job, Workspace } from "@maester/contracts";
 import type {
   ClassificationRow,
   CompanyRow,
@@ -8,6 +8,7 @@ import type {
   ExtractionRevisionRow,
   FactWithSource,
   JobRow,
+  MarketFetchRow,
   WorkspaceRow,
 } from "@maester/db";
 
@@ -168,5 +169,16 @@ export function toFact({ fact, source }: FactWithSource): FinancialFact {
     currency: fact.currency,
     normalizedValue: fact.normalizedValue,
     source: { documentId: source.documentId, pageIndex: source.pageIndex, textLayerMatch: source.textLayerMatch },
+  };
+}
+
+const FETCH_CODES = new Set(["DHAN_TOKEN_EXPIRED", "DHAN_RATE_LIMITED", "SOURCE_UNAVAILABLE"]);
+
+export function toFetchStatus(row: MarketFetchRow | null): FetchStatus {
+  if (!row) return { state: "never", at: null, errorCode: null };
+  return {
+    state: row.state,
+    at: (row.finishedAt ?? row.startedAt).toISOString(),
+    errorCode: row.state === "failed" ? ((row.errorCode && FETCH_CODES.has(row.errorCode) ? row.errorCode : "UNKNOWN") as FetchStatus["errorCode"]) : null,
   };
 }
