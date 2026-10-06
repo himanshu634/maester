@@ -39,6 +39,9 @@ describe("worker env: market", () => {
     const env = loadWorkerEnv({ ...base, CONNECTIONS_KEY: key, DHAN_REQUESTS_PER_SECOND: "2", MARKET_REFRESH_MINUTES: "10" });
     expect(env).toMatchObject({ CONNECTIONS_KEY: key, DHAN_REQUESTS_PER_SECOND: 2, MARKET_REFRESH_MINUTES: 10 });
   });
+  it("refuses more than 5 Dhan requests per second", () => {
+    expect(() => loadWorkerEnv({ ...base, DHAN_REQUESTS_PER_SECOND: "6" })).toThrow("DHAN_REQUESTS_PER_SECOND");
+  });
   it("refuses a CONNECTIONS_KEY that is not 32 bytes, base64", () => {
     for (const bad of [Buffer.alloc(16, 1).toString("base64"), "not base64!!"]) {
       expect(() => loadWorkerEnv({ ...base, CONNECTIONS_KEY: bad })).toThrow("CONNECTIONS_KEY must be 32 bytes, base64");

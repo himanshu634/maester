@@ -22,15 +22,25 @@ function splitLine(line: string): string[] {
   return out;
 }
 
-export function parseScripMaster(csv: string): ScripRow[] {
-  const lines = csv.split(/\r?\n/).filter((l) => l.length > 0);
-  const header = splitLine(lines[0] ?? "").map((h) => h.trim());
-  return lines.slice(1).map((line) => {
+/** The rows the market sources use: NSE equity, and MCX gold futures. */
+export function keepScripRow(r: ScripRow): boolean {
+  return (r.SEM_EXM_EXCH_ID === "NSE" && r.SEM_SEGMENT === "E" && r.SEM_INSTRUMENT_NAME === "EQUITY") ||
+    (r.SEM_EXM_EXCH_ID === "MCX" && r.SEM_SEGMENT === "M" && r.SEM_INSTRUMENT_NAME === "FUTCOM" && r.SM_SYMBOL_NAME === MCX_GOLD_NAME);
+}
+
+/** Parses the CSV; with `keep`, rows it rejects are dropped as they are read. */
+export function parseScripMaster(csv: string, keep?: (row: ScripRow) => boolean): ScripRow[] {
+  const out: ScripRow[] = [];
+  let header: string[] | undefined;
+  for (const line of csv.split(/\r?\n/)) {
+    if (line.length === 0) continue;
     const cells = splitLine(line);
+    if (!header) { header = cells.map((h) => h.trim()); continue; }
     const row: ScripRow = {};
     header.forEach((h, i) => { row[h] = (cells[i] ?? "").trim(); });
-    return row;
-  });
+    if (!keep || keep(row)) out.push(row);
+  }
+  return out;
 }
 
 /** NSE cash equity, EQ series: trading symbol → security id. */

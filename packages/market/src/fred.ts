@@ -5,17 +5,19 @@ export type FredOptions = { apiKey: string; fetch?: typeof globalThis.fetch; bas
 export class HttpFredSource implements FredSource {
   private readonly fetchFn: typeof globalThis.fetch;
   private readonly baseUrl: string;
-  constructor(private readonly opts: FredOptions) {
+  readonly #apiKey: string;
+  constructor(opts: FredOptions) {
+    this.#apiKey = opts.apiKey;
     this.fetchFn = opts.fetch ?? globalThis.fetch;
     this.baseUrl = opts.baseUrl ?? "https://api.stlouisfed.org/fred";
   }
 
   private async get(params: Record<string, string>): Promise<DailyPoint[]> {
     const url = new URL(`${this.baseUrl}/series/observations`);
-    url.search = new URLSearchParams({ ...params, api_key: this.opts.apiKey, file_type: "json" }).toString();
+    url.search = new URLSearchParams({ ...params, api_key: this.#apiKey, file_type: "json" }).toString();
     let res: Response;
     try {
-      res = await this.fetchFn(url.toString());
+      res = await this.fetchFn(url.toString(), { signal: AbortSignal.timeout(30_000) });
     } catch {
       // The error text of fetch can carry the URL, and the URL carries the key.
       throw new MarketSourceError("SOURCE_UNAVAILABLE", "FRED could not be reached");

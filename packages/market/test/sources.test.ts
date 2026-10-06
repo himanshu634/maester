@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { HttpDhanSource, HttpFredSource, ist, MarketSourceError, nearMonthGold, parseScripMaster } from "../src/index.js";
+import { HttpDhanSource, HttpFredSource, ist, MarketSourceError, keepScripRow, nearMonthGold, parseScripMaster } from "../src/index.js";
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const noSleep = async () => {};
+type Json2 = Record<string, unknown>;
 
 /** A clock that only moves when the injected sleep is called. */
 function clock() {
@@ -127,8 +128,11 @@ describe("HttpDhanSource", () => {
     const ok = make(async (url, init) => { seen = { url: String(url), init: init! }; return json(200, { accessToken: "new-token", expiryTime: "2099-03-31T10:07:00" }); });
     const res = await ok.renewToken();
     expect(res.accessToken).toBe("new-token");
+    expect(res.expiresAt).toBe("2099-03-31T04:37:00.000Z"); // zone-less, read as IST
     expect(seen!.url).toBe("https://api.dhan.co/v2/RenewToken");
     expect(seen!.init.headers).toMatchObject({ "access-token": "t", dhanClientId: "c" });
+    const viaValidity = make(async () => json(200, { accessToken: "n", tokenValidity: "31/03/2099 15:37" }));
+    expect((await viaValidity.renewToken()).expiresAt).toBe("2099-03-31T10:07:00.000Z");
     const refused = make(async () => json(400, { errorCode: "DH-906", errorMessage: "cannot renew" }));
     await expect(refused.renewToken()).rejects.toMatchObject({ code: "DHAN_TOKEN_EXPIRED" });
     const noToken = make(async () => json(200, {}));
@@ -167,6 +171,67 @@ describe("HttpDhanSource", () => {
       { securityId: "495213", exchangeSegment: "MCX_COMM", instrument: "FUTCOM", expiry: "2026-12-04" },
       { securityId: "559933", exchangeSegment: "MCX_COMM", instrument: "FUTCOM", expiry: "2027-02-05" },
     ]);
+  });
+
+  it("keeps server text, the token and the client id out of error messages", async () => {
+    const leak = "tok-SECRET-123 cid-SECRET-9";
+    const body = { errorCode: "DH-XXX", errorMessage: leak };
+    const cases: [number, Json2, string][] = [
+      [401, { ...body, errorCode: "DH-901" }, "DHAN_TOKEN_EXPIRED"],
+      [429, { ...body, errorCode: "DH-904" }, "DHAN_RATE_LIMITED"],
+      [500, body, "SOURCE_UNAVAILABLE"],
+      [500, { errorCode: leak, errorMessage: leak }, "SOURCE_UNAVAILABLE"],
+    ];
+    for (const [status, b, code] of cases) {
+      const dhan = new HttpDhanSource({ clientId: "cid-SECRET-9", accessToken: "tok-SECRET-123", requestsPerSecond: 4, fetch: async () => json(status, b), sleep: noSleep });
+      const err = await dhan.daily(inst, "2026-10-01", "2026-10-07").catch((e) => e);
+      expect(err.code).toBe(code);
+      expect(err.message).not.toContain("SECRET");
+    }
+    const net = new HttpDhanSource({ clientId: "cid-SECRET-9", accessToken: "tok-SECRET-123", requestsPerSecond: 4, fetch: async () => { throw new TypeError(`fetch failed ${leak}`); }, sleep: noSleep });
+    const err = await net.daily(inst, "2026-10-01", "2026-10-07").catch((e) => e);
+    expect(err.code).toBe("SOURCE_UNAVAILABLE");
+    expect(err.message).not.toContain("SECRET");
+  });
+
+  it("does not show the token, client id or key to JSON.stringify", () => {
+    const dhan = new HttpDhanSource({ clientId: "cid-SECRET-9", accessToken: "tok-SECRET-123", requestsPerSecond: 4 });
+    expect(JSON.stringify(dhan)).not.toContain("SECRET");
+    expect(JSON.stringify(new HttpFredSource({ apiKey: "key-SECRET-1" }))).not.toContain("SECRET");
+  });
+
+  it("refuses a rate of zero or less", () => {
+    for (const requestsPerSecond of [0, -1, Number.NaN]) {
+      expect(() => new HttpDhanSource({ clientId: "c", accessToken: "t", requestsPerSecond })).toThrow();
+    }
+  });
+
+  it("returns daily closes oldest first", async () => {
+    const t = (d: string) => Date.parse(`${d}T00:00:00+05:30`) / 1000;
+    const dhan = make(async () => json(200, { close: [2, 1], timestamp: [t("2026-10-06"), t("2026-10-05")] }));
+    expect((await dhan.daily(inst, "2026-10-01", "2026-10-07")).map((p) => p.day)).toEqual(["2026-10-05", "2026-10-06"]);
+  });
+
+  it("skips a null strike in the option chain", async () => {
+    const dhan = make(async (url) => String(url).endsWith("expirylist") ? json(200, { data: ["2099-01-01"] }) : json(200, { data: { oc: { "1": null, "2": { ce: { oi: 10 }, pe: { oi: 5 } } } } }));
+    expect(await dhan.putCallRatio()).toBe(0.5);
+  });
+
+  it("puts a timeout on every request", async () => {
+    const signals: (AbortSignal | null | undefined)[] = [];
+    const dhan = make(async (url, init) => { signals.push(init?.signal); return String(url).endsWith(".csv") ? new Response(csv) : json(200, { close: [], timestamp: [] }); });
+    await dhan.daily(inst, "a", "2026-10-07");
+    await dhan.equityIds();
+    expect(signals).toHaveLength(2);
+    expect(signals.every((x) => x instanceof AbortSignal)).toBe(true);
+    const timedOut = make(async () => { throw new DOMException("timed out", "TimeoutError"); });
+    await expect(timedOut.daily(inst, "a", "2026-10-07")).rejects.toMatchObject({ code: "SOURCE_UNAVAILABLE", message: "Dhan could not be reached" });
+  });
+
+  it("keeps only the rows it uses from the scrip master", () => {
+    const kept = parseScripMaster(csv, keepScripRow);
+    expect(kept.every((r) => (r.SEM_SEGMENT === "E" && r.SEM_EXM_EXCH_ID === "NSE") || r.SM_SYMBOL_NAME === "GOLD")).toBe(true);
+    expect(kept.length).toBeLessThan(parseScripMaster(csv).length);
   });
 
   it("raises SOURCE_UNAVAILABLE when the scrip master cannot be downloaded", async () => {
