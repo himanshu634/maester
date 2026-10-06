@@ -26,3 +26,22 @@ describe("worker env: extraction", () => {
     expect(loadWorkerEnv({ ...cloud, GOOGLE_CLOUD_PROJECT: "p", WORKER_INVOKER_SA: "api@p.iam" }).EXTRACTOR_AUTH).toBe("oidc");
   });
 });
+
+describe("worker env: market", () => {
+  const key = Buffer.alloc(32, 7).toString("base64");
+  it("defaults the Dhan rate and refresh interval, and leaves the key unset", () => {
+    const env = loadWorkerEnv(base);
+    expect(env.DHAN_REQUESTS_PER_SECOND).toBe(4);
+    expect(env.MARKET_REFRESH_MINUTES).toBe(30);
+    expect(env.CONNECTIONS_KEY).toBeUndefined();
+  });
+  it("reads the settings", () => {
+    const env = loadWorkerEnv({ ...base, CONNECTIONS_KEY: key, DHAN_REQUESTS_PER_SECOND: "2", MARKET_REFRESH_MINUTES: "10" });
+    expect(env).toMatchObject({ CONNECTIONS_KEY: key, DHAN_REQUESTS_PER_SECOND: 2, MARKET_REFRESH_MINUTES: 10 });
+  });
+  it("refuses a CONNECTIONS_KEY that is not 32 bytes, base64", () => {
+    for (const bad of [Buffer.alloc(16, 1).toString("base64"), "not base64!!"]) {
+      expect(() => loadWorkerEnv({ ...base, CONNECTIONS_KEY: bad })).toThrow("CONNECTIONS_KEY must be 32 bytes, base64");
+    }
+  });
+});

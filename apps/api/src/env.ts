@@ -38,6 +38,12 @@ const EnvSchema = z.object({
   MAIL_DRIVER: z.enum(["console", "resend"]).default("console"),
   RESEND_API_KEY: z.string().optional().transform((v) => v || undefined),
   MAIL_FROM: z.string().optional().transform((v) => v || undefined),
+  // 32 bytes, base64. Encrypts saved market data keys. Unset: the Settings routes answer INVALID_STATE and the refresher is off.
+  CONNECTIONS_KEY: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined)
+    .refine((v) => v === undefined || (/^[A-Za-z0-9+/]+={0,2}$/.test(v) && Buffer.from(v, "base64").length === 32), "CONNECTIONS_KEY must be 32 bytes, base64"),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

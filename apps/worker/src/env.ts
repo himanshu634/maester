@@ -26,6 +26,15 @@ const Schema = z.object({
   CLOUD_TASKS_QUEUE: z.string().default("maester-jobs"),
   WORKER_INVOKER_SA: z.string().optional(),
   TASK_DISPATCH_DEADLINE_SECONDS: z.coerce.number().int().positive().default(1800),
+  // 32 bytes, base64. Encrypts saved market data keys. Unset: the Settings routes answer INVALID_STATE and the refresher is off.
+  CONNECTIONS_KEY: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined)
+    .refine((v) => v === undefined || (/^[A-Za-z0-9+/]+={0,2}$/.test(v) && Buffer.from(v, "base64").length === 32), "CONNECTIONS_KEY must be 32 bytes, base64"),
+  // Market mood: Dhan Data API calls per second (the limit is 5), and minutes between refreshes.
+  DHAN_REQUESTS_PER_SECOND: z.coerce.number().positive().default(4),
+  MARKET_REFRESH_MINUTES: z.coerce.number().int().positive().default(30),
 });
 export type WorkerEnv = z.infer<typeof Schema>;
 

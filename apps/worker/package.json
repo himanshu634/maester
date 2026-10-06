@@ -17,6 +17,7 @@
     "@maester/contracts": "workspace:*",
     "@maester/db": "workspace:*",
     "@maester/jobs": "workspace:*",
+    "@maester/market": "workspace:*",
     "@maester/storage": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "google-auth-library": "^11.0.0",

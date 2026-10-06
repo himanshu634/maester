@@ -53,3 +53,19 @@ describe("env", () => {
     expect(() => testEnv({ MAIL_DRIVER: "resend", RESEND_API_KEY: undefined })).toThrow(/RESEND_API_KEY/);
   });
 });
+
+describe("env: CONNECTIONS_KEY", () => {
+  const key = Buffer.alloc(32, 7).toString("base64");
+  it("is optional", () => {
+    expect(testEnv().CONNECTIONS_KEY).toBeUndefined();
+    expect(testEnv({ CONNECTIONS_KEY: "" }).CONNECTIONS_KEY).toBeUndefined();
+  });
+  it("accepts 32 bytes, base64", () => {
+    expect(testEnv({ CONNECTIONS_KEY: key }).CONNECTIONS_KEY).toBe(key);
+  });
+  it("refuses anything that does not decode to 32 bytes", () => {
+    for (const bad of [Buffer.alloc(16, 1).toString("base64"), Buffer.alloc(33, 1).toString("base64"), "not base64!!", "short"]) {
+      expect(() => testEnv({ CONNECTIONS_KEY: bad })).toThrow("CONNECTIONS_KEY must be 32 bytes, base64");
+    }
+  });
+});
