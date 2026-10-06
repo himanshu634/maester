@@ -1,6 +1,9 @@
 import { and, asc, desc, eq, gte, inArray, like, sql } from "drizzle-orm";
 import type { Db } from "../client.js";
-import { marketFetch, marketPoint, type MarketFetchRow, type MarketPointRow, type NewMarketPoint } from "../schema/market.js";
+import {
+  marketConnection, marketFetch, marketPoint,
+  type MarketConnectionProvider, type MarketConnectionRow, type MarketFetchRow, type MarketPointRow, type NewMarketPoint,
+} from "../schema/market.js";
 
 const CHUNK = 1000;
 
@@ -61,4 +64,50 @@ export async function finishMarketFetch(db: Db, id: string, outcome: { state: "o
 export async function latestMarketFetch(db: Db): Promise<MarketFetchRow | null> {
   const [row] = await db.select().from(marketFetch).orderBy(desc(marketFetch.startedAt)).limit(1);
   return row ?? null;
+}
+
+export async function getConnection(db: Db, provider: MarketConnectionProvider): Promise<MarketConnectionRow | null> {
+  const [row] = await db.select().from(marketConnection).where(eq(marketConnection.provider, provider));
+  return row ?? null;
+}
+
+/** Saved connections, Dhan first. */
+export async function listConnections(db: Db): Promise<MarketConnectionRow[]> {
+  return db.select().from(marketConnection).orderBy(asc(marketConnection.provider));
+}
+
+export type SaveConnection = Pick<MarketConnectionRow, "provider" | "clientId" | "secretCiphertext" | "secretLast4" | "expiresAt" | "checkedAt" | "savedByUserId">;
+
+/** Inserts or replaces a provider's connection. A save clears last_error_code and sets saved_at to now. */
+export async function saveConnection(db: Db, row: SaveConnection): Promise<MarketConnectionRow> {
+  const values = { ...row, lastErrorCode: null, savedAt: new Date() };
+  const [saved] = await db.insert(marketConnection).values(values).onConflictDoUpdate({
+    target: marketConnection.provider,
+    set: {
+      clientId: values.clientId, secretCiphertext: values.secretCiphertext, secretLast4: values.secretLast4,
+      expiresAt: values.expiresAt, checkedAt: values.checkedAt, lastErrorCode: null, savedAt: values.savedAt, savedByUserId: values.savedByUserId,
+    },
+  }).returning();
+  return saved!;
+}
+
+/** True when a row was removed. */
+export async function deleteConnection(db: Db, provider: MarketConnectionProvider): Promise<boolean> {
+  const rows = await db.delete(marketConnection).where(eq(marketConnection.provider, provider)).returning({ provider: marketConnection.provider });
+  return rows.length > 0;
+}
+
+/** For the refresher: records what the source said on its last call (null after a good call). */
+export async function markConnectionError(db: Db, provider: MarketConnectionProvider, code: string | null): Promise<void> {
+  await db.update(marketConnection).set({ lastErrorCode: code }).where(eq(marketConnection.provider, provider));
+}
+
+/** When each source's readings were last stored, from market_point.source ("Dhan · …", "FRED · …"). */
+export async function lastMarketReads(db: Db): Promise<Record<MarketConnectionProvider, Date | null>> {
+  const [row] = await db.select({
+    dhan: sql<string | null>`max(${marketPoint.fetchedAt}) filter (where ${marketPoint.source} like 'Dhan ·%')`,
+    fred: sql<string | null>`max(${marketPoint.fetchedAt}) filter (where ${marketPoint.source} like 'FRED ·%')`,
+  }).from(marketPoint);
+  const at = (v: string | null | undefined) => (v ? new Date(v) : null);
+  return { dhan: at(row?.dhan), fred: at(row?.fred) };
 }

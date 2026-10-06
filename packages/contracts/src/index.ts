@@ -7,3 +7,4 @@ export * from "./extraction.js";
 export * from "./classification.js";
 export * from "./payloads.js";
 export * from "./market-mood.js";
+export * from "./connection.js";

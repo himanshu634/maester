@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { check, date, doublePrecision, index, integer, pgTable, primaryKey, text, uuid } from "drizzle-orm/pg-core";
+import { user } from "./auth.js";
 import { ts } from "./platform.js";
 
 /**
@@ -32,3 +33,24 @@ export const marketFetch = pgTable("market_fetch", {
   index("market_fetch_started_at").on(t.startedAt),
 ]);
 export type MarketFetchRow = typeof marketFetch.$inferSelect;
+
+/**
+ * The user's own key for one market data source, saved from Settings. The secret is kept only
+ * as AES-256-GCM ciphertext under the server's CONNECTIONS_KEY, and only its last 4 characters
+ * are ever shown.
+ */
+export const marketConnection = pgTable("market_connection", {
+  provider: text("provider", { enum: ["dhan", "fred"] }).primaryKey(),
+  clientId: text("client_id"),
+  secretCiphertext: text("secret_ciphertext").notNull(),
+  secretLast4: text("secret_last4").notNull(),
+  expiresAt: ts("expires_at"),
+  checkedAt: ts("checked_at").notNull(),
+  /** Set by the refresher when the source refuses the key (DHAN_TOKEN_EXPIRED) or fails; cleared on a save or a good call. */
+  lastErrorCode: text("last_error_code"),
+  savedAt: ts("saved_at").notNull().defaultNow(),
+  savedByUserId: text("saved_by_user_id").references(() => user.id, { onDelete: "set null" }),
+}, (t) => [check("market_connection_provider", sql`${t.provider} in ('dhan', 'fred')`)]);
+export type MarketConnectionRow = typeof marketConnection.$inferSelect;
+export type NewMarketConnection = typeof marketConnection.$inferInsert;
+export type MarketConnectionProvider = MarketConnectionRow["provider"];

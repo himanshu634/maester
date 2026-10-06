@@ -14,7 +14,7 @@ export async function testDb(): Promise<Db> {
 }
 
 export async function truncateAll(db: Db): Promise<void> {
-  await db.execute(sql`TRUNCATE TABLE "job", "document", "membership", "workspace", "session", "account", "verification", "user", "waitlist_entry", "rate_limit", "market_point", "market_fetch" CASCADE`);
+  await db.execute(sql`TRUNCATE TABLE "job", "document", "membership", "workspace", "session", "account", "verification", "user", "waitlist_entry", "rate_limit", "market_point", "market_fetch", "market_connection" CASCADE`);
 }
 
 export async function insertUser(db: Db, id: string, email: string) {

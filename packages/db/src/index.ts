@@ -22,5 +22,8 @@ export { admitOrWaitlist, approveWaitlistEmail, normalizeEmail, type WaitlistSou
 export {
   getCurrentClassification, listEvidence, getCurrentRevision, normalizeCompanyName, matchCompanies, findStoredDuplicate,
 } from "./queries/classification.js";
-export type { MarketPointRow, NewMarketPoint, MarketFetchRow } from "./schema/market.js";
-export { upsertMarketPoints, listMarketSeries, listMarketSeriesByPrefix, latestMarketDay, startMarketFetch, finishMarketFetch, latestMarketFetch } from "./queries/market.js";
+export type { MarketPointRow, NewMarketPoint, MarketFetchRow, MarketConnectionRow, MarketConnectionProvider } from "./schema/market.js";
+export {
+  upsertMarketPoints, listMarketSeries, listMarketSeriesByPrefix, latestMarketDay, startMarketFetch, finishMarketFetch, latestMarketFetch,
+  getConnection, listConnections, saveConnection, deleteConnection, markConnectionError, lastMarketReads, type SaveConnection,
+} from "./queries/market.js";
