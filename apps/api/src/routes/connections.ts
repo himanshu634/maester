@@ -37,7 +37,8 @@ function toConnection(provider: ConnectionProvider, row: MarketConnectionRow | u
  */
 function checkFailed(deps: AppDeps, provider: ConnectionProvider, err: unknown): HttpError {
   const code = err instanceof MarketSourceError ? err.code : "SOURCE_UNAVAILABLE";
-  deps.logger.warn({ provider, code }, "connection check failed");
+  // The error's name only (e.g. TypeError), so a bug here is not mistaken for an outage; never its message.
+  deps.logger.warn({ provider, code, errName: err instanceof Error ? err.name : typeof err }, "connection check failed");
   if (code === "DHAN_TOKEN_EXPIRED") return new HttpError("VALIDATION_FAILED", "request validation failed", [{ path: "accessToken", message: "Dhan said this token isn’t valid." }]);
   if (code === "DHAN_RATE_LIMITED") return new HttpError("RATE_LIMITED", "DHAN_RATE_LIMITED");
   return new HttpError("INTERNAL", "SOURCE_UNAVAILABLE", undefined, 503);
