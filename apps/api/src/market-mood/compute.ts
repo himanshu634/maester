@@ -27,6 +27,8 @@ type Def = {
   indian: boolean;
   /** Null: no source connected yet. */
   build: ((s: SeriesMap) => Point[]) | null;
+  /** Source label shown when nothing is stored yet. */
+  label: string;
 };
 
 /** Indexed read for an index already known to be in range. */
@@ -48,40 +50,41 @@ function trend(s: SeriesMap): Point[] {
   return out;
 }
 
-function change(p: Point[], i: number, n: number): number | null {
-  return i >= n ? (pt(p, i).value / pt(p, i - n).value - 1) * 100 : null;
-}
-
 function goldVsNifty(s: SeriesMap): Point[] {
-  const gold = new Map((s.gold_mcx ?? []).map((p, i, a) => [p.day, change(a, i, 20)]));
+  const gold = s.gold_mcx ?? [];
   const nifty = s.nifty50 ?? [];
   const out: Point[] = [];
-  nifty.forEach((p, i) => {
-    const g = gold.get(p.day);
-    const n = change(nifty, i, 20);
-    if (g != null && n != null) out.push({ day: p.day, value: g - n, source: "Worked out from Dhan · MCX gold and NSE close" });
-  });
+  for (let i = 20; i < nifty.length; i++) {
+    const day = pt(nifty, i).day;
+    const baseDay = pt(nifty, i - 20).day;
+    const gi = atOrBefore(gold, day);
+    const gb = atOrBefore(gold, baseDay);
+    if (gi < 0 || gb < 0) continue;
+    const g = (pt(gold, gi).value / pt(gold, gb).value - 1) * 100;
+    const n = (pt(nifty, i).value / pt(nifty, i - 20).value - 1) * 100;
+    out.push({ day, value: g - n, source: "Worked out from Dhan · MCX gold and NSE close" });
+  }
   return out;
 }
 
 export const READINGS: Def[] = [
-  { key: "india_vix", family: "fear", scored: true, invert: true, previous: 5, indian: true, build: raw("india_vix") },
-  { key: "us_vix", family: "fear", scored: true, invert: true, previous: 5, indian: false, build: raw("us_vix") },
-  { key: "nifty_pcr", family: "fear", scored: false, invert: false, previous: 5, indian: true, build: raw("nifty_pcr_oi") },
-  { key: "fpi_flows", family: "money", scored: true, invert: false, previous: 20, indian: true, build: null },
-  { key: "dii_flows", family: "money", scored: false, invert: false, previous: 20, indian: true, build: null },
-  { key: "nifty_trend", family: "breadth", scored: true, invert: false, previous: 20, indian: true, build: trend },
-  { key: "n500_above_200d", family: "breadth", scored: true, invert: false, previous: 20, indian: true, build: raw("n500_above_200d_pct") },
-  { key: "n500_net_highs", family: "breadth", scored: true, invert: false, previous: 20, indian: true, build: raw("n500_net_highs_pct") },
-  { key: "usd_inr", family: "havens", scored: false, invert: false, previous: 20, indian: false, build: raw("usd_inr") },
-  { key: "gold_vs_nifty", family: "havens", scored: true, invert: true, previous: 20, indian: true, build: goldVsNifty },
+  { key: "india_vix", family: "fear", scored: true, invert: true, previous: 5, indian: true, build: raw("india_vix"), label: "Dhan · NSE close" },
+  { key: "us_vix", family: "fear", scored: true, invert: true, previous: 5, indian: false, build: raw("us_vix"), label: "FRED · Cboe VIX close" },
+  { key: "nifty_pcr", family: "fear", scored: false, invert: false, previous: 5, indian: true, build: raw("nifty_pcr_oi"), label: "Dhan · NSE close" },
+  { key: "fpi_flows", family: "money", scored: true, invert: false, previous: 20, indian: true, build: null, label: "No source connected yet" },
+  { key: "dii_flows", family: "money", scored: false, invert: false, previous: 20, indian: true, build: null, label: "No source connected yet" },
+  { key: "nifty_trend", family: "breadth", scored: true, invert: false, previous: 20, indian: true, build: trend, label: "Dhan · NSE close" },
+  { key: "n500_above_200d", family: "breadth", scored: true, invert: false, previous: 20, indian: true, build: raw("n500_above_200d_pct"), label: "Dhan · NSE close" },
+  { key: "n500_net_highs", family: "breadth", scored: true, invert: false, previous: 20, indian: true, build: raw("n500_net_highs_pct"), label: "Dhan · NSE close" },
+  { key: "usd_inr", family: "havens", scored: false, invert: false, previous: 20, indian: false, build: raw("usd_inr"), label: "FRED · Federal Reserve noon rate, New York" },
+  { key: "gold_vs_nifty", family: "havens", scored: true, invert: true, previous: 20, indian: true, build: goldVsNifty, label: "Worked out from Dhan · MCX gold and NSE close" },
 ];
 
 /** Share of `window` below `value`, counting equal values as half, as a whole percent (half up). */
 export function percentileRank(window: number[], value: number): number {
   let below = 0, equal = 0;
   for (const v of window) { if (v < value) below++; else if (v === value) equal++; }
-  return Math.floor(((below + equal / 2) / window.length) * 100 + 0.5);
+  return Math.floor(((2 * below + equal) * 50) / window.length + 0.5);
 }
 
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000);
@@ -111,7 +114,7 @@ export function readingSeries(key: ReadingKey, s: SeriesMap): Point[] {
 }
 
 function readingOn(def: Def, p: Point[], session: string | null): Reading {
-  const base = { key: def.key, family: def.family, scored: def.scored, source: p.at(-1)?.source ?? (def.build ? "Dhan" : "No source connected yet") };
+  const base = { key: def.key, family: def.family, scored: def.scored, source: p.at(-1)?.source ?? def.label };
   const empty = (missing: MissingReason): Reading => ({ ...base, value: null, day: null, previous: null, rank: null, rankDays: 0, score: null, missing });
   if (!def.build) return empty("no_source");
   const i = session ? atOrBefore(p, session) : p.length - 1;
@@ -142,11 +145,9 @@ export function computeMood(s: SeriesMap, fetch: FetchStatus): MarketMood {
   const provisional = latestSession !== null && built.some(({ def }, k) => def.indian && def.scored && readings[k]!.score !== null && readings[k]!.day! < latestSession);
 
   const history: MarketMood["history"] = [];
-  if (score !== null) {
-    for (const day of sessionsList.slice(-HISTORY_SESSIONS)) {
-      const m = moodOf(built.map(({ def, points }) => readingOn(def, points, day)));
-      if (m.score !== null) history.push({ day, score: m.score });
-    }
+  for (const day of sessionsList.slice(-HISTORY_SESSIONS)) {
+    const m = moodOf(built.map(({ def, points }) => readingOn(def, points, day)));
+    if (m.score !== null) history.push({ day, score: m.score });
   }
   const atOrBelowShare = score !== null && history.length
     ? Math.round((history.filter((h) => h.score <= score).length / history.length) * 100)

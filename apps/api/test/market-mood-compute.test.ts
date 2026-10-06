@@ -39,6 +39,10 @@ describe("percentileRank", () => {
     expect(percentileRank([1, 2, 3, 4], 3)).toBe(63); // (2 + 0.5) / 4 = 62.5, rounded half up
     expect(percentileRank([5, 5, 5, 5], 5)).toBe(50);
     expect(percentileRank([1, 2, 3], 10)).toBe(100);
+    // 43.5 / 300 = 14.5 exactly: must round half up to 15, not 14 through float error
+    const w = [...Array(43).fill(0), ...Array(1).fill(1), ...Array(1).fill(1), ...Array(255).fill(2)];
+    expect(w).toHaveLength(300);
+    expect(percentileRank(w, 1)).toBe(15);
   });
 });
 
@@ -79,7 +83,19 @@ describe("computeMood", () => {
     const mood = computeMood(m, NEVER);
     expect(mood.scoredCount).toBe(4);
     expect(mood.score).toBeNull();
-    expect(mood.history).toEqual([]);
+    expect(mood.band).toBeNull();
+    expect(mood.atOrBelowShare).toBeNull();
+  });
+
+  it("still builds history when today has no mood", () => {
+    const m = fullMarket();
+    // two breadth series stop 10 sessions ago: stale today (4 scored), but present on earlier days
+    m.n500_above_200d_pct = m.n500_above_200d_pct!.slice(0, -10);
+    m.n500_net_highs_pct = m.n500_net_highs_pct!.slice(0, -10);
+    const mood = computeMood(m, NEVER);
+    expect(mood.score).toBeNull();
+    expect(mood.history.length).toBeGreaterThan(0);
+    expect(mood.atOrBelowShare).toBeNull();
   });
 
   it("does not rank a reading with fewer than 250 days", () => {
@@ -111,6 +127,8 @@ describe("computeMood", () => {
     const mood = computeMood(fullMarket("2026-10-02"), NEVER); // a Friday
     expect(mood.latestSession).toBe("2026-10-02");
     expect(mood.provisional).toBe(false);
+    expect(mood.asOf).toBe("2026-10-02");
+    expect(mood.readings.filter((r) => r.scored && r.score !== null).every((r) => r.missing === null)).toBe(true);
   });
 
   it("treats a reading more than 4 days older than the latest session as stale", () => {
@@ -120,6 +138,20 @@ describe("computeMood", () => {
     expect(r.missing).toBe("stale");
     expect(r.score).toBeNull();
     expect(r.value).not.toBeNull(); // still shown, with its day
+  });
+
+  it("treats exactly 4 days behind as current and 5 as stale", () => {
+    const m4 = fullMarket();
+    m4.us_vix = m4.us_vix!.slice(0, -2); // Fri 2 Oct vs Tue 6 Oct: 4 days
+    expect(computeMood(m4, NEVER).readings.find((x) => x.key === "us_vix")!.missing).toBeNull();
+    const m5 = fullMarket();
+    m5.us_vix = m5.us_vix!.slice(0, -3); // Thu 1 Oct: 5 days
+    expect(computeMood(m5, NEVER).readings.find((x) => x.key === "us_vix")!.missing).toBe("stale");
+  });
+
+  it("labels an empty FRED reading with its own source", () => {
+    const r = computeMood({}, NEVER).readings.find((x) => x.key === "us_vix")!;
+    expect(r.source).toBe("FRED · Cboe VIX close");
   });
 
   it("builds 12 months of history and today's share", () => {
@@ -145,5 +177,15 @@ describe("derived readings", () => {
       nifty50: series(days, (i) => (i === 20 ? 101 : 100)),
     });
     expect(s.at(-1)!.value).toBeCloseTo(9, 6); // +10% less +1%
+  });
+  it("takes gold's change over the same period as Nifty across MCX-only days", () => {
+    const days = sessions(21, "2026-10-06");
+    const gold = series(days, (i) => (i === 20 ? 110 : 100));
+    gold.splice(19, 0, { day: "2026-10-03", value: 105, source: "x" }); // Saturday MCX session, Nifty shut
+    const s = readingSeries("gold_vs_nifty", {
+      gold_mcx: gold,
+      nifty50: series(days, (i) => (i === 20 ? 101 : 100)),
+    });
+    expect(s.at(-1)!.value).toBeCloseTo(9, 6);
   });
 });
