@@ -40,7 +40,7 @@ describe("percentileRank", () => {
     expect(percentileRank([5, 5, 5, 5], 5)).toBe(50);
     expect(percentileRank([1, 2, 3], 10)).toBe(100);
     // 43.5 / 300 = 14.5 exactly: must round half up to 15, not 14 through float error
-    const w = [...Array(43).fill(0), ...Array(1).fill(1), ...Array(1).fill(1), ...Array(255).fill(2)];
+    const w = [...Array(43).fill(0), ...Array(1).fill(1), ...Array(256).fill(2)];
     expect(w).toHaveLength(300);
     expect(percentileRank(w, 1)).toBe(15);
   });
@@ -180,8 +180,9 @@ describe("derived readings", () => {
   });
   it("takes gold's change over the same period as Nifty across MCX-only days", () => {
     const days = sessions(21, "2026-10-06");
-    const gold = series(days, (i) => (i === 20 ? 110 : 100));
-    gold.splice(19, 0, { day: "2026-10-03", value: 105, source: "x" }); // Saturday MCX session, Nifty shut
+    // day 1 of gold is distinct, so a base taken 20 gold points back (shifted by the extra point) gives a different answer
+    const gold = series(days, (i) => (i === 20 ? 110 : i === 1 ? 80 : 100));
+    gold.splice(4, 0, { day: "2026-09-12", value: 100, source: "x" }); // Saturday MCX session, Nifty shut
     const s = readingSeries("gold_vs_nifty", {
       gold_mcx: gold,
       nifty50: series(days, (i) => (i === 20 ? 101 : 100)),
