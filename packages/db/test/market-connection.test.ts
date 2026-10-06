@@ -50,6 +50,13 @@ describe("market connections", () => {
     expect((await getConnection(db, "dhan"))!.lastErrorCode).toBeNull();
   });
 
+  it("stores a given lastErrorCode, and clears it on a save without one", async () => {
+    await saveConnection(db, dhan({ lastErrorCode: "DHAN_NO_DATA_PLAN" }));
+    expect((await getConnection(db, "dhan"))!.lastErrorCode).toBe("DHAN_NO_DATA_PLAN");
+    await saveConnection(db, dhan());
+    expect((await getConnection(db, "dhan"))!.lastErrorCode).toBeNull();
+  });
+
   it("refuses an unknown provider", async () => {
     await expect(db.execute(sql`insert into market_connection (provider, secret_ciphertext, secret_last4, checked_at) values ('other', 'x', 'x', now())`)).rejects.toThrow();
   });

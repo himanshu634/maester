@@ -46,7 +46,11 @@ export const marketConnection = pgTable("market_connection", {
   secretLast4: text("secret_last4").notNull(),
   expiresAt: ts("expires_at"),
   checkedAt: ts("checked_at").notNull(),
-  /** Set by the refresher when the source refuses the key (DHAN_TOKEN_EXPIRED) or fails; cleared on a save or a good call. */
+  /**
+   * DHAN_NO_DATA_PLAN: set by a save when Dhan took the token but the Data API subscription is off.
+   * Otherwise set by the refresher when the source refuses the key (DHAN_TOKEN_EXPIRED) or fails;
+   * cleared on a save or a good call.
+   */
   lastErrorCode: text("last_error_code"),
   savedAt: ts("saved_at").notNull().defaultNow(),
   savedByUserId: text("saved_by_user_id").references(() => user.id, { onDelete: "set null" }),

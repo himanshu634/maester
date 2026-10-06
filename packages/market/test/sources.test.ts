@@ -277,7 +277,7 @@ describe("HttpFredSource", () => {
   });
 
   it("raises SOURCE_UNAVAILABLE without leaking the key", async () => {
-    const bad = new HttpFredSource({ apiKey: "secretkey", fetch: async () => json(400, { error_message: "Bad key" }) });
+    const bad = new HttpFredSource({ apiKey: "secretkey", fetch: async () => json(500, { error_message: "Internal error secretkey" }) });
     const err = await bad.observations("VIXCLS", "2026-10-01").catch((e) => e);
     expect(err).toMatchObject({ code: "SOURCE_UNAVAILABLE" });
     expect(err.message).not.toContain("secretkey");
@@ -285,6 +285,18 @@ describe("HttpFredSource", () => {
     const err2 = await down.check().catch((e) => e);
     expect(err2.code).toBe("SOURCE_UNAVAILABLE");
     expect(err2.message).not.toContain("secretkey");
+  });
+
+  it("raises FRED_KEY_REFUSED for 400, 401 and 403, without leaking the key", async () => {
+    for (const status of [400, 401, 403]) {
+      const bad = new HttpFredSource({ apiKey: "secretkey", fetch: async () => json(status, { error_message: "Bad api_key secretkey" }) });
+      const err = await bad.check().catch((e) => e);
+      expect(err).toBeInstanceOf(MarketSourceError);
+      expect(err.code).toBe("FRED_KEY_REFUSED");
+      expect(err.message).not.toContain("secretkey");
+    }
+    const busy = new HttpFredSource({ apiKey: "k", fetch: async () => json(429, {}) });
+    await expect(busy.check()).rejects.toMatchObject({ code: "SOURCE_UNAVAILABLE" });
   });
 
   it("raises SOURCE_UNAVAILABLE when the body cannot be read", async () => {

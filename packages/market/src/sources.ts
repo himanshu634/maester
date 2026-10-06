@@ -24,7 +24,8 @@ export interface FredSource {
 
 export class MarketSourceError extends Error {
   constructor(
-    readonly code: "DHAN_TOKEN_EXPIRED" | "DHAN_RATE_LIMITED" | "SOURCE_UNAVAILABLE",
+    /** FRED_KEY_REFUSED: FRED answered 400, 401 or 403, which it does for a wrong api_key. */
+    readonly code: "DHAN_TOKEN_EXPIRED" | "DHAN_RATE_LIMITED" | "FRED_KEY_REFUSED" | "SOURCE_UNAVAILABLE",
     message: string,
   ) {
     super(message);

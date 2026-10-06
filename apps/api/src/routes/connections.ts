@@ -16,18 +16,22 @@ const HTTP_SOURCES: MarketSources = {
 
 const PROVIDERS = ConnectionProvider.options;
 
-function toConnection(provider: ConnectionProvider, row: MarketConnectionRow | undefined, lastRead: Date | null, now: Date, notice: Connection["notice"] = null): Connection {
+/** Stored by a Dhan save when the token works but the Data API subscription is off. Not a failure. */
+const NO_DATA_PLAN = "DHAN_NO_DATA_PLAN";
+
+function toConnection(provider: ConnectionProvider, row: MarketConnectionRow | undefined, lastRead: Date | null, now: Date): Connection {
   if (!row) return { provider, state: "not_connected", clientId: null, last4: null, expiresAt: null, checkedAt: null, lastRead: lastRead?.toISOString() ?? null, notice: null };
   const expired = row.lastErrorCode === "DHAN_TOKEN_EXPIRED" || (row.expiresAt !== null && row.expiresAt <= now);
+  const noPlan = row.lastErrorCode === NO_DATA_PLAN;
   return {
     provider,
-    state: expired ? "expired" : row.lastErrorCode ? "failing" : "connected",
+    state: expired ? "expired" : row.lastErrorCode && !noPlan ? "failing" : "connected",
     clientId: row.clientId,
     last4: row.secretLast4,
     expiresAt: row.expiresAt?.toISOString() ?? null,
     checkedAt: row.checkedAt.toISOString(),
     lastRead: lastRead?.toISOString() ?? null,
-    notice,
+    notice: noPlan ? "DATA_PLAN_INACTIVE" : null,
   };
 }
 
@@ -40,11 +44,19 @@ function checkFailed(deps: AppDeps, provider: ConnectionProvider, err: unknown):
   // The error's name only (e.g. TypeError), so a bug here is not mistaken for an outage; never its message.
   deps.logger.warn({ provider, code, errName: err instanceof Error ? err.name : typeof err }, "connection check failed");
   if (code === "DHAN_TOKEN_EXPIRED") return new HttpError("VALIDATION_FAILED", "request validation failed", [{ path: "accessToken", message: "Dhan said this token isn’t valid." }]);
+  if (code === "FRED_KEY_REFUSED") return new HttpError("VALIDATION_FAILED", "request validation failed", [{ path: "apiKey", message: "FRED said this key isn’t valid." }]);
   if (code === "DHAN_RATE_LIMITED") return new HttpError("RATE_LIMITED", "DHAN_RATE_LIMITED");
   return new HttpError("INTERNAL", "SOURCE_UNAVAILABLE", undefined, 503);
 }
 
 const last4 = (secret: string) => secret.slice(-4);
+
+/** Dhan's expiry as a Date, or null when it is missing or does not parse (never an Invalid Date). */
+function expiry(iso: string | null): Date | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
 
 /** Settings → Connections. Needs a session but no workspace; the saved keys are global to the install. */
 export function connectionRoutes(deps: AppDeps) {
@@ -61,17 +73,15 @@ export function connectionRoutes(deps: AppDeps) {
     await next();
   });
 
-  async function view(provider: ConnectionProvider, row: MarketConnectionRow, notice: Connection["notice"] = null): Promise<Connection> {
-    const reads = await lastMarketReads(deps.db);
-    return toConnection(provider, row, reads[provider], new Date(), notice);
-  }
-
-  r.get("/", async (c) => {
+  /** The listing GET answers; a PUT answers its own item from the same read, so the two always agree. */
+  async function items(): Promise<Connection[]> {
     const [rows, reads] = await Promise.all([listConnections(deps.db), lastMarketReads(deps.db)]);
     const now = new Date();
-    const items = PROVIDERS.map((p) => toConnection(p, rows.find((row) => row.provider === p), reads[p], now));
-    return c.json({ items });
-  });
+    return PROVIDERS.map((p) => toConnection(p, rows.find((row) => row.provider === p), reads[p], now));
+  }
+  const item = async (provider: ConnectionProvider) => (await items()).find((i) => i.provider === provider)!;
+
+  r.get("/", async (c) => c.json({ items: await items() }));
 
   r.put("/dhan", validate("json", SaveDhanConnectionRequest), async (c) => {
     const { clientId, accessToken } = c.req.valid("json");
@@ -84,11 +94,12 @@ export function connectionRoutes(deps: AppDeps) {
     if (profile.clientId !== clientId) {
       throw new HttpError("VALIDATION_FAILED", "request validation failed", [{ path: "clientId", message: "This token belongs to another Dhan client ID." }]);
     }
-    const row = await saveConnection(deps.db, {
+    await saveConnection(deps.db, {
       provider: "dhan", clientId, secretCiphertext: encryptSecret(accessToken, needKey()), secretLast4: last4(accessToken),
-      expiresAt: profile.tokenExpiresAt ? new Date(profile.tokenExpiresAt) : null, checkedAt: new Date(), savedByUserId: c.get("user").id,
+      expiresAt: expiry(profile.tokenExpiresAt), checkedAt: new Date(), savedByUserId: c.get("user").id,
+      lastErrorCode: profile.dataPlanActive === false ? NO_DATA_PLAN : null,
     });
-    return c.json(await view("dhan", row, profile.dataPlanActive === false ? "DATA_PLAN_INACTIVE" : null));
+    return c.json(await item("dhan"));
   });
 
   r.put("/fred", validate("json", SaveFredConnectionRequest), async (c) => {
@@ -98,11 +109,11 @@ export function connectionRoutes(deps: AppDeps) {
     } catch (err) {
       throw checkFailed(deps, "fred", err);
     }
-    const row = await saveConnection(deps.db, {
+    await saveConnection(deps.db, {
       provider: "fred", clientId: null, secretCiphertext: encryptSecret(apiKey, needKey()), secretLast4: last4(apiKey),
       expiresAt: null, checkedAt: new Date(), savedByUserId: c.get("user").id,
     });
-    return c.json(await view("fred", row));
+    return c.json(await item("fred"));
   });
 
   r.delete("/:provider", async (c) => {

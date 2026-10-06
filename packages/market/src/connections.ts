@@ -23,8 +23,13 @@ function open(row: SavedConnection, key: Buffer): string {
 export function loadConnections(rows: SavedConnection[], key: Buffer): LoadedConnections {
   const out: LoadedConnections = { dhan: null, fred: null };
   for (const row of rows) {
-    if (row.provider === "dhan" && row.clientId) out.dhan = { clientId: row.clientId, accessToken: open(row, key) };
-    else if (row.provider === "fred") out.fred = { apiKey: open(row, key) };
+    if (row.provider === "dhan") {
+      // The API always saves a Dhan row with its client ID; a row without one cannot be used, so it is skipped.
+      if (!row.clientId) continue;
+      out.dhan = { clientId: row.clientId, accessToken: open(row, key) };
+    } else if (row.provider === "fred") {
+      out.fred = { apiKey: open(row, key) };
+    }
   }
   return out;
 }

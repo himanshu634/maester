@@ -103,7 +103,27 @@ describe("settings connections", () => {
     const res = await putDhan({ clientId: CLIENT, accessToken: TOKEN });
     expect(res.status).toBe(200);
     expect(Connection.parse(await clean(res))).toMatchObject({ state: "connected", notice: "DATA_PLAN_INACTIVE" });
-    expect(await getConnection(ctx.db, "dhan")).not.toBeNull();
+    expect((await getConnection(ctx.db, "dhan"))!.lastErrorCode).toBe("DHAN_NO_DATA_PLAN");
+    expect((await list()).items[0]).toMatchObject({ state: "connected", notice: "DATA_PLAN_INACTIVE" });
+
+    dhanAnswer = { clientId: CLIENT, tokenExpiresAt: null, dataPlanActive: true };
+    const again = await putDhan({ clientId: CLIENT, accessToken: TOKEN });
+    expect(Connection.parse(await clean(again))).toMatchObject({ state: "connected", notice: null });
+    expect((await list()).items[0]).toMatchObject({ state: "connected", notice: null });
+    logsClean();
+  });
+
+  it("answers PUT with what GET lists", async () => {
+    const saved = Connection.parse(await clean(await putDhan({ clientId: CLIENT, accessToken: TOKEN })));
+    expect((await list()).items[0]).toEqual(saved);
+  });
+
+  it("keeps no expiry when Dhan's expiry does not parse", async () => {
+    dhanAnswer = { clientId: CLIENT, tokenExpiresAt: "not a date", dataPlanActive: true };
+    const res = await putDhan({ clientId: CLIENT, accessToken: TOKEN });
+    expect(res.status).toBe(200);
+    expect(Connection.parse(await clean(res))).toMatchObject({ state: "connected", expiresAt: null });
+    expect((await getConnection(ctx.db, "dhan"))!.expiresAt).toBeNull();
   });
 
   it("answers 400 on accessToken when Dhan refuses the token, and keeps nothing", async () => {
@@ -148,6 +168,7 @@ describe("settings connections", () => {
     expect(res.status).toBe(400);
     expect(await res.text()).not.toContain(TOKEN);
     expect((await putDhan({ clientId: "", accessToken: TOKEN })).status).toBe(400);
+    expect((await putDhan({ clientId: CLIENT, accessToken: "x".repeat(19) })).status).toBe(400);
     expect(calls.dhan).toEqual([]);
   });
 
@@ -171,8 +192,19 @@ describe("settings connections", () => {
     expect(await getConnection(ctx.db, "fred")).toBeNull();
   });
 
+  it("answers 400 on apiKey when FRED refuses the key, and keeps nothing", async () => {
+    fredAnswer = new MarketSourceError("FRED_KEY_REFUSED", `FRED refused the API key (400) ${FRED_KEY}`);
+    const res = await putFred({ apiKey: FRED_KEY });
+    expect(res.status).toBe(400);
+    const body = (await clean(res)) as ErrBody;
+    expect(body.error.code).toBe("VALIDATION_FAILED");
+    expect(body.error.fields).toEqual([{ path: "apiKey", message: "FRED said this key isn’t valid." }]);
+    expect(await getConnection(ctx.db, "fred")).toBeNull();
+    logsClean();
+  });
+
   it("answers 503 when FRED does not answer, and keeps nothing", async () => {
-    fredAnswer = new MarketSourceError("SOURCE_UNAVAILABLE", "FRED answered 400");
+    fredAnswer = new MarketSourceError("SOURCE_UNAVAILABLE", "FRED answered 502");
     const res = await putFred({ apiKey: FRED_KEY });
     expect(res.status).toBe(503);
     expect(((await clean(res)) as ErrBody).error.message).toBe("SOURCE_UNAVAILABLE");
@@ -222,6 +254,8 @@ describe("settings connections", () => {
       method: "PUT", headers: { "content-type": "application/json", origin: "http://localhost" }, body: JSON.stringify({ clientId: CLIENT, accessToken: TOKEN }),
     });
     expect(put.status).toBe(401);
+    const del = await ctx.app.request("/v1/settings/connections/dhan", { method: "DELETE", headers: { origin: "http://localhost" } });
+    expect(del.status).toBe(401);
     expect(calls.dhan).toEqual([]);
   });
 });

@@ -76,16 +76,19 @@ export async function listConnections(db: Db): Promise<MarketConnectionRow[]> {
   return db.select().from(marketConnection).orderBy(asc(marketConnection.provider));
 }
 
-export type SaveConnection = Pick<MarketConnectionRow, "provider" | "clientId" | "secretCiphertext" | "secretLast4" | "expiresAt" | "checkedAt" | "savedByUserId">;
+export type SaveConnection = Pick<MarketConnectionRow, "provider" | "clientId" | "secretCiphertext" | "secretLast4" | "expiresAt" | "checkedAt" | "savedByUserId"> & {
+  /** What the save's own check found, e.g. "DHAN_NO_DATA_PLAN". Default null: a save clears the last error. */
+  lastErrorCode?: string | null;
+};
 
-/** Inserts or replaces a provider's connection. A save clears last_error_code and sets saved_at to now. */
+/** Inserts or replaces a provider's connection, setting last_error_code (null unless given) and saved_at to now. */
 export async function saveConnection(db: Db, row: SaveConnection): Promise<MarketConnectionRow> {
-  const values = { ...row, lastErrorCode: null, savedAt: new Date() };
+  const values = { ...row, lastErrorCode: row.lastErrorCode ?? null, savedAt: new Date() };
   const [saved] = await db.insert(marketConnection).values(values).onConflictDoUpdate({
     target: marketConnection.provider,
     set: {
       clientId: values.clientId, secretCiphertext: values.secretCiphertext, secretLast4: values.secretLast4,
-      expiresAt: values.expiresAt, checkedAt: values.checkedAt, lastErrorCode: null, savedAt: values.savedAt, savedByUserId: values.savedByUserId,
+      expiresAt: values.expiresAt, checkedAt: values.checkedAt, lastErrorCode: values.lastErrorCode, savedAt: values.savedAt, savedByUserId: values.savedByUserId,
     },
   }).returning();
   return saved!;

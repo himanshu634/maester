@@ -22,6 +22,8 @@ export class HttpFredSource implements FredSource {
       // The error text of fetch can carry the URL, and the URL carries the key.
       throw new MarketSourceError("SOURCE_UNAVAILABLE", "FRED could not be reached");
     }
+    // FRED answers 400 for a bad api_key; its error text is not passed on (it can echo the key).
+    if (res.status === 400 || res.status === 401 || res.status === 403) throw new MarketSourceError("FRED_KEY_REFUSED", `FRED refused the API key (${res.status})`);
     if (res.status !== 200) throw new MarketSourceError("SOURCE_UNAVAILABLE", `FRED answered ${res.status}`);
     let body: { observations?: { date?: string; value?: string }[] };
     try {

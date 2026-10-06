@@ -53,6 +53,10 @@ describe("loadConnections", () => {
     expect(out).toEqual({ dhan: { clientId: "1000001", accessToken: "dhan-token" }, fred: { apiKey: "fred-key" } });
   });
 
+  it("skips a Dhan row with no client ID", () => {
+    expect(loadConnections([{ provider: "dhan", clientId: null, secretCiphertext: encryptSecret("dhan-token", key) }], key)).toEqual({ dhan: null, fred: null });
+  });
+
   it("gives null for a provider with no row", () => {
     expect(loadConnections([], key)).toEqual({ dhan: null, fred: null });
   });

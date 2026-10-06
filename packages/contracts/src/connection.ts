@@ -8,7 +8,10 @@ export type ConnectionProvider = z.infer<typeof ConnectionProvider>;
 /**
  * One saved (or unsaved) connection. The key itself is never sent; `last4` is its last 4 characters.
  * - `expired`: Dhan's token is past its expiry, or Dhan last refused it.
- * - `failing`: the source's last call failed for another reason.
+ * - `failing`: the source's last call failed for another reason. A FRED key the refresher finds
+ *   refused lists as `failing`, since FRED keys do not expire.
+ * - `connected` with `notice: "DATA_PLAN_INACTIVE"`: Dhan took the token but the Data API subscription
+ *   is off. Kept with the connection, so GET says it too, until a save or a good call clears it.
  */
 export const Connection = z.object({
   provider: ConnectionProvider,
@@ -19,7 +22,7 @@ export const Connection = z.object({
   checkedAt: IsoTimestamp.nullable(),
   /** When readings from this source were last stored. */
   lastRead: IsoTimestamp.nullable(),
-  /** Only on the answer to a save: Dhan took the token but the Data API subscription is off. */
+  /** Dhan took the token but the Data API subscription is off. */
   notice: z.enum(["DATA_PLAN_INACTIVE"]).nullable(),
 });
 export type Connection = z.infer<typeof Connection>;
