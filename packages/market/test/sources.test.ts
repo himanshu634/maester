@@ -234,6 +234,20 @@ describe("HttpDhanSource", () => {
     expect(kept.length).toBeLessThan(parseScripMaster(csv).length);
   });
 
+  it("treats a 2xx body that cannot be read as a source error, but an empty JSON object as empty", async () => {
+    const broken = { ok: true, status: 200, json: async () => { throw new DOMException("timed out", "TimeoutError"); } } as unknown as Response;
+    await expect(make(async () => broken).daily(inst, "a", "2026-10-07")).rejects.toMatchObject({ code: "SOURCE_UNAVAILABLE" });
+    expect(await make(async () => json(200, {})).daily(inst, "a", "2026-10-07")).toEqual([]);
+  });
+
+  it("maps a scrip master body failure to a source error and tries again next time", async () => {
+    let n = 0;
+    const dhan = make(async () => (++n === 1 ? ({ ok: true, status: 200, text: async () => { throw new DOMException("timed out", "TimeoutError"); } } as unknown as Response) : new Response(csv)));
+    await expect(dhan.equityIds()).rejects.toMatchObject({ code: "SOURCE_UNAVAILABLE", message: "The Dhan scrip master could not be downloaded" });
+    expect((await dhan.equityIds()).get("TCS")).toBe("11536");
+    expect(n).toBe(2);
+  });
+
   it("raises SOURCE_UNAVAILABLE when the scrip master cannot be downloaded", async () => {
     const dhan = make(async () => new Response("x", { status: 503 }));
     await expect(dhan.equityIds()).rejects.toMatchObject({ code: "SOURCE_UNAVAILABLE" });
@@ -271,6 +285,11 @@ describe("HttpFredSource", () => {
     const err2 = await down.check().catch((e) => e);
     expect(err2.code).toBe("SOURCE_UNAVAILABLE");
     expect(err2.message).not.toContain("secretkey");
+  });
+
+  it("raises SOURCE_UNAVAILABLE when the body cannot be read", async () => {
+    const broken = { status: 200, json: async () => { throw new DOMException("timed out", "TimeoutError"); } } as unknown as Response;
+    await expect(new HttpFredSource({ apiKey: "k", fetch: async () => broken }).observations("VIXCLS", "a")).rejects.toMatchObject({ code: "SOURCE_UNAVAILABLE" });
   });
 
   it("checks a key by reading one VIXCLS observation", async () => {

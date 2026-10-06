@@ -97,7 +97,8 @@ export class HttpDhanSource implements DhanSource {
         const parsed: unknown = await res.json();
         if (parsed && typeof parsed === "object") data = parsed as Json;
       } catch {
-        // Not JSON; the status decides.
+        // On an error status the status decides; on a 2xx a body we cannot read is a failure, not an empty answer.
+        if (res.ok) throw new MarketSourceError("SOURCE_UNAVAILABLE", "Dhan answered with a body that could not be read");
       }
       // Only the status and a short error code go into messages; never text the server controls.
       const rawCode = typeof data.errorCode === "string" ? data.errorCode : undefined;
@@ -177,7 +178,13 @@ export class HttpDhanSource implements DhanSource {
       }
       if (!res.ok) throw new MarketSourceError("SOURCE_UNAVAILABLE", `The Dhan scrip master answered ${res.status}`);
       // Keep only the rows used (a few thousand of about 200,000).
-      return parseScripMaster(await res.text(), keepScripRow);
+      let text: string;
+      try {
+        text = await res.text();
+      } catch {
+        throw new MarketSourceError("SOURCE_UNAVAILABLE", "The Dhan scrip master could not be downloaded");
+      }
+      return parseScripMaster(text, keepScripRow);
     })();
     // A failed download is not kept; the next call tries again.
     this.scrip.catch(() => { this.scrip = undefined; });
