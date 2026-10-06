@@ -14,6 +14,8 @@ ENV NODE_ENV=production
 RUN useradd -m app
 WORKDIR /app
 COPY --from=build /out/dist ./dist
+# server.js reads ../data/nifty500.csv relative to dist/, so the folder sits beside it.
+COPY --from=build /repo/apps/worker/data ./data
 COPY --from=build /out/node_modules ./node_modules
 COPY --from=build /out/package.json ./package.json
 # Mount point for the local-disk storage driver (docker-compose only). Creating

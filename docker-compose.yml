@@ -39,6 +39,11 @@ x-api-env: &api-env
   DISPATCH_MODE: local
   DISPATCH_SECRET: local-dispatch-secret
   WORKER_URL: http://worker:8788
+  # Market mood. CONNECTIONS_KEY (generate with: openssl rand -base64 32) encrypts the Dhan and
+  # FRED keys saved in Settings; unset, those routes refuse and the worker does not refresh.
+  CONNECTIONS_KEY: ${CONNECTIONS_KEY:-}
+  DHAN_REQUESTS_PER_SECOND: ${DHAN_REQUESTS_PER_SECOND:-4}
+  MARKET_REFRESH_MINUTES: ${MARKET_REFRESH_MINUTES:-30}
 
 services:
   postgres:

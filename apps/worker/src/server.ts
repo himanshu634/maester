@@ -6,6 +6,8 @@ import { loadWorkerEnv } from "./env.js";
 import { HttpExtractorClient } from "./extractor.js";
 import { handlers } from "./jobs/index.js";
 import { createLogger } from "./logger.js";
+import { createMarketRefresher } from "./market/build.js";
+import { startMarketSchedule } from "./market/schedule.js";
 import { createStore } from "./store.js";
 
 const env = loadWorkerEnv();
@@ -23,12 +25,20 @@ const extractor = env.EXTRACTOR_URL
 if (!extractor) logger.info("EXTRACTOR_URL is not set; documents are verified but not extracted");
 const app = createWorkerApp({ db, store, logger, env, handlers, dispatcher, extractor });
 
+let stopMarketSchedule = () => {};
+if (env.CONNECTIONS_KEY) {
+  stopMarketSchedule = startMarketSchedule(createMarketRefresher(env, db, logger), env.MARKET_REFRESH_MINUTES, logger);
+} else {
+  logger.info("CONNECTIONS_KEY is not set; market mood is not refreshed");
+}
+
 const server = serve({ fetch: app.fetch, port: env.PORT }, (info) =>
   logger.info({ port: info.port }, "worker listening"),
 );
 
 process.on("SIGTERM", () => {
   logger.info("SIGTERM received; closing");
+  stopMarketSchedule();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 10_000).unref();
 });
