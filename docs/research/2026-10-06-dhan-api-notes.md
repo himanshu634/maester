@@ -14,7 +14,7 @@ Live calls happen later (Task 7 Step 4, after Task 9b, with the user's own keys)
 Nothing is proven to break the spec. Three docs facts are risks. Check them first when live calls start.
 
 1. **Index daily history is not confirmed.** The historical-data page says daily data goes back "upto the date of its inception". It does not say that `IDX_I` / `INDEX` is supported. It shows only an `NSE_EQ` / `EQUITY` example. If `IDX_I` returns nothing or an error, NIFTY 50 and INDIA VIX history needs another source. (Docs)
-2. **A token lasts 24 hours.** Renewal exists (`GET /v2/RenewToken`) but works only on an active token. "If you try to renew an expired token, it will return an error." A worker that misses one day needs a new token from the user. The planned `DHAN_TOKEN_EXPIRED` path and the renew message in Settings must be real. The worker should renew while the token is still active (for example once a day). (Docs)
+2. **A token lasts 24 hours.** Renewal exists (`POST /v2/RenewToken`) but works only on an active token, and only for tokens generated on Dhan Web. "If you try to renew an expired token, it will return an error." A worker that misses one day needs a new token from the user. The planned `DHAN_TOKEN_EXPIRED` path and the renew message in Settings must be real. Renewal also expires the current token and issues a new one, so the new token must be stored at once. Whether the worker should renew automatically is an open question for the live run. It is safe only if the token was generated on Dhan Web and the new token is saved before the old one is used again. Until then, assume the user pastes a fresh token in Settings. (Docs)
 3. **Daily end date is non-inclusive.** `toDate` is not included. To get today's candle, send tomorrow's date. (Docs)
 
 ## Instruments (CSV)
@@ -94,7 +94,7 @@ Response paths per strike (the strike is the object key under `data.oc`):
 | Put last price | `data.oc.{strike}.pe.last_price` |
 | Greeks | `data.oc.{strike}.ce.greeks` and `.pe.greeks` (delta, theta, gamma, vega) |
 
-Rate limit: one unique request every 3 seconds per underlying and expiry. Sum `oi` over all strikes for put-call ratio. Strike keys may be decimal strings such as `"25000.000000"`. Parse them as numbers. (Inference, confirm live.)
+Rate limit: one unique request every 3 seconds per underlying and expiry. Sum `oi` over all strikes for put-call ratio. Inference, not from the docs: strike keys may be decimal strings such as `"25000.000000"`, so parse them as numbers. Confirm live.
 
 ## Limits and errors (Docs)
 
@@ -136,7 +136,10 @@ Gaps:
 
 - Validity: 24 hours for a web-generated token (web.dhan.co), for a token from the API key and secret consent flow, and for a TOTP token.
 - API key and secret last 12 months. Each access token from them still lasts 24 hours.
-- Renew: `GET https://api.dhan.co/v2/RenewToken` with headers `access-token: <JWT>` and `dhanClientId: <client id>`. It gives another 24 hours. It works only on a token that is still active. An expired token returns an error (body not documented).
+- Renew: `POST https://api.dhan.co/v2/RenewToken` with headers `access-token: <JWT>` and `dhanClientId: <client id>`. (Docs)
+- It works only for tokens generated from Dhan Web: "You can use this only for tokens generated from Dhan Web." Tokens from the API key and secret flow or TOTP are not covered. (Docs)
+- It expires the current token and issues a new one with another 24 hours. The old token stops working, so the new token must be stored at once. (Docs)
+- It works only on a token that is still active. An expired token returns an error (body not documented). (Docs)
 
 Profile endpoint, for the Settings feature:
 
@@ -166,7 +169,7 @@ Response example (from the docs):
 | Is the Data API plan active? | `dataPlan` | `Active` or `Deactive` |
 | When does the Data API plan end? | `dataValidity` | `YYYY-MM-DD HH:MM:SS.0` |
 
-Settings should treat the token as valid only if the call succeeds and `tokenValidity` is in the future. It should treat the Data API plan as active only if `dataPlan` is `Active` and `dataValidity` is in the future. Whether `client-id` is needed on this call is not stated. Sending it is harmless.
+Settings should treat the token as valid only if the call succeeds and `tokenValidity` is in the future. It should treat the Data API plan as active only if `dataPlan` is `Active` and `dataValidity` is in the future. Whether `client-id` is needed on this call is not stated. Sending it is probably harmless (untested).
 
 ## FRED (Docs)
 
@@ -186,5 +189,6 @@ Settings should treat the token as valid only if the call succeeds and `tokenVal
 4. Which security id does a continuous GOLD series need with `expiryCode: 0`? Does the series join across expiries?
 5. HTTP status and body for a wrong token.
 6. Strike key format and whether `data.oc` is ordered. Does the expiry list start with the nearest date?
-7. Does `/v2/profile` need `client-id`? What time zone is `tokenValidity` in?
-8. Does FRED return `"."` for holidays on `VIXCLS` and `DEXINUS`?
+7. Does `POST /v2/RenewToken` accept the user's token type, and does the old token stop working at once? Is automatic renewal in the worker safe?
+8. Does `/v2/profile` need `client-id`? What time zone is `tokenValidity` in?
+9. Does FRED return `"."` for holidays on `VIXCLS` and `DEXINUS`?
