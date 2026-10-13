@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { frameFor, linePath, lowest, monthTicks, niceDomain, scales } from './chart';
+import { frameFor, highest, linePath, lowest, monthTicks, niceDomain, scales } from './chart';
 
 const days = (n: number, from = '2026-01-01') =>
 	Array.from({ length: n }, (_, i) => {
@@ -81,5 +81,19 @@ describe('niceDomain', () => {
 		const [lo, hi] = niceDomain([7, 7]);
 		expect(lo).toBeLessThan(7);
 		expect(hi).toBeGreaterThan(7);
+	});
+});
+
+describe('frameFor left', () => {
+	it('takes a wider left gutter for longer axis labels', () => {
+		expect(frameFor(600, { bandNames: false }).left).toBe(48);
+		expect(frameFor(600, { bandNames: false, left: 72 }).left).toBe(72);
+	});
+});
+
+describe('highest', () => {
+	it('finds the first highest point', () => {
+		expect(highest([1, 5, 3, 5])).toBe(1);
+		expect(highest([])).toBeNull();
 	});
 });

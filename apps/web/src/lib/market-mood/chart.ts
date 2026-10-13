@@ -26,7 +26,7 @@ export interface Scales {
 	y: (value: number) => number;
 }
 
-export function frameFor(width: number, opts: { bandNames: boolean }): Frame {
+export function frameFor(width: number, opts: { bandNames: boolean; left?: number }): Frame {
 	const bandNames = opts.bandNames && width >= BAND_NAMES_FROM;
 	return {
 		width,
@@ -34,7 +34,7 @@ export function frameFor(width: number, opts: { bandNames: boolean }): Frame {
 		top: 12,
 		right: bandNames ? 112 : 12,
 		bottom: 28,
-		left: 48
+		left: opts.left ?? 48
 	};
 }
 
@@ -80,6 +80,16 @@ export function lowest(values: number[]): number | null {
 	if (values.length === 0) return null;
 	let at = 0;
 	for (let i = 1; i < values.length; i++) if (values[i]! < values[at]!) at = i;
+	return at;
+}
+
+/** Index of the first highest value, or null for no values. */
+export function highest(values: number[]): number | null {
+	if (values.length === 0) return null;
+	let at = 0;
+	values.forEach((v, i) => {
+		if (v > values[at]!) at = i;
+	});
 	return at;
 }
 

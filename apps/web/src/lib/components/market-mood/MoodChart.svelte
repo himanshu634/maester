@@ -1,8 +1,9 @@
 <!--
 	A line over time, ink only, on one axis: the mood's 12 months (0–100, with band lines and, when
-	wide enough, band names) or a reading's 2 years (its own domain). The last point is marked and
-	labelled; the year's low too, when asked. Drawn in pixels from the container's width so labels
-	stay 14px. "Show as a table" gives the same figures as a table, newest first.
+	wide enough, band names), a reading's 2 years (its own domain) or a share's year of closes (the
+	Research summary). The last point is marked and labelled; the year's low and high too, when
+	asked. Drawn in pixels from the container's width so labels stay 14px. "Show as a table" gives
+	the same figures as a table, newest first.
 -->
 <script lang="ts">
 	import { marketMoodContent as copy } from '$lib/content/market-mood';
@@ -11,6 +12,7 @@
 		axisValues,
 		CHART_HEIGHT,
 		frameFor,
+		highest,
 		linePath,
 		lowest,
 		monthTicks,
@@ -25,11 +27,17 @@
 		bands?: boolean;
 		/** Text alternative for the drawing. */
 		label: string;
-		/** Axis and table figures. */
+		/** Table figures, and the axis labels unless `axisFormat` is given. */
 		format: (value: number) => string;
+		/** Axis labels, when they differ from the table's (a short rupee form, say). */
+		axisFormat?: (value: number) => string;
 		todayLabel: string;
 		/** Label for the lowest point, or null to leave it unmarked. */
 		lowLabel?: ((value: number, day: string) => string) | null;
+		/** Label for the highest point, or null to leave it unmarked. */
+		highLabel?: ((value: number, day: string) => string) | null;
+		/** Width of the left gutter in pixels, for longer axis labels. */
+		gutter?: number;
 		withYear?: boolean;
 		valueHeader: string;
 	}
@@ -40,8 +48,11 @@
 		bands = false,
 		label,
 		format,
+		axisFormat,
 		todayLabel,
 		lowLabel = null,
+		highLabel = null,
+		gutter = 48,
 		withYear = false,
 		valueHeader
 	}: Props = $props();
@@ -53,7 +64,7 @@
 	let showTable = $state(false);
 
 	let values = $derived(points.map((p) => p.value));
-	let frame = $derived(frameFor(width, { bandNames: bands }));
+	let frame = $derived(frameFor(width, { bandNames: bands, left: gutter }));
 	let s = $derived(scales(points.length, frame, domain));
 	let path = $derived(linePath(values, s));
 	let ticks = $derived(
@@ -65,6 +76,8 @@
 	);
 	let last = $derived(points.length - 1);
 	let low = $derived(lowLabel ? lowest(values) : null);
+	let high = $derived(highLabel ? highest(values) : null);
+	let axis = $derived(axisFormat ?? format);
 	let right = $derived(width - frame.right);
 	let floor = $derived(s.y(domain[0]));
 	let newestFirst = $derived([...points].reverse());
@@ -99,7 +112,7 @@
 				<line class="axis" x1={frame.left} x2={right} y1={floor} y2={floor} />
 				{#each axisValues(domain) as v (v)}
 					<text class="muted-text" x={frame.left - 8} y={s.y(v) + 5} text-anchor="end">
-						{format(v)}
+						{axis(v)}
 					</text>
 				{/each}
 				{#each ticks as tick (tick.x)}
@@ -120,6 +133,20 @@
 						text-anchor={leftward ? 'end' : 'start'}
 					>
 						{lowLabel!(values[low]!, dayMonth(points[low]!.day))}
+					</text>
+				{/if}
+				{#if high !== null && high !== last && high !== low}
+					{@const hx = s.x(high)}
+					{@const hy = s.y(values[high]!)}
+					{@const leftward = hx > right - 160}
+					<rect class="mark" x={hx - 3} y={hy - 3} width="6" height="6" />
+					<text
+						class="halo"
+						x={leftward ? hx - 9 : hx + 9}
+						y={Math.max(hy - 10, frame.top + 12)}
+						text-anchor={leftward ? 'end' : 'start'}
+					>
+						{highLabel!(values[high]!, dayMonth(points[high]!.day))}
 					</text>
 				{/if}
 				<rect class="mark" x={tx - 4} y={ty - 4} width="8" height="8" />
