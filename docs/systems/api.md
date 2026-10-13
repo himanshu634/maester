@@ -258,7 +258,7 @@ For a retry, the API sets the state to `queued`, sets `maxAttempts` to `attempt`
 | `n500_above_200d` | `breadth` | Yes | The rank | `n500_above_200d_pct` |
 | `n500_net_highs` | `breadth` | Yes | The rank | `n500_net_highs_pct` |
 | `usd_inr` | `havens` | No | None | `usd_inr` |
-| `gold_vs_nifty` | `havens` | Yes | 100 minus the rank | Calculated: the change of `gold_mcx` over 20 trading days, minus the change of `nifty50` over the same days. |
+| `gold_vs_nifty` | `havens` | Yes | 100 minus the rank | Calculated: the change of `gold_mcx` over 20 trading days, minus the change of `nifty50` over the same days. A day is left out if its gold close, or the gold close at its start, is more than 4 days older than the Nifty day. |
 
 Other rules for the mood:
 

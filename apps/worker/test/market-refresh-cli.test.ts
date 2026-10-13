@@ -31,13 +31,13 @@ describe("market:refresh", () => {
     expect(lines.error.join("\n")).not.toContain("not-a-key");
   });
 
-  it("runs one pass with no saved connections: ok, nothing written, exit 0", async () => {
+  it("runs one pass with no saved connections: failed DHAN_NOT_CONNECTED, nothing written, exit 1", async () => {
     const ctx = await createWorkerContext();
     close = ctx.close;
     const { lines, out } = capture();
     const code = await runMarketRefreshOnce({ ...BASE, CONNECTIONS_KEY: KEY }, out, () => ({ db: ctx.db, logger: silentLogger }));
-    expect(code).toBe(0);
-    expect(lines.log).toEqual(["ok, 0 points written"]);
-    expect((await latestMarketFetch(ctx.db))?.state).toBe("ok");
+    expect(code).toBe(1);
+    expect(lines.log).toEqual(["failed DHAN_NOT_CONNECTED, 0 points written"]);
+    expect((await latestMarketFetch(ctx.db))?.state).toBe("failed");
   });
 });

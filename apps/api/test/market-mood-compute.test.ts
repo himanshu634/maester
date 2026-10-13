@@ -178,6 +178,15 @@ describe("derived readings", () => {
     });
     expect(s.at(-1)!.value).toBeCloseTo(9, 6); // +10% less +1%
   });
+  it("never pairs a Nifty day with a gold price more than 4 days old, so frozen gold goes stale", () => {
+    const m = fullMarket();
+    m.gold_mcx = m.gold_mcx!.slice(0, -10); // gold stopped two weeks before the latest session
+    const s = readingSeries("gold_vs_nifty", m);
+    expect(s.at(-1)!.day < "2026-09-28").toBe(true);
+    const gold = computeMood(m, NEVER).readings.find((r) => r.key === "gold_vs_nifty")!;
+    expect(gold.missing).toBe("stale");
+    expect(gold.score).toBeNull();
+  });
   it("takes gold's change over the same period as Nifty across MCX-only days", () => {
     const days = sessions(21, "2026-10-06");
     // day 1 of gold is distinct, so a base taken 20 gold points back (shifted by the extra point) gives a different answer

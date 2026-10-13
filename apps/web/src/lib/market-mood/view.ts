@@ -234,6 +234,16 @@ export function fetchNotice(m: MarketMood): FetchNotice | null {
 				action: copy.notice.settings
 			};
 		}
+		case 'DHAN_NOT_CONNECTED':
+			return { ...copy.notice.dhanNotConnected, action: copy.notice.settings };
+		case 'FRED_NOT_CONNECTED':
+			return { ...copy.notice.fredNotConnected, action: copy.notice.settings };
+		case 'DHAN_NO_DATA_PLAN':
+			return {
+				title: copy.notice.noDataPlan.title,
+				detail: copy.notice.noDataPlan.detail(stops),
+				action: null
+			};
 		case 'DHAN_RATE_LIMITED':
 			return {
 				title: copy.notice.rateLimited(day),

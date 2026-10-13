@@ -109,7 +109,7 @@ The market mood validators give the shape of the Market mood page:
 - `MoodBand` gives five bands, from `very_cautious` to `very_eager`.
 - `MissingReason` gives the cause when a reading has no value or no rank: `no_source`, `no_data`, `stale` or `not_enough_history`.
 - A `MarketMood` has exactly 10 readings. Its `scoredCount` is a maximum of 7. Each `rank` and `score` is an integer from 0 to 100, or `null`.
-- `FetchStatus.errorCode` has the four codes of `MarketSourceError` and also `UNKNOWN`.
+- `FetchStatus.errorCode` has the five codes of `MarketSourceError`, the two codes `DHAN_NOT_CONNECTED` and `FRED_NOT_CONNECTED` that the refresher records, and `UNKNOWN`.
 - A `ReadingDetail` has one reading and its values for the last 2 years, oldest first.
 
 The connection validators give the shape of a market connection on the Settings page:
@@ -320,7 +320,7 @@ The modules `config`, `extraction`, `qa`, `storage`, `schema` and `validation` a
 7. A network failure, a different error status, a different error code, or a 2xx body that it cannot parse gives `SOURCE_UNAVAILABLE`.
 8. The error message contains only the status and a short error code. It never contains text from the server, the token or the client ID.
 
-The error codes `DH-902` and `806` tell that the Dhan data plan is not active. They give `SOURCE_UNAVAILABLE`, not `DHAN_TOKEN_EXPIRED`.
+The error codes `DH-902` and `806` tell that the Dhan data plan is not active. They give `DHAN_NO_DATA_PLAN`, not `DHAN_TOKEN_EXPIRED`.
 
 `daily` asks `/charts/historical` for the closes from `from` to `to`. Dhan does not include the `toDate`, so the request sends the day after `to`. `ist` changes each timestamp to an IST day.
 

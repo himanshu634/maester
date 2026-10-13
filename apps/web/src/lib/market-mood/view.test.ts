@@ -333,6 +333,43 @@ describe('fetchNotice', () => {
 		expect(fetchNotice(canvasMood({ fetch: running }))).toBeNull();
 	});
 
+	it('sends the investor to Settings when Dhan or FRED is not connected', () => {
+		const at = '2026-10-06T10:00:00.000Z';
+		const dhan = fetchNotice(
+			canvasMood({
+				latestSession: null,
+				fetch: { state: 'failed', at, errorCode: 'DHAN_NOT_CONNECTED' }
+			})
+		);
+		expect(dhan).toEqual({
+			title: 'Dhan isn’t connected yet.',
+			detail:
+				'Market mood needs Dhan for the Indian readings. Connect it in Settings and Maester reads them on its next pass.',
+			action: { label: 'Open Settings', href: '/terminal/settings' }
+		});
+		const fred = fetchNotice(
+			canvasMood({ fetch: { state: 'failed', at, errorCode: 'FRED_NOT_CONNECTED' } })
+		);
+		expect(fred).toMatchObject({
+			title: 'FRED isn’t connected yet.',
+			action: { href: '/terminal/settings' }
+		});
+	});
+
+	it('says when the Dhan Data API subscription is not active', () => {
+		const notice = fetchNotice(
+			canvasMood({
+				latestSession: '2026-10-01',
+				fetch: { state: 'failed', at: '2026-10-06T10:00:00.000Z', errorCode: 'DHAN_NO_DATA_PLAN' }
+			})
+		);
+		expect(notice).toEqual({
+			title: 'Dhan’s Data API subscription isn’t active.',
+			detail: 'Market mood stops at 1 Oct until you turn it on in Dhan.',
+			action: null
+		});
+	});
+
 	it('says nothing after a good fetch', () => {
 		expect(fetchNotice(canvasMood())).toBeNull();
 	});

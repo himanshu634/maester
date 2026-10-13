@@ -154,9 +154,11 @@ describe("MarketRefresher", () => {
     const { logger, lines } = recordingLogger();
     expect(await refresher({ dhan, fred, logger }).refresh()).toBe("ran");
 
-    for (const inst of [NIFTY_50, INDIA_VIX, GOLD, { securityId: "2885" }, { securityId: "11536" }]) {
+    for (const inst of [NIFTY_50, INDIA_VIX, { securityId: "2885" }, { securityId: "11536" }]) {
       expect(dhan.callsFor(inst)).toEqual([{ securityId: inst.securityId, from: "2022-10-06", to: "2026-10-06" }]);
     }
+    // MCX is still trading at 17:30 IST, so gold stops at yesterday's settled close.
+    expect(dhan.callsFor(GOLD)).toEqual([{ securityId: GOLD.securityId, from: "2022-10-06", to: "2026-10-05" }]);
     expect(fred.calls).toEqual([{ seriesId: "VIXCLS", from: "2022-10-06" }, { seriesId: "DEXINUS", from: "2022-10-06" }]);
 
     const keys = ["nifty50", "india_vix", "gold_mcx", "eq:RELIANCE", "eq:TCS", "n500_above_200d_pct", "n500_net_highs_pct", "us_vix", "usd_inr", "nifty_pcr_oi"];
@@ -195,7 +197,7 @@ describe("MarketRefresher", () => {
 
     expect(dhan.callsFor(NIFTY_50)).toEqual([{ securityId: NIFTY_50.securityId, from: "2026-10-06", to: "2026-10-07" }]);
     expect(dhan.callsFor(INDIA_VIX)[0]!.from).toBe("2026-10-06");
-    expect(dhan.callsFor(GOLD)[0]!.from).toBe("2026-10-07"); // the day after the last gold day
+    expect(dhan.callsFor(GOLD)[0]).toMatchObject({ from: "2026-10-06", to: "2026-10-06" }); // the day after the last gold day, up to yesterday
     expect(dhan.callsFor({ securityId: "2885" })[0]!.from).toBe("2026-10-06");
     expect(fred.calls).toEqual([{ seriesId: "VIXCLS", from: "2026-10-05" }, { seriesId: "DEXINUS", from: "2026-10-05" }]);
     expect(await latestMarketDay(ctx.db, "n500_above_200d_pct")).toBe("2026-10-07");
@@ -340,15 +342,46 @@ describe("MarketRefresher", () => {
     expect(asked).toBe(0);
   });
 
-  it("skips a source that is not connected, without an error", async () => {
+  it("records a source that is not connected, so the page can send the investor to Settings", async () => {
     await refresher({ dhan: null }).refresh();
-    expect(await latestMarketFetch(ctx.db)).toMatchObject({ state: "ok", errorCode: null });
+    expect(await latestMarketFetch(ctx.db)).toMatchObject({ state: "failed", errorCode: "DHAN_NOT_CONNECTED" });
     expect(await latestMarketDay(ctx.db, "us_vix")).toBe("2026-10-05");
     expect(await latestMarketDay(ctx.db, "nifty50")).toBeNull();
 
     await refresher({ fred: null }).refresh();
-    expect(await latestMarketFetch(ctx.db)).toMatchObject({ state: "ok", errorCode: null });
+    expect(await latestMarketFetch(ctx.db)).toMatchObject({ state: "failed", errorCode: "FRED_NOT_CONNECTED" });
     expect(await latestMarketDay(ctx.db, "nifty50")).toBe("2026-10-06");
+
+    await refresher({ dhan: null, fred: null }).refresh();
+    expect(await latestMarketFetch(ctx.db)).toMatchObject({ state: "failed", errorCode: "DHAN_NOT_CONNECTED" });
+  });
+
+  it("records a lapsed Data API subscription and marks the Dhan connection with it", async () => {
+    await seedDhan();
+    const dhan = new FakeDhan("2026-10-06");
+    dhan.failDaily = new MarketSourceError("DHAN_NO_DATA_PLAN", "Dhan answered 500 DH-902");
+    await refresher({ dhan }).refresh();
+    expect(await latestMarketFetch(ctx.db)).toMatchObject({ state: "failed", errorCode: "DHAN_NO_DATA_PLAN" });
+    expect((await getConnection(ctx.db, "dhan"))!.lastErrorCode).toBe("DHAN_NO_DATA_PLAN");
+  });
+
+  it("carries on to breadth when gold fails, and records the failure", async () => {
+    const dhan = new FakeDhan("2026-10-06");
+    dhan.unavailable.add(GOLD.securityId);
+    await refresher({ dhan, members: ["RELIANCE", "TCS"] }).refresh();
+    expect(await latestMarketDay(ctx.db, "gold_mcx")).toBeNull();
+    expect(await latestMarketDay(ctx.db, "nifty_pcr_oi")).not.toBeNull();
+    expect(await latestMarketDay(ctx.db, "n500_above_200d_pct")).toBe("2026-10-06");
+    expect(await latestMarketFetch(ctx.db)).toMatchObject({ state: "failed", errorCode: "SOURCE_UNAVAILABLE" });
+  });
+
+  it("reads gold only up to yesterday until MCX has closed for the day", async () => {
+    const dhan = new FakeDhan("2026-10-06");
+    await refresher({ dhan }).refresh(); // 17:30 IST on 6 Oct: MCX is still trading
+    expect(await latestMarketDay(ctx.db, "gold_mcx")).toBe("2026-10-05");
+    expect(await latestMarketDay(ctx.db, "nifty50")).toBe("2026-10-06");
+    await refresher({ dhan, now: new Date("2026-10-06T18:40:00Z") }).refresh(); // 00:10 IST on 7 Oct
+    expect(await latestMarketDay(ctx.db, "gold_mcx")).toBe("2026-10-06");
   });
 
   it("finishes the run failed when the saved connections cannot be read", async () => {

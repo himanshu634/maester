@@ -60,6 +60,9 @@ function goldVsNifty(s: SeriesMap): Point[] {
     const gi = atOrBefore(gold, day);
     const gb = atOrBefore(gold, baseDay);
     if (gi < 0 || gb < 0) continue;
+    // Gold borrows the Nifty's day, so a gold price too old to be current is never paired with it:
+    // otherwise a gold series that stopped would go on looking current and be scored.
+    if (daysBetween(pt(gold, gi).day, day) > STALE_DAYS || daysBetween(pt(gold, gb).day, baseDay) > STALE_DAYS) continue;
     const g = (pt(gold, gi).value / pt(gold, gb).value - 1) * 100;
     const n = (pt(nifty, i).value / pt(nifty, i - 20).value - 1) * 100;
     out.push({ day, value: g - n, source: "Worked out from Dhan · MCX gold future and NSE close" });

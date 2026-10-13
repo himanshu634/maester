@@ -64,6 +64,13 @@ function minus(day: string, years: number): string {
 
 type Failure = { provider: MarketConnectionProvider | null; code: string; message: string };
 
+/** Failures that stop the whole Dhan part: every later call would fail the same way. */
+const STOPS_DHAN = new Set(["DHAN_TOKEN_EXPIRED", "DHAN_RATE_LIMITED", "DHAN_NO_DATA_PLAN"]);
+const stopsDhan = (err: unknown) => err instanceof MarketSourceError && STOPS_DHAN.has(err.code);
+
+/** 23:55 IST: MCX has closed, so today's gold candle is final. */
+const MCX_CLOSED_MINUTES = 23 * 60 + 55;
+
 /** One pass: what it has written so far and the clock it runs on. */
 class Pass {
   written = 0;
@@ -72,6 +79,8 @@ class Pass {
   readonly afterClose: boolean;
   /** The last day whose close is settled: today after 15:45 IST, otherwise yesterday. */
   readonly lastClose: string;
+  /** The last day whose MCX gold close is settled: today after the MCX close, otherwise yesterday. */
+  readonly goldUntil: string;
   readonly backfillFrom: string;
   private cleared = new Set<MarketConnectionProvider>();
   private goldList: Promise<GoldContract[]> | undefined;
@@ -82,6 +91,7 @@ class Pass {
     const minutes = Math.floor((istMs % 86_400_000) / 60_000);
     this.afterClose = minutes >= AFTER_CLOSE_MINUTES;
     this.lastClose = this.afterClose ? this.today : addDays(this.today, -1);
+    this.goldUntil = minutes >= MCX_CLOSED_MINUTES ? this.today : addDays(this.today, -1);
     this.backfillFrom = minus(this.today, deps.backfillYears ?? 4);
   }
 
@@ -116,6 +126,9 @@ export class MarketRefresher {
     try {
       pass = new Pass(this.deps, this.deps.now?.() ?? new Date());
       const sources = await this.deps.sources();
+      // Not connected is recorded, so the page can send the investor to Settings.
+      if (!sources.dhan) failures.push({ provider: "dhan", code: "DHAN_NOT_CONNECTED", message: "Dhan is not connected" });
+      if (!sources.fred) failures.push({ provider: "fred", code: "FRED_NOT_CONNECTED", message: "FRED is not connected" });
       if (sources.fred) {
         try {
           await this.fred(pass, sources.fred);
@@ -125,7 +138,7 @@ export class MarketRefresher {
       }
       if (sources.dhan) {
         try {
-          await this.dhan(pass, sources.dhan);
+          await this.dhan(pass, sources.dhan, failures);
         } catch (err) {
           failures.push(await this.failed("dhan", err));
         }
@@ -152,7 +165,7 @@ export class MarketRefresher {
     const message = err instanceof Error ? err.message : String(err);
     this.deps.logger.warn({ provider, code, message }, "market refresh failed");
     try {
-      if (provider === "dhan" && code === "DHAN_TOKEN_EXPIRED") await markConnectionError(this.deps.db, "dhan", code);
+      if (provider === "dhan" && (code === "DHAN_TOKEN_EXPIRED" || code === "DHAN_NO_DATA_PLAN")) await markConnectionError(this.deps.db, "dhan", code);
       if (provider === "fred" && code === "FRED_KEY_REFUSED") await markConnectionError(this.deps.db, "fred", code);
     } catch (markErr) {
       this.deps.logger.error({ provider, message: (markErr as Error).message }, "market refresh could not mark the connection");
@@ -169,13 +182,23 @@ export class MarketRefresher {
     }
   }
 
-  private async dhan(pass: Pass, initial: DhanSource): Promise<void> {
+  /**
+   * The Dhan part. A failure in gold or the option chain is recorded and the pass carries on to
+   * breadth; a token, rate-limit or subscription failure stops the Dhan part.
+   */
+  private async dhan(pass: Pass, initial: DhanSource, failures: Failure[]): Promise<void> {
     const dhan = await this.renewIfDue(pass, initial);
     await this.dhanSeries(pass, dhan, "nifty50", NIFTY_50);
     await this.dhanSeries(pass, dhan, "india_vix", INDIA_VIX);
-    await this.gold(pass, dhan);
     // The option chain is live only, so it goes before the long member loop.
-    await this.putCallRatio(pass, dhan);
+    for (const step of [() => this.gold(pass, dhan), () => this.putCallRatio(pass, dhan)]) {
+      try {
+        await step();
+      } catch (err) {
+        if (stopsDhan(err)) throw err;
+        failures.push(await this.failed("dhan", err));
+      }
+    }
     await this.breadth(pass, dhan);
   }
 
@@ -242,14 +265,15 @@ export class MarketRefresher {
     // Gold is read only at or before Nifty days; skip the scrip master download when the Nifty has nothing newer.
     const nifty = await latestMarketDay(db, "nifty50");
     if (latest && (!nifty || nifty <= latest)) return;
+    // MCX trades into the evening: today's candle is read only once it is final.
+    const from = latest ? addDays(latest, 1) : pass.backfillFrom;
+    if (from > pass.goldUntil) return;
     const [contract] = await pass.goldContracts(dhan);
     if (!contract) {
       logger.warn("no unexpired MCX gold contract in the scrip master; gold skipped");
       return;
     }
-    const from = latest ? addDays(latest, 1) : pass.backfillFrom;
-    if (from > pass.lastClose) return;
-    const points = (await dhan.daily(contract, from, pass.lastClose)).filter((p) => p.day <= pass.lastClose);
+    const points = (await dhan.daily(contract, from, pass.goldUntil)).filter((p) => p.day <= pass.goldUntil);
     await pass.answered("dhan");
     if (!latest && points[0]) logger.info(`gold history starts ${points[0].day}`);
     await pass.store("gold_mcx", points, GOLD_LABEL);
@@ -295,7 +319,7 @@ export class MarketRefresher {
         points = await dhan.daily({ securityId, exchangeSegment: "NSE_EQ", instrument: "EQUITY" }, from, pass.lastClose);
       } catch (err) {
         // A token or rate-limit failure stops the pass; one symbol Dhan will not answer for does not.
-        if (err instanceof MarketSourceError && (err.code === "DHAN_TOKEN_EXPIRED" || err.code === "DHAN_RATE_LIMITED")) throw err;
+        if (stopsDhan(err)) throw err;
         failed.push(symbol);
         continue;
       }

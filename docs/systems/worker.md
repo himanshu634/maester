@@ -229,9 +229,13 @@ The Dhan part has these steps, in this order:
 1. The refresher renews the Dhan token if necessary. See [Dhan token renewal](#dhan-token-renewal).
 2. The refresher reads the closes of the Nifty 50 index into `nifty50` and of the India VIX index into `india_vix`. Each read goes from the last stored day to the last close.
 3. The refresher reads the closes of the gold future into `gold_mcx`.
-4. The gold read starts on the day after the last stored day. If `gold_mcx` has points and `nifty50` has no newer day, the refresher does not read gold.
+4. The gold read starts on the day after the last stored day. It stops at the last settled gold close: today after 23:55 IST, when MCX is closed, and yesterday before that. If `gold_mcx` has points and `nifty50` has no newer day, the refresher does not read gold.
 5. The refresher writes the put–call ratio of the Nifty to `nifty_pcr_oi`. See the conditions below.
 6. The refresher reads the closes of the members and calculates the breadth. See [Breadth](#breadth).
+
+If step 3 or step 5 fails, the refresher records the failure and continues to step 6. A `DHAN_TOKEN_EXPIRED`, `DHAN_RATE_LIMITED` or `DHAN_NO_DATA_PLAN` error stops the Dhan part.
+
+If Dhan has no connection, the refresher records `DHAN_NOT_CONNECTED` for the refresh run. If FRED has no connection, it records `FRED_NOT_CONNECTED`. Then the run is `failed`, and Market mood tells the investor to connect the source in Settings. A `DHAN_NO_DATA_PLAN` error also sets `last_error_code` of the Dhan connection to `DHAN_NO_DATA_PLAN`.
 
 The put–call ratio is the sum of the open interest of the puts divided by the sum of the open interest of the calls. It uses the nearest Nifty expiry. Dhan gives the option chain live only. Thus the refresher writes one point for today, and only when all of these conditions are true:
 

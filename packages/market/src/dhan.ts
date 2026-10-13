@@ -17,6 +17,8 @@ export type DhanOptions = {
 
 const TOKEN_CODES = new Set(["DH-901", "807"]);
 const RATE_CODES = new Set(["DH-904", "805"]);
+/** The Data API subscription is not active. */
+const NO_PLAN_CODES = new Set(["DH-902", "806"]);
 const API_TIMEOUT_MS = 30_000;
 const SCRIP_TIMEOUT_MS = 120_000;
 const BACKOFF_MS = [1000, 2000, 4000];
@@ -113,6 +115,7 @@ export class HttpDhanSource implements DhanSource {
       if (refusal && res.status >= 400 && res.status < 500) throw new MarketSourceError(refusal, `Dhan refused the request${code ? ` (${code})` : ""}`);
       if (!res.ok || rawCode) {
         // DH-902 and 806 mean the Data API is not subscribed; that is not an expired token.
+        if (rawCode && NO_PLAN_CODES.has(rawCode)) throw new MarketSourceError("DHAN_NO_DATA_PLAN", "Dhan's Data API subscription is not active");
         throw new MarketSourceError("SOURCE_UNAVAILABLE", `Dhan answered ${res.status}${code ? ` ${code}` : ""}`);
       }
       return data;

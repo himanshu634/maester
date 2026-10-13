@@ -68,7 +68,8 @@ describe("HttpDhanSource", () => {
   });
 
   it("raises SOURCE_UNAVAILABLE for other failures and network errors, never naming the token", async () => {
-    await expect(make(async () => json(500, { errorCode: "DH-902", errorMessage: "no data plan" })).daily(inst, "a", "2026-10-07")).rejects.toMatchObject({ code: "SOURCE_UNAVAILABLE" });
+    await expect(make(async () => json(500, { errorCode: "DH-902", errorMessage: "no data plan" })).daily(inst, "a", "2026-10-07")).rejects.toMatchObject({ code: "DHAN_NO_DATA_PLAN" });
+    await expect(make(async () => json(400, { errorCode: "806", errorMessage: "no data plan" })).daily(inst, "a", "2026-10-07")).rejects.toMatchObject({ code: "DHAN_NO_DATA_PLAN" });
     const err = await make(async () => { throw new TypeError("fetch failed t"); }).daily(inst, "a", "2026-10-07").catch((e) => e);
     expect(err.code).toBe("SOURCE_UNAVAILABLE");
   });

@@ -55,6 +55,9 @@ export interface Reading {
 export type FetchErrorCode =
 	| 'DHAN_TOKEN_EXPIRED'
 	| 'DHAN_RATE_LIMITED'
+	| 'DHAN_NO_DATA_PLAN'
+	| 'DHAN_NOT_CONNECTED'
+	| 'FRED_NOT_CONNECTED'
 	| 'FRED_KEY_REFUSED'
 	| 'SOURCE_UNAVAILABLE'
 	| 'UNKNOWN';

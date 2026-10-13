@@ -263,6 +263,23 @@ export const marketMoodContent = {
 					? `US VIX and the rupee stop at ${stops} until you save a new key in Settings.`
 					: 'US VIX and the rupee have no readings until you save a new key in Settings.'
 		},
+		dhanNotConnected: {
+			title: 'Dhan isn’t connected yet.',
+			detail:
+				'Market mood needs Dhan for the Indian readings. Connect it in Settings and Maester reads them on its next pass.'
+		},
+		fredNotConnected: {
+			title: 'FRED isn’t connected yet.',
+			detail:
+				'US VIX and the rupee come from FRED. Connect it in Settings and Maester reads them on its next pass.'
+		},
+		noDataPlan: {
+			title: 'Dhan’s Data API subscription isn’t active.',
+			detail: (stops: string | null) =>
+				stops
+					? `Market mood stops at ${stops} until you turn it on in Dhan.`
+					: 'Market mood has no readings until you turn it on in Dhan.'
+		},
 		rateLimited: (day: string) => `Dhan asked Maester to slow down on ${day}.`,
 		unavailable: (day: string) => `A market data source didn’t answer on ${day}.`,
 		unknown: (day: string) => `The last market data fetch stopped on ${day}.`,
