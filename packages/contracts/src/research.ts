@@ -19,8 +19,9 @@ export const CellCheck = z.object({
   status: z.enum(["passed", "failed", "not_checked"]).nullable(),
   /** The subtotal the check is about, as printed. */
   subjectLabel: z.string().nullable(),
-  /** What the lines add up to, and what the page prints, in the table's unit. */
+  /** The subtotal as the page prints it, in the table's unit. */
   expected: DecimalString.nullable(),
+  /** What the subtotal's lines add up to, in the table's unit. */
   actual: DecimalString.nullable(),
 });
 export type CellCheck = z.infer<typeof CellCheck>;

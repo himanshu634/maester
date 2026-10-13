@@ -38,7 +38,7 @@ Everything comes from data Maester already has, except earnings per share (below
 This is a pure module in the API, `apps/api/src/financials/stitch.ts`, with its own tests.
 
 - **Columns.** A column is one period end. Its date is `period_end`, or `as_of_date` for balance sheet facts. Columns are kept separately for each statement and each basis. Facts that have neither date are left out and counted (`unplaced`). The page says how many were left out.
-- **Which filing a column comes from.** Each column comes whole from the newest filing that prints that period, so every column adds up. "Newest" means the latest classification `period_end`; when two filings tie, the later revision wins. The column header names that filing ("AR 2025–26").
+- **Which filing a column comes from.** Each column comes whole from the newest filing that prints that period, so a column never mixes filings. "Newest" means the latest classification `period_end`; when two filings tie, the later revision wins. The column header names that filing ("AR 2025–26").
 - **Restated.** An older filing may also print a period that a newer filing now supplies. When the older filing printed a different value for the same line, the cell carries `restated`. That record holds the older filing, its page and the value it printed. The table shows the newer filing's figure.
 - **Rows.** A row is a line, matched across filings by its printed name. The key is the statement, the basis, the normalised section, the normalised label, and the occurrence: the nth time that section and label appear in one column, by `line_order`. Normalising does four things, in this order:
   1. lower-cases the text;
@@ -128,7 +128,7 @@ This is a pure module in the web app, `lib/research/summary.ts`, with tests. It 
 | Figure panel | figure in the page's text | "Found in the page's text". |
 | Figure panel | page has no text layer (scanned) | "Page 213 (scanned): not checked against its text". |
 | Figure panel | figure not in the page's text | "**Not found.** The page's text doesn't contain {printed}." |
-| Figure panel | sum fails | "**No.** The lines add up to {expected}; the page prints {actual}, {difference} {more or less}." |
+| Figure panel | sum fails | "**No.** The lines add up to {actual}; the page prints {expected}, {difference} {more or less}." |
 | Figure panel | dash or unparsed | "Printed as a dash. Maester doesn't read it as zero." or "Maester couldn't read what page {n} prints here." |
 
 ## Accessibility

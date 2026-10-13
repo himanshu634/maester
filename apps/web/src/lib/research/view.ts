@@ -96,16 +96,18 @@ export function addsUp(cell: FinancialCell): Words {
 	if (c.role === 'component')
 		return { text: copy.words.partOf(c.subjectLabel ?? '', c.status === 'passed') };
 	if (c.status === 'passed') return { text: copy.words.adds };
-	const expected = Number(c.expected);
-	const actual = Number(c.actual);
-	const diff = figure(String(Math.abs(expected - actual).toFixed(2)));
+	// `expected` is the subtotal as the page prints it; `actual` is what its lines add up to.
+	const page = c.expected === null ? null : Number(c.expected);
+	const lines = c.actual === null ? null : Number(c.actual);
+	const difference =
+		page === null || lines === null ? null : figure(String(Math.abs(page - lines).toFixed(2)));
 	return {
 		strong: copy.words.failed.strong,
 		text: copy.words.failed.text(
-			figure(c.expected ?? '0'),
-			figure(c.actual ?? '0'),
-			diff,
-			actual > expected
+			c.actual === null ? '—' : figure(c.actual),
+			c.expected === null ? '—' : figure(c.expected),
+			difference,
+			page !== null && lines !== null && page > lines
 		)
 	};
 }

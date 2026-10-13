@@ -116,7 +116,7 @@ export const researchContent = {
 		region: (kind: string) => `${kind} by year, scrolls sideways`,
 		restated: (fy: string) => `${fy} restated`,
 		newestWins:
-			'Each year comes whole from the newest filing that prints it, so every column adds up.',
+			'Each year comes whole from the newest filing that prints it, so a column never mixes filings.',
 		notRead: (basis: string, kind: string) =>
 			`No ${basis.toLowerCase()} ${kind.toLowerCase()} has been read yet.`,
 		unplaced: (n: number) =>
@@ -166,8 +166,9 @@ export const researchContent = {
 		notChecked: 'Not checked',
 		failed: {
 			strong: 'No.',
-			text: (expected: string, actual: string, diff: string, more: boolean) =>
-				`The lines add up to ${expected}; the page prints ${actual}, ${diff} ${more ? 'more' : 'less'}.`
+			/** `more`: the page prints more than the lines add up to. No difference when a number is unknown. */
+			text: (lines: string, page: string, difference: string | null, more: boolean) =>
+				`The lines add up to ${lines}; the page prints ${page}${difference ? `, ${difference} ${more ? 'more' : 'less'}` : ''}.`
 		},
 		missing: (filing: string) => `Not printed under this name in ${filing}.`,
 		dash: (page: number) => `A dash printed on page ${page}. Maester doesn’t read it as zero.`,

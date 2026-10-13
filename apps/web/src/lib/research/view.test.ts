@@ -141,8 +141,8 @@ describe('addsUp', () => {
 						role: 'subject',
 						status: 'failed',
 						subjectLabel: 'Total expenses',
-						expected: '10021.3',
-						actual: '10012.3'
+						expected: '10012.3',
+						actual: '10021.3'
 					}
 				})
 			)
@@ -150,6 +150,35 @@ describe('addsUp', () => {
 			strong: 'No.',
 			text: 'The lines add up to 10,021.30; the page prints 10,012.30, 9.00 less.'
 		});
+		expect(
+			addsUp(
+				cell({
+					check: {
+						role: 'subject',
+						status: 'failed',
+						subjectLabel: 'Total income',
+						expected: '12489',
+						actual: '12480'
+					}
+				})
+			)
+		).toEqual({
+			strong: 'No.',
+			text: 'The lines add up to 12,480.00; the page prints 12,489.00, 9.00 more.'
+		});
+		expect(
+			addsUp(
+				cell({
+					check: {
+						role: 'subject',
+						status: 'failed',
+						subjectLabel: 'Total income',
+						expected: null,
+						actual: '12480'
+					}
+				})
+			)
+		).toEqual({ strong: 'No.', text: 'The lines add up to 12,480.00; the page prints —.' });
 		expect(
 			addsUp(
 				cell({
