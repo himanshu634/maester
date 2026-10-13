@@ -1,6 +1,6 @@
 # Market mood: design
 
-Status: approved for planning, 6 October 2026.
+Status: approved for planning, 6 October 2026. Built on staging, 13 October 2026; the notes below are aligned with what was built.
 
 Design canvas: "Maester Market Mood", https://claude.ai/artifact/Sa34MqzWhGqUZbPxTKNhZ5, page "A+B · final" (frames F1–F4).
 
@@ -58,9 +58,9 @@ These rules come from section 5 of the mood research.
   - trend is `(close / mean(close over 125 sessions) − 1) × 100`;
   - gold against Nifty is the 20-session % change of gold less that of Nifty;
   - flows are a 20-session sum;
-  - breadth is a share of the members with enough history (200 sessions for the average, 250 for 52-week highs and lows).
-- **Times.** Each reading carries its source label and the day its value is for. The mood's "as of" is its oldest scored reading's day. If any scored reading is older than the latest Indian session, the head says "Provisional".
-- **History.** The 12-month line is the mood worked out for each Indian session in the last 12 months, from the data as stored.
+  - breadth is a share of the members with enough history (200 sessions for the average, 252 closes, one trading year, for 52-week highs and lows). The worker backfills 4 years, so derived readings have 500 ranked days.
+- **Times.** Each reading carries its source label and the day its value is for. The mood's "as of" is its oldest scored reading's day. If any Indian scored reading is older than the latest Indian session, the head says "Provisional". US VIX, a day behind by nature, never makes the mood provisional; it drops out of the mood only when it is more than 4 calendar days old (stale).
+- **History.** The 12-month line is the mood worked out for each Indian session in the last 12 months that had at least 5 scored readings, from the data as stored. It is drawn even on a day with no mood today.
 
 ## System
 
@@ -119,8 +119,8 @@ Settings states:
 
 | State | What the page says |
 | --- | --- |
-| No data yet | "No readings yet. Maester fetches them after the market closes." The fetch status is shown: never run, running, or failed with its error. |
-| Dhan token expired | "Dhan stopped answering on 2 Oct. The token has expired." with a link to Settings. Readings show with their last stored day. |
+| No data yet | "No readings yet. Maester fetches them after the market closes." Each reading is missing as `no_data` (flows as `no_source`). The fetch status is shown: never run, running, or failed with its error. |
+| Dhan token expired | "Dhan stopped answering. The token has expired." (undated: the worker records a failed run every 30 minutes, so the latest run's day is not when it stopped), "Market mood stops at 1 Oct until you save a new one in Settings." and a link to Settings. Readings show with their last stored day. |
 | A reading missing or late | "—" with the reason. The head says "6 of 7 readings" and so on. |
 | Fewer than 5 scored readings | "Not enough readings to give a mood today." The readings still show. |
 | Holidays and weekends | Readings say the day they are for, in words ("Friday’s close"). |

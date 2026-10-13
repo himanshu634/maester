@@ -16,6 +16,7 @@ The rail header contains Maester and the workspace picker. The context header co
 | --- | --- | --- | --- |
 | Overview | `/portfolios/:portfolioId` | R1 | One portfolio, snapshot initially |
 | Holdings | `/portfolios/:portfolioId/holdings` | R1 | Owned positions |
+| Market mood | `/terminal/market-mood` and `/terminal/market-mood/:readingKey` | R1 (added 6 Oct 2026) | The market's mood from the investor's own Dhan and FRED data; personal, signed in only ([DESIGN.md](DESIGN.md) §10) |
 | Transactions | `/portfolios/:portfolioId/transactions` | R2 | Accounts within portfolio |
 | Performance | `/portfolios/:portfolioId/performance` | R2 | Supported complete interval |
 | Research | `/research` and `/companies/:companyId` | R1 | Companies in the workspace |
@@ -25,9 +26,9 @@ The rail header contains Maester and the workspace picker. The context header co
 | Alerts | `/alerts` | R3 | Followed changes and conditions |
 | Reports | `/reports` | R3 basic; R4 expanded | Export artifacts |
 | Activity | `/activity` | R1 basic | Jobs, imports, edits |
-| Settings | `/settings` | R1 | Preferences, data, account |
+| Settings | `/settings` (built as `/terminal/settings`) | R1 | Account, and the Dhan and FRED market data connections; preferences later. Works ([DESIGN.md](DESIGN.md) §10, Settings, and §5, connection section) |
 
-Group portfolio navigation together; group Research, Watchlist, Documents and Analyst together. Activity and Settings stay at the bottom. Do not expose future routes as empty menu items. Until an R1 page works, the web client may list it marked "Soon" and open a coming-soon page that says what it will do and what it needs first ([design specification](DESIGN.md) sections 7 and 10); a page outside R1 is not listed. R1 without any portfolio opens Research onboarding. Remember the last workspace, but validate access before restoring a deep link.
+Group portfolio navigation together (Overview, Holdings and Market mood); group Research, Watchlist, Documents and Analyst together. Activity and Settings stay at the bottom. Do not expose future routes as empty menu items. Until an R1 page works, the web client may list it marked "Soon" and open a coming-soon page that says what it will do and what it needs first ([design specification](DESIGN.md) sections 7 and 10); a page outside R1 is not listed. R1 without any portfolio opens Research onboarding. Remember the last workspace, but validate access before restoring a deep link.
 
 Global search returns companies, securities, documents and saved notes in named groups. Results show exchange, company name and source/period metadata. It must never silently choose the first result for an ambiguous ticker. Search text is not automatically submitted to an AI model.
 

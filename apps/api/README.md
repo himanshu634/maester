@@ -22,6 +22,8 @@ Status: implemented (base). `apps/api` is a [Hono](https://hono.dev/) HTTP servi
 - `GET /v1/workspaces/:ws/documents/:id/facts?revisionId=` — a revision's facts with their page references (latest revision by default).
 - `GET /v1/workspaces/:ws/jobs/:id`, `POST /v1/workspaces/:ws/jobs/:id/retry` — job state and manual retry.
 - `GET /v1/workspaces/:ws/jobs/:id/events` — Server-Sent Events stream of job progress.
+- `GET /v1/market-mood`, `GET /v1/market-mood/readings/:key` — the market's mood worked out from stored Dhan and FRED series, every reading with its source and day, the 12-month history, the last fetch's state; and one reading with its last 2 years. Session only, no workspace; never public.
+- `GET /v1/settings/connections`, `PUT /v1/settings/connections/dhan`, `PUT /v1/settings/connections/fred`, `DELETE /v1/settings/connections/:provider` — the Dhan and FRED keys from Settings. A PUT checks the key with the source first and keeps it only if it passes (`400` on the field when refused, `429` when Dhan limits the rate, `503` when the source does not answer), encrypted with `CONNECTIONS_KEY`; responses give only its last 4 characters. `409 INVALID_STATE` when `CONNECTIONS_KEY` is not set. The keys are global to the install: any approved signed-in user can replace or delete them.
 - `GET /dev/upload` — a small static page exercising the full upload → verify → SSE flow by hand; served only outside `NODE_ENV=production`. Browse it at the web origin (`http://localhost:5173/dev/upload`), which proxies `/dev`.
 - `POST /dev/auth/admit` — development and test only: approves an email and confirms an existing account for it, so local sign-up and the smoke test need no inbox.
 - `PUT|GET /dev/blobs/*` — signed local object storage standing in for Cloud Storage; mounted only when `STORAGE_DRIVER=disk`, which is refused in production.
@@ -51,6 +53,7 @@ Loaded from the root `.env` (see `.env.example`) via `loadEnv()` in `src/env.ts`
 | `DISPATCH_SECRET` | Required when `DISPATCH_MODE=local`; shared secret the worker checks |
 | `WORKER_URL` | Base URL of `apps/worker`, used to build Cloud Tasks targets |
 | `WORKER_INVOKER_SA` | Required when `DISPATCH_MODE=cloud-tasks`; service account Cloud Tasks uses to call the worker |
+| `CONNECTIONS_KEY` | 32 bytes, base64 (`openssl rand -base64 32`). Encrypts the Dhan and FRED keys saved in Settings (AES-256-GCM). Without it the connection routes answer `409`. The worker needs the same value |
 | `MAX_UPLOAD_BYTES`, `UPLOAD_URL_TTL_SECONDS`, `DOWNLOAD_URL_TTL_SECONDS` | Upload/download limits (defaulted) |
 | `PORT`, `LOG_LEVEL`, `NODE_ENV` | Server basics (defaulted) |
 
