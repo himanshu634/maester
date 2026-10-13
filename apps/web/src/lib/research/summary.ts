@@ -6,7 +6,13 @@
  */
 import { researchContent as copy } from '$lib/content/research';
 import { percent, price } from '$lib/terminal/format';
-import type { CompanyFinancials, CompanyStock, FinancialRow, StatementTable } from './types';
+import type {
+	CompanyFinancials,
+	CompanyStock,
+	FinancialRow,
+	StatementTable,
+	TableUnit
+} from './types';
 import { fyLabel, unitShort, unitWords } from './view';
 
 export interface SummaryFigure {
@@ -34,18 +40,18 @@ const longFmt = new Intl.DateTimeFormat('en-GB', {
 	timeZone: 'UTC'
 });
 const weekdayFmt = new Intl.DateTimeFormat('en-GB', { weekday: 'long', timeZone: 'UTC' });
-const shortFmt = new Intl.DateTimeFormat('en-GB', {
-	day: 'numeric',
-	month: 'short',
-	timeZone: 'UTC'
-});
+// view.ts spells the months out the same way; Intl's short month is "Sept" in some ICU versions.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const at = (day: string) => new Date(`${day}T00:00:00Z`);
 
 export const shortName = (name: string) => name.replace(/\s+(limited|ltd\.?)$/i, '').trim();
 /** "Friday 9 October". */
 export const longDay = (day: string) => longFmt.format(at(day)).replace(',', '');
 /** "9 Oct". */
-export const shortDay = (day: string) => shortFmt.format(at(day));
+export const shortDay = (day: string) => {
+	const d = at(day);
+	return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+};
 
 const signed = (n: number) => `${n < 0 ? MINUS : '+'}${two.format(Math.abs(n))}`;
 const signedPct = (n: number, digits = 1) =>
@@ -77,21 +83,26 @@ function profitAndLoss(
 	return null;
 }
 
-/** The newest column with a figure, and the figure in the column before it. */
-function latest(row: FinancialRow): { now: number; col: number; before: number | null } | null {
-	const cells = row.cells;
-	for (let c = cells.length - 1; c >= 0; c--) {
-		const cell = cells[c]!;
-		if (cell.status === 'value' && cell.value !== null) {
-			const prev = c > 0 ? cells[c - 1]! : null;
-			return {
-				now: Number(cell.value),
-				col: c,
-				before: prev && prev.status === 'value' && prev.value !== null ? Number(prev.value) : null
-			};
-		}
-	}
-	return null;
+/** A cell's figure, or null when the cell has none (missing, a dash, unreadable). */
+function figureAt(row: FinancialRow, col: number): number | null {
+	const cell = row.cells[col];
+	return cell && cell.status === 'value' && cell.value !== null ? Number(cell.value) : null;
+}
+
+/**
+ * The row's figure in one column, and in the column before it. A line with no figure in the
+ * column is not there: nothing older stands in for it, so a sentence never mixes years.
+ */
+function reading(row: FinancialRow, col: number): { now: number; before: number | null } | null {
+	const now = figureAt(row, col);
+	return now === null ? null : { now, before: col > 0 ? figureAt(row, col - 1) : null };
+}
+
+/** Whether amounts in this table can be written: a scale Maester can name, in rupees. */
+function unitKnown(unit: TableUnit): boolean {
+	const scale = unit.scale === null ? null : Number(unit.scale);
+	const named = scale !== null && (scale === 1 || unitShort(unit) !== '');
+	return named && (unit.currency === null || unit.currency === 'INR');
 }
 
 const blank = (label: string): SummaryFigure => ({
@@ -157,6 +168,11 @@ export function summarize(input: {
 		pe.reason = ok ? copy.summary.noFigures : copy.summary.needsPrice;
 	} else {
 		const { table, index } = pl;
+		// The latest year is the table's newest column. Revenue, profit and earnings per share all
+		// come from it and from nowhere else; a change compares with the column just before it.
+		const col = table.columns.length - 1;
+		const fy = fyLabel(table.columns[col]!.periodEnd);
+		const canWrite = unitKnown(table.unit);
 		const short = unitShort(table.unit);
 		const word = unitWords(table.unit).replace(/^₹ ?/, '');
 		const money = (n: number, compact: boolean) => {
@@ -169,32 +185,33 @@ export function summarize(input: {
 			(r) => r.perShare && /basic/.test(norm(`${r.section} ${r.label}`))
 		);
 		const epsIndex = basicIndex >= 0 ? basicIndex : table.rows.findIndex((r) => r.perShare);
-		const rev = revIndex >= 0 ? latest(table.rows[revIndex]!) : null;
-		const prof = profIndex >= 0 ? latest(table.rows[profIndex]!) : null;
-		const anchor = prof ?? rev;
-		const fy = anchor ? fyLabel(table.columns[anchor.col]!.periodEnd) : null;
+		const rev = revIndex >= 0 ? reading(table.rows[revIndex]!, col) : null;
+		const prof = profIndex >= 0 ? reading(table.rows[profIndex]!, col) : null;
 
-		if (prof && fy) {
+		if (!prof) {
+			profitFig.reason = copy.summary.noProfit;
+		} else if (!canWrite) {
+			profitFig.reason = copy.summary.unknownUnit;
+		} else {
 			profitFig.label = copy.summary.labels.profit(fy);
 			profitFig.value = `${prof.now < 0 ? MINUS : ''}${money(prof.now, true)}`;
-			if (prof.before !== null && prof.before > 0 && prof.now > 0 && prof.col > 0) {
+			if (prof.before !== null && prof.before > 0 && prof.now > 0) {
 				profitFig.change = copy.summary.profitChange(
 					signedPct(change(prof.now, prof.before)),
-					fyLabel(table.columns[prof.col - 1]!.periodEnd)
+					fyLabel(table.columns[col - 1]!.periodEnd)
 				);
 			}
 			const revChange = rev && rev.before ? signedPct(change(rev.now, rev.before)) : null;
 			profitFig.note = copy.summary.profitNote(
-				`${table.basis === 'standalone' ? 'Standalone' : 'Consolidated'}.`,
+				`${copy.statements.bases[table.basis]}.`,
 				rev ? money(rev.now, true) : null,
 				revChange
 			);
-		} else {
-			profitFig.reason = copy.summary.noFigures;
 		}
 
 		// "In 2025–26 its revenue grew 7.7% to ₹12,105 crore and its profit grew 27.5% to ₹1,459 crore."
 		// The first clause names the owner: "its" after the price sentence, the company otherwise.
+		// With no amount Maester can write (an unnamed unit, another currency) there is no clause.
 		const owner = ok ? 'its' : name.endsWith('s') ? `${name}’` : `${name}’s`;
 		const revClause = (who: string) =>
 			!rev
@@ -220,22 +237,22 @@ export function summarize(input: {
 		};
 		const clauses = rev ? [revClause(owner), profClause('its')] : [profClause(owner)];
 		const said = clauses.filter((c): c is string => c !== null);
-		if (fy && said.length) business = `In ${fy} ${said.join(' and ')}.`;
+		if (canWrite && said.length) business = `In ${fy} ${said.join(' and ')}.`;
 
-		// Price to earnings: the last close ÷ the printed basic earnings per share.
-		const eps = epsIndex >= 0 ? latest(table.rows[epsIndex]!) : null;
-		if (eps) epsCell = { tableIndex: index, row: epsIndex, col: eps.col };
+		// Price to earnings: the last close ÷ the printed basic earnings per share, newest year.
+		// Per share, so it does not depend on the table's unit.
+		const eps = epsIndex >= 0 ? reading(table.rows[epsIndex]!, col) : null;
+		if (eps) epsCell = { tableIndex: index, row: epsIndex, col };
 		if (!ok) pe.reason = copy.summary.needsPrice;
 		else if (!eps) pe.reason = copy.summary.noEps;
-		else if (eps.now <= 0)
-			pe.reason = copy.summary.loss(fyLabel(table.columns[eps.col]!.periodEnd));
+		else if (eps.now <= 0) pe.reason = copy.summary.loss(fy);
 		else {
-			const cell = table.rows[epsIndex]!.cells[eps.col]!;
+			const cell = table.rows[epsIndex]!.cells[col]!;
 			pe.value = (ok.last!.value / eps.now).toFixed(1);
 			pe.note = copy.summary.peNote(
 				two.format(ok.last!.value),
 				two.format(eps.now),
-				fyLabel(table.columns[eps.col]!.periodEnd),
+				fy,
 				(cell.source?.pageIndex ?? 0) + 1
 			);
 		}

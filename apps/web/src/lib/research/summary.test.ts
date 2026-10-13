@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import type { ReportingBasis } from '$lib/documents/types';
 import type {
 	CompanyFinancials,
 	CompanyStock,
 	FinancialCell,
 	FinancialRow,
-	StatementTable
+	StatementTable,
+	TableUnit
 } from './types';
-import { longDay, shortName, summarize } from './summary';
+import { longDay, shortDay, shortName, summarize } from './summary';
 
 const NO = {
 	role: 'none',
@@ -42,14 +44,16 @@ const r = (
 	cells: [v(a), v(b)],
 	...over
 });
+const CRORE: TableUnit = { label: '₹ in crore', scale: '10000000', currency: 'INR' };
 function pl(
 	rows: FinancialRow[],
-	basis: 'consolidated' | 'standalone' = 'consolidated'
+	basis: ReportingBasis = 'consolidated',
+	unit: TableUnit = CRORE
 ): StatementTable {
 	return {
 		statement: 'income_statement',
 		basis,
-		unit: { label: '₹ in crore', scale: '10000000', currency: 'INR' },
+		unit,
 		columns: [
 			{
 				periodEnd: '2025-03-31',
@@ -84,8 +88,10 @@ const canvas = (
 		r('Revenue from operations', '11240.75', '12105.4'),
 		r('Profit for the year', '1144', '1459', { isSubtotal: true }),
 		r('Basic', '48.6', '61.98', { section: 'Earnings per equity share (₹)', perShare: true })
-	]
-): CompanyFinancials => ({ company, filings: [], tables: [pl(rows)] });
+	],
+	basis: ReportingBasis = 'consolidated',
+	unit: TableUnit = CRORE
+): CompanyFinancials => ({ company, filings: [], tables: [pl(rows, basis, unit)] });
 const stock: CompanyStock = {
 	state: 'ok',
 	symbol: 'SYNCEM',
@@ -114,6 +120,11 @@ describe('shortName and longDay', () => {
 		expect(shortName('Synthetic Cements Limited')).toBe('Synthetic Cements');
 		expect(shortName('Kestrel Power Ltd.')).toBe('Kestrel Power');
 		expect(longDay('2026-10-09')).toBe('Friday 9 October');
+	});
+
+	it('names the month the way the tables do, never Sept', () => {
+		expect(shortDay('2026-09-24')).toBe('24 Sep');
+		expect(shortDay('2026-10-09')).toBe('9 Oct');
 	});
 });
 
@@ -214,5 +225,120 @@ describe('summarize', () => {
 		expect(s.sentence).toBeNull();
 		expect(s.figures.map((f) => f.value)).toEqual([null, null, null, null]);
 		expect(s.figures[0]!.reason).toBe('The prices didn’t load.');
+	});
+
+	describe('what it will not guess', () => {
+		const pricePart =
+			'Synthetic Cements closed at ₹1,284.50 on Friday 9 October, 18.4% higher than a year earlier.';
+		const rev = r('Revenue from operations', '11240.75', '12105.4');
+		const profit = r('Profit for the year', '1144', '1459', { isSubtotal: true });
+		const basic = r('Basic', '48.6', '61.98', { section: 'Earnings per share', perShare: true });
+
+		it('writes no amounts when the table’s scale is unknown, and says why', () => {
+			const unit = { label: '₹ in crore', scale: null, currency: 'INR' };
+			const s = summarize({
+				financials: canvas([rev, profit, basic], 'consolidated', unit),
+				stock,
+				stockFailed: false
+			});
+			expect(s.sentence).toBe(pricePart);
+			expect(s.figures[3]).toMatchObject({
+				value: null,
+				reason: 'The statement’s unit isn’t one Maester can name.',
+				change: null,
+				note: null
+			});
+			// Earnings per share is per share, so price to earnings still works.
+			expect(s.figures[2]!.value).toBe('20.7');
+			const none = summarize({
+				financials: canvas([rev, profit, basic], 'consolidated', unit),
+				stock: null,
+				stockFailed: true
+			});
+			expect(none.sentence).toBeNull();
+		});
+
+		it('writes no amounts for a table that is not in rupees', () => {
+			const unit = { label: 'USD in million', scale: '1000000', currency: 'USD' };
+			const s = summarize({
+				financials: canvas([rev, profit, basic], 'consolidated', unit),
+				stock,
+				stockFailed: false
+			});
+			expect(s.sentence).toBe(pricePart);
+			expect(s.figures[3]).toMatchObject({
+				value: null,
+				reason: 'The statement’s unit isn’t one Maester can name.'
+			});
+		});
+
+		it('takes revenue from the newest year only, never an older one', () => {
+			const s = summarize({
+				financials: canvas([r('Revenue from operations', '11240.75', null), profit, basic]),
+				stock,
+				stockFailed: false
+			});
+			expect(s.sentence).toBe(`${pricePart} In 2025–26 its profit grew 27.5% to ₹1,459 crore.`);
+			expect(s.figures[3]!.value).toBe('₹1,459 cr');
+			expect(s.figures[3]!.note).toBe('Consolidated.');
+		});
+
+		it('says the profit line wasn’t found, and keeps the revenue clause', () => {
+			const s = summarize({
+				financials: canvas([
+					rev,
+					r('Profit for the year from continuing operations', '1144', '1459'),
+					basic
+				]),
+				stock,
+				stockFailed: false
+			});
+			expect(s.sentence).toBe(`${pricePart} In 2025–26 its revenue grew 7.7% to ₹12,105 crore.`);
+			expect(s.figures[3]).toMatchObject({
+				value: null,
+				reason: 'Profit wasn’t found in the statement.'
+			});
+		});
+
+		it('says there is no annual report only when there is no profit and loss at all', () => {
+			const s = summarize({
+				financials: { company, filings: [], tables: [] },
+				stock,
+				stockFailed: false
+			});
+			expect(s.figures[3]!.reason).toBe('No annual report read yet.');
+		});
+
+		it('takes earnings per share from the newest year only', () => {
+			const s = summarize({
+				financials: canvas([
+					rev,
+					profit,
+					r('Basic', '48.6', null, { section: 'Earnings per share', perShare: true })
+				]),
+				stock,
+				stockFailed: false
+			});
+			expect(s.figures[2]).toMatchObject({
+				value: null,
+				reason: 'The filing’s earnings per share wasn’t read.'
+			});
+			expect(s.epsCell).toBeNull();
+		});
+
+		it('names a basis that is not stated', () => {
+			const s = summarize({
+				financials: canvas([rev, profit, basic], 'unknown'),
+				stock,
+				stockFailed: false
+			});
+			expect(s.figures[3]!.note).toMatch(/^Basis not stated\./);
+			const standalone = summarize({
+				financials: canvas([rev, profit, basic], 'standalone'),
+				stock,
+				stockFailed: false
+			});
+			expect(standalone.figures[3]!.note).toMatch(/^Standalone\./);
+		});
 	});
 });

@@ -85,6 +85,8 @@ export const researchContent = {
 		noEps: 'The filing’s earnings per share wasn’t read.',
 		loss: (fy: string) => `The company made a loss in ${fy}, so there’s no price to earnings.`,
 		noFigures: 'No annual report read yet.',
+		noProfit: 'Profit wasn’t found in the statement.',
+		unknownUnit: 'The statement’s unit isn’t one Maester can name.',
 		settings: 'Settings',
 		chart: {
 			heading: 'The last year’s closes',
