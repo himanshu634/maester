@@ -7,11 +7,11 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { settingsContent as copy } from '$lib/content/settings';
-	import { readMe, type Fetcher } from '$lib/documents/client';
+	import { ApiError, readMe, type Fetcher } from '$lib/documents/client';
 	import type { Me } from '$lib/documents/types';
 	import { connectionsApi } from '$lib/settings/client';
 	import type { Connection, ConnectionProvider } from '$lib/settings/types';
-	import { opensOnLoad, summaryWords, tagWord } from '$lib/settings/view';
+	import { listFailure, opensOnLoad, summaryWords, tagWord } from '$lib/settings/view';
 	import SectionIssue from '$lib/components/errors/SectionIssue.svelte';
 	import Hatch from '$lib/components/loading/Hatch.svelte';
 	import ConnectionSection from './ConnectionSection.svelte';
@@ -28,17 +28,31 @@
 	let open = $state<Record<string, boolean>>({});
 	let headers = $state<Record<string, HTMLButtonElement | undefined>>({});
 	let announcement = $state('');
+	/** Why the connections did not load, while the account did. */
+	let connectionsIssue = $state<{ title: string; retry: boolean } | null>(null);
+
+	async function readConnections(): Promise<void> {
+		try {
+			const list = await api.list();
+			connections = list.items;
+			open = {
+				account: open.account ?? false,
+				...Object.fromEntries(list.items.map((c) => [c.provider, opensOnLoad(c)]))
+			};
+			connectionsIssue = null;
+		} catch (err) {
+			connectionsIssue = listFailure(
+				err instanceof ApiError ? err : new ApiError(0, 'NETWORK', 'list failed')
+			);
+		}
+	}
 
 	async function start() {
 		load = 'loading';
 		try {
-			const [who, list] = await Promise.all([readMe(fetcher), api.list()]);
+			const [who] = await Promise.all([readMe(fetcher), readConnections()]);
 			me = who;
-			connections = list.items;
-			open = {
-				account: false,
-				...Object.fromEntries(list.items.map((c) => [c.provider, opensOnLoad(c)]))
-			};
+			open = { account: false, ...open };
 			load = 'ready';
 		} catch {
 			load = 'failed';
@@ -124,6 +138,18 @@
 		</SettingsGroup>
 
 		<SettingsGroup heading={copy.connections.heading} lede={copy.connections.lede}>
+			{#if connectionsIssue}
+				<div class="issue">
+					<SectionIssue
+						title={connectionsIssue.title}
+						detail={connectionsIssue.retry
+							? copy.loadFailed.connectionsDetail
+							: copy.loadFailed.noServerKeyDetail}
+						retryLabel={connectionsIssue.retry ? copy.loadFailed.retry : undefined}
+						onretry={connectionsIssue.retry ? readConnections : undefined}
+					/>
+				</div>
+			{/if}
 			{#each connections as connection (connection.provider)}
 				<SettingsItem
 					id="{id}-{connection.provider}"
@@ -144,7 +170,9 @@
 				</SettingsItem>
 			{/each}
 		</SettingsGroup>
-		<p class="muted note">{copy.connections.disconnectNote}</p>
+		{#if connections.length > 0}
+			<p class="muted note">{copy.connections.disconnectNote}</p>
+		{/if}
 	{/if}
 
 	<p class="visually-hidden" role="status" aria-live="polite">{announcement}</p>
@@ -174,6 +202,10 @@
 
 	.lede {
 		max-width: var(--measure);
+	}
+
+	.issue {
+		padding-bottom: var(--space-4);
 	}
 
 	.note {

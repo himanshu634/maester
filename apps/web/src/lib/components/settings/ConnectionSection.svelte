@@ -15,6 +15,7 @@
 		checkDhan,
 		checkFred,
 		expiredNote,
+		failingNotice,
 		expiryWords,
 		lastReadWords,
 		saveFailure,
@@ -131,8 +132,9 @@
 				<p>{expiredNote(connection)}</p>
 			</Notice>
 		{:else if connection.state === 'failing'}
-			<Notice title={copy.notices.failing.title(words.name)} role="note">
-				<p>{copy.notices.failing.detail}</p>
+			{@const failing = failingNotice(connection)}
+			<Notice title={failing.title} role="note">
+				<p>{failing.detail}</p>
 			</Notice>
 		{/if}
 		{#if connection.notice === 'DATA_PLAN_INACTIVE'}

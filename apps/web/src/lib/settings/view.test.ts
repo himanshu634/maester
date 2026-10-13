@@ -6,7 +6,9 @@ import {
 	checkFred,
 	expiredNote,
 	expiryWords,
+	failingNotice,
 	lastReadWords,
+	listFailure,
 	opensOnLoad,
 	saveFailure,
 	savedWords,
@@ -177,5 +179,36 @@ describe('saveFailure', () => {
 		expect(saveFailure(new ApiError(401, 'UNAUTHENTICATED', 'no'), 'dhan').message).toBe(
 			'Your session ended. Sign in again, then save.'
 		);
+	});
+});
+
+describe('failingNotice', () => {
+	it('says FRED refused the key, since that is what makes FRED failing', () => {
+		expect(failingNotice(conn({ provider: 'fred', state: 'failing' }))).toEqual({
+			title: 'FRED refused the key on the last read.',
+			detail: 'Save a new key. US VIX and the rupee stop until you do.'
+		});
+	});
+
+	it('says Dhan did not answer, for a Dhan connection that is failing', () => {
+		expect(failingNotice(conn({ state: 'failing' })).title).toBe(
+			'Dhan didn’t answer on the last read.'
+		);
+	});
+});
+
+describe('listFailure', () => {
+	it('says the server cannot keep keys when its encryption key is not set', () => {
+		expect(listFailure(new ApiError(409, 'INVALID_STATE', 'CONNECTIONS_KEY is not set'))).toEqual({
+			title: 'This server can’t keep keys yet: its encryption key isn’t set.',
+			retry: false
+		});
+	});
+
+	it('offers to try again for anything else', () => {
+		expect(listFailure(new ApiError(0, 'NETWORK', 'offline'))).toEqual({
+			title: 'Your connections didn’t load.',
+			retry: true
+		});
 	});
 });

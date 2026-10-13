@@ -12,7 +12,10 @@ export const settingsContent = {
 	loadFailed: {
 		title: 'Your settings didn’t load.',
 		detail: 'Nothing saved is lost. Check your connection and try again.',
-		retry: 'Try again'
+		retry: 'Try again',
+		connections: 'Your connections didn’t load.',
+		connectionsDetail: 'Nothing saved is lost. Check your connection and try again.',
+		noServerKeyDetail: 'Set CONNECTIONS_KEY for the API and the worker, then reload this page.'
 	},
 
 	account: {
@@ -117,6 +120,10 @@ export const settingsContent = {
 					: 'Market mood has no readings until you save a new one.'
 		},
 		failing: {
+			fred: {
+				title: 'FRED refused the key on the last read.',
+				detail: 'Save a new key. US VIX and the rupee stop until you do.'
+			},
 			title: (name: string) => `${name} didn’t answer on the last read.`,
 			detail: 'Maester tries again every 30 minutes. If it keeps failing, save the key again.'
 		},

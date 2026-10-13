@@ -12,6 +12,7 @@ import {
 	formatValue,
 	dayTag,
 	headLine,
+	nextReadIn,
 	inMoodLine,
 	rankSentence,
 	sourceLine
@@ -358,5 +359,18 @@ describe('dayTag', () => {
 		expect(dayTag(canvasMood())).toBe('After the close, 6 Oct');
 		expect(dayTag(canvasMood({ provisional: true }))).toBe('Provisional, 6 Oct');
 		expect(dayTag(canvasMood({ latestSession: null }))).toBeNull();
+	});
+});
+
+describe('nextReadIn', () => {
+	it('waits out the rest of the 10 minutes since the last read, success or failure', () => {
+		const last = Date.parse('2026-10-06T10:00:00.000Z');
+		expect(nextReadIn(last, last)).toBe(600_000);
+		expect(nextReadIn(last, last + 240_000)).toBe(360_000);
+	});
+
+	it('reads at once when a hidden tab comes back after the wait has passed', () => {
+		const last = Date.parse('2026-10-06T10:00:00.000Z');
+		expect(nextReadIn(last, last + 3_600_000)).toBe(0);
 	});
 });

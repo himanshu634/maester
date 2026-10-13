@@ -12,6 +12,7 @@
 	import { marketMoodApi } from '$lib/market-mood/client';
 	import type { MarketMood } from '$lib/market-mood/types';
 	import {
+		nextReadIn,
 		bandLabel,
 		byFamily,
 		dayMonth,
@@ -26,9 +27,6 @@
 	import MoodRuler from './MoodRuler.svelte';
 	import ReadingRow from './ReadingRow.svelte';
 
-	/** How often an open page reads the mood again. The worker refreshes every 30 minutes. */
-	const RELOAD_MS = 10 * 60 * 1000;
-
 	const id = $props.id();
 	const fetcher: Fetcher = (url, init) => fetch(url, init);
 	const api = marketMoodApi(fetcher);
@@ -36,6 +34,8 @@
 	let load = $state<'loading' | 'failed' | 'ready'>('loading');
 	let mood = $state.raw<MarketMood | null>(null);
 	let hidden = $state(false);
+	/** When the last read finished, success or failure, so a failed read still re-arms the timer. */
+	let lastAttempt = $state(0);
 
 	async function start() {
 		if (!mood) load = 'loading';
@@ -45,6 +45,8 @@
 		} catch {
 			// A failed background read keeps the mood already on screen.
 			if (!mood) load = 'failed';
+		} finally {
+			lastAttempt = Date.now();
 		}
 	}
 
@@ -53,10 +55,11 @@
 		start();
 	});
 
-	// Read again after a while; never while the tab is hidden. Re-arms after each read.
+	// Read again 10 minutes after the last attempt, never while the tab is hidden. A tab that comes
+	// back after the wait reads at once. Re-arms after every attempt, including a failed one.
 	$effect(() => {
-		if (hidden || load !== 'ready' || !mood) return;
-		const timer = window.setTimeout(start, RELOAD_MS);
+		if (hidden || load !== 'ready' || lastAttempt === 0) return;
+		const timer = window.setTimeout(start, nextReadIn(lastAttempt, Date.now()));
 		return () => window.clearTimeout(timer);
 	});
 

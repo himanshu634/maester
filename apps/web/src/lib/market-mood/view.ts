@@ -164,6 +164,17 @@ function reasonsOut(m: MarketMood): string {
 	);
 }
 
+/** How often an open page reads the mood again. The worker refreshes every 30 minutes. */
+export const RELOAD_MS = 10 * 60 * 1000;
+
+/**
+ * How long to wait before the next read, counted from the last attempt, success or failure.
+ * Zero when the wait has already passed, as when a hidden tab comes back.
+ */
+export function nextReadIn(lastAttempt: number, now: number): number {
+	return Math.max(0, RELOAD_MS - (now - lastAttempt));
+}
+
 /** The tag beside the heading: the day the mood is for, and whether it is provisional. */
 export function dayTag(m: MarketMood): string | null {
 	if (m.latestSession === null) return null;

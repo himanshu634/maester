@@ -127,3 +127,20 @@ export function saveFailure(err: ApiError, provider: ConnectionProvider): Failur
 	if (err.code === 'UNAUTHENTICATED') return { field: null, message: copy.errors.signedOut };
 	return { field: null, message: copy.errors.noAnswer(name) };
 }
+
+/** The note on a connection whose last read failed. A FRED connection fails when FRED refuses its key. */
+export function failingNotice(c: Connection): { title: string; detail: string } {
+	return c.provider === 'fred'
+		? copy.notices.failing.fred
+		: {
+				title: copy.notices.failing.title(copy.providers[c.provider].name),
+				detail: copy.notices.failing.detail
+			};
+}
+
+/** What the Connections group says when the list did not load, and whether trying again can help. */
+export function listFailure(err: ApiError): { title: string; retry: boolean } {
+	return err.code === 'INVALID_STATE'
+		? { title: copy.errors.noServerKey, retry: false }
+		: { title: copy.loadFailed.connections, retry: true };
+}
