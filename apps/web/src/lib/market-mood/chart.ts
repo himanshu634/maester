@@ -55,12 +55,15 @@ export function linePath(values: number[], s: Scales): string {
 		.join(' ');
 }
 
-/** The first session of each month, as "Nov" or "Nov 2025", leaving out labels that would touch. */
+/**
+ * The first session of each month, as "Nov" or "Nov 2025", leaving out labels that would touch.
+ * A label with its year is about 60px wide at 14px, so those keep 80px apart.
+ */
 export function monthTicks(
 	days: string[],
 	s: Scales,
 	withYear = false,
-	minGap = 56
+	minGap = withYear ? 80 : 56
 ): { x: number; label: string }[] {
 	const ticks: { x: number; label: string }[] = [];
 	let last = -Infinity;

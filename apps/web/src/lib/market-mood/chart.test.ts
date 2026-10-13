@@ -62,6 +62,14 @@ describe('monthTicks', () => {
 		const frame = frameFor(600, { bandNames: false });
 		expect(monthTicks(ds, scales(ds.length, frame, [0, 100]), true)[0]?.label).toBe('Jan 2026');
 	});
+
+	it('spaces labels with a year further apart, so "Nov 2025" never touches the next', () => {
+		const ds = days(365, '2025-10-10');
+		const frame = frameFor(300, { bandNames: false, left: 72 });
+		const ticks = monthTicks(ds, scales(ds.length, frame, [0, 100]), true);
+		const gaps = ticks.slice(1).map((t, i) => t.x - ticks[i]!.x);
+		expect(Math.min(...gaps)).toBeGreaterThanOrEqual(80);
+	});
 });
 
 describe('lowest', () => {

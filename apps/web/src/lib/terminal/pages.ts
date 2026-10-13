@@ -1,8 +1,8 @@
 /**
  * The signed-in terminal's pages, in rail order. Every page planned for the first release is
  * listed; one that does not work yet says "Soon" in the rail and opens a coming-soon page that
- * says what it will do (docs/DESIGN.md sections 7 and 10). Market mood, Documents and Settings work. The demo routes keep their own
- * one-item rail and are not listed here.
+ * says what it will do (docs/DESIGN.md sections 7 and 10). Market mood, Research, Documents and
+ * Settings work. The demo routes keep their own one-item rail and are not listed here.
  */
 export type TerminalPageKey =
 	| 'overview'
@@ -16,7 +16,10 @@ export type TerminalPageKey =
 	| 'settings';
 
 /** The pages that are still coming-soon pages (ComingSoon). */
-export type ComingSoonKey = Exclude<TerminalPageKey, 'documents' | 'market-mood' | 'settings'>;
+export type ComingSoonKey = Exclude<
+	TerminalPageKey,
+	'documents' | 'market-mood' | 'research' | 'settings'
+>;
 
 export type TerminalPath =
 	| '/terminal'
@@ -57,7 +60,13 @@ export const terminalPages: readonly TerminalPage[] = [
 		group: 'portfolio',
 		soon: false
 	},
-	{ key: 'research', label: 'Research', path: '/terminal/research', group: 'research', soon: true },
+	{
+		key: 'research',
+		label: 'Research',
+		path: '/terminal/research',
+		group: 'research',
+		soon: false
+	},
 	{
 		key: 'watchlist',
 		label: 'Watchlist',

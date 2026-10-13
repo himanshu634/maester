@@ -34,6 +34,7 @@
 	} from '$lib/documents/types';
 	import Notice from '$lib/components/auth/Notice.svelte';
 	import SectionIssue from '$lib/components/errors/SectionIssue.svelte';
+	import { companyHref } from '$lib/research/links';
 	import StageLadder from './StageLadder.svelte';
 	import KindForm, { type KindAnswer } from './KindForm.svelte';
 	import CompanyForm from './CompanyForm.svelte';
@@ -332,6 +333,11 @@
 				busy={retrying}
 				onretry={() => retry(onextract)}
 			/>
+		{:else if doc.intakeState === 'read' && !jobRunning && companyId}
+			<p class="figures-link">
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the id is known only at runtime; the path is resolve()d -->
+				<a href={companyHref(companyId)}>{copy.slip.seeFigures}</a>
+			</p>
 		{/if}
 
 		{#if message}

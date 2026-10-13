@@ -107,20 +107,9 @@ export const terminalContent = {
 					landed: 'not yet! the walls are still going up'
 				}
 			},
-			research: {
-				what: 'Each company you own or follow, with the figures from its filings and the page each figure came from.',
-				needs: 'It fills in as the filings for your companies are read.',
-				sketch: {
-					label:
-						'A sketch of a filing cabinet. Dragging the top drawer open shows it holds a single note that says being sorted.',
-					idle: 'pull the drawer open',
-					open: 'just one note so far',
-					note: ['being', 'sorted']
-				}
-			},
 			watchlist: {
 				what: 'Companies you’re watching but don’t own yet, each with the date you meant to look again and what has changed since.',
-				needs: 'It opens with the research pages.',
+				needs: 'It starts once you can follow a company from Research.',
 				sketch: {
 					label:
 						'A sketch of a pair of binoculars over a quiet horizon. Dragging sweeps their view along the horizon, and there is nothing in it yet.',

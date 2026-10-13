@@ -24,6 +24,12 @@ export const researchContent = {
 		latest: 'Latest year',
 		standing: 'Where it stands'
 	},
+	/** Read out after the "—" in the Latest year column. */
+	noLatest: 'No annual report read yet',
+	/** Read from and Latest year in one line, under the name, when the list is narrow. */
+	folded: (reports: string, latest: string | null) =>
+		latest ? `${reports}, latest ${latest}` : reports,
+	listLabel: 'Your companies',
 	reports: (n: number) =>
 		n === 0 ? 'No annual report read yet' : `${n} annual ${n === 1 ? 'report' : 'reports'}`,
 	standing: {
@@ -35,6 +41,9 @@ export const researchContent = {
 
 	company: {
 		back: 'Research',
+		/** The page's heading while the company's name is not known yet; read out, not shown. */
+		heading: 'A company in Research',
+		identity: { nse: 'NSE', bse: 'BSE', cin: 'CIN' },
 		loading: (name: string | null) => (name ? `Loading ${name}.` : 'Loading the company.'),
 		notFound: { title: 'This company isn’t in your workspace.', back: 'Back to Research' },
 		financialsFailed: {
@@ -45,7 +54,9 @@ export const researchContent = {
 		stockFailed: {
 			title: 'The prices didn’t load.',
 			detail: 'The business figures below are still current.',
-			retry: 'Try again'
+			retry: 'Try again',
+			busy: 'Asking for the prices again…',
+			again: 'Still didn’t load. Try again in a moment.'
 		},
 		readFrom: (n: number) => `Read from ${n} annual ${n === 1 ? 'report' : 'reports'}:`,
 		nothingRead: (name: string) => `No annual report for ${name} has been read yet.`,
@@ -88,6 +99,8 @@ export const researchContent = {
 		noProfit: 'Profit wasn’t found in the statement.',
 		unknownUnit: 'The statement’s unit isn’t one Maester can name.',
 		settings: 'Settings',
+		/** "Connect Dhan in Settings to see prices.", with Settings as a link. */
+		connect: { before: 'Connect Dhan in', after: 'to see prices.' },
 		chart: {
 			heading: 'The last year’s closes',
 			source: 'NSE, ₹ a share. From your Dhan data.',

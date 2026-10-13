@@ -56,7 +56,9 @@ export const documentsContent = {
 		change: 'Change',
 		changeLabel: (term: string) => `Change ${term.toLowerCase()}`,
 		cancel: 'Cancel',
-		notYet: 'Maester hasn’t worked this out yet.'
+		notYet: 'Maester hasn’t worked this out yet.',
+		/** Once a document is read and its company confirmed: a link to the company's figures. */
+		seeFigures: 'See the figures'
 	},
 
 	kind: {
