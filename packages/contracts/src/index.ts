@@ -8,3 +8,4 @@ export * from "./classification.js";
 export * from "./payloads.js";
 export * from "./market-mood.js";
 export * from "./connection.js";
+export * from "./research.js";
