@@ -150,17 +150,6 @@ export const terminalContent = {
 					written: 'that’s the only line for now',
 					entry: 'first entry soon'
 				}
-			},
-			settings: {
-				what: 'Your account, your preferences and what happens to your data, in one place.',
-				needs: 'Until it opens, you can sign out below the page list.',
-				sketch: {
-					label:
-						'A sketch of a spanner on a bolt in a half-assembled bracket. Dragging around the bolt turns the spanner; some parts are still missing.',
-					idle: 'turn the spanner',
-					turning: 'a little tighter…',
-					done: 'still fitting the parts'
-				}
 			}
 		}
 	}

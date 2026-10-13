@@ -10,6 +10,8 @@
 		value: string;
 		error?: string | null;
 		hint?: string;
+		/** The input, so a form can move focus back to it. */
+		input?: HTMLInputElement;
 	}
 
 	let {
@@ -19,7 +21,8 @@
 		autocomplete,
 		value = $bindable(),
 		error,
-		hint
+		hint,
+		input = $bindable()
 	}: Props = $props();
 	const describedby = $derived(
 		[hint ? `${id}-hint` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined
@@ -34,6 +37,7 @@
 		name={id}
 		{type}
 		{autocomplete}
+		bind:this={input}
 		bind:value
 		aria-invalid={error ? 'true' : undefined}
 		aria-describedby={describedby}

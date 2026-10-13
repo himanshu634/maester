@@ -44,10 +44,11 @@ describe('terminalPages', () => {
 		expect(terminalPages.some((page) => page.path.startsWith('/terminal/demo'))).toBe(false);
 	});
 
-	it('marks every page as coming soon until it works; Market mood and Documents work', () => {
+	it('marks every page as coming soon until it works; Market mood, Documents and Settings work', () => {
 		expect(terminalPages.filter((page) => !page.soon).map((page) => page.key)).toEqual([
 			'market-mood',
-			'documents'
+			'documents',
+			'settings'
 		]);
 	});
 

@@ -8,13 +8,28 @@
 	interface Props {
 		id: string;
 		label: string;
-		autocomplete: 'current-password' | 'new-password';
+		autocomplete: 'current-password' | 'new-password' | 'off';
 		value: string;
 		error?: string | null;
 		hint?: string;
+		/** The Show button's name, when it is not a password: "Show token". */
+		showLabel?: string;
+		placeholder?: string;
+		/** The input, so a form can move focus back to it. */
+		input?: HTMLInputElement;
 	}
 
-	let { id, label, autocomplete, value = $bindable(), error, hint }: Props = $props();
+	let {
+		id,
+		label,
+		autocomplete,
+		value = $bindable(),
+		error,
+		hint,
+		showLabel,
+		placeholder,
+		input = $bindable()
+	}: Props = $props();
 	let shown = $state(false);
 	const describedby = $derived(
 		[hint ? `${id}-hint` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined
@@ -30,6 +45,9 @@
 			name={id}
 			type={shown ? 'text' : 'password'}
 			{autocomplete}
+			{placeholder}
+			spellcheck="false"
+			bind:this={input}
 			bind:value
 			aria-invalid={error ? 'true' : undefined}
 			aria-describedby={describedby}
@@ -38,10 +56,10 @@
 		<button
 			class="show"
 			type="button"
-			aria-label={authContent.fields.showPassword}
+			aria-label={showLabel ? undefined : authContent.fields.showPassword}
 			aria-pressed={shown}
 			aria-controls={id}
-			onclick={() => (shown = !shown)}>{authContent.fields.show}</button
+			onclick={() => (shown = !shown)}>{showLabel ?? authContent.fields.show}</button
 		>
 	</div>
 	{#if error}<p class="error" id="{id}-error">{error}</p>{/if}

@@ -73,7 +73,7 @@ async function toError(response: Response): Promise<ApiError> {
 	);
 }
 
-async function send(fetcher: Fetcher, url: string, init?: RequestInit): Promise<Response> {
+export async function send(fetcher: Fetcher, url: string, init?: RequestInit): Promise<Response> {
 	let response: Response;
 	try {
 		response = await fetcher(url, init);
