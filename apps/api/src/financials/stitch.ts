@@ -101,17 +101,34 @@ function keyed(facts: FactWithSource[]): { byKey: Map<string, FactWithSource>; k
   return { byKey, keys };
 }
 
+/** Failed outranks not checked, which outranks passed: a figure is never shown cleaner than its worst check. */
+const SEVERITY: Record<ExtractionCheckRow["status"], number> = { failed: 2, not_checked: 1, passed: 0 };
+
 function checkFor(f: FactWithSource, filing: Filing, siblings: FactWithSource[], move: number): CellCheck {
-  // A check names its section when it has one: two subtotals called "Total" are told apart by it.
-  const index = (subject: string, section: string) =>
-    filing.checks.find(
-      (c) =>
-        c.statement === f.fact.statement &&
-        c.basis === f.fact.basis &&
-        (c.section === null || normalise(c.section) === normalise(section)) &&
-        normalise(c.periodLabel) === normalise(f.fact.periodLabel) &&
-        normalise(c.subjectLabel) === normalise(subject),
-    );
+  // A check names its section when it has one: two subtotals called "Total" are told apart by it. A check with no
+  // section (the balance identity, for one) covers every section, so a subtotal can have two checks: the worst
+  // status wins, and on a tie the check that names the section exactly, so the result never depends on array order.
+  const index = (subject: string, section: string) => {
+    let best: ExtractionCheckRow | undefined;
+    for (const c of filing.checks) {
+      if (
+        c.statement !== f.fact.statement ||
+        c.basis !== f.fact.basis ||
+        (c.section !== null && normalise(c.section) !== normalise(section)) ||
+        normalise(c.periodLabel) !== normalise(f.fact.periodLabel) ||
+        normalise(c.subjectLabel) !== normalise(subject)
+      ) {
+        continue;
+      }
+      if (!best) {
+        best = c;
+        continue;
+      }
+      const worse = SEVERITY[c.status] - SEVERITY[best.status];
+      if (worse > 0 || (worse === 0 && best.section === null && c.section !== null)) best = c;
+    }
+    return best;
+  };
   const rescale = (v: string | null) => (v === null ? null : moveDecimal(v, move));
   const own = index(f.fact.reportedLabel, f.fact.section);
   if (own) return { role: "subject", status: own.status, subjectLabel: own.subjectLabel, expected: rescale(own.expected), actual: rescale(own.actual) };

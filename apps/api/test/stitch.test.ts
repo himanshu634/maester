@@ -33,10 +33,10 @@ function fact(doc: Doc, label: string, periodEnd: string, printed: string, o: Op
   };
 }
 
-function check(doc: Doc, subject: string, periodEnd: string, status: "passed" | "failed", expected: string, actual: string, o: { statement?: Kind; section?: string } = {}): ExtractionCheckRow {
+function check(doc: Doc, subject: string, periodEnd: string, status: "passed" | "failed", expected: string, actual: string, o: { statement?: Kind; section?: string | null } = {}): ExtractionCheckRow {
   return {
     id: crypto.randomUUID(), workspaceId: WS, revisionId: doc.revisionId, checkType: "subtotal", statement: o.statement ?? "income_statement",
-    basis: "consolidated", section: o.section ?? "Income", periodLabel: `Year ended ${periodEnd}`, subjectLabel: subject, status, expected, actual, detail: "",
+    basis: "consolidated", section: o.section === undefined ? "Income" : o.section, periodLabel: `Year ended ${periodEnd}`, subjectLabel: subject, status, expected, actual, detail: "",
   };
 }
 
@@ -197,6 +197,38 @@ describe("stitch", () => {
     }));
     const bs = stitch([ar]).find((t) => t.statement === "balance_sheet")!;
     expect(bs.rows.map((r) => r.cells[0]!.check.status)).toEqual(["passed", "failed"]);
+  });
+
+  describe("when a subtotal has two checks, the section's and the section-less balance identity", () => {
+    const subtotalPassed = (d: Doc) => check(d, "Total assets", "2026-03-31", "passed", "17580.00", "17580.00", { statement: "balance_sheet", section: "Assets" });
+    const identityFailed = (d: Doc) => check(d, "Total assets", "2026-03-31", "failed", "17580.00", "17588.00", { statement: "balance_sheet", section: null });
+    const orders = { "passed first": [subtotalPassed, identityFailed], "failed first": [identityFailed, subtotalPassed] };
+    for (const [name, order] of Object.entries(orders)) {
+      it(`shows the failed one on the subtotal and on its lines (${name})`, () => {
+        const ar = filing("2026-03-31", (d) => ({
+          facts: [
+            fact(d, "Property, plant and equipment", "2026-03-31", "9,000.00", { statement: "balance_sheet", section: "Assets", order: 0 }),
+            fact(d, "Total assets", "2026-03-31", "17,580.00", { statement: "balance_sheet", section: "Assets", order: 1, subtotal: true, parts: ["Property, plant and equipment"] }),
+          ],
+          checks: order.map((make) => make(d)),
+        }));
+        const bs = stitch([ar]).find((t) => t.statement === "balance_sheet")!;
+        expect(row(bs, "Total assets").cells[0]!.check).toEqual({ role: "subject", status: "failed", subjectLabel: "Total assets", expected: "17580", actual: "17588" });
+        expect(row(bs, "Property, plant and equipment").cells[0]!.check).toEqual({ role: "component", status: "failed", subjectLabel: "Total assets", expected: "17580", actual: "17588" });
+      });
+    }
+
+    it("on a tie in status takes the check that names the section", () => {
+      const ar = filing("2026-03-31", (d) => ({
+        facts: [fact(d, "Total assets", "2026-03-31", "17,580.00", { statement: "balance_sheet", section: "Assets", subtotal: true })],
+        checks: [
+          check(d, "Total assets", "2026-03-31", "passed", "1.00", "1.00", { statement: "balance_sheet", section: null }),
+          check(d, "Total assets", "2026-03-31", "passed", "17580.00", "17580.00", { statement: "balance_sheet", section: "Assets" }),
+        ],
+      }));
+      const bs = stitch([ar]).find((t) => t.statement === "balance_sheet")!;
+      expect(row(bs, "Total assets").cells[0]!.check).toMatchObject({ status: "passed", expected: "17580" });
+    });
   });
 
   it("keeps a printed dash and an unreadable figure apart from a missing one", () => {
