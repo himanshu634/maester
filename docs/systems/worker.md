@@ -368,7 +368,7 @@ These codes do not make the job fail. The document state becomes `rejected`, and
 | `UNKNOWN` | An error that is not a `MarketSourceError`. Examples: a saved connection does not decrypt, or the worker cannot read the renewed token. | The run row is `failed`. If a connection does not decrypt, no source runs in this pass. |
 | Renewal fails for a different cause | Dhan does not answer the renewal, or sends a different error. | The refresher writes the code to the log and uses the current token. |
 | No member list | No file at `apps/worker/data/nifty500.csv`, or the file has no rows. | The refresher reads no member closes and writes no breadth. The other series refresh. |
-| No `Symbol` column | The header of the member list has no `Symbol` column. | `readMembers` throws. The worker stops at start, and `market:refresh` stops with an error. |
+| No `Symbol` column | The header of the member list has no `Symbol` column. | `readMembers` throws. `loadMembers` logs the error and gives an empty list. The worker starts, and the refresher stores no breadth. |
 | Member with no Dhan ID | The scrip master has no NSE `EQ` row for the symbol. | The member is not in the breadth. The worker writes the symbols to the log. |
 | Member failure | Dhan gives a different error for one member. | The member is not in the breadth for this pass. |
 | Thin day | Fewer than 95% of the members with a close on the previous session have a close on the new day. | The refresher holds back the day and the days after it. A later pass calculates them. |
