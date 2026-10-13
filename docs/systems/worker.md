@@ -229,7 +229,7 @@ The Dhan part has these steps, in this order:
 1. The refresher renews the Dhan token if necessary. See [Dhan token renewal](#dhan-token-renewal).
 2. The refresher reads the closes of the Nifty 50 index into `nifty50` and of the India VIX index into `india_vix`. Each read goes from the last stored day to the last close.
 3. The refresher reads the closes of the gold future into `gold_mcx`.
-4. The gold read starts on the day after the last stored day. It stops at the last settled gold close: today after 23:55 IST, when MCX is closed, and yesterday before that. If `gold_mcx` has points and `nifty50` has no newer day, the refresher does not read gold.
+4. The gold read starts on the day after the last stored day. It stops at the last settled gold close: today after 23:55 IST, after MCX closes, and yesterday before that. If `gold_mcx` has points and `nifty50` has no newer day, the refresher does not read gold.
 5. The refresher writes the put–call ratio of the Nifty to `nifty_pcr_oi`. See the conditions below.
 6. The refresher reads the closes of the members and calculates the breadth. See [Breadth](#breadth).
 
