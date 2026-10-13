@@ -28,10 +28,25 @@ This document describes the HTTP service in `apps/api`. For the full system, rea
 | dispatcher | The part that tells the worker to start a job. It sends an HTTP request or makes a Cloud Tasks task. |
 | trace ID | The value of the `x-request-id` header. The API puts it in each error and in the log. |
 | error envelope | The JSON body of an API error: `{ "error": { "code", "message", "fields", "traceId" } }`. |
+| provider | A market data source that the user connects in Settings: `dhan` (Dhan) or `fred` (FRED). |
+| secret | The Dhan access token or the FRED API key that a user gives for a provider. |
+| connection | The row in the `market_connection` table for one provider. It holds the encrypted secret. |
+| connections key | The value of `CONNECTIONS_KEY`: 32 bytes in base64. The API uses it to encrypt each secret. |
+| series | All rows in the `market_point` table with one `series` name, for example `nifty50`. One row is one value for one day. |
+| refresh run | A row in the `market_fetch` table. The market refresher of the worker writes it. |
+| trading day | One day in the `nifty50` series. The code calls the latest trading day `latestSession`. |
+| reading | One of the 10 market values on the market mood page, with its day, rank and score. The contract is `Reading`. |
+| scored reading | One of the 7 readings that make the mood. |
+| rank | The percentage of earlier values of a reading that are lower than its current value. An equal value counts as one half. |
+| score | The part that a scored reading gives to the mood, 0 to 100. |
+| mood | The rounded average of the scores, 0 to 100. |
+| band | The name of the range that the mood is in, for example `cautious`. |
 
 ## Function
 
 The API signs users in, keeps their sessions and admits only the emails that the waitlist approves. For a signed-in member of a workspace, it writes companies and documents, gives signed URLs for upload and download, and creates jobs. The worker does the slow work of each job. The API only writes the job row and tells the worker about it. The browser reads the result from the API later, or follows a job through a Server-Sent Events stream. The browser reaches the API through the proxy of the web origin.
+
+The API also has two groups of routes that need a session but no workspace. The market mood routes calculate the mood from the series that the worker stores. The Settings routes check a secret with its provider, then keep it encrypted as a connection.
 
 In this document, `...` in a path is `/v1/workspaces/:ws`.
 
@@ -51,12 +66,15 @@ In this document, `...` in a path is `/v1/workspaces/:ws`.
 | Dispatch | `apps/api/src/dispatch/index.ts` | Selects the dispatcher from `DISPATCH_MODE`. |
 | Mail | `apps/api/src/mail/` | Sends the mail for email confirmation and password reset. |
 | Store | `apps/api/src/store.ts` | Selects the object store from `STORAGE_DRIVER`. |
-| Serialize | `apps/api/src/serialize.ts` | Changes database rows into the JSON shapes of `@maester/contracts`. |
+| Serialize | `apps/api/src/serialize.ts` | Changes database rows into the JSON shapes of `@maester/contracts`. `toFetchStatus` gives the status of the latest refresh run. |
+| Market mood routes | `apps/api/src/routes/market-mood.ts` | Read the series and the latest refresh run, then send the mood or one reading. |
+| Mood calculation | `apps/api/src/market-mood/compute.ts` | Calculates the readings, the ranks, the scores, the mood and the history. It uses no database and no clock. |
+| Connections routes | `apps/api/src/routes/connections.ts` | List, check, keep and remove the connections. |
 | Logger | `apps/api/src/logger.ts` | Writes JSON log records with pino. Removes the `cookie` and `authorization` request headers from the log. |
 | Migrate | `apps/api/src/migrate.ts` | Applies the database migrations, then stops. |
 | Tests | `apps/api/test/` | Vitest tests. They use a real Postgres database. |
 
-The API uses four shared packages: `@maester/db`, `@maester/contracts`, `@maester/jobs` and `@maester/storage`. Read [shared packages](packages.md) for them.
+The API uses five shared packages: `@maester/db`, `@maester/contracts`, `@maester/jobs`, `@maester/storage` and `@maester/market`. From `@maester/market`, it uses `encryptSecret`, `HttpDhanSource` and `HttpFredSource`. Read [shared packages](packages.md) for them.
 
 ## Operation
 
@@ -69,6 +87,12 @@ All routes under `/v1` need a session. All routes under `/v1/workspaces/:ws/` al
 | GET | `/healthz` | `{ "status": "ok" }`. No session is necessary. |
 | GET, POST | `/api/auth/*` | Better Auth sends the response. |
 | GET | `/v1/me` | The user and the workspaces of the user. |
+| GET | `/v1/market-mood` | The mood, the 10 readings, the history and the status of the latest refresh run. No workspace is necessary. |
+| GET | `/v1/market-mood/readings/:key` | One reading and its last 500 values. No workspace is necessary. |
+| GET | `/v1/settings/connections` | The two connections, `dhan` first. No workspace is necessary. |
+| PUT | `/v1/settings/connections/dhan` | Checks a Dhan secret with Dhan, then keeps it. |
+| PUT | `/v1/settings/connections/fred` | Checks a FRED secret with FRED, then keeps it. |
+| DELETE | `/v1/settings/connections/:provider` | Removes a connection. Status 204. |
 | GET | `/v1/workspaces` | The workspaces of the user. `nextCursor` is always `null`. |
 | GET | `/v1/workspaces/:ws` | One workspace. |
 | POST | `/v1/workspaces/:ws/companies` | Creates a company. Status 201. |
@@ -209,6 +233,80 @@ For a retry, the API sets the state to `queued`, sets `maxAttempts` to `attempt`
 5. If nothing changes for 15 seconds, the API sends the comment line `: ping`.
 6. The API closes the stream after 30 minutes.
 
+### Market mood
+
+1. The browser sends `GET /v1/market-mood`. The route needs a session. It does not need a workspace.
+2. The API reads 8 series from the `market_point` table, from 1,464 days (4 × 366) before the current date. It also reads the latest refresh run.
+3. `computeMood` makes the 10 readings from these series. The table after these steps shows each reading.
+4. For each reading, the API uses the value on the latest trading day, or the last value before that day.
+5. The API compares this value with up to 500 earlier values of the same reading, to get the rank. 500 values are about 2 years. With fewer than 250 earlier values, the reading has no rank.
+6. If the value is more than 4 days older than the latest trading day, the reading is stale. A stale reading has no score.
+7. The score of a scored reading is its rank. For `india_vix`, `us_vix` and `gold_vs_nifty`, the score is 100 minus the rank, because a high value shows caution.
+8. The mood is the rounded average of the scores. If fewer than 5 of the 7 scored readings have a score, there is no mood.
+9. The API calculates the mood again for each of the last 250 trading days. The history keeps each day with a mood.
+10. `atOrBelowShare` is the percentage of the history days with a mood at or below the current mood.
+11. The response also has the band, `scoredCount`, `asOf`, `latestSession`, `provisional` and `fetch`.
+
+| Reading | Family | Scored | Score | Series |
+| --- | --- | --- | --- | --- |
+| `india_vix` | `fear` | Yes | 100 minus the rank | `india_vix` |
+| `us_vix` | `fear` | Yes | 100 minus the rank | `us_vix` |
+| `nifty_pcr` | `fear` | No | None | `nifty_pcr_oi` |
+| `fpi_flows` | `money` | Yes | The rank | No series. The reading is always `no_source`. |
+| `dii_flows` | `money` | No | None | No series. The reading is always `no_source`. |
+| `nifty_trend` | `breadth` | Yes | The rank | Calculated from `nifty50`: the percentage above the average of the last 125 trading days. |
+| `n500_above_200d` | `breadth` | Yes | The rank | `n500_above_200d_pct` |
+| `n500_net_highs` | `breadth` | Yes | The rank | `n500_net_highs_pct` |
+| `usd_inr` | `havens` | No | None | `usd_inr` |
+| `gold_vs_nifty` | `havens` | Yes | 100 minus the rank | Calculated: the change of `gold_mcx` over 20 trading days, minus the change of `nifty50` over the same days. |
+
+Other rules for the mood:
+
+- The band is `very_cautious` below 20, `cautious` below 40, `middling` below 60, `eager` below 80, and `very_eager` from 80.
+- `asOf` is the oldest day of the scored readings that have a score.
+- `provisional` is true when a scored reading for India has a score and a day before the latest trading day. `us_vix` and `usd_inr` do not make the mood provisional.
+- `previous` in a reading is the value 5 rows earlier for the `fear` readings, and 20 rows earlier for all other readings.
+- The `source` of a reading is the `source` of its last row. If the reading has no rows, it is a fixed label, for example `FRED · Cboe VIX close`.
+- If the `nifty50` series has no rows, no reading is stale, `provisional` is false and the history is empty.
+
+`toFetchStatus` gives `fetch` from the latest refresh run:
+
+- If there is no refresh run, `state` is `never`.
+- If not, `state` is the state of the run. `at` is the time that the run finished, or the time that it started if it did not finish.
+- `errorCode` has a value only for a `failed` run. A code that the contract does not know becomes `UNKNOWN`.
+
+`GET /v1/market-mood/readings/:key` calculates the full mood, then sends one reading and the last 500 values of its series, oldest first. If `:key` is not one of the 10 readings, the result is `NOT_FOUND`.
+
+### Settings connections
+
+1. The `requireSession` middleware checks the session.
+2. The connections routes check the connections key. If `CONNECTIONS_KEY` has no value, each route gives `INVALID_STATE`, before the body check.
+3. A `PUT` route checks the body with a Zod schema. The Dhan body has `clientId` (1 to 32 characters) and `accessToken` (20 to 4,096 characters). The FRED body has `apiKey`: 32 lower-case letters and digits.
+4. The API calls the provider with the secret. For Dhan, it calls `GET https://api.dhan.co/v2/profile`. For FRED, it asks for the latest value of the `VIXCLS` series.
+5. If the call fails, the API keeps nothing. The table after these steps shows the result.
+6. For Dhan, if the client ID from Dhan is not the `clientId` of the request, the result is `VALIDATION_FAILED` on `clientId`.
+7. `encryptSecret` encrypts the secret with AES-256-GCM and the connections key. It uses a new random 12-byte IV each time.
+8. The API writes the connection: the encrypted secret, its last 4 characters, the expiry from Dhan, `checkedAt` and `savedByUserId`. A new save replaces the old connection.
+9. The response is the same item that `GET /v1/settings/connections` gives for the provider.
+
+| Code from the provider | Status | Result |
+| --- | --- | --- |
+| `DHAN_TOKEN_EXPIRED` | 400 | `VALIDATION_FAILED`, with one entry in `fields` for `accessToken`. |
+| `FRED_KEY_REFUSED` | 400 | `VALIDATION_FAILED`, with one entry in `fields` for `apiKey`. |
+| `DHAN_RATE_LIMITED` | 429 | `RATE_LIMITED`. |
+| All other failures | 503 | `INTERNAL`, with the message `SOURCE_UNAVAILABLE`. |
+
+Other rules for the connections:
+
+- The API never sends a secret back. A connection shows only `last4`, the last 4 characters of the secret.
+- When a check fails, the log gets only the provider, the code and the name of the error. The message of the error does not go into the response or the log.
+- A save sets `lastErrorCode` to no value. But if Dhan accepts the token and the Data API plan is off, the save sets `DHAN_NO_DATA_PLAN`.
+- If the expiry from Dhan does not parse, the connection has no expiry.
+- `HttpDhanSource` sends 4 requests or fewer each second. Each call stops after 30 seconds. If Dhan sends a rate limit, `HttpDhanSource` tries again after 1, 2 and 4 seconds.
+- `HttpFredSource` stops a call after 30 seconds. FRED status 400, 401 or 403 gives `FRED_KEY_REFUSED`. All other failures give `SOURCE_UNAVAILABLE`, also a FRED rate limit.
+- `DELETE .../connections/:provider` sends status 204, also when the connection does not exist. A provider that is not `dhan` or `fred` gets `NOT_FOUND`.
+- `lastRead` is the latest `fetched_at` of a row in `market_point` with a `source` that starts with `Dhan ·` or `FRED ·`.
+
 ## States and errors
 
 ### Error codes
@@ -218,15 +316,16 @@ The API sends each error in the error envelope. The trace ID is in the envelope 
 | Code | Status | Cause |
 | --- | --- | --- |
 | `UNAUTHENTICATED` | 401 | A `/v1` route without a valid session. |
-| `NOT_FOUND` | 404 | An unknown route, a path ID that is not a UUID, or a document, job or company that is not in the workspace of the user. |
-| `VALIDATION_FAILED` | 400 | The body or the query does not agree with its schema. Also a company that is not in the workspace, and a classification change that changes nothing. |
+| `NOT_FOUND` | 404 | An unknown route, a path ID that is not a UUID, or a document, job or company that is not in the workspace of the user. Also an unknown reading and an unknown provider. |
+| `VALIDATION_FAILED` | 400 | The body or the query does not agree with its schema. Also a company that is not in the workspace, and a classification change that changes nothing. Also a secret that the provider refuses, and a Dhan token for a different client ID. |
 | `CONFLICT` | 409 | A company name or identifier that the workspace has. A stale `basedOn`. A job key that a different workspace has. |
 | `UPLOAD_TOO_LARGE` | 413 | The declared `size` is more than `MAX_UPLOAD_BYTES`. |
-| `INVALID_STATE` | 409 | The document or the job is not in the correct state for the action. |
-| `INTERNAL` | 500 | An unexpected error. The message is always `internal error`. The log has the stack. |
+| `INVALID_STATE` | 409 | The document or the job is not in the correct state for the action. Also a connections route when `CONNECTIONS_KEY` has no value. |
+| `RATE_LIMITED` | 429 | Dhan sends a rate limit to the check of a Dhan secret, also after three more tries. |
+| `INTERNAL` | 500 | An unexpected error. The message is `internal error`. The log has the stack. |
+| `INTERNAL` | 503 | The check of a secret fails because the provider does not answer correctly. The message is `SOURCE_UNAVAILABLE`. |
 | `FORBIDDEN` | 403 | Not used by an API route. |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | Not used by an API route. A type that is not PDF gets `VALIDATION_FAILED`. |
-| `RATE_LIMITED` | 429 | Not used by an API route. |
 
 Better Auth makes its own responses for `/api/auth/*`. These responses do not use the error envelope. A request over the rate limit gets status 429 from Better Auth. The `/dev` routes also send a short `{ "error" }` body, not the error envelope.
 
@@ -253,6 +352,28 @@ The API does not write the other intake states or the state `verifying`.
 | `queued` | `createJob` or a retry. | The dispatcher sends the job to the worker. |
 | `running`, `succeeded`, `failed`, `cancelled` | The API does not write these states. | The events stream ends after `succeeded`, `failed` or `cancelled`. |
 
+### Reading states
+
+A reading without a value or without a rank has a value in `missing`:
+
+| State | Cause | Result |
+| --- | --- | --- |
+| `no_source` | The reading has no provider yet (`fpi_flows` and `dii_flows`). | No value, no rank and no score. |
+| `no_data` | The series has no row on or before the latest trading day. | No value, no rank and no score. |
+| `not_enough_history` | The reading has fewer than 250 earlier values. | A value, but no rank and no score. |
+| `stale` | The value is more than 4 days older than the latest trading day. | A value and a rank, but no score. |
+| No mood | Fewer than 5 scored readings have a score. | `score` and `band` are `null`. `scoredCount` shows how many have a score. |
+
+### Connection states
+
+| State | Cause | Result |
+| --- | --- | --- |
+| `not_connected` | The provider has no connection. | Only `lastRead` can have a value. |
+| `connected` | The connection has no `lastErrorCode`, or has `DHAN_NO_DATA_PLAN`. | The last check or call with the secret did not fail. |
+| `connected` with the notice `DATA_PLAN_INACTIVE` | `lastErrorCode` is `DHAN_NO_DATA_PLAN`. Dhan accepts the token, but the Data API plan is off. | The notice stays until a new save or a good call of the refresher. |
+| `expired` | `lastErrorCode` is `DHAN_TOKEN_EXPIRED`, or `expiresAt` is now or earlier. | A save of a valid Dhan token clears this state. |
+| `failing` | `lastErrorCode` has a different code. A FRED secret that FRED refuses is `failing`, because FRED secrets do not expire. | A save of a valid secret, or a good call of the refresher, clears this state. |
+
 ### Start errors
 
 `loadEnv` stops the start with the message `invalid environment` in these conditions:
@@ -276,8 +397,11 @@ The API writes these tables directly or through `@maester/db`:
 - `workspace` and `membership`, through `ensurePersonalWorkspace`.
 - `company`, `document`, `document_classification` and `classification_evidence`.
 - `job`, through `createJob`, `retryJob` and `decideIntake`.
+- `market_connection`, through `saveConnection` and `deleteConnection`. It has one row for each provider and no workspace column.
 
 The API reads the `extraction_revision`, `extraction_check`, `financial_fact` and `source_reference` tables through `@maester/db`. It does not write them.
+
+The API reads the `market_point` and `market_fetch` tables through `listMarketSeries`, `latestMarketFetch` and `lastMarketReads`. It does not write them. The market refresher of the worker writes them. These tables have no workspace column.
 
 ### Object store
 
@@ -290,6 +414,8 @@ The API reads the `extraction_revision`, `extraction_check`, `financial_fact` an
 - Resend (`https://api.resend.com/emails`), for mail when `MAIL_DRIVER=resend`. The API stops a call to Resend after 10 seconds.
 - Cloud Tasks, when `DISPATCH_MODE=cloud-tasks`.
 - The worker, at `WORKER_URL`.
+- Dhan (`https://api.dhan.co/v2`), to check a Dhan secret. Only `PUT .../connections/dhan` calls it.
+- FRED (`https://api.stlouisfed.org/fred`), to check a FRED secret. Only `PUT .../connections/fred` calls it.
 
 ### Environment variables
 
@@ -322,6 +448,7 @@ The `dev` script reads the root `.env` file. A value that is an empty string cou
 | `TRUSTED_PROXIES` | Empty | A comma-separated list of proxy addresses or CIDR ranges. Necessary in production. |
 | `MAIL_DRIVER` | `console` | `console` or `resend`. The `console` driver writes the mail to the log. Production refuses it. |
 | `RESEND_API_KEY`, `MAIL_FROM` | None | Necessary for `resend`. |
+| `CONNECTIONS_KEY` | None | 32 bytes in base64. It encrypts each secret. Without a value, the connections routes give `INVALID_STATE`. A value that is not 32 bytes in base64 stops the start. |
 | `MIGRATIONS_FOLDER` | None | Only for `migrate.ts`. The Docker image sets `/app/drizzle`. |
 | `DATABASE_URL_TEST_API` | `postgres://maester:maester@localhost:5433/maester_test_api` | Only for the tests. |
 
@@ -397,19 +524,25 @@ Note: The script `scripts/db/init.sql` creates the test database on the first st
 
 WARNING: Set `NODE_ENV=production` on a public server. If `NODE_ENV` has no value, the API uses `development`. In `development` and `test`, `POST /dev/auth/admit` approves and confirms any email without a check. The rate limiter is also off unless `AUTH_RATE_LIMIT=on`. The Docker image sets `production`, but other start methods do not.
 
-WARNING: Keep `DISPATCH_SECRET` and `BETTER_AUTH_SECRET` private. The API sends `DISPATCH_SECRET` to the worker in each local dispatch. With the `disk` driver, a person with the secret can make a valid signed URL for any object.
+WARNING: Keep `DISPATCH_SECRET`, `BETTER_AUTH_SECRET` and `CONNECTIONS_KEY` private. A person with `CONNECTIONS_KEY` and the database can decrypt the Dhan and FRED secrets. The API sends `DISPATCH_SECRET` to the worker in each local dispatch. With the `disk` driver, a person with the secret can make a valid signed URL for any object.
 
 CAUTION: Set `DATABASE_URL_TEST_API` only to a test database. The test setup empties the user, session, workspace, document, job and waitlist tables in that database.
 
 ## Limits
 
-- No API route sends `FORBIDDEN`, `UNSUPPORTED_MEDIA_TYPE` or `RATE_LIMITED` in the error envelope.
+- No API route sends `FORBIDDEN` or `UNSUPPORTED_MEDIA_TYPE` in the error envelope.
 - The API has no route to cancel a job, and no route to delete a document or a company.
 - `GET /v1/workspaces` does not use pages. `nextCursor` is always `null`.
 - The document list reads the latest job and the classification of each document with separate queries.
 - In `local` mode, if the request to the worker fails, the API only writes a log record. The job stays `queued` until a retry.
 - The Cloud Tasks dispatcher of the API sets no dispatch deadline. Cloud Tasks then uses its default.
 - The events stream ignores `Last-Event-ID`. Each event has the full job.
+- The connections are global to the install. Any approved user with a session can replace or delete the Dhan and FRED secrets.
+- No rate limit applies to the `PUT` routes for the connections. Each call of these routes sends a request to Dhan or FRED.
+- The API shows market data only to a user with a session. All users see the same market data, because it has no workspace.
+- `fpi_flows` and `dii_flows` have no provider. Thus the mood uses 6 of the 7 scored readings at most.
+- The API calculates the mood again for each request and keeps no cache. A request for one reading also calculates the full mood.
+- The API does not decrypt a secret and does not write market data. The market refresher of the worker does this work.
 - The deployment target of the API: Not known.
 - The port of the API in production: Not known. The Dockerfile declares port 8080, but the image does not set `PORT`, and the default is 8787.
 
@@ -427,6 +560,7 @@ CAUTION: Set `DATABASE_URL_TEST_API` only to a test database. The test setup emp
 - [apps/api/src/migrate.ts](../../apps/api/src/migrate.ts)
 - [apps/api/src/store.ts](../../apps/api/src/store.ts)
 - [apps/api/src/serialize.ts](../../apps/api/src/serialize.ts)
+- [apps/api/src/market-mood/compute.ts](../../apps/api/src/market-mood/compute.ts)
 - [apps/api/src/middleware/](../../apps/api/src/middleware/)
 - [apps/api/src/routes/](../../apps/api/src/routes/)
 - [apps/api/src/jobs/create.ts](../../apps/api/src/jobs/create.ts)
@@ -443,7 +577,14 @@ CAUTION: Set `DATABASE_URL_TEST_API` only to a test database. The test setup emp
 - [packages/contracts/src/document.ts](../../packages/contracts/src/document.ts)
 - [packages/contracts/src/classification.ts](../../packages/contracts/src/classification.ts)
 - [packages/contracts/src/job.ts](../../packages/contracts/src/job.ts)
+- [packages/contracts/src/market-mood.ts](../../packages/contracts/src/market-mood.ts)
+- [packages/contracts/src/connection.ts](../../packages/contracts/src/connection.ts)
+- [packages/db/src/queries/market.ts](../../packages/db/src/queries/market.ts)
+- [packages/market/src/secrets.ts](../../packages/market/src/secrets.ts)
+- [packages/market/src/dhan.ts](../../packages/market/src/dhan.ts)
+- [packages/market/src/fred.ts](../../packages/market/src/fred.ts)
 - [packages/db/src/schema/](../../packages/db/src/schema/)
 - [scripts/db/init.sql](../../scripts/db/init.sql)
+- [.env.example](../../.env.example)
 - [docker-compose.yml](../../docker-compose.yml)
 - [docs/DEVELOPMENT.md](../DEVELOPMENT.md), section 8, for the test databases

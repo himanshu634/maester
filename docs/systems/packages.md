@@ -28,12 +28,22 @@
 | Fixture | A sample JSON or NDJSON file in `packages/contracts/fixtures`. The TypeScript tests and the Python tests read the same fixtures. |
 | Wire format | The JSON that one process sends to a different process, for example from `extractor` to `worker`. |
 | Transient error | An error after which the same call can succeed later, for example a timeout or HTTP status 429. |
+| Market source | A service that gives market data: Dhan or FRED. The Dhan API is at `https://api.dhan.co/v2`. The FRED API is at `https://api.stlouisfed.org/fred`. |
+| Market series | One daily series of market values with a text key, for example `india_vix` or `eq:RELIANCE`. |
+| Market point | One row in `market_point`. It is the value of one market series on one day. |
+| Market connection | One row in `market_connection`. It keeps the encrypted secret of the investor for one market source. |
+| Secret | The Dhan access token or the FRED API key that the investor saves in Settings. |
+| Connections key | The 32-byte AES key that encrypts the secret in each market connection. The apps get it from the environment variable `CONNECTIONS_KEY`. |
+| Refresh run | One row in `market_fetch`. It is one pass of the market refresher in the `worker` app. |
+| Reading | One of the 10 values on the Market mood page, for example `india_vix`. The `Reading` validator gives its shape. |
+| Scrip master | The CSV file of Dhan instruments at `SCRIP_MASTER_URL`. |
+| IST | India Standard Time, UTC plus 5 hours and 30 minutes. |
 
 ## Function
 
-The shared packages hold the code that more than one app uses. Five TypeScript packages give the API contracts, the database, job dispatch, file storage and the lint settings. One Python package, the financial engine, classifies PDF filings and extracts their financial statements. The `api` and `worker` apps use the TypeScript packages. The `extractor` and `cli` apps use the Python package.
+The shared packages hold the code that more than one app uses. Six TypeScript packages give the API contracts, the database, job dispatch, file storage, market data and the lint settings. One Python package, the financial engine, classifies PDF filings and extracts their financial statements. The `api` and `worker` apps use the TypeScript packages. The `extractor` and `cli` apps use the Python package.
 
-A sixth TypeScript package, `packages/financial-engine-ts`, is empty. For the full system, see [Maester](maester.md).
+A seventh TypeScript package, `packages/financial-engine-ts`, is empty. For the full system, see [Maester](maester.md).
 
 ## Parts
 
@@ -44,6 +54,7 @@ A sixth TypeScript package, `packages/financial-engine-ts`, is empty. For the fu
 | `@maester/db` | `packages/db` | Gives the database schema, the migrations, a PostgreSQL client and the query functions. |
 | `@maester/jobs` | `packages/jobs` | Creates jobs, sends tasks and calculates the next intake state of a document. |
 | `@maester/storage` | `packages/storage` | Gives the `ObjectStore` interface and three object stores. |
+| `@maester/market` | `packages/market` | Gets daily market data from Dhan and FRED. Encrypts and decrypts the secrets of market connections. |
 | `maester-financial-engine` | `packages/financial-engine` | A Python library with the import name `pdf_financial_qa`. It classifies PDF filings and extracts facts from them. |
 | `@maester/financial-engine` | `packages/financial-engine-ts` | An empty TypeScript package. It exports only `ENGINE_VERSION`, with the value `"0.0.0"`. |
 
@@ -58,10 +69,15 @@ The name of the package in `packages/financial-engine-ts` is `@maester/financial
 | `@maester/db` | `apps/api`, `apps/worker`, `@maester/jobs` | `apps/api/src/app.ts`, `apps/worker/src/run.ts`, `packages/jobs/src/create.ts` |
 | `@maester/jobs` | `apps/api`, `apps/worker` | `apps/api/src/dispatch/index.ts`, `apps/worker/src/dispatch.ts` |
 | `@maester/storage` | `apps/api`, `apps/worker` | `apps/api/src/store.ts`, `apps/worker/src/store.ts` |
+| `@maester/market` | `apps/api`, `apps/worker` | `apps/api/src/routes/connections.ts`, `apps/worker/src/market/build.ts` |
 | `maester-financial-engine` | `apps/extractor`, `apps/cli` | `apps/extractor/src/maester_extractor/app.py`, `apps/cli/src/maester_cli/cli.py` |
 | `@maester/financial-engine` | No app | Only its own `package.json` has this name |
 
-The `web` app does not import `@maester/contracts`. The file `apps/web/src/lib/documents/types.ts` keeps a copy of a subset of the validators as TypeScript types.
+The `web` app does not import `@maester/contracts`. Three files keep a copy of a subset of the validators as TypeScript types:
+
+- `apps/web/src/lib/documents/types.ts`
+- `apps/web/src/lib/market-mood/types.ts`, a copy of `market-mood.ts`
+- `apps/web/src/lib/settings/types.ts`, a copy of `connection.ts`
 
 ### `@maester/config`
 
@@ -82,8 +98,27 @@ The `web` app does not import `@maester/contracts`. The file `apps/web/src/lib/d
 | `extraction.ts` | `ExtractorEvent`, `ExtractionResult`, `ExtractedFact`, `ExtractionRevision`, `FinancialFact`, `DocumentExtraction`, `DocumentFacts`, `ExtractResponse` |
 | `classification.ts` | `ClassifyResponse`, `ClassificationResult`, `Classification`, `Evidence`, `IntakeState`, `ChangeClassificationRequest`, `Cin`, `BseCode`, `NseSymbol` |
 | `payloads.ts` | `DocumentVerifyResult`, `DocumentClassifyResult`, `DocumentExtractResult`. Each is the `result` of one job type. |
+| `market-mood.ts` | `ReadingKey`, `ReadingFamily`, `MoodBand`, `MissingReason`, `Reading`, `FetchStatus`, `MarketMood`, `ReadingDetail` |
+| `connection.ts` | `ConnectionProvider`, `Connection`, `ConnectionList`, `SaveDhanConnectionRequest`, `SaveFredConnectionRequest` |
 
-Each validator has a TypeScript type with the same name. `JobTypes` gives the three job types: `document.verify`, `document.classify` and `document.extract`. The package has no OpenAPI document and no generated client. Its `README.md` is the guide to the HTTP routes of the API.
+Each validator has a TypeScript type with the same name. `JobTypes` gives the three job types: `document.verify`, `document.classify` and `document.extract`. The package has no OpenAPI document and no generated client. Its `README.md` is the guide to the HTTP routes of the API. The README does not describe the routes for market mood or for market connections.
+
+The market mood validators give the shape of the Market mood page:
+
+- `ReadingKey` gives the 10 readings in page order. `ReadingFamily` gives four families: `fear`, `money`, `breadth` and `havens`.
+- `MoodBand` gives five bands, from `very_cautious` to `very_eager`.
+- `MissingReason` gives the cause when a reading has no value or no rank: `no_source`, `no_data`, `stale` or `not_enough_history`.
+- A `MarketMood` has exactly 10 readings. Its `scoredCount` is a maximum of 7. Each `rank` and `score` is an integer from 0 to 100, or `null`.
+- `FetchStatus.errorCode` has the four codes of `MarketSourceError` and also `UNKNOWN`.
+- A `ReadingDetail` has one reading and its values for the last 2 years, oldest first.
+
+The connection validators give the shape of a market connection on the Settings page:
+
+- A `Connection` never contains the secret. It contains only `last4`, the last 4 characters of the secret.
+- The state of a `Connection` is `not_connected`, `connected`, `expired` or `failing`. The `notice` is `DATA_PLAN_INACTIVE` or `null`.
+- The comment on `ConnectionList` says that it always has two items, Dhan first.
+- `SaveDhanConnectionRequest` accepts a client ID of 1 to 32 characters and an access token of 20 to 4096 characters.
+- `SaveFredConnectionRequest` accepts only an API key of 32 lower-case letters and digits. Its error message does not contain the refused value.
 
 ### `@maester/db`
 
@@ -102,8 +137,12 @@ Each validator has a TypeScript type with the same name. `JobTypes` gives the th
 | `getCurrentClassification`, `listEvidence`, `getCurrentRevision` | Classification queries. |
 | `normalizeCompanyName`, `matchCompanies`, `findStoredDuplicate` | Company match and duplicate search for document intake. |
 | `admitOrWaitlist`, `approveWaitlistEmail`, `normalizeEmail` | Waitlist queries for sign-up. |
+| `MarketPointRow`, `NewMarketPoint`, `MarketFetchRow`, `MarketConnectionRow`, `MarketConnectionProvider` | The row types of the market tables. |
+| `upsertMarketPoints`, `listMarketSeries`, `listMarketSeriesByPrefix`, `listMarketValuesByPrefix`, `latestMarketDay` | Market point queries. `upsertMarketPoints` writes a maximum of 1000 rows in each insert. It replaces the value of a series and day that the table has. The lists give the oldest day first. |
+| `startMarketFetch`, `finishMarketFetch`, `latestMarketFetch` | Refresh run queries. |
+| `getConnection`, `listConnections`, `saveConnection`, `deleteConnection`, `markConnectionError`, `lastMarketReads`, `SaveConnection` | Market connection queries. `listConnections` gives Dhan first. `lastMarketReads` gives the last time that the database stored a market point from each market source. |
 
-Each query for a workspace record takes the workspace ID and gives only rows of that workspace. The package has three scripts: `generate`, `migrate` and `waitlist:approve`.
+Each query for a workspace record takes the workspace ID and gives only rows of that workspace. The three market tables have no `workspace_id` column, and the market queries take no workspace ID. The package has three scripts: `generate`, `migrate` and `waitlist:approve`.
 
 ### `@maester/jobs`
 
@@ -134,6 +173,23 @@ The package does not run jobs. The `worker` app runs them. See [worker](worker.m
 | `MemoryObjectStore` | Keeps files in memory. Only the tests of the apps use it. |
 
 The `api` and `worker` apps make a `DiskObjectStore` or a `GcsObjectStore` from the environment variable `STORAGE_DRIVER`. The API dev routes use `verifyBlobSignature`.
+
+### `@maester/market`
+
+| Export | Function |
+| --- | --- |
+| `DhanSource`, `FredSource` | The interfaces of the two market sources. |
+| `HttpDhanSource(opts)` | Calls the Dhan API. It gives daily closes, the Nifty put-call ratio, the NSE equity IDs, the MCX gold contracts and the profile. It also renews the access token. |
+| `HttpFredSource(opts)` | Calls the FRED API. It gives the observations of one series from a start day. `check()` reads one `VIXCLS` observation to examine the API key. |
+| `MarketSourceError` | The error of a market source. Its `code` is `DHAN_TOKEN_EXPIRED`, `DHAN_RATE_LIMITED`, `FRED_KEY_REFUSED` or `SOURCE_UNAVAILABLE`. |
+| `encryptSecret(plain, key)`, `decryptSecret(blob, key)` | Encrypt and decrypt one secret with AES-256-GCM. The connections key must have 32 bytes. |
+| `loadConnections(rows, key)` | Decrypts the `market_connection` rows. It gives a Dhan client ID and access token, and a FRED API key, or `null` for each. |
+| `ist(epochSeconds)` | Gives the IST calendar day of a time, as `YYYY-MM-DD`. |
+| `NIFTY_50`, `INDIA_VIX`, `MCX_GOLD_NAME`, `NIFTY_OPTION_UNDERLYING`, `SCRIP_MASTER_URL` | The fixed Dhan instruments and the address of the scrip master. |
+| `parseScripMaster`, `keepScripRow`, `nearMonthGold` | Parse the scrip master, keep only the NSE equity rows and the rows of MCX gold futures, and find the gold contract with the nearest expiry. |
+| `DailyPoint`, `Instrument`, `GoldContract`, `ScripRow`, `DhanOptions`, `FredOptions`, `SavedConnection`, `LoadedConnections` | The types of the package. |
+
+The package has no runtime dependencies. It uses `fetch` and `node:crypto` from Node.js. `loadConnections` takes rows, not a database client, so that `@maester/market` does not import `@maester/db`. The caller gives it the result of `listConnections`. The package does not read environment variables. The apps give it the connections key and the Dhan request rate.
 
 ### `maester-financial-engine`
 
@@ -199,6 +255,8 @@ The migrations are:
 | `0001_company_and_extraction.sql` | Creates `company`, `extraction_revision`, `financial_fact`, `source_reference` and `extraction_check`. |
 | `0002_sign_in.sql` | Creates `rate_limit` and `waitlist_entry`. |
 | `0003_document_intake.sql` | Creates `document_classification` and `classification_evidence`. Adds the identifier columns to `company`, the intake columns to `document` and `classification_id` to `extraction_revision`. |
+| `0004_market.sql` | Creates `market_point` and `market_fetch`. |
+| `0005_market_connection.sql` | Creates `market_connection`. Its foreign key to `user` sets `saved_by_user_id` to `null` when the database deletes the user. |
 
 ### Object storage
 
@@ -207,7 +265,7 @@ The migrations are:
 3. The worker gets the file with `readStream`.
 4. `GcsObjectStore` makes V4 signed URLs of Google Cloud Storage.
 5. `DiskObjectStore` keeps the bytes in `<root>/objects/<key>` and the content type in `<root>/meta/<key>.json`.
-6. `DiskObjectStore` makes the URL `<baseUrl>/dev/blobs/<key>?expires=<time>&signature=<signature>`. The signature is an HMAC-SHA256 of `<method>:<key>:<expires>` with the secret.
+6. `DiskObjectStore` makes the URL `<baseUrl>/dev/blobs/<key>?expires=<time>&signature=<signature>`. The signature is an HMAC-SHA256 of `<method>:<key>:<expires>` with the `secret` of `DiskSigningOptions`.
 7. The API blob routes call `verifyBlobSignature` before they accept a request to a disk URL.
 
 ### Classification of a PDF
@@ -249,6 +307,55 @@ The progress callback gets the stage name and the percent. The `extractor` app s
 
 The modules `config`, `extraction`, `qa`, `storage`, `schema` and `validation` are the first extraction path. `extract` sends one PDF of a maximum of 15 MB to the model in one call. `ask` answers one question about one extraction. `save` writes the result to `data/cache/<hash>.json`. Only the `cli` app uses this path. See [CLI](cli.md).
 
+### Dhan calls
+
+`HttpDhanSource` sends each API request with the headers `access-token` and `client-id`. A request to `/RenewToken` sends `access-token` and `dhanClientId`. It does these steps for each API request:
+
+1. It keeps a minimum of 1000 / `requestsPerSecond` milliseconds between two requests.
+2. It sends the request with a timeout of 30 seconds.
+3. If the response has status 401, or the error code `DH-901` or `807`, it throws `DHAN_TOKEN_EXPIRED`.
+4. If the response has status 429, or the error code `DH-904` or `805`, it waits and sends the request again. The waits are 1, 2 and 4 seconds.
+5. If the fourth request also gets a rate limit, it throws `DHAN_RATE_LIMITED`.
+6. For `renewToken` only, a different 4xx status gives `DHAN_TOKEN_EXPIRED`.
+7. A network failure, a different error status, a different error code, or a 2xx body that it cannot parse gives `SOURCE_UNAVAILABLE`.
+8. The error message contains only the status and a short error code. It never contains text from the server, the token or the client ID.
+
+The error codes `DH-902` and `806` tell that the Dhan data plan is not active. They give `SOURCE_UNAVAILABLE`, not `DHAN_TOKEN_EXPIRED`.
+
+`daily` asks `/charts/historical` for the closes from `from` to `to`. Dhan does not include the `toDate`, so the request sends the day after `to`. `ist` changes each timestamp to an IST day.
+
+`putCallRatio` uses the first Nifty expiry on or after the current IST day. If there is no such expiry, it uses the earliest expiry in the list. It divides the sum of the put open interest by the sum of the call open interest. If the call open interest is 0, it throws `SOURCE_UNAVAILABLE`.
+
+`equityIds` and `goldContracts` read the scrip master one time for each `HttpDhanSource`. The download has a timeout of 120 seconds. `HttpDhanSource` keeps only the NSE equity rows and the rows of MCX `GOLD` futures. If the download fails, `HttpDhanSource` does not keep the failure, and the next call tries again. `goldContracts` gives only contracts with an expiry on or after the current IST day, earliest first.
+
+`profile` reads `/profile` and gives the client ID, the token expiry and `dataPlanActive`. Dhan gives the token expiry as `DD/MM/YYYY HH:MM` with no time zone, and `HttpDhanSource` reads it as IST. `dataPlanActive` is false if the data plan is not `Active` or if its end time is before now. It is `null` if Dhan gives no data plan. `renewToken` calls `/RenewToken`. Dhan then expires the old token and gives a new token.
+
+### FRED calls
+
+1. `HttpFredSource` sends `GET /series/observations` with `series_id`, `api_key` and `file_type=json`. The timeout is 30 seconds.
+2. If the status is 400, 401 or 403, it throws `FRED_KEY_REFUSED`. FRED gives status 400 for a wrong API key.
+3. If the status is a different value and not 200, it throws `SOURCE_UNAVAILABLE`.
+4. A network failure or a body that is not JSON also gives `SOURCE_UNAVAILABLE`. The message does not contain the URL, because the URL contains the API key.
+5. It ignores an observation with the value `"."`. A day with no value is never 0.
+6. It returns the other observations as days and values.
+
+`check()` asks for the newest `VIXCLS` observation only. The two sources keep the secrets in private class fields. `JSON.stringify` and log lines do not show them.
+
+### Market connections and refresh runs
+
+1. The `api` app encrypts the secret of the investor with `encryptSecret` and the connections key.
+2. `encryptSecret` makes a new random 12-byte IV for each call. It returns base64 of the IV, the 16-byte authentication tag and the ciphertext, in this order.
+3. `saveConnection` inserts or replaces the row of the market source. It sets `saved_at` to now and `last_error_code` to the given code or `null`.
+4. The `worker` app reads the rows with `listConnections` and gives them to `loadConnections`.
+5. `loadConnections` decrypts each row with `decryptSecret`. It ignores a Dhan row with no client ID.
+6. The market refresher calls `startMarketFetch`. This inserts a refresh run with the state `running`.
+7. If a different refresh run has the state `running` and started less than 1 hour ago, `startMarketFetch` inserts no row and returns `null`.
+8. The refresher writes the market points with `upsertMarketPoints`.
+9. `markConnectionError` writes the last error code of a market source, or `null` after a good call.
+10. `finishMarketFetch` writes the state `ok` or `failed`, the end time, the number of market points and the error.
+
+`startMarketFetch` looks only at the last hour. Thus a refresh run that stops with the state `running` blocks new runs for a maximum of 1 hour. When the refresher renews a Dhan token, it encrypts the new token and calls `saveConnection` again. See [worker](worker.md).
+
 ## States and errors
 
 | State or error | Cause | Result |
@@ -282,6 +389,18 @@ The modules `config`, `extraction`, `qa`, `storage`, `schema` and `validation` a
 | `UNKNOWN_UNIT` | The unit text of a statement gives no scale. | A warning. The facts have no normalized value. |
 | `COMPANY_NAME_MISMATCH` | The printed company name and the given company name are different. | A warning. |
 | `MODEL_ANSWER_DROPPED` | A model answer has no quote on its page, or its value is not in the list of permitted values. | A warning. The answer stays empty. |
+| `DHAN_TOKEN_EXPIRED` | Dhan gives status 401, or the error code `DH-901` or `807`. Or `renewToken` gets a different 4xx status. | `MarketSourceError`. |
+| `DHAN_RATE_LIMITED` | Dhan gives status 429, or the error code `DH-904` or `805`, to four requests in sequence. | `MarketSourceError`, after waits of 1, 2 and 4 seconds. |
+| `FRED_KEY_REFUSED` | FRED gives status 400, 401 or 403. | `MarketSourceError`. |
+| `SOURCE_UNAVAILABLE` | The request to a market source fails, the market source gives a different error, or the body has no usable data. | `MarketSourceError`. |
+| `the connections key must be 32 bytes` | `encryptSecret` or `decryptSecret` gets a key that does not have 32 bytes. | The function throws an `Error`. |
+| `the saved secret is malformed` | The encrypted value has fewer than 28 bytes. | `decryptSecret` throws an `Error`. |
+| `the saved secret could not be decrypted` | The encrypted value changed, or a different key encrypted it. | `decryptSecret` throws an `Error`. |
+| `the saved <provider> connection could not be decrypted; save it again in Settings` | `decryptSecret` fails for one row. | `loadConnections` throws an `Error` that gives only the provider name. |
+| `requestsPerSecond must be greater than 0` | `HttpDhanSource` gets a rate of 0 or less, or a rate that is not finite. | The constructor throws an `Error`. |
+| `startMarketFetch` returns `null` | A refresh run with the state `running` started less than 1 hour ago. | No new refresh run starts. |
+| `deleteConnection` returns `false` | The table has no row for the market source. | Nothing changes. |
+| `market_connection_provider` or `market_fetch_state` constraint error | A provider is not `dhan` or `fred`, or a state is not `running`, `ok` or `failed`. | PostgreSQL refuses the insert. |
 
 ## Data
 
@@ -306,10 +425,21 @@ The modules `config`, `extraction`, `qa`, `storage`, `schema` and `validation` a
 | `waitlist_entry` | 0002 | One email that asked for an account: status (`pending` or `approved`), source (`google`, `email` or `admin`), request time and approval time. |
 | `document_classification` | 0003 | One classification: kind, other type, results span, period, company, printed identifiers, statements found, `set_by`, job, `reads_under_id`, versions and warnings. |
 | `classification_evidence` | 0003 | The source of one answer: field, source (`rule`, `model` or `investor`), rule ID, page index, quote and text layer match. |
+| `market_point` | 0004 | One market point: series, day, value, source text and `fetched_at`. One row for each series and day. |
+| `market_fetch` | 0004 | One refresh run: state (`running`, `ok` or `failed`), start time, end time, `points_written`, error code and error message. |
+| `market_connection` | 0005 | One market connection: provider (`dhan` or `fred`), client ID, `secret_ciphertext`, `secret_last4`, expiry, `checked_at`, `last_error_code`, `saved_at` and `saved_by_user_id`. One row for each provider. |
 
 Rows in `document_classification`, `extraction_revision` and `financial_fact` do not change after the insert. A new answer or a new extraction adds new rows. The schema comments in `classification.ts` and `extraction.ts` say this.
 
 The current classification of a document is its newest `document_classification` row. `getCurrentRevision` gives the newest revision with the `classification_id` of the `reads_under_id` of that classification. If the document has no classification, it gives the newest revision. If `reads_under_id` is empty, it gives `null`.
+
+The three market tables have no `workspace_id` column. The schema comment says that they keep the Dhan and FRED data of the user, and that the apps show it only in a session. The keys of the market series are:
+
+- `nifty50`, `india_vix`, `us_vix`, `usd_inr` and `gold_mcx`
+- `nifty_pcr_oi`, `n500_above_200d_pct` and `n500_net_highs_pct`
+- `eq:<SYMBOL>` for the close of each Nifty 500 member
+
+The source text of a market point starts with `Dhan ·` or `FRED ·`. `lastMarketReads` uses this text to find the market source. In `market_connection`, `secret_ciphertext` holds the output of `encryptSecret`, and `secret_last4` holds the last 4 characters of the secret. After a save, `last_error_code` holds `DHAN_NO_DATA_PLAN` or `null`. If the refresher gets `DHAN_TOKEN_EXPIRED` or `FRED_KEY_REFUSED`, it writes that code. After a good call, it writes `null`.
 
 ### Environment variables
 
@@ -321,6 +451,7 @@ The current classification of a document is its newest `document_classification`
 | `GOOGLE_CLOUD_PROJECT` | `pdf_financial_qa/config.py` | The Google Cloud project of the first extraction path. It is necessary. |
 | `GOOGLE_CLOUD_LOCATION` | `pdf_financial_qa/config.py` | The Vertex AI location. The default is `us-central1`. |
 | `GEMINI_MODEL` | `pdf_financial_qa/config.py` | The model name. The default is `gemini-2.5-pro`. |
+| `CONNECTIONS_KEY` | `apps/api/src/env.ts`, `apps/worker/src/env.ts` | The connections key, as 32 bytes in base64. The apps refuse a value of a different length. The packages do not read it. The apps decode it and give the bytes to `@maester/market`. |
 
 ### Files
 
@@ -344,9 +475,9 @@ The current classification of a document is its newest `document_classification`
    uv sync --locked
    ```
 
-### To test `@maester/contracts`, `@maester/jobs` and `@maester/storage`
+### To test `@maester/contracts`, `@maester/jobs`, `@maester/storage` and `@maester/market`
 
-These tests need no database and no Google Cloud account.
+These tests need no database and no Google Cloud account. The tests of `@maester/market` give the market sources a substitute `fetch`. They need no Dhan or FRED key.
 
 1. Run the tests of `@maester/contracts`:
 
@@ -364,6 +495,12 @@ These tests need no database and no Google Cloud account.
 
    ```bash
    pnpm --filter @maester/storage test
+   ```
+
+4. Run the tests of `@maester/market`:
+
+   ```bash
+   pnpm --filter @maester/market test
    ```
 
 The tests of `@maester/contracts` parse the fixtures and each JSON example in its `README.md`.
@@ -472,6 +609,12 @@ WARNING: Keep the rows of the `account` table private. The table holds provider 
 
 The form in which Better Auth keeps the password: Not known. The code in this repository does not show it.
 
+WARNING: Keep the connections key and the rows of `market_connection` private. With these two, a person can decrypt the Dhan access token and the FRED API key of the investor.
+
+CAUTION: Do not change the connections key while the database holds market connections. If the key changes, `loadConnections` cannot decrypt the rows. The investor must then save each market connection again in Settings.
+
+CAUTION: Store the new token from `renewToken` immediately. Dhan expires the old token when it gives the new token. If the caller loses the new token, the saved Dhan token does not work.
+
 CAUTION: Set `DATABASE_URL_TEST_DB` only to a test database. Each test file of `@maester/db` calls `testDb()`, which empties the tables with `TRUNCATE … CASCADE`.
 
 CAUTION: Run `pnpm stack:reset` only if you can lose the local data. The command deletes the Docker volumes, with the local database and the local files.
@@ -487,8 +630,12 @@ CAUTION: Do not change a migration that a database already applied. Add a new mi
 - The classification model gets a maximum of 10 pages.
 - The extraction workflow does not extract a statement on more than 6 pages.
 - The first extraction path refuses a PDF of more than 15 MB.
-- No foreign key deletes rows in other tables, except the keys from `session` and `account` to `user`.
-- The database has no tables for portfolios, holdings, transactions, prices or notes. `docs/DATA_MODEL.md` describes them as the target design.
+- No foreign key deletes rows in other tables, except the keys from `session` and `account` to `user`. The key from `market_connection` to `user` sets `saved_by_user_id` to `null`.
+- The database has no tables for portfolios, holdings, transactions, prices of holdings or notes. `docs/DATA_MODEL.md` describes them as the target design. The `market_point` table keeps only the market series for the Market mood page.
+- The comments in `dhan.ts` and `instruments.ts` say that the Dhan endpoints, headers, IDs and error codes come from the Dhan documentation, not from live calls.
+- The Dhan documentation does not give the response of `/RenewToken`. `renewToken` reads an expiry only if the response has one that it can parse.
+- `renewToken` operates only for a token from the Dhan website.
+- `HttpDhanSource` reads the token expiry and the end of the data plan as IST, because Dhan gives no time zone.
 
 ## Sources
 
@@ -595,6 +742,33 @@ CAUTION: Do not change a migration that a database already applied. Add a new mi
 - [`tests/test_extraction_contracts.py`](../../tests/test_extraction_contracts.py)
 - [`tests/test_extraction_values.py`](../../tests/test_extraction_values.py)
 - [`tests/test_extraction_workflow.py`](../../tests/test_extraction_workflow.py)
+- [`packages/contracts/src/market-mood.ts`](../../packages/contracts/src/market-mood.ts)
+- [`packages/contracts/src/connection.ts`](../../packages/contracts/src/connection.ts)
+- [`packages/contracts/test/market-mood.test.ts`](../../packages/contracts/test/market-mood.test.ts)
+- [`packages/contracts/test/connection.test.ts`](../../packages/contracts/test/connection.test.ts)
+- [`packages/db/src/schema/market.ts`](../../packages/db/src/schema/market.ts)
+- [`packages/db/src/queries/market.ts`](../../packages/db/src/queries/market.ts)
+- [`packages/db/drizzle/0004_market.sql`](../../packages/db/drizzle/0004_market.sql)
+- [`packages/db/drizzle/0005_market_connection.sql`](../../packages/db/drizzle/0005_market_connection.sql)
+- [`packages/db/test/market.test.ts`](../../packages/db/test/market.test.ts)
+- [`packages/db/test/market-connection.test.ts`](../../packages/db/test/market-connection.test.ts)
+- [`packages/market/package.json`](../../packages/market/package.json)
+- [`packages/market/src/index.ts`](../../packages/market/src/index.ts)
+- [`packages/market/src/sources.ts`](../../packages/market/src/sources.ts)
+- [`packages/market/src/dhan.ts`](../../packages/market/src/dhan.ts)
+- [`packages/market/src/fred.ts`](../../packages/market/src/fred.ts)
+- [`packages/market/src/instruments.ts`](../../packages/market/src/instruments.ts)
+- [`packages/market/src/scrip.ts`](../../packages/market/src/scrip.ts)
+- [`packages/market/src/secrets.ts`](../../packages/market/src/secrets.ts)
+- [`packages/market/src/connections.ts`](../../packages/market/src/connections.ts)
+- [`packages/market/test/secrets.test.ts`](../../packages/market/test/secrets.test.ts)
+- [`packages/market/test/sources.test.ts`](../../packages/market/test/sources.test.ts)
+- [`apps/api/src/routes/connections.ts`](../../apps/api/src/routes/connections.ts)
+- [`apps/worker/src/env.ts`](../../apps/worker/src/env.ts)
+- [`apps/worker/src/market/build.ts`](../../apps/worker/src/market/build.ts)
+- [`apps/worker/src/market/refresh.ts`](../../apps/worker/src/market/refresh.ts)
+- [`apps/web/src/lib/market-mood/types.ts`](../../apps/web/src/lib/market-mood/types.ts)
+- [`apps/web/src/lib/settings/types.ts`](../../apps/web/src/lib/settings/types.ts)
 - [`pnpm-workspace.yaml`](../../pnpm-workspace.yaml)
 - [`docs/DEVELOPMENT.md`](../DEVELOPMENT.md)
 - [`docs/DATA_MODEL.md`](../DATA_MODEL.md)
