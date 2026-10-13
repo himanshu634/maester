@@ -208,14 +208,15 @@ export const marketMoodContent = {
 			detail: 'The first fetch reads up to 4 years of history, so it can take a few minutes.'
 		},
 		tokenExpired: {
-			title: (day: string) => `Dhan stopped answering on ${day}. The token has expired.`,
+			/** Undated: every 30-minute pass fails again, so the latest pass's day is not when it stopped. */
+			title: 'Dhan stopped answering. The token has expired.',
 			detail: (stops: string | null) =>
 				stops
 					? `Market mood stops at ${stops} until you save a new one in Settings.`
 					: 'Market mood has no readings until you save a new one in Settings.'
 		},
 		fredRefused: {
-			title: (day: string) => `FRED refused the key on ${day}.`,
+			title: 'FRED refused the key.',
 			detail: (stops: string | null) =>
 				stops
 					? `US VIX and the rupee stop at ${stops} until you save a new key in Settings.`

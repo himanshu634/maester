@@ -204,14 +204,14 @@ export function fetchNotice(m: MarketMood): FetchNotice | null {
 	switch (errorCode) {
 		case 'DHAN_TOKEN_EXPIRED':
 			return {
-				title: copy.notice.tokenExpired.title(day),
+				title: copy.notice.tokenExpired.title,
 				detail: copy.notice.tokenExpired.detail(stops),
 				action: copy.notice.settings
 			};
 		case 'FRED_KEY_REFUSED': {
 			const usDay = m.readings.find((r) => r.key === 'us_vix')?.day ?? null;
 			return {
-				title: copy.notice.fredRefused.title(day),
+				title: copy.notice.fredRefused.title,
 				detail: copy.notice.fredRefused.detail(usDay ? dayMonth(usDay) : null),
 				action: copy.notice.settings
 			};

@@ -266,23 +266,32 @@ describe('headLine', () => {
 });
 
 describe('fetchNotice', () => {
-	it('says when the Dhan token expired, where the mood stops and where to renew it', () => {
+	it('says the Dhan token expired, where the mood stops and where to renew it', () => {
 		const m = canvasMood({
 			latestSession: '2026-10-01',
 			fetch: { state: 'failed', at: '2026-10-02T12:00:00.000Z', errorCode: 'DHAN_TOKEN_EXPIRED' }
 		});
 		expect(fetchNotice(m)).toEqual({
-			title: 'Dhan stopped answering on 2 Oct. The token has expired.',
+			title: 'Dhan stopped answering. The token has expired.',
 			detail: 'Market mood stops at 1 Oct until you save a new one in Settings.',
 			action: { label: 'Open Settings', href: '/terminal/settings' }
 		});
 	});
 
-	it('uses the day in India, not in UTC', () => {
+	it('never dates the expiry from the latest pass, which runs again every 30 minutes', () => {
 		const m = canvasMood({
-			fetch: { state: 'failed', at: '2026-10-01T20:00:00.000Z', errorCode: 'DHAN_TOKEN_EXPIRED' }
+			latestSession: '2026-10-01',
+			fetch: { state: 'failed', at: '2026-10-05T09:30:00.000Z', errorCode: 'DHAN_TOKEN_EXPIRED' }
 		});
-		expect(fetchNotice(m)?.title).toBe('Dhan stopped answering on 2 Oct. The token has expired.');
+		expect(fetchNotice(m)?.title).not.toContain('5 Oct');
+		expect(fetchNotice(m)?.detail).toContain('1 Oct');
+	});
+
+	it('dates a passing failure by the day in India, not in UTC', () => {
+		const m = canvasMood({
+			fetch: { state: 'failed', at: '2026-10-01T20:00:00.000Z', errorCode: 'SOURCE_UNAVAILABLE' }
+		});
+		expect(fetchNotice(m)?.title).toBe('A market data source didn’t answer on 2 Oct.');
 	});
 
 	it('sends a refused FRED key to Settings', () => {
@@ -290,7 +299,8 @@ describe('fetchNotice', () => {
 			fetch: { state: 'failed', at: '2026-10-06T10:00:00.000Z', errorCode: 'FRED_KEY_REFUSED' }
 		});
 		expect(fetchNotice(m)).toMatchObject({
-			title: 'FRED refused the key on 6 Oct.',
+			title: 'FRED refused the key.',
+			detail: 'US VIX and the rupee stop at 5 Oct until you save a new key in Settings.',
 			action: { href: '/terminal/settings' }
 		});
 	});
