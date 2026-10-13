@@ -84,7 +84,7 @@ async function send(fetcher: Fetcher, url: string, init?: RequestInit): Promise<
 	return response;
 }
 
-async function getJson<T>(fetcher: Fetcher, url: string): Promise<T> {
+export async function getJson<T>(fetcher: Fetcher, url: string): Promise<T> {
 	return (await send(fetcher, url)).json() as Promise<T>;
 }
 
