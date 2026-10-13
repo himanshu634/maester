@@ -27,17 +27,26 @@ This document gives the system level of Maester. Each app and each shared packag
 | fact | A row in the `financial_fact` table. It holds one figure from a statement. |
 | extraction check | A row in the `extraction_check` table. It holds the result of one arithmetic check of the facts. |
 | slip | The panel on the Documents page that shows one document. |
+| market point | A row in the `market_point` table. It holds the value of one daily market series on one day, with its source. |
+| market refresh | One run of the market refresher in the worker. It gets new market points from Dhan and FRED. Each market refresh that starts writes one row in the `market_fetch` table. |
+| market connection | A row in the `market_connection` table. It holds the encrypted secret for one market data source: Dhan or FRED. |
+| access token | The secret that Dhan gives for a market connection. |
+| API key | The secret that FRED gives for a market connection. |
+| reading | One of the 10 daily market values that the Market mood page shows, for example India VIX. The API uses 7 of them to calculate the market mood. |
+| market mood | A score from 0 to 100. The API calculates it from 7 of the readings when the web client asks for it. |
 
 ## Function
 
-Maester reads financial filings for an investor. The investor signs in to the web client and adds a PDF. Maester finds what the PDF is and which company it is for. If the PDF is an annual report or financial results, Maester reads the statements into facts. Each fact keeps the page that it came from. The repository holds five apps, seven shared packages and the deployment scripts.
+Maester reads financial filings for an investor. The investor signs in to the web client and adds a PDF. Maester finds what the PDF is and which company it is for. If the PDF is an annual report or financial results, Maester reads the statements into facts. Each fact keeps the page that it came from.
+
+Maester also shows a market mood. It calculates the market mood from daily market data that the investor's own Dhan and FRED accounts give. The repository holds five apps, eight shared packages and the deployment scripts.
 
 ## Parts
 
 | Part | Location | Function |
 | --- | --- | --- |
-| [API](api.md) | `apps/api` | TypeScript HTTP service (Hono). It serves sign-in at `/api/auth/*` through Better Auth and the routes for workspaces, companies, documents and jobs at `/v1`. It writes documents and jobs and dispatches jobs. |
-| [Worker](worker.md) | `apps/worker` | TypeScript HTTP service (Hono). It receives a dispatch at `POST /tasks/:type`, takes a lease and runs `document.verify`, `document.classify` or `document.extract`. |
+| [API](api.md) | `apps/api` | TypeScript HTTP service (Hono). It serves sign-in at `/api/auth/*` through Better Auth and the routes for workspaces, companies, documents and jobs at `/v1`. It writes documents and jobs and dispatches jobs. It also serves the market mood at `/v1/market-mood` and the market connections at `/v1/settings/connections`. |
+| [Worker](worker.md) | `apps/worker` | TypeScript HTTP service (Hono). It receives a dispatch at `POST /tasks/:type`, takes a lease and runs `document.verify`, `document.classify` or `document.extract`. If `CONNECTIONS_KEY` has a value, it also runs the market refresh on a timer. |
 | [Extractor](extractor.md) | `apps/extractor` | Python HTTP service (FastAPI). It answers `POST /v1/classify` and `POST /v1/extract` for the worker and calls Gemini on Vertex AI. It does not write data. |
 | [Web client](web.md) | `apps/web` | Static SvelteKit site. In a container, nginx serves it and sends `/api/auth/`, `/v1/` and `/dev/` to the API. |
 | [CLI](cli.md) | `apps/cli` | Python command `maester` with `ingest`, `ask` and `list-docs`. It keeps a JSON cache in `data/cache`. It does not use the API or the database. |
@@ -45,6 +54,7 @@ Maester reads financial filings for an investor. The investor signs in to the we
 | [Database package](packages.md) | `packages/db` | Drizzle schema, queries and migrations for Postgres. |
 | [Jobs package](packages.md) | `packages/jobs` | Job creation, the dispatchers and the intake decision. The API and the worker use it. |
 | [Storage package](packages.md) | `packages/storage` | The `ObjectStore` interface and its drivers. |
+| [Market package](packages.md) | `packages/market` | The clients for Dhan and FRED, and the encryption of the secrets of market connections. The API and the worker use it. |
 | [Financial engine](packages.md) | `packages/financial-engine` | Python engine with the namespace `pdf_financial_qa`. The extractor and the CLI use it. |
 | [TypeScript engine](packages.md) | `packages/financial-engine-ts` | A placeholder. It exports only `ENGINE_VERSION`. |
 | [Shared configuration](packages.md) | `packages/config` | The base TypeScript and ESLint configuration. |
@@ -100,6 +110,38 @@ The repository has three package managers:
 3. The API then calls `decideIntake`, which can start a new `document.extract` job (`apps/api/src/routes/classification.ts:165`).
 4. The slip can also start the work again. The web client then sends `POST .../classify` or `POST .../extract` (`apps/web/src/lib/documents/client.ts:141-149`). Each call creates a new job (`apps/api/src/routes/classification.ts:177-195`, `apps/api/src/routes/documents.ts:147-162`).
 
+### Market connections
+
+1. The Settings page reads `GET /v1/settings/connections` (`apps/web/src/lib/settings/client.ts:27-29`). The routes for market connections need a session but no workspace (`apps/api/src/app.ts:77-80`).
+2. Each of these routes needs `CONNECTIONS_KEY`. Without it, the API answers `INVALID_STATE` (`apps/api/src/routes/connections.ts:65-74`).
+3. The investor saves a Dhan access token or a FRED API key with `PUT` (`apps/web/src/lib/settings/client.ts:30-35`). The secret goes only in the request body.
+4. Before the API keeps a secret, it calls the source one time to check it (`apps/api/src/routes/connections.ts:86-117`). For Dhan, the client ID that Dhan returns must agree with the client ID in the request.
+5. The API keeps the secret as AES-256-GCM ciphertext and keeps its last 4 characters (`apps/api/src/routes/connections.ts:97-101`, `packages/market/src/secrets.ts:11-18`). No answer contains the secret.
+6. If the check fails, the API logs only the provider, the error code and the error name (`apps/api/src/routes/connections.ts:42-50`).
+7. If Dhan accepts the access token but the Data API subscription is off, the API keeps the market connection with the notice `DATA_PLAN_INACTIVE` (`apps/api/src/routes/connections.ts:19-35`, `:100`).
+8. `DELETE /v1/settings/connections/:provider` deletes the market connection (`apps/api/src/routes/connections.ts:119-124`). The market points stay.
+
+### Market refresh
+
+1. If `CONNECTIONS_KEY` has a value, the worker starts the market schedule (`apps/worker/src/server.ts:28-33`).
+2. The first market refresh starts 10 seconds later. Then a market refresh starts every `MARKET_REFRESH_MINUTES`, with the default 30 (`apps/worker/src/market/schedule.ts:3-40`, `apps/worker/src/env.ts:37`).
+3. A new market refresh does not start while the last one continues (`apps/worker/src/market/schedule.ts:25-38`). It also stops if a `market_fetch` row from the last hour has the state `running` (`packages/db/src/queries/market.ts:57-65`).
+4. Each market refresh decrypts the saved market connections. Then it gets new market points from FRED and from Dhan (`apps/worker/src/market/refresh.ts:110-134`).
+5. A series without stored points starts 4 years back (`apps/worker/src/market/refresh.ts:85`).
+6. If a Dhan access token has less than 6 hours left, the worker gets a new access token from Dhan and keeps it (`apps/worker/src/market/refresh.ts:39`, `:187-215`).
+7. If Dhan refuses the access token, or FRED refuses the API key, the worker writes the error code on the market connection (`apps/worker/src/market/refresh.ts:155-156`).
+8. At the end, the worker writes `ok` or `failed` in the `market_fetch` row. A Dhan failure comes before a FRED failure (`apps/worker/src/market/refresh.ts:136-142`).
+
+### Market mood
+
+1. The Market mood page reads `GET /v1/market-mood` (`apps/web/src/lib/market-mood/client.ts:10-12`). This route needs a session but no workspace (`apps/api/src/app.ts:77-79`).
+2. The API reads the market points of the last 4 years and the last `market_fetch` row (`apps/api/src/routes/market-mood.ts:9-24`).
+3. `computeMood` ranks each reading against its own last 500 values. A reading with fewer than 250 values has no rank (`apps/api/src/market-mood/compute.ts:12-13`, `:103-104`).
+4. The market mood is the rounded average of the scores of the 7 readings that the API uses. It needs a score for at least 5 of them (`apps/api/src/market-mood/compute.ts:14`, `:130-134`).
+5. `GET /v1/market-mood/readings/:key` returns one reading and its last 500 values (`apps/api/src/routes/market-mood.ts:26-31`, `apps/api/src/market-mood/compute.ts:162`).
+6. While the tab shows, the page reads the market mood again every 10 minutes (`apps/web/src/lib/components/market-mood/MarketMoodPage.svelte:30`, `:57-61`).
+7. The page shows the state of the last market refresh in a notice. If the investor must act, the notice has a link to Settings (`apps/web/src/lib/market-mood/view.ts:202-240`).
+
 ## States and errors
 
 | State or error | Cause | Result |
@@ -133,6 +175,14 @@ The repository has three package managers:
 | `UPLOAD_TOO_LARGE` (413) | The declared size is larger than `MAX_UPLOAD_BYTES` (50 MiB). | The API does not create the document. |
 | `CONFLICT` (409) | `basedOn` is not current, or a company with the same name or identifier exists. | The API returns the error. |
 | `INVALID_STATE` (409) | The action does not agree with the document state, for example `finalize` before the PDF arrived. | The API returns the error. |
+| `INVALID_STATE` (409) without `CONNECTIONS_KEY` | The API has no `CONNECTIONS_KEY`. | Each route for market connections returns this error. The Settings page does not load. |
+| No `CONNECTIONS_KEY` in the worker | The worker has no `CONNECTIONS_KEY`. | The worker does not start the market schedule. It writes this in its log. |
+| Market refresh `running`, `ok`, `failed` | The worker writes the state of each market refresh in `market_fetch`. | The Market mood page shows a notice for a failed market refresh and for the first market refresh. |
+| Market connection `not_connected`, `connected`, `expired`, `failing` | The API calculates the state from the row, the expiry time and `last_error_code`. | The Settings page shows the state in a word. |
+| `VALIDATION_FAILED` (400) on a market connection | Dhan or FRED refused the secret, or the client ID does not agree. | The API keeps nothing. |
+| `RATE_LIMITED` (429) on a market connection | Dhan asked for fewer requests in the check. | The API keeps nothing. |
+| `INTERNAL` (503) with `SOURCE_UNAVAILABLE` | The source did not answer the check. | The API keeps nothing. |
+| No market mood | Fewer than 5 of the 7 readings that the API uses have a score. | The API returns `score: null`. The page tells why. |
 
 ## Data
 
@@ -161,6 +211,9 @@ Postgres 16 holds one database, `maester`. The schema is in `packages/db/src/sch
 | Platform | `workspace`, `membership`, `company`, `document`, `job` |
 | Classification | `document_classification`, `classification_evidence` |
 | Extraction | `extraction_revision`, `financial_fact`, `source_reference`, `extraction_check` |
+| Market | `market_point`, `market_fetch`, `market_connection` |
+
+The market tables have no workspace column. The market points and the market connections belong to the installation, not to a user or a workspace.
 
 On a new `pgdata` volume, `scripts/db/init.sql` also creates the test databases `maester_test_db`, `maester_test_api` and `maester_test_worker`.
 
@@ -182,6 +235,8 @@ Maester has no separate queue in the local stack. The `job` table holds the stat
 | Cloud Storage | API, worker | PDFs when `STORAGE_DRIVER` is `gcs`. |
 | Cloud Tasks | API, worker | Dispatch when `DISPATCH_MODE` is `cloud-tasks`. |
 | Cloud Run, Cloud SQL, Secret Manager, Artifact Registry | `infra` scripts | Deployment of the API, the worker and the web client. |
+| Dhan Data API | API, worker | The check of a saved access token. The daily market data of India: Nifty 50, India VIX, MCX gold, the option chain and the Nifty 500 closes. |
+| FRED | API, worker | The check of a saved API key. US VIX and the rupee per US dollar. |
 
 ## Procedures
 
@@ -390,6 +445,10 @@ WARNING: Do not use the secrets from `docker-compose.yml` or `.env.example` on a
 
 WARNING: Control who can read the logs of the API and of nginx. Confirmation links and reset links are in the query strings of requests. A confirmation link that nobody used signs in the person who opens it.
 
+WARNING: Keep `CONNECTIONS_KEY` private. A person with this key and a copy of the database can decrypt the Dhan access token and the FRED API key.
+
+CAUTION: Do not change `CONNECTIONS_KEY` after you save a market connection. The worker cannot decrypt a secret that an old key encrypted. Then you must save each market connection again.
+
 CAUTION: `pnpm stack:reset` deletes the `pgdata` and `blobs` volumes. Use `pnpm stack:down` to stop the stack and keep the data.
 
 ## Limits
@@ -400,7 +459,9 @@ CAUTION: `pnpm stack:reset` deletes the `pgdata` and `blobs` volumes. Use `pnpm 
 - The deployed worker also has no `GOOGLE_CLOUD_PROJECT` and no `WORKER_INVOKER_SA` (`infra/deploy.sh:60`). Thus its dispatcher cannot send a `document.classify` job (`apps/worker/src/dispatch.ts:8-13`).
 - Each user has one personal workspace. The Documents page uses only the first workspace.
 - Approval of an email is a script. There is no screen for it.
-- Maester has no portfolio, holdings or market data yet. In the terminal, only Documents works. The other pages tell what they will do.
+- Maester has no portfolio or holdings yet. In the terminal, Documents, Market mood and Settings work. The other pages tell what they will do.
+- Each signed-in user reads and changes the same two market connections. The market data has no owner.
+- `infra/deploy.sh` does not set `CONNECTIONS_KEY`. Thus, the deployed API refuses the routes for market connections, and the deployed worker does not run the market refresh.
 - The CLI does not share data with the API, the worker or the database.
 - `packages/financial-engine-ts` holds only a version number.
 
@@ -415,6 +476,10 @@ CAUTION: `pnpm stack:reset` deletes the `pgdata` and `blobs` volumes. Use `pnpm 
 - [`apps/worker/src/jobs/document-verify.ts`](../../apps/worker/src/jobs/document-verify.ts), [`apps/worker/src/jobs/document-classify.ts`](../../apps/worker/src/jobs/document-classify.ts), [`apps/worker/src/jobs/document-extract.ts`](../../apps/worker/src/jobs/document-extract.ts)
 - [`apps/extractor/src/maester_extractor/app.py`](../../apps/extractor/src/maester_extractor/app.py), [`apps/extractor/src/maester_extractor/settings.py`](../../apps/extractor/src/maester_extractor/settings.py)
 - [`apps/web/nginx.conf.template`](../../apps/web/nginx.conf.template), [`apps/web/vite.config.ts`](../../apps/web/vite.config.ts), [`apps/web/package.json`](../../apps/web/package.json), [`apps/web/src/lib/session.ts`](../../apps/web/src/lib/session.ts), [`apps/web/src/routes/login/+page.svelte`](../../apps/web/src/routes/login/+page.svelte), [`apps/web/src/lib/components/terminal/SignedInPage.svelte`](../../apps/web/src/lib/components/terminal/SignedInPage.svelte)
+- [`apps/api/src/routes/market-mood.ts`](../../apps/api/src/routes/market-mood.ts), [`apps/api/src/market-mood/compute.ts`](../../apps/api/src/market-mood/compute.ts), [`apps/api/src/routes/connections.ts`](../../apps/api/src/routes/connections.ts)
+- [`apps/worker/src/server.ts`](../../apps/worker/src/server.ts), [`apps/worker/src/market/schedule.ts`](../../apps/worker/src/market/schedule.ts), [`apps/worker/src/market/refresh.ts`](../../apps/worker/src/market/refresh.ts)
+- [`packages/market/src/secrets.ts`](../../packages/market/src/secrets.ts), [`packages/market/src/connections.ts`](../../packages/market/src/connections.ts), [`packages/db/src/schema/market.ts`](../../packages/db/src/schema/market.ts), [`packages/db/src/queries/market.ts`](../../packages/db/src/queries/market.ts)
+- [`apps/web/src/lib/market-mood/client.ts`](../../apps/web/src/lib/market-mood/client.ts), [`apps/web/src/lib/market-mood/view.ts`](../../apps/web/src/lib/market-mood/view.ts), [`apps/web/src/lib/components/market-mood/MarketMoodPage.svelte`](../../apps/web/src/lib/components/market-mood/MarketMoodPage.svelte), [`apps/web/src/lib/settings/client.ts`](../../apps/web/src/lib/settings/client.ts), [`apps/web/src/lib/content/settings.ts`](../../apps/web/src/lib/content/settings.ts)
 - [`apps/web/src/lib/documents/client.ts`](../../apps/web/src/lib/documents/client.ts), [`apps/web/src/lib/documents/intake.ts`](../../apps/web/src/lib/documents/intake.ts), [`apps/web/src/lib/components/documents/DocumentsPage.svelte`](../../apps/web/src/lib/components/documents/DocumentsPage.svelte), [`apps/web/src/lib/terminal/pages.ts`](../../apps/web/src/lib/terminal/pages.ts)
 - [`apps/cli/src/maester_cli/cli.py`](../../apps/cli/src/maester_cli/cli.py), [`packages/financial-engine/src/pdf_financial_qa/config.py`](../../packages/financial-engine/src/pdf_financial_qa/config.py)
 - [`packages/jobs/src/create.ts`](../../packages/jobs/src/create.ts), [`packages/jobs/src/dispatch.ts`](../../packages/jobs/src/dispatch.ts), [`packages/jobs/src/intake.ts`](../../packages/jobs/src/intake.ts)

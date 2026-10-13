@@ -22,6 +22,18 @@ This document tells how the code of the web app works. For the visual rules (col
 | Earlier list | The part of the Documents page that shows the other documents of the workspace. |
 | live document | A document that the API still works on. The function `isLive` decides this. |
 | poll | A timed request that the web app sends again and again to read the latest state. |
+| reading | One of the 10 daily market values on the Market mood page, for example India VIX. `READING_KEYS` in `types.ts` lists them. |
+| reading key | The code name of one reading, for example `india_vix`. The path of a reading page ends with it. |
+| scored reading | One of the 7 readings that the API uses to calculate the market mood. |
+| market mood | A score from 0 to 100 that the API calculates from the scored readings. |
+| band | One of the five names for a range of the market mood, from "Very cautious" (0 to 19) to "Very eager" (80 to 100). |
+| family | One of the four groups of readings: `fear`, `money`, `breadth` and `havens`. |
+| reading page | The page for one reading, at `/terminal/market-mood/<reading key>`. |
+| market refresh | One run of the worker that gets new market data from Dhan and FRED. The API gives the state of the last market refresh as `fetch`. |
+| market connection | The saved access data for one market data source: Dhan or FRED. The API keeps it. |
+| access token | The secret that Dhan gives for a market connection. |
+| API key | The secret that FRED gives for a market connection. |
+| settings item | One part of a group on the Settings page. A button in its heading opens and closes it. |
 | design token | A CSS custom property in `tokens.css`. |
 | reset token | The secret value in the emailed link for a new password. The link gives it as `token` in the address. |
 | design guard | The test file `design-guard.test.ts`. |
@@ -30,7 +42,7 @@ This document tells how the code of the web app works. For the visual rules (col
 
 The web app is the browser client of Maester for investors. It is a static site. The build makes all pages before deployment, and nginx serves them as files. The script in each page then calls the API through the proxy on the same origin. Thus, the session cookie is a first-party cookie.
 
-The web app has public pages, sign-in pages, one error page and the terminal. In the terminal, only the Documents page works with real data. Each other terminal page is a coming-soon page.
+The web app has public pages, sign-in pages, one error page and the terminal. In the terminal, three pages work with real data: Documents, Market mood and Settings. Each other terminal page is a coming-soon page.
 
 ## Parts
 
@@ -43,13 +55,22 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 | Session functions | `src/lib/session.ts` | `readSession`, `endSession`, `safeNext` and `verifyCallback`. |
 | Signed-in guard | `src/lib/components/terminal/SignedInPage.svelte` | Checks the session. Shows the terminal shell or sends the person to `/login`. |
 | Terminal shell | `src/lib/components/terminal/TerminalShell.svelte` | The rail, the menu for small screens, the context header and the account block. |
-| Page list | `src/lib/terminal/pages.ts` | The eight terminal pages, their paths, their groups and the `soon` flag. |
-| Coming-soon pages | `src/routes/terminal/*/+page.svelte`, `ComingSoon.svelte`, `components/terminal/sketches/` | Seven pages that tell what each page will do. |
+| Page list | `src/lib/terminal/pages.ts` | The nine terminal pages, their paths, their groups and the `soon` flag. |
+| Coming-soon pages | `src/routes/terminal/*/+page.svelte`, `ComingSoon.svelte`, `components/terminal/sketches/` | Six pages that tell what each page will do. |
 | Demo | `src/routes/terminal/demo/`, `src/lib/terminal/` | The overview page with the synthetic data in `fixture.ts`. |
 | Documents page | `src/routes/terminal/documents/+page.svelte`, `src/lib/components/documents/` | Adds a PDF file, shows the progress and lets the investor correct the answers. |
 | Documents client | `src/lib/documents/client.ts` | Typed calls to the document routes of the API. |
 | Intake logic | `src/lib/documents/intake.ts` | Functions without Svelte for the Documents page: file checks, slip choice, ladder steps, error messages. |
 | API types | `src/lib/documents/types.ts` | A copy of a subset of the types in `packages/contracts`. |
+| Market mood page | `src/routes/terminal/market-mood/+page.svelte`, `src/lib/components/market-mood/` | Shows the market mood, the 10 readings, a chart of the last 12 months and the method. |
+| Reading pages | `src/routes/terminal/market-mood/[key]/`, `ReadingPage.svelte` | Ten pages, one for each reading. Each page shows the value and a chart of the last 2 years. |
+| Market mood client | `src/lib/market-mood/client.ts` | Typed calls to the market mood routes of the API. |
+| Market mood logic | `src/lib/market-mood/view.ts`, `src/lib/market-mood/chart.ts` | Functions without Svelte: units, ranks, day words, notices and the geometry of the charts. |
+| Market mood types | `src/lib/market-mood/types.ts` | A copy of the market mood types in `packages/contracts`. |
+| Settings page | `src/routes/terminal/settings/+page.svelte`, `src/lib/components/settings/` | Shows the account. Lets the investor save, replace and remove the two market connections. |
+| Settings client | `src/lib/settings/client.ts` | Typed calls to the market connection routes of the API. |
+| Settings logic | `src/lib/settings/view.ts` | Functions without Svelte: state words, dates, field checks and save errors. |
+| Settings types | `src/lib/settings/types.ts` | A copy of the market connection types in `packages/contracts`. |
 | Error page | `src/routes/+error.svelte`, `src/lib/errors/errors.ts` | One page for all errors. `errorView` selects the view. |
 | Loader and hatch | `src/lib/loading/`, `src/lib/components/loading/` | The wait indicators and the one clock that moves them. |
 | Copy | `src/lib/content/` | All text that a person reads on the pages. |
@@ -96,11 +117,11 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 
 ### Terminal shell and pages
 
-1. `TerminalShell` reads `pagesIn('portfolio')`, `pagesIn('research')` and `pagesIn('foot')` from `pages.ts`. It shows the pages in these three groups.
-2. A page with `soon: true` shows "Soon" after its label. In `pages.ts`, only `documents` has `soon: false`.
+1. `TerminalShell` reads `pagesIn('portfolio')`, `pagesIn('research')` and `pagesIn('foot')` from `pages.ts`. It shows the pages in these three groups. Market mood is in the `portfolio` group, after Holdings.
+2. A page with `soon: true` shows "Soon" after its label. In `pages.ts`, `market-mood`, `documents` and `settings` have `soon: false`.
 3. Under a session, the account block shows the email and a Sign out button. `endSession` calls `signOut()`.
 4. If `signOut()` succeeds, the page goes to `/`. If it fails, the shell shows a failure line, and the session stays.
-5. The seven coming-soon routes put `ComingSoon` and one sketch in `SignedInPage`.
+5. The six coming-soon routes put `ComingSoon` and one sketch in `SignedInPage`.
 6. The demo routes do not use `SignedInPage`. They show `Overview` with `demo` or `quietDemo` from `fixture.ts`.
 7. In the demo, the code disables the three write buttons. Each button points to the read-only note with `aria-describedby`.
 8. `dueItems` in `due.ts` puts the due items in this order: review, position limit, price that Maester does not know. In each kind, the larger portfolio weight comes first.
@@ -150,6 +171,65 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 6. If the API returns `CONFLICT` for `basedOn`, the slip shows the latest answers and a message. It then reads the slip again with `reloadSlip`.
 7. "Try again" on a failed step calls `classify` or `extract`. Then the page reads the document again.
 
+### Market mood page
+
+1. `MarketMoodPage` starts only after `SignedInPage` finds a user.
+2. On mount, `start()` calls `mood()` of `marketMoodApi` (`GET /v1/market-mood`). The page uses no workspace.
+3. While the first load runs, the page shows hatch boxes and one status line. If the first load fails, the page shows a `SectionIssue` with "Try again".
+4. The head shows the band, the score and `MoodRuler`. Under them, `headLine` tells how many scored readings the API used. It also names each scored reading without a score, with the reason.
+5. `dayTag` shows the day of the latest Indian session. The tag says "Provisional" when an Indian scored reading is older than that session.
+6. `fetchNotice` selects a `Notice` from the state of the last market refresh. After a good market refresh, no notice shows.
+7. These notices have a link to `/terminal/settings`:
+   - No market refresh ran yet.
+   - Dhan refused the access token.
+   - FRED refused the API key.
+8. `byFamily` puts the readings in the four families, in the sequence of `READING_KEYS`.
+9. Each `ReadingRow` shows the name, the value, the change, the rank and the source with its day. `ScoreTick` shows what the reading adds to the market mood. The name is a link to the reading page.
+10. A value that the API does not have shows "—". `inMoodLine` tells why a reading is not in the market mood.
+11. `MoodChart` draws the market mood of the last 12 months as an SVG image. It calculates the pixels from the width of its container. Thus, the labels stay at 14 px.
+12. "Show as a table" shows the same values in a table, newest first.
+
+### Market mood page: poll
+
+1. After a successful read, the page reads the market mood again after `RELOAD_MS` (10 minutes). Each successful read starts a new interval.
+2. When the person hides the tab, the effect cleanup stops the timer.
+3. When the tab shows again, a new interval of 10 minutes starts. The page does not read the market mood immediately.
+4. If a poll fails, the page keeps the old market mood on the screen. It shows no message.
+5. After a failed poll, no new timer starts. The poll starts again only when the person hides the tab and shows it again.
+
+### Reading pages
+
+1. `[key]/+page.ts` sets `prerender = true`. Its `entries` function gives the 10 reading keys of `READING_KEYS`. Thus, the build makes one HTML file for each reading.
+2. For a different reading key, `load` gives a 404 error. In the container, nginx sends `404.html` for a path without a file.
+3. On mount, `ReadingPage` calls `reading()` of `marketMoodApi` (`GET /v1/market-mood/readings/<reading key>`) one time. The reading page does not poll.
+4. The page shows the value, the change, the rank and what the reading measures.
+5. `MoodChart` draws the values of the reading for the last 2 years. `niceDomain` sets the range of the axis to whole steps of 1, 2 or 5.
+6. If the read fails, the page shows a `SectionIssue` with "Try again". The link back to the Market mood page always shows.
+
+### Settings page
+
+1. On mount, `start()` calls `readMe` and `list()` of `connectionsApi` at the same time. If one of them fails, the page shows a `SectionIssue` with "Try again".
+2. The Account group shows the name, the email and the name of the first workspace.
+3. The Connections group shows one settings item for Dhan and one settings item for FRED. `opensOnLoad` opens a settings item if its state is not `connected`.
+4. Each `SettingsItem` has a button in an `h3`. The `aria-expanded` attribute gives its state. More than one settings item can be open.
+5. A settings item without a good market connection shows a form. A connected settings item shows the last 4 characters of the secret and the time of the last read. For Dhan, it also shows the client ID and the expiry date.
+6. On a connected settings item, "Replace" shows the form again. "Cancel" closes the form.
+7. Before the request, `checkDhan` refuses an empty client ID. It also refuses an access token that has fewer than 20 characters.
+8. Before the request, `checkFred` refuses an API key that is not 32 lower-case letters and digits.
+9. "Save and check" sends `PUT /v1/settings/connections/dhan` or `PUT /v1/settings/connections/fred`. The secret goes only in the request body.
+10. While the API checks the secret, the page disables "Save and check" and shows a `Ruler`.
+11. If the API refuses, `saveFailure` selects the message. The message shows under the field or under the form. The focus moves to the field.
+12. After a save, the page replaces the settings item. It moves the focus to the settings item button and tells the change in a polite status region.
+
+### Settings page: disconnect
+
+1. "Disconnect" opens `DisconnectDialog`, a modal `dialog` element.
+2. In the dialog, "Disconnect" sends `DELETE /v1/settings/connections/<provider>`.
+3. "Keep it" or the Escape key closes the dialog. The market connection stays.
+4. After a removal, the page reads the list again. If that read fails, the page sets the settings item to `not_connected`.
+5. The page moves the focus to the settings item button and tells the change in the status region.
+6. If the `DELETE` request fails, the dialog closes and the settings item shows a failure line.
+
 ### Error page
 
 1. `+error.svelte` calls `errorView` with the status, the path and the connection state.
@@ -197,6 +277,24 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 | `identify_failed`, `read_failed` | A job of the API failed. | The ladder shows "Stopped". The slip shows "Try again". |
 | `needs_company`, `needs_kind`, `duplicate` | The API needs a decision from the investor. | The ladder shows "Needs you". The slip shows a `Notice`. |
 | Answers do not load | `getClassification` fails. | The slip shows a `SectionIssue` with "Try again". |
+| Market mood does not load | `GET /v1/market-mood` fails, and no market mood is on the screen. | The page shows a `SectionIssue` with "Try again". |
+| Market mood poll fails | A later `GET /v1/market-mood` fails. | The old market mood stays. The page shows no message, and the poll stops. |
+| No market mood | Fewer than 5 scored readings have a score. | The head tells how many scored readings have a score, and why the others do not. `MoodRuler` shows no block. |
+| No market refresh yet | `fetch.state` is `never`. | A `Notice` with a link to Settings. |
+| First market refresh runs | `fetch.state` is `running`, and the API has no market points yet. | A `Notice` tells that Maester gets the first readings now. It has no link. |
+| `DHAN_TOKEN_EXPIRED`, `FRED_KEY_REFUSED` | The last market refresh failed with this code. | A `Notice` tells the last day of data. It has a link to Settings. |
+| `DHAN_RATE_LIMITED`, `SOURCE_UNAVAILABLE`, other codes | The last market refresh failed with a different code. | A `Notice` gives the day of the failure in India. It tells that Maester tries again within 30 minutes. |
+| Reading does not load | `GET /v1/market-mood/readings/<reading key>` fails. | The reading page shows a `SectionIssue` with "Try again". |
+| Unknown reading key | The path has a reading key that is not in `READING_KEYS`. | The error page shows the `not-found` view. |
+| Settings do not load | `readMe` or the list fails. The list also fails with `INVALID_STATE` when the API has no `CONNECTIONS_KEY`. | The page shows a `SectionIssue` with "Try again". The Account group does not show. |
+| Market connection `expired` | Dhan refused the access token, or its expiry time is in the past. | The settings item opens. A `Notice` gives the day at which the Market mood page stops. |
+| Market connection `failing` | The worker wrote `FRED_KEY_REFUSED` on the market connection. No other code gives this state. | The settings item opens. A `Notice` tells that the source did not answer and that Maester tries again every 30 minutes. |
+| `DATA_PLAN_INACTIVE` | Dhan accepted the access token, but the Data API subscription is off. | A `Notice` tells the investor to turn on the subscription. |
+| Field check fails | `checkDhan` or `checkFred` finds a bad value. | The message shows under the field. No request goes to the API. |
+| `VALIDATION_FAILED` on save | The source refused the secret, or the access token is for a different client ID. | The message shows under the field. The API keeps nothing. |
+| `RATE_LIMITED` on save | Dhan asked for fewer requests. | A message under the form tells the investor to try again in a minute. |
+| Other error on save | The source did not answer, or the request failed. | A message under the form tells that the source did not answer. |
+| Disconnect fails | The `DELETE` request fails. | The dialog closes. The settings item shows a failure line. |
 | Offline | The browser sends the `offline` event. | The error page shows the offline view. The terminal shell shows `OfflineBanner`. |
 | nginx 5xx | nginx cannot answer for a page path. | nginx sends `50x.html`. |
 
@@ -220,6 +318,14 @@ The web app calls these API paths:
 | `/v1/workspaces/<id>/documents/<id>/extract` | `POST` | `extract` |
 | `/v1/workspaces/<id>/companies?limit=100` | `GET` | `listCompanies` |
 | `/v1/workspaces/<id>/companies/<id>` | `GET` | `getCompany` |
+| `/v1/market-mood` | `GET` | `mood` in `market-mood/client.ts` |
+| `/v1/market-mood/readings/<reading key>` | `GET` | `reading` in `market-mood/client.ts` |
+| `/v1/settings/connections` | `GET` | `list` in `settings/client.ts` |
+| `/v1/settings/connections/dhan` | `PUT` | `saveDhan` |
+| `/v1/settings/connections/fred` | `PUT` | `saveFred` |
+| `/v1/settings/connections/<provider>` | `DELETE` | `remove` |
+
+The Settings page also calls `readMe`. It sends the access token and the API key only in the body of a `PUT` request. It never puts them in an address or in browser storage. The API never sends a secret back, only its last 4 characters.
 
 The web app reads these environment variables:
 
@@ -265,7 +371,7 @@ Do these procedures in `apps/web`. The web app is a separate pnpm project with i
 
 2. Read the result.
 
-Vitest runs the 15 test files in `src` in a Node environment. The design guard is one of these files.
+Vitest runs the 20 test files in `src` in a Node environment. The design guard is one of these files.
 
 ### To run the web app in development
 
@@ -298,13 +404,19 @@ The defaults of these variables in the image are local placeholders.
 
 WARNING: Keep the access logs of the web server private. The first request for `/reset-password` puts the reset token in the address, and nginx can write that address to its log.
 
+WARNING: Send the Dhan access token and the FRED API key only in the body of a `PUT` request. Never put them in an address, in browser storage or in a log. An address can go into the access log of nginx.
+
 WARNING: Do not remove the `safeNext` check from a page that reads `next`. Without this check, a link from a different person can send the investor to a different site after sign-in.
 
-CAUTION: When a type in `packages/contracts` changes, change `src/lib/documents/types.ts` too. The web app cannot import `@maester/contracts`, and no test compares the two files.
+CAUTION: When a type in `packages/contracts` changes, change its copy in the web app too. The copies are `src/lib/documents/types.ts`, `src/lib/market-mood/types.ts` and `src/lib/settings/types.ts`. The web app cannot import `@maester/contracts`, and no test compares the files.
 
 ## Limits
 
-- Only the Documents page uses real data. Each of these pages is a coming-soon page: overview, holdings, research, watchlist, analyst, activity and settings.
+- Only the Documents, Market mood and Settings pages use real data. Each of these pages is a coming-soon page: overview, holdings, research, watchlist, analyst and activity.
+- After a failed poll, the Market mood page does not poll again until the person hides the tab and shows it again. The page shows no message for a failed poll.
+- The reading pages do not poll.
+- If the API has no `CONNECTIONS_KEY`, the whole Settings page does not load. Thus, the message `noServerKey` of `saveFailure` cannot show.
+- For a `failing` market connection, the notice tells that the source did not answer. But the only cause of this state is a refused FRED API key.
 - The web app uses only the first workspace of the person.
 - The Earlier list reads only the first 25 documents. The company form offers only the first 100 companies.
 - The Documents page uses polls. The web client does not use Server-Sent Events, but `nginx.conf.template` has settings for them.
@@ -349,6 +461,36 @@ CAUTION: When a type in `packages/contracts` changes, change `src/lib/documents/
 - [`apps/web/src/lib/documents/client.ts`](../../apps/web/src/lib/documents/client.ts)
 - [`apps/web/src/lib/documents/intake.ts`](../../apps/web/src/lib/documents/intake.ts)
 - [`apps/web/src/lib/documents/types.ts`](../../apps/web/src/lib/documents/types.ts)
+- [`apps/web/src/routes/terminal/market-mood/+page.svelte`](../../apps/web/src/routes/terminal/market-mood/+page.svelte)
+- [`apps/web/src/routes/terminal/market-mood/[key]/+page.svelte`](../../apps/web/src/routes/terminal/market-mood/%5Bkey%5D/+page.svelte)
+- [`apps/web/src/routes/terminal/market-mood/[key]/+page.ts`](../../apps/web/src/routes/terminal/market-mood/%5Bkey%5D/+page.ts)
+- [`apps/web/src/lib/components/market-mood/MarketMoodPage.svelte`](../../apps/web/src/lib/components/market-mood/MarketMoodPage.svelte)
+- [`apps/web/src/lib/components/market-mood/ReadingPage.svelte`](../../apps/web/src/lib/components/market-mood/ReadingPage.svelte)
+- [`apps/web/src/lib/components/market-mood/ReadingRow.svelte`](../../apps/web/src/lib/components/market-mood/ReadingRow.svelte)
+- [`apps/web/src/lib/components/market-mood/MoodChart.svelte`](../../apps/web/src/lib/components/market-mood/MoodChart.svelte)
+- [`apps/web/src/lib/components/market-mood/MoodRuler.svelte`](../../apps/web/src/lib/components/market-mood/MoodRuler.svelte)
+- [`apps/web/src/lib/components/market-mood/RankRuler.svelte`](../../apps/web/src/lib/components/market-mood/RankRuler.svelte)
+- [`apps/web/src/lib/components/market-mood/ScoreTick.svelte`](../../apps/web/src/lib/components/market-mood/ScoreTick.svelte)
+- [`apps/web/src/lib/market-mood/types.ts`](../../apps/web/src/lib/market-mood/types.ts)
+- [`apps/web/src/lib/market-mood/client.ts`](../../apps/web/src/lib/market-mood/client.ts)
+- [`apps/web/src/lib/market-mood/view.ts`](../../apps/web/src/lib/market-mood/view.ts)
+- [`apps/web/src/lib/market-mood/chart.ts`](../../apps/web/src/lib/market-mood/chart.ts)
+- [`apps/web/src/lib/market-mood/view.test.ts`](../../apps/web/src/lib/market-mood/view.test.ts)
+- [`apps/web/src/lib/content/market-mood.ts`](../../apps/web/src/lib/content/market-mood.ts)
+- [`apps/web/src/routes/terminal/settings/+page.svelte`](../../apps/web/src/routes/terminal/settings/+page.svelte)
+- [`apps/web/src/lib/components/settings/SettingsPage.svelte`](../../apps/web/src/lib/components/settings/SettingsPage.svelte)
+- [`apps/web/src/lib/components/settings/SettingsGroup.svelte`](../../apps/web/src/lib/components/settings/SettingsGroup.svelte)
+- [`apps/web/src/lib/components/settings/SettingsItem.svelte`](../../apps/web/src/lib/components/settings/SettingsItem.svelte)
+- [`apps/web/src/lib/components/settings/ConnectionSection.svelte`](../../apps/web/src/lib/components/settings/ConnectionSection.svelte)
+- [`apps/web/src/lib/components/settings/DisconnectDialog.svelte`](../../apps/web/src/lib/components/settings/DisconnectDialog.svelte)
+- [`apps/web/src/lib/settings/types.ts`](../../apps/web/src/lib/settings/types.ts)
+- [`apps/web/src/lib/settings/client.ts`](../../apps/web/src/lib/settings/client.ts)
+- [`apps/web/src/lib/settings/client.test.ts`](../../apps/web/src/lib/settings/client.test.ts)
+- [`apps/web/src/lib/settings/view.ts`](../../apps/web/src/lib/settings/view.ts)
+- [`apps/web/src/lib/content/settings.ts`](../../apps/web/src/lib/content/settings.ts)
+- [`apps/api/src/routes/market-mood.ts`](../../apps/api/src/routes/market-mood.ts)
+- [`apps/api/src/routes/connections.ts`](../../apps/api/src/routes/connections.ts)
+- [`apps/worker/src/market/refresh.ts`](../../apps/worker/src/market/refresh.ts)
 - [`apps/web/src/lib/errors/errors.ts`](../../apps/web/src/lib/errors/errors.ts)
 - [`apps/web/src/lib/loading/loading.ts`](../../apps/web/src/lib/loading/loading.ts)
 - [`apps/web/src/lib/styles/tokens.css`](../../apps/web/src/lib/styles/tokens.css)
