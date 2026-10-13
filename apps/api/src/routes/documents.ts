@@ -144,6 +144,18 @@ export function documentRoutes(deps: AppDeps) {
     return c.json(body);
   });
 
+  // The PDF itself, for a plain link: "…/file#page=213" opens it at the page, since the browser
+  // keeps the fragment across this redirect. Signed for a short while and never cached.
+  r.get("/:id/file", async (c) => {
+    const workspace = c.get("workspace");
+    const doc = await getDocument(deps.db, workspace.id, uuidParam(c, "id"));
+    if (!doc) throw new HttpError("NOT_FOUND", "document not found");
+    if (doc.state !== "stored") throw new HttpError("INVALID_STATE", `document is ${doc.state}`);
+    const signed = await deps.store.signDownload(doc.storageKey, { expiresInSeconds: deps.env.DOWNLOAD_URL_TTL_SECONDS });
+    c.header("Cache-Control", "no-store");
+    return c.redirect(signed.url, 302);
+  });
+
   r.post("/:id/extract", async (c) => {
     const workspace = c.get("workspace");
     const doc = await getDocument(deps.db, workspace.id, uuidParam(c, "id"));

@@ -20,6 +20,7 @@ import { DEFAULT_SSE, jobEventsRoute, type SseOptions } from "./routes/job-event
 import { jobRoutes } from "./routes/jobs.js";
 import { marketMoodRoutes } from "./routes/market-mood.js";
 import { meRoutes } from "./routes/me.js";
+import { companyResearchRoutes, researchRoutes } from "./routes/research.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
 
 export type AppEnv = {
@@ -85,6 +86,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}) {
   ws.route("/jobs", jobEventsRoute(deps, options.sse ?? DEFAULT_SSE));
   ws.route("/jobs", jobRoutes(deps));
   ws.route("/companies", companyRoutes(deps));
+  ws.route("/companies", companyResearchRoutes(deps));
+  ws.route("/research", researchRoutes(deps));
   ws.route("/documents", documentRoutes(deps));
   ws.route("/documents", classificationRoutes(deps));
   v1.route("/workspaces/:ws", ws);
