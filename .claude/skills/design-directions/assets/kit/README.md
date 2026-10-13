@@ -44,3 +44,15 @@ shared upload states. They add the full signed-in rail with "Soon", coming-soon 
 with the crate, crane (interactive) and blueprint sketches, the drop zone, the stage
 ladder, the intake slip and the cover-page evidence view.
 Run `node documents.mjs --measure`, measure, then `node documents.mjs documents-heights.json`.
+
+## Market mood round (2026-10-06)
+
+The "Maester Market Mood" canvas (https://claude.ai/artifact/Sa34MqzWhGqUZbPxTKNhZ5) holds
+round 1 (A · One number, opened up, B · Readings, no verdict, C · Before the open, D · Where it
+meets your portfolio), the picked "A+B · final" frames F1–F4, and the Settings rounds: G · One
+form (picked), H · Connections ledger, J · Fix it where it breaks, and "Settings · G final"
+frames K1–K3. Its generator (`mood.mjs`, `mood-notes.json`, `mood-heights.json`) lived only in
+that session's scratchpad and was lost when the scratchpad was cleared, so it is not here. The
+published canvas is the durable copy: read a frame's source with the Artifact tool
+(`project/F1.dc.html` and so on) and build the next round from it. The built pages are
+`apps/web/src/lib/components/market-mood/` and `components/settings/`.
