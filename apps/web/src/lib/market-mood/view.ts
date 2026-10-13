@@ -164,6 +164,13 @@ function reasonsOut(m: MarketMood): string {
 	);
 }
 
+/** The tag beside the heading: the day the mood is for, and whether it is provisional. */
+export function dayTag(m: MarketMood): string | null {
+	if (m.latestSession === null) return null;
+	const day = dayMonth(m.latestSession);
+	return m.provisional ? copy.tag.provisional(day) : copy.tag.afterClose(day);
+}
+
 /** The sentence under the band word. */
 export function headLine(m: MarketMood): string {
 	if (m.latestSession === null) return copy.noReadings;

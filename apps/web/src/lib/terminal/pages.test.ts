@@ -7,6 +7,7 @@ describe('terminalPages', () => {
 		expect(terminalPages.map((page) => page.label)).toEqual([
 			'Overview',
 			'Holdings',
+			'Market mood',
 			'Research',
 			'Watchlist',
 			'Documents',
@@ -17,7 +18,11 @@ describe('terminalPages', () => {
 	});
 
 	it('groups portfolio pages, research pages, and Activity and Settings at the foot', () => {
-		expect(pagesIn('portfolio').map((page) => page.key)).toEqual(['overview', 'holdings']);
+		expect(pagesIn('portfolio').map((page) => page.key)).toEqual([
+			'overview',
+			'holdings',
+			'market-mood'
+		]);
 		expect(pagesIn('research').map((page) => page.key)).toEqual([
 			'research',
 			'watchlist',
@@ -39,8 +44,9 @@ describe('terminalPages', () => {
 		expect(terminalPages.some((page) => page.path.startsWith('/terminal/demo'))).toBe(false);
 	});
 
-	it('marks every page as coming soon until it works; Documents works', () => {
+	it('marks every page as coming soon until it works; Market mood and Documents work', () => {
 		expect(terminalPages.filter((page) => !page.soon).map((page) => page.key)).toEqual([
+			'market-mood',
 			'documents'
 		]);
 	});
@@ -59,7 +65,7 @@ describe('listLabels', () => {
 		expect(listLabels(pagesIn('portfolio').slice(0, 1))).toBe('Overview');
 		expect(listLabels([])).toBe('');
 		expect(listLabels(terminalPages)).toBe(
-			'Overview, Holdings, Research, Watchlist, Documents, Analyst, Activity and Settings'
+			'Overview, Holdings, Market mood, Research, Watchlist, Documents, Analyst, Activity and Settings'
 		);
 	});
 });

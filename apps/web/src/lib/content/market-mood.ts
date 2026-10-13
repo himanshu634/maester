@@ -29,6 +29,10 @@ export const marketMoodContent = {
 		retry: 'Try again'
 	},
 	noMood: 'Not enough readings to give a mood today.',
+	tag: {
+		afterClose: (day: string) => `After the close, ${day}`,
+		provisional: (day: string) => `Provisional, ${day}`
+	},
 	ofHundred: (score: number) => `${score} of 100`,
 
 	bands: {
@@ -148,6 +152,9 @@ export const marketMoodContent = {
 		was: (value: string, day: string) => `was ${value} on ${day}`
 	},
 	inMood: {
+		label: 'In the mood:',
+		scoreWords: (score: number, band: string) => `${score} · ${band}`,
+		tickLabel: (score: number) => `${score} of 100`,
 		score: (score: number, band: string) => `In the mood: ${score} · ${band}`,
 		unscored: (why: string) => `Not in the mood: ${why}.`,
 		no_source: 'Not in the mood: no source connected yet.',
@@ -161,12 +168,46 @@ export const marketMoodContent = {
 	showTable: 'Show as a table',
 	hideTable: 'Hide the table',
 
+	ruler: {
+		label: (score: number, band: string) => `Mood ${score} of 100: ${band}`,
+		unknown: 'Mood unknown'
+	},
+
 	chart: {
 		heading: 'The mood, last 12 months',
+		label: (from: number, to: number, low: number, day: string) =>
+			`Mood over the last 12 months, from ${from} to ${to}; lowest ${low} on ${day}.`,
+		empty: 'No moods worked out yet. The line starts on the first day with 5 readings.',
+		day: 'Day',
+		mood: 'Mood',
 		today: (score: number) => `${score} today`,
 		lowest: (score: number, day: string) => `${score} · lowest, ${day}`,
 		atOrBelow: (share: number) =>
 			`In the last 12 months the mood was this low or lower on ${share}% of trading days.`
+	},
+
+	reading: {
+		chartHeading: 'The last 2 years',
+		chartLabel: (name: string, lo: string, hi: string, today: string) =>
+			`${name} over the last 2 years, between ${lo} and ${hi}; today ${today}.`,
+		today: (value: string) => `${value} today`,
+		empty: 'Nothing stored for this reading yet.',
+		value: 'Value',
+		about: 'About this reading',
+		terms: {
+			what: 'What it is',
+			inMood: 'In the mood',
+			from: 'Where from',
+			history: 'What history says'
+		},
+		history:
+			'It is placed against its own last 2 years, so it says how unusual today is. It describes today; it doesn’t time anything.',
+		loading: 'Reading the stored values.',
+		loadFailed: {
+			title: 'This reading didn’t load.',
+			detail: 'Its values are still stored. Check your connection and try again.',
+			retry: 'Try again'
+		}
 	},
 
 	method: {

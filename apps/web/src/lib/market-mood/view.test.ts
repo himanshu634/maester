@@ -10,6 +10,7 @@ import {
 	fetchNotice,
 	formatPrevious,
 	formatValue,
+	dayTag,
 	headLine,
 	inMoodLine,
 	rankSentence,
@@ -349,5 +350,13 @@ describe('market mood copy', () => {
 			expect(marketMoodContent.readings[key].name).toBeTruthy();
 			expect(marketMoodContent.readings[key].measures).toBeTruthy();
 		}
+	});
+});
+
+describe('dayTag', () => {
+	it('says the day the mood is for, and when it is provisional', () => {
+		expect(dayTag(canvasMood())).toBe('After the close, 6 Oct');
+		expect(dayTag(canvasMood({ provisional: true }))).toBe('Provisional, 6 Oct');
+		expect(dayTag(canvasMood({ latestSession: null }))).toBeNull();
 	});
 });
