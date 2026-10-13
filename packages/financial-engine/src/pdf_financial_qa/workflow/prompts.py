@@ -31,6 +31,8 @@ dashes, e.g. "(1,23,456.50)" or "-". Never compute, round, rescale or convert.
 "Year ended 31 March 2025").
 - For every line item give its label as printed, the page it appears on, and its value \
 for each period column. Omit a period when its cell is blank.
+- Include the earnings per share lines (basic and diluted) when the statement prints \
+them, as line items under their own printed heading, with their values exactly as printed.
 - Group line items into the statement's own sections (e.g. "Assets", "Equity and \
 liabilities", "Revenue", "Cash flow from operating activities"), in printed order.
 - Mark subtotal and total lines with is_subtotal and list in component_labels the exact \

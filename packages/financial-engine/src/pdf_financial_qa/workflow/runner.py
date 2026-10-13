@@ -45,7 +45,14 @@ from pdf_financial_qa.workflow.model import (
 )
 from pdf_financial_qa.workflow.pdf import PdfDocument
 from pdf_financial_qa.workflow.prompts import PROMPT_VERSION
-from pdf_financial_qa.workflow.values import format_decimal, parse_label_date, same_company, scale_for, text_layer_match
+from pdf_financial_qa.workflow.values import (
+    format_decimal,
+    is_per_share,
+    parse_label_date,
+    same_company,
+    scale_for,
+    text_layer_match,
+)
 
 PIPELINE_VERSION = "extract-1"
 STATEMENT_ORDER = {"balance_sheet": 0, "income_statement": 1, "cash_flow": 2}
@@ -401,6 +408,8 @@ def _assemble(state: RunState, model_name: str) -> ExtractionResult:
 
 def _fact(doc: PdfDocument, draft: StatementDraft, section: DraftSection, line: DraftLine, value: DraftValue,
           order: int, scale: Decimal | None) -> ExtractedFact:
+    if is_per_share(section.name, line.label):
+        scale = Decimal(1)
     period_date = parse_label_date(value.period)
     is_balance = draft.statement == "balance_sheet"
     return ExtractedFact(

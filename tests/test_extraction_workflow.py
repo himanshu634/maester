@@ -324,5 +324,37 @@ class LocateTests(unittest.TestCase):
         self.assertIn("UNKNOWN_UNIT", [w.code for w in result.warnings])
 
 
+class ExtractPromptTest(unittest.TestCase):
+    def test_asks_for_earnings_per_share_lines(self):
+        from pdf_financial_qa.workflow.prompts import EXTRACT
+
+        self.assertIn("earnings per share", EXTRACT)
+        self.assertIn("basic and diluted", EXTRACT)
+
+
+class PerShareTest(unittest.TestCase):
+    def test_spots_earnings_per_share_lines(self):
+        from pdf_financial_qa.workflow.values import is_per_share
+
+        self.assertTrue(is_per_share("Earnings per equity share (face value ₹10)", "Basic"))
+        self.assertTrue(is_per_share("Other", "Basic EPS (₹)"))
+        self.assertFalse(is_per_share("Income", "Revenue from operations"))
+
+
+class PerShareFactTests(unittest.TestCase):
+    def test_per_share_lines_are_stored_at_scale_one(self):
+        with_eps = StatementOutput(currency="INR", unit_label="Rs. in crores", periods=["Year ended 31 March 2026"], sections=[
+            lines_section("Profit and loss", [("Profit", "2,000", ())], period="Year ended 31 March 2026"),
+            lines_section("Earnings per share", [("Basic", "12.50", ()), ("Diluted", "12.25", ())], period="Year ended 31 March 2026"),
+        ])
+        model = ScriptedModel(extract={"balance_sheet": [balance_sheet()], "income_statement": [with_eps], "cash_flow": [cash_flow()]})
+        result = run_extraction(PDF, model=model, settings=FAST)
+
+        basic = next(f for f in result.facts if f.reported_label == "Basic")
+        self.assertEqual((basic.reported_value, basic.scale_factor, basic.normalized_value), ("12.50", "1", "12.50"))
+        profit = next(f for f in result.facts if f.reported_label == "Profit")
+        self.assertEqual((profit.scale_factor, profit.normalized_value), ("10000000", "20000000000"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -66,6 +66,14 @@ def scale_for(unit_label: str | None) -> Decimal | None:
     return None
 
 
+_PER_SHARE = re.compile(r"earnings per (equity )?share|\beps\b", re.IGNORECASE)
+
+
+def is_per_share(section: str, label: str) -> bool:
+    """A per-share line, such as earnings per share: rupees a share, whatever the statement's unit."""
+    return bool(_PER_SHARE.search(section) or _PER_SHARE.search(label))
+
+
 _MONTHS = {
     name: index
     for index, names in enumerate(
