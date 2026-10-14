@@ -43,10 +43,10 @@ This document describes the HTTP service in `apps/api`. For the full system, rea
 | band | The name of the range that the mood is in, for example `cautious`. |
 | filing | A document that has a company. `listCompanyFilings` gives the filings of a workspace or of one company. |
 | read annual report | A filing with the kind `annual_report` and the intake state `read`. Only these filings go into the statement tables. |
-| statement table | One `StatementTable`: the lines of one statement on one basis, with one column for each financial year. |
-| line | One line of a statement table, with a section and a printed label. The contract calls it a row. |
-| column | One financial year of a statement table. Each column comes from one filing. |
-| cell | One figure of one line in one column. It has a status, a source page and a check. |
+| statement table | One `StatementTable`: the statement lines of one statement on one basis, with one year column for each financial year. |
+| statement line | One line of a statement table, with a section and a printed label. The contract calls it a row. |
+| year column | One financial year of a statement table. Each year column comes from one filing. |
+| cell | One figure of one statement line in one year column. It has a status, a source page and a check. |
 | stock | The answer of `GET .../companies/:id/stock`: the NSE closing prices of the share of one company. |
 | closing price | The value of one day in the series `eq:<SYMBOL>`. |
 
@@ -308,20 +308,20 @@ Other rules for the mood:
 The rule of `stitch` has three parts:
 
 - `stitch` sorts the read annual reports by period end, newest first, then by the time of the revision.
-- Each column takes all its figures from the first filing in this order that prints its period. Thus a column never mixes two filings.
-- A line of one filing matches a line of another filing when the section and the printed label are equal after `normalise`. Thus a renamed line is two lines.
+- Each year column takes all its figures from the first filing in this order that prints its period. Thus a year column never mixes two filings.
+- A statement line of one filing matches a statement line of another filing when the section and the printed label are equal after `normalise`. Thus a renamed statement line is two statement lines.
 
 Other rules for the statement tables:
 
 - `stitch` makes one statement table for each statement and basis that a read annual report has.
-- The columns are in the order of their period, oldest first. A fact with no period end and no as-of date goes in no column. `unplaced` counts these facts.
-- The lines follow the order of the newest column. A line that only an older column has goes in after the line before it.
+- The year columns are in the order of their period, oldest first. A fact with no period end and no as-of date goes in no year column. `unplaced` counts these facts.
+- The statement lines follow the order of the newest year column. A statement line that only an older year column has goes in after the statement line before it.
 - The unit of a statement table is the unit of the newest filing that has facts for the statement and the basis.
-- If an older filing has a different scale that is a power of 10, `stitch` moves the decimal point of its figures. If its currency is different, `leftOut` names the filing and `stitch` does not use it. `leftOut` also names a filing with a scale that has no value or is not a power of 10.
-- A per-share line is a line with `earnings per share` or `eps` in its section or label. The API sends the printed value of a per-share line and never moves its decimal point.
-- The `status` of a cell is `value`, `dash`, `unparsed` or `missing`. `missing` means that the filing of the column does not print the line.
-- If an older filing prints a different value or status for the same line and period, the cell has `restated`. It holds the page and the printed text of the older filing.
-- A cell has the check of the subtotal that it is, or the check of the subtotal that has the line as a component. If more than one check applies, the worst status wins: `failed`, then `not_checked`, then `passed`.
+- If the scale of an older filing differs from the scale of the table, `stitch` moves the decimal point of its figures. If the currency is different, `leftOut` names the filing and `stitch` does not use it. `leftOut` also names it if one of the two scales has no value or is not a power of 10.
+- A per-share line is a statement line with `earnings per share` or `eps` in its section or label. The API sends the printed value of a per-share line and never moves its decimal point.
+- The `status` of a cell is `value`, `dash`, `unparsed` or `missing`. `missing` means that the filing of the year column does not print the statement line.
+- If an older filing prints a different value or status for the same statement line and period, the cell has `restated`. It holds the page and the printed text of the older filing.
+- A cell has the check of the subtotal that it is, or the check of the subtotal that has the statement line as a component. If more than one check applies, the worst status wins: `failed`, then `not_checked`, then `passed`.
 - A filing with the kind `financial_results` is not in the statement tables.
 
 `GET .../companies/:id/stock` has these steps:
