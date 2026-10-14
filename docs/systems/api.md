@@ -315,13 +315,17 @@ Other rules for the statement tables:
 
 - `stitch` makes one statement table for each statement and basis that a read annual report has.
 - The year columns are in the order of their period, oldest first. A fact with no period end and no as-of date goes in no year column. `unplaced` counts these facts.
+- If a statement and basis have facts but no fact has a date, the statement table has no year columns and no statement lines. It keeps `unplaced` and `leftOut`. Thus the web page can tell how many figures it left out.
 - The statement lines follow the order of the newest year column. A statement line that only an older year column has goes in after the statement line before it.
 - The unit of a statement table is the unit of the newest filing that has facts for the statement and the basis.
 - If the scale of an older filing differs from the scale of the table, `stitch` moves the decimal point of its figures. If the currency is different, `leftOut` names the filing and `stitch` does not use it. `leftOut` also names it if one of the two scales has no value or is not a power of 10.
-- A per-share line is a statement line with a section or label that matches `earnings per share`, `earnings per equity share` or `eps` after `normalise`. The API sends the printed value of a per-share line and never moves its decimal point.
+- A per-share line is a statement line with a section or label that matches `earnings per share`, `earning per share`, `earnings per equity share`, `earning per equity share` or the word `eps` after `normalise`. The pattern is `earnings? per (equity )?share|\beps\b`. The extractor uses the same pattern. The API sends the printed value of a per-share line and never moves its decimal point.
 - The `status` of a cell is `value`, `dash`, `unparsed` or `missing`. `missing` means that the filing of the year column does not print the statement line.
 - If an older filing prints a different value or status for the same statement line and period, the cell has `restated`. It holds the page and the printed text of the older filing.
-- A cell has the check of the subtotal that it is, or the check of the subtotal that has the statement line as a component. If more than one check applies, the worst status wins: `failed`, then `not_checked`, then `passed`.
+- Before `stitch` compares two values, it rounds them to the same precision. The precision of a value is the number of decimals of its `reportedValue`, minus the places that `stitch` moved its decimal point into the unit of the table. A per-share value does not move. The precision can be less than 0: then the value is known to tens or hundreds only. `stitch` uses the lower precision of the two values. `roundTo` rounds half away from zero, exactly, with strings and `BigInt`. Thus "12,10,543.21" in lakh and "12,105.43" in crore are the same value, and the cell has no `restated`.
+- A cell has the check of the subtotal that it is, or the check of the subtotal that has the statement line as a component. If more than one check applies to a subtotal, the worst status wins: `failed`, then `not_checked`, then `passed`. If two checks have the same status, the check that names the section wins.
+- A component gets only the `subtotal` check of its subtotal. It never gets the `balance_identity` check. The balance identity compares total assets with equity and liabilities, thus only total assets has it.
+- `check.checkType` tells which check the cell has: `subtotal`, `balance_identity`, or `null` if the cell has no check. For the balance identity, `expected` is total assets as printed and `actual` is equity and liabilities.
 - A filing with the kind `financial_results` is not in the statement tables.
 
 `GET .../companies/:id/stock` has these steps:

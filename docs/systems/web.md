@@ -110,7 +110,7 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 3. Each signed-in page puts its content in `SignedInPage`. On mount, `SignedInPage` calls `readSession`.
 4. While the check runs, `SignedInPage` shows the masthead, the page title and a `Loader`.
 5. If the person has a session, `SignedInPage` shows `TerminalShell` with the page content.
-6. If the person has no session, `SignedInPage` goes to `/login?next=<path>`. It replaces the current history entry.
+6. If the person has no session, `SignedInPage` goes to `/login?next=<path>`. The path is `page.url.pathname` and `page.url.search`, read in the browser. Thus a company page comes back to its company. It replaces the current history entry. The `noscript` link has the page path only, because a prerendered page has no query.
 7. `SignedInPage` keeps the last known user in a module variable. Thus, the shell stays on the screen when the person moves to a different terminal page. Each page checks the session again.
 8. A counter in `checkSession` makes sure that only the latest check changes the page.
 
@@ -181,7 +181,8 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 5. Each form calls `changeClassification` with `basedOn` set to the ID of the current answers.
 6. If the API returns `CONFLICT` for `basedOn`, the slip shows the latest answers and a message. It then reads the slip again with `reloadSlip`.
 7. "Try again" on a failed step calls `classify` or `extract`. Then the page reads the document again.
-8. If the intake state is `read`, no job runs and the document has a company, the slip shows "See the figures". This link goes to the company page, with `companyHref`.
+8. If the intake state is `read` and no job runs, the slip shows the button "Read it again". It calls `extract`, as "Try again" does. While the new read runs, the ladder shows "Reading the statements" as "Now".
+9. If the document also has a company, the slip shows "See the figures" before the button. This link goes to the company page, with `companyHref`. The link and the button are both secondary actions.
 
 ### Market mood page
 
@@ -239,31 +240,38 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 1. `CompanyPage` reads `id` from the query of the address in the browser. The build makes one HTML file for the route. Thus the company travels in the query.
 2. If `id` is not a UUID, the page shows "This company isn’t in your workspace." and a link to Research. It shows the same text if the person has no workspace.
 3. If not, `start()` calls `financials()` and `stock()` at the same time with `Promise.allSettled`. Only the latest call of `start()` can change the page.
-4. If `financials()` fails with status 404, the page shows the same not-found text. If it fails in a different way, the page shows a `SectionIssue` with "Try again".
-5. If `stock()` fails, the stock summary shows a `SectionIssue` for the prices only. Its "Try again" calls `stock()` again. The statements stay on the screen.
-6. The head shows the name, the NSE symbol, the BSE code, the CIN and the periods of the read annual reports, newest first.
-7. `summarize` in `summary.ts` makes the stock summary. It uses no model. The sentence comes from fixed templates.
-8. `summarize` uses the income statement of the company. It takes the consolidated one, or the standalone one if there is no consolidated one, or the one with an unknown basis.
-9. Revenue, profit and earnings per share come from the newest column of this statement table only. A change compares the newest column with the column before it.
-10. If a line has no value in the newest column, `summarize` writes nothing for that line. An older column never stands in.
-11. `summarize` shows no amount for a currency other than `INR`. It also shows no amount if the scale has no value or `unitShort` cannot name it. The reason is "The statement’s unit isn’t one Maester can name."
-12. If no line has a profit name, the reason for the profit is "Profit wasn’t found in the statement."
-13. The price to earnings is the last closing price divided by the basic earnings per share of the newest column. If the statement table has no basic line, `summarize` uses the first per-share line.
-14. If the earnings per share is zero or less, there is no price to earnings. The reason says that the company made a loss.
-15. `StockSummary` shows the sentence and the four figures. A figure with no value shows "—". The reason is in the text for a screen reader or in the note.
-16. `RangeRuler` shows where the last closing price is between the low and the high of the last year.
-17. If the stock has a state other than `ok`, the page shows no chart. The reason is no NSE symbol, no Dhan connection (with a link to Settings), or a share that is not in the Nifty 500.
-18. If the stock has more than one closing price, `MoodChart` draws the last year of closing prices. It marks the low and the high and uses a left gutter of 72 px for the rupee labels.
-19. The Statements section has two groups of toggle buttons: the statement and the basis. A basis shows only if a statement table has it. A toggle clears the selected figure.
-20. `StatementTable` shows the selected statement table in a region that scrolls sideways. The region starts at the newest years. The names of the lines stay in place when the region scrolls.
-21. Each figure is a button with `aria-pressed`. Only one button has `tabindex="0"`. The arrow keys, Home and End call `move` in `grid.ts`.
-22. A click on a figure selects it. `FigurePanel` then shows the filing and the page of the figure.
-23. `onPage` tells if the text of the page has the printed figure. `addsUp` tells if the sum of the figure adds up.
-24. `FigurePanel` shows "Used in" only if the selected figure is the earnings per share that the price to earnings uses.
-25. If the browser is 1024 px wide or wider, the figure panel is beside the statement table. If not, a click moves the focus to the panel, and "Back to the table" moves it back to the figure.
-26. "Open the PDF at page N" is a link that opens in a new tab. It goes to `pageHref`: `.../documents/<id>/file#page=N`. The API redirects to the PDF, and the browser keeps the page.
-27. Under the statement table, notes tell that each year comes whole from the newest filing that prints it. They also tell how many figures have no date, and which filings the API left out.
-28. A last note names the results for a quarter or a half year. These are not in the statement tables.
+4. If `financials()` fails with status 404, the page shows the same not-found text. If `financials()` and `stock()` both fail in a different way, the page shows one `SectionIssue` with "Try again".
+5. If only `financials()` fails, the page shows the stock summary with its prices and its chart. The business figures show "—" with the reason "The statements didn’t load." The Statements section shows a `SectionIssue`. Its "Try again" calls only `financials()` again (`retryFinancials`).
+6. If `stock()` fails, the stock summary shows a `SectionIssue` for the prices only. Its "Try again" calls `stock()` again. The statements stay on the screen.
+7. The head shows the name, the NSE symbol, the BSE code, the CIN and the periods of the read annual reports, newest first. `yearsRead` names each period one time. "Read from N annual reports" counts the reports. If the statements did not load, the head shows the NSE symbol from the stock.
+8. `summarize` in `summary.ts` makes the stock summary. It uses no model. The sentence comes from fixed templates.
+9. `summarize` uses the income statement of the company that has year columns. It takes the consolidated one, or the standalone one if the consolidated one has no year columns, or the one with an unknown basis.
+10. Revenue, profit and earnings per share come from the newest column of this statement table only. A change compares the newest column with the column before it.
+11. If a line has no value in the newest column, `summarize` writes nothing for that line. An older column never stands in.
+12. `bareLabel` removes a list marker ("I.", "(a)", "1.") from the start of a line name, and references in brackets ("(Note 25)", "(XI + XIV)", "(PAT)") from its end. `summarize` then compares the name with the revenue and profit names. The profit names include "Profit (loss) for the period", "Profit after tax" and "Net profit after tax".
+13. `summarize` takes the first line with a name that agrees and with a cell that is not `missing` in the newest column. Thus a line that only an older filing prints cannot hide the line of the newest year.
+14. If there is no income statement with year columns, the reason for the business figures is one of these: "The statements didn’t load." if `financials()` failed, "The profit and loss has no figures Maester could place by year." if a read annual report is counted, or "No annual report read yet.".
+15. In a sentence, `fyWords` names a year that does not end on 31 March as "the year to 31 Dec 2025". If a loss is the first clause of the sentence and there is no price sentence before it, the clause starts with the company name, not "it".
+16. `summarize` shows no amount for a currency other than `INR`. It also shows no amount if the scale has no value or `unitShort` cannot name it. The reason is "The statement’s unit isn’t one Maester can name."
+17. If no line has a profit name, the reason for the profit is "Profit wasn’t found in the statement."
+18. The price to earnings is the last closing price divided by the basic earnings per share of the newest column. If no basic line has a cell in the newest column, `summarize` uses the first per-share line that has one. The note says "the basic earnings per share" only for a basic line, and "the earnings per share" for a different line.
+19. If the currency of the statement table is not `INR`, there is no price to earnings. The reason is "The filing reports in another currency."
+20. If the earnings per share is zero or less, there is no price to earnings. The reason says that the company made a loss.
+21. `StockSummary` shows the sentence and the four figures. A figure with no value shows "—". The reason is in the text for a screen reader or in the note.
+22. `RangeRuler` shows where the last closing price is between the low and the high of the last year.
+23. If the stock has a state other than `ok`, the page shows no chart. The reason is no NSE symbol, no Dhan connection (with a link to Settings), or no closing prices for the share: "Maester has no closes for this share yet. It keeps prices for Nifty 500 shares, from your Dhan data." This text is true for all causes of `not_tracked`: a share outside the Nifty 500, no market refresh yet, an expired token, or a symbol in a different form.
+24. If the stock has more than one closing price, `MoodChart` draws the last year of closing prices. It marks the low and the high and uses a left gutter of 72 px for the rupee labels.
+25. The Statements section has two groups of toggle buttons: the statement and the basis. A basis shows only if a statement table has it. A toggle clears the selected figure. `defaultBasis` selects the first basis: the consolidated income statement if it has year columns, then a different income statement with year columns.
+26. `StatementTable` shows the selected statement table in a region that scrolls sideways. The region starts at the newest years. The names of the lines stay in place when the region scrolls.
+27. Each figure is a button with `aria-pressed`. Only one button has `tabindex="0"`. The arrow keys, Home and End call `move` in `grid.ts`.
+28. A click on a figure selects it. `FigurePanel` then shows the filing and the page of the figure.
+29. `onPage` tells if the text of the page has the printed figure. `addsUp` tells if the sum of the figure adds up. For a failed balance identity (`checkType` is `balance_identity`), `addsUp` says that total assets does not equal equity and liabilities, with the two values and the difference.
+30. `FigurePanel` shows "Used in" only if the selected figure is the earnings per share that the price to earnings uses.
+31. If the browser is 1024 px wide or wider, the figure panel is beside the statement table. If not, a click moves the focus to the panel, and "Back to the table" moves it back to the figure.
+32. "Open the PDF at page N" is a link that opens in a new tab. It goes to `pageHref`: `.../documents/<id>/file#page=N`. The API redirects to the PDF, and the browser keeps the page.
+33. Under the statement table, notes tell that each year comes whole from the newest filing that prints it. They also tell how many figures have no date, and which filings the API left out.
+34. If the statement table has no year columns, the page shows the notes about the figures with no date and the filings left out. It does not show the statement table or "not read yet".
+35. A last note names the results for a quarter or a half year. These are not in the statement tables.
 
 ### Settings page
 
@@ -345,7 +353,10 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 | `DHAN_RATE_LIMITED`, `SOURCE_UNAVAILABLE`, other codes | The last market refresh failed with a different code. | A `Notice` gives the day of the failure in India. It tells that Maester tries again within 30 minutes. |
 | Companies do not load | `readMe` or `companies()` fails. | The Research list shows a `SectionIssue` with "Try again". |
 | Company not found | `id` is not a UUID, the person has no workspace, or `financials()` fails with status 404. | The company page shows "This company isn’t in your workspace." |
-| Statements do not load | `financials()` fails in a different way. | The company page shows a `SectionIssue` with "Try again". |
+| Statements do not load | `financials()` fails in a different way, and `stock()` also fails. | The company page shows a `SectionIssue` with "Try again". |
+| Statements do not load, prices load | Only `financials()` fails. | The stock summary shows the prices and the chart. The business figures show "—" with "The statements didn’t load." The Statements section shows a `SectionIssue` with "Try again". |
+| No figure with a date | A statement table has no year columns. | The section tells how many figures had no date. The profit shows "—" with "The profit and loss has no figures Maester could place by year." |
+| Other currency | The currency of the statement table is not `INR`. | The price to earnings shows "—" with "The filing reports in another currency." |
 | Prices do not load | `stock()` fails. | The stock summary shows a `SectionIssue` for the prices. The figures that need a price show "—". The statements stay. |
 | No price | The stock has the state `no_symbol`, `not_connected` or `not_tracked`. | The figures that need a price show "—" with the reason. There is no chart. |
 | No annual report read | The company has no read annual report. | The Statements section tells this and links to the Documents page. |
