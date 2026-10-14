@@ -315,10 +315,10 @@ The document engine and CLI carry the prototype's limits, and the hosted service
 - Extraction accuracy is not measured. The workflow has offline tests with a scripted model only; a run against Gemini is manual.
 - Each fact has one page reference and no bounding box. Statements spanning more than six pages are not extracted. Dimensions, restatement links and printed page labels are not modelled.
 - The correction guard checks changed values against the page's text layer, so it cannot protect scanned pages, and it does not stop a correction from changing which components a subtotal lists.
-- There is no review or correction flow for facts yet (F06), and the web client does not show them (F07).
+- There is no review or correction flow for facts yet (F06). The web client shows facts, with their pages and checks, only on a company's Research page, from its read annual reports (F07).
 - Extraction is not deployed: the Cloud Run steps are listed in [document extraction](EXTRACTION.md) section 7.
 - Identity is Google or email and password, behind a waitlist: approval is a script, with no admin screen, and nothing is emailed on approval. Every user gets one personal workspace; there is no invitation or role management. [SIGN_IN.md](SIGN_IN.md) section 3.8 lists the known limits, including pre-registration through the email link.
-- The web client is a set of static pages. Sign-in and recovery call the API through the web origin; under a real session `/terminal/documents` adds filings and shows what Maester read them as, through the API, while the terminal's other first-release pages (`/terminal` and six more) are coming-soon pages, and the overview is a synthetic demo that does not read the API.
+- The web client is a set of static pages. Sign-in and recovery call the API through the web origin; under a real session `/terminal/documents` adds filings and shows what Maester read them as, `/terminal/research` shows a company's statements year by year, and `/terminal/market-mood` and `/terminal/settings` work, all through the API, while the terminal's other first-release pages (`/terminal` and four more: holdings, watchlist, analyst and activity) are coming-soon pages, and the overview is a synthetic demo that does not read the API.
 - Local dispatch does not retry a failed job automatically.
 - There is no ledger, market data, portfolio accounting, evidence-backed Analyst or autonomous loop. Extraction accuracy is not measured.
 

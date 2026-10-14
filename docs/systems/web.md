@@ -480,7 +480,7 @@ WARNING: Send the Dhan access token and the FRED API key only in the body of a `
 
 WARNING: Do not remove the `safeNext` check from a page that reads `next`. Without this check, a link from a different person can send the investor to a different site after sign-in.
 
-CAUTION: When a type in `packages/contracts` changes, change its copy in the web app too. The copies are `src/lib/documents/types.ts`, `src/lib/market-mood/types.ts` and `src/lib/settings/types.ts`. The web app cannot import `@maester/contracts`, and no test compares the files.
+CAUTION: When a type in `packages/contracts` changes, change its copy in the web app too. The copies are `src/lib/documents/types.ts`, `src/lib/market-mood/types.ts`, `src/lib/research/types.ts` and `src/lib/settings/types.ts`. The web app cannot import `@maester/contracts`, and no test compares the files.
 
 ## Limits
 

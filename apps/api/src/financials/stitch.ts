@@ -4,8 +4,8 @@ import type { ExtractionCheckRow, FactWithSource } from "@maester/db";
 /**
  * Puts a company's years together from the facts of its read annual reports
  * (docs/superpowers/specs/2026-10-13-company-financials-design.md, "The table").
- * Each column comes whole from the newest filing that prints its period, so every column
- * adds up; an older filing that printed a different figure for the same line and year marks
+ * Each column comes whole from the newest filing that prints its period, so a column never
+ * mixes filings; an older filing that printed a different figure for the same line and year marks
  * the cell restated. Lines match across filings by printed name. Pure: no database.
  */
 

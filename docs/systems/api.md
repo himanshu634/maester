@@ -318,7 +318,7 @@ Other rules for the statement tables:
 - The statement lines follow the order of the newest year column. A statement line that only an older year column has goes in after the statement line before it.
 - The unit of a statement table is the unit of the newest filing that has facts for the statement and the basis.
 - If the scale of an older filing differs from the scale of the table, `stitch` moves the decimal point of its figures. If the currency is different, `leftOut` names the filing and `stitch` does not use it. `leftOut` also names it if one of the two scales has no value or is not a power of 10.
-- A per-share line is a statement line with `earnings per share` or `eps` in its section or label. The API sends the printed value of a per-share line and never moves its decimal point.
+- A per-share line is a statement line with a section or label that matches `earnings per share`, `earnings per equity share` or `eps` after `normalise`. The API sends the printed value of a per-share line and never moves its decimal point.
 - The `status` of a cell is `value`, `dash`, `unparsed` or `missing`. `missing` means that the filing of the year column does not print the statement line.
 - If an older filing prints a different value or status for the same statement line and period, the cell has `restated`. It holds the page and the printed text of the older filing.
 - A cell has the check of the subtotal that it is, or the check of the subtotal that has the statement line as a component. If more than one check applies, the worst status wins: `failed`, then `not_checked`, then `passed`.

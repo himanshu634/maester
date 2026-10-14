@@ -73,11 +73,12 @@ The name of the package in `packages/financial-engine-ts` is `@maester/financial
 | `maester-financial-engine` | `apps/extractor`, `apps/cli` | `apps/extractor/src/maester_extractor/app.py`, `apps/cli/src/maester_cli/cli.py` |
 | `@maester/financial-engine` | No app | Only its own `package.json` has this name |
 
-The `web` app does not import `@maester/contracts`. Three files keep a copy of a subset of the validators as TypeScript types:
+The `web` app does not import `@maester/contracts`. Four files keep a copy of a subset of the validators as TypeScript types:
 
 - `apps/web/src/lib/documents/types.ts`
 - `apps/web/src/lib/market-mood/types.ts`, a copy of `market-mood.ts`
 - `apps/web/src/lib/settings/types.ts`, a copy of `connection.ts`
+- `apps/web/src/lib/research/types.ts`, a copy of `research.ts`, and of `Company` from `company.ts`
 
 ### `@maester/config`
 
@@ -312,7 +313,7 @@ A model failure never stops classification. The result has a warning instead.
 9. The branch refuses a correction that adds a value that is not on its page. It adds the warning `CORRECTION_REJECTED`.
 10. `assemble` makes the facts, the checks and the coverage. The state is `complete` if all statements give facts, else `partial`.
 
-The prompt for a statement asks for the earnings per share lines, basic and diluted, when the statement prints them. A line with `earnings per share` or `eps` in its section or label is a per-share line. `is_per_share` finds it. The fact of a per-share line has the scale 1, whatever the unit of the statement. Thus its `normalizedValue` is rupees a share. The other facts of a statement have the scale of the unit of the statement.
+The prompt for a statement asks for the earnings per share lines, basic and diluted, when the statement prints them. A line is a per-share line when its section or its label matches `earnings per share`, `earnings per equity share` or `eps`, with the case ignored. `is_per_share` finds it. The fact of a per-share line has the scale 1, whatever the unit of the statement. Thus its `normalizedValue` is rupees a share. The other facts of a statement have the scale of the unit of the statement.
 
 The run has a budget. It stops if it needs more than 40 model calls or more than 840 seconds. Each model call has a maximum of 3 attempts. The workflow tries a call again only after a transient error.
 

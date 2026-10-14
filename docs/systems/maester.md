@@ -453,7 +453,7 @@ CAUTION: `pnpm stack:reset` deletes the `pgdata` and `blobs` volumes. Use `pnpm 
 
 ## Limits
 
-- The web client does not show revisions, facts or extraction checks. Only the API routes `GET .../extraction` and `GET .../facts` and the page `/dev/upload` return them.
+- The web client does not show revisions. It shows facts and their checks only on the Research company page, from read annual reports. The API routes `GET .../extraction` and `GET .../facts` and the page `/dev/upload` return the revisions.
 - In the `local` mode, nothing dispatches a job again after an error that the worker can try again. The job stays `queued`. `POST .../jobs/:id/retry` accepts a `queued` job only after 5 minutes.
 - `infra/deploy.sh` does not deploy the extractor. The deployed worker has no `EXTRACTOR_URL`.
 - The deployed worker also has no `GOOGLE_CLOUD_PROJECT` and no `WORKER_INVOKER_SA` (`infra/deploy.sh:60`). Thus its dispatcher cannot send a `document.classify` job (`apps/worker/src/dispatch.ts:8-13`).
