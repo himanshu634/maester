@@ -16,6 +16,8 @@ export type CellStatus = 'value' | 'dash' | 'unparsed' | 'missing';
 export interface CellCheck {
 	role: 'subject' | 'component' | 'none';
 	status: 'passed' | 'failed' | 'not_checked' | null;
+	/** A line carries only its subtotal's check; the balance identity is on total assets alone. */
+	checkType: 'subtotal' | 'balance_identity' | null;
 	subjectLabel: string | null;
 	expected: string | null;
 	actual: string | null;
@@ -74,6 +76,7 @@ export interface StatementTable {
 	statement: StatementKind;
 	basis: ReportingBasis;
 	unit: TableUnit;
+	/** Empty when the statement was read but none of its figures has a date. */
 	columns: FinancialColumn[];
 	rows: FinancialRow[];
 	unplaced: number;

@@ -1,21 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import type { CellCheck, FinancialCell } from './types';
+import type { CellCheck, FinancialCell, StatementTable } from './types';
 import {
 	addsUp,
 	cellReason,
 	cellText,
+	defaultBasis,
 	figure,
 	filingShort,
 	fyLabel,
+	fyWords,
 	onPage,
 	standing,
 	unitShort,
-	unitWords
+	unitWords,
+	yearsRead
 } from './view';
 
 const NO_CHECK: CellCheck = {
 	role: 'none',
 	status: null,
+	checkType: null,
 	subjectLabel: null,
 	expected: null,
 	actual: null
@@ -37,6 +41,10 @@ describe('fyLabel', () => {
 		expect(fyLabel('2026-03-31')).toBe('2025–26');
 		expect(fyLabel('2000-03-31')).toBe('1999–00');
 		expect(fyLabel('2025-12-31')).toBe('Year to 31 Dec 2025');
+	});
+	it('names a year mid-sentence in lower case', () => {
+		expect(fyWords('2026-03-31')).toBe('2025–26');
+		expect(fyWords('2025-12-31')).toBe('the year to 31 Dec 2025');
 	});
 	it('names a filing by its year', () => {
 		expect(filingShort('2026-03-31')).toBe('AR 2025–26');
@@ -114,6 +122,7 @@ describe('addsUp', () => {
 					check: {
 						role: 'component',
 						status: 'passed',
+						checkType: 'subtotal',
 						subjectLabel: 'Total income',
 						expected: '12480',
 						actual: '12480'
@@ -127,6 +136,7 @@ describe('addsUp', () => {
 					check: {
 						role: 'subject',
 						status: 'passed',
+						checkType: 'subtotal',
 						subjectLabel: 'Total income',
 						expected: '12480',
 						actual: '12480'
@@ -140,6 +150,7 @@ describe('addsUp', () => {
 					check: {
 						role: 'subject',
 						status: 'failed',
+						checkType: 'subtotal',
 						subjectLabel: 'Total expenses',
 						expected: '10012.3',
 						actual: '10021.3'
@@ -156,6 +167,7 @@ describe('addsUp', () => {
 					check: {
 						role: 'subject',
 						status: 'failed',
+						checkType: 'subtotal',
 						subjectLabel: 'Total income',
 						expected: '12489',
 						actual: '12480'
@@ -172,6 +184,7 @@ describe('addsUp', () => {
 					check: {
 						role: 'subject',
 						status: 'failed',
+						checkType: 'subtotal',
 						subjectLabel: 'Total income',
 						expected: null,
 						actual: '12480'
@@ -185,6 +198,7 @@ describe('addsUp', () => {
 					check: {
 						role: 'subject',
 						status: 'not_checked',
+						checkType: 'subtotal',
 						subjectLabel: 'Total',
 						expected: null,
 						actual: null
@@ -192,6 +206,76 @@ describe('addsUp', () => {
 				})
 			)
 		).toEqual({ text: 'Not checked' });
+	});
+});
+
+describe('addsUp for the balance identity', () => {
+	const identity = (status: 'passed' | 'failed', expected: string | null, actual: string | null) =>
+		cell({
+			check: {
+				role: 'subject',
+				status,
+				checkType: 'balance_identity',
+				subjectLabel: 'TOTAL ASSETS',
+				expected,
+				actual
+			}
+		});
+
+	it('says total assets doesn’t equal equity and liabilities, not that lines don’t add up', () => {
+		expect(addsUp(identity('failed', '300', '290'))).toEqual({
+			strong: 'No.',
+			text: 'Total assets doesn’t equal equity and liabilities: the page prints 300.00; equity and liabilities come to 290.00, 10.00 more.'
+		});
+		expect(addsUp(identity('failed', '17580', '17588'))).toEqual({
+			strong: 'No.',
+			text: 'Total assets doesn’t equal equity and liabilities: the page prints 17,580.00; equity and liabilities come to 17,588.00, 8.00 less.'
+		});
+		expect(addsUp(identity('failed', '300', null))).toEqual({
+			strong: 'No.',
+			text: 'Total assets doesn’t equal equity and liabilities: the page prints 300.00; equity and liabilities come to —.'
+		});
+	});
+
+	it('says a passed identity adds up', () => {
+		expect(addsUp(identity('passed', '300', '300'))).toEqual({ text: 'Adds up' });
+	});
+});
+
+describe('yearsRead', () => {
+	it('names each year once, newest first, and only counted filings', () => {
+		expect(
+			yearsRead([
+				{ counted: true, periodEnd: '2025-03-31' },
+				{ counted: true, periodEnd: '2026-03-31' },
+				{ counted: true, periodEnd: '2026-03-31' },
+				{ counted: true, periodEnd: null },
+				{ counted: false, periodEnd: '2024-03-31' }
+			])
+		).toEqual(['2025–26', '2024–25']);
+	});
+});
+
+describe('defaultBasis', () => {
+	const t = (
+		basis: StatementTable['basis'],
+		placed: boolean,
+		statement: StatementTable['statement'] = 'income_statement'
+	) => ({ statement, basis, columns: placed ? [{}] : [] }) as unknown as StatementTable;
+
+	it('opens the consolidated profit and loss when it has years', () => {
+		expect(defaultBasis([t('standalone', true), t('consolidated', true)])).toBe('consolidated');
+	});
+
+	it('opens a basis with years before one whose figures had no date', () => {
+		expect(defaultBasis([t('consolidated', false), t('standalone', true)])).toBe('standalone');
+	});
+
+	it('still opens a profit and loss with no years when it is all there is', () => {
+		expect(defaultBasis([t('standalone', false), t('consolidated', true, 'balance_sheet')])).toBe(
+			'standalone'
+		);
+		expect(defaultBasis([])).toBe('consolidated');
 	});
 });
 

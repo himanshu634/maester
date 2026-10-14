@@ -2,7 +2,8 @@
  * The stock and business summary on a company's page: one sentence filled in by rule (never by
  * a model), and four headline figures. Prices are the investor's own Dhan closes; the business
  * figures are the newest year read. Price to earnings divides the last close by the basic
- * earnings per share the annual report prints. Unknown is "—" with its reason; never advice.
+ * earnings per share the annual report prints (any per-share line when no basic one has the
+ * newest year). Unknown is "—" with its reason; never advice.
  */
 import { researchContent as copy } from '$lib/content/research';
 import { percent, price } from '$lib/terminal/format';
@@ -13,7 +14,7 @@ import type {
 	StatementTable,
 	TableUnit
 } from './types';
-import { fyLabel, unitShort, unitWords } from './view';
+import { fyWords, unitShort, unitWords } from './view';
 
 export interface SummaryFigure {
 	label: string;
@@ -65,19 +66,38 @@ const norm = (s: string) =>
 		.replace(/\s+/g, ' ')
 		.trim();
 
+/** A list marker before a line's name: "I.", "XV.", "(a)", "a)", "1.". */
+const LIST_MARKER = /^(?:\(\s*(?:[ivxlcdm]+|[a-z]|\d+)\s*\)|(?:[ivxlcdm]+|[a-z]|\d+)\s*[.)])\s+/i;
+/** A reference after it: "(XI + XIV)", "(VII-VIII)", "(Note 25)", "(PAT)". */
+const TRAILING_REFERENCE = /\s*\([^()]*\)\s*$/;
+
+/**
+ * A line's name as matched: no leading list marker and no trailing parenthetical references,
+ * so "XV. Profit (Loss) for the period (XI + XIV)" reads as "Profit (Loss) for the period".
+ */
+export function bareLabel(label: string): string {
+	let name = label.trim().replace(LIST_MARKER, '');
+	for (let next = name.replace(TRAILING_REFERENCE, ''); next !== name && next.trim();) {
+		name = next;
+		next = name.replace(TRAILING_REFERENCE, '');
+	}
+	return name;
+}
+
 const REVENUE =
 	/^(revenue from operations|total revenue from operations|income from operations|revenue)$/;
+/** "Profit (loss) for the year", "Profit after tax", "Net profit after tax", "Net profit" and the like. */
 const PROFIT =
-	/^(net )?(profit|profit loss|loss) (for|after tax for) the (year|period)$|^(net profit|profit after tax)$/;
+	/^(net )?(profit|profit loss|loss) (for|after tax for) the (year|period)$|^(net )?(profit|profit loss) after tax$|^net profit( loss)?$/;
 
-/** The profit and loss to summarise: consolidated if read, otherwise standalone. */
+/** The profit and loss to summarise: consolidated if it has years, otherwise standalone. */
 function profitAndLoss(
 	f: CompanyFinancials | null
 ): { table: StatementTable; index: number } | null {
 	if (!f) return null;
 	for (const basis of ['consolidated', 'standalone', 'unknown'] as const) {
 		const index = f.tables.findIndex(
-			(t) => t.statement === 'income_statement' && t.basis === basis
+			(t) => t.statement === 'income_statement' && t.basis === basis && t.columns.length > 0
 		);
 		if (index >= 0) return { table: f.tables[index]!, index };
 	}
@@ -118,6 +138,8 @@ const blank = (label: string): SummaryFigure => ({
 
 export function summarize(input: {
 	financials: CompanyFinancials | null;
+	/** The statements did not load: the business figures say so, the prices still show. */
+	financialsFailed?: boolean;
 	stock: CompanyStock | null;
 	stockFailed: boolean;
 }): Summary {
@@ -165,14 +187,21 @@ export function summarize(input: {
 	let epsCell: Summary['epsCell'] = null;
 	const pl = profitAndLoss(financials);
 	if (!pl) {
-		profitFig.reason = copy.summary.noFigures;
-		pe.reason = ok ? copy.summary.noFigures : copy.summary.needsPrice;
+		// "No annual report read yet" only when none is counted: a report whose figures have no
+		// date to place them by was still read.
+		const why = input.financialsFailed
+			? copy.summary.noStatements
+			: financials?.filings.some((f) => f.counted)
+				? copy.summary.noPlacedFigures
+				: copy.summary.noFigures;
+		profitFig.reason = why;
+		pe.reason = ok ? why : copy.summary.needsPrice;
 	} else {
 		const { table, index } = pl;
 		// The latest year is the table's newest column. Revenue, profit and earnings per share all
 		// come from it and from nowhere else; a change compares with the column just before it.
 		const col = table.columns.length - 1;
-		const fy = fyLabel(table.columns[col]!.periodEnd);
+		const fy = fyWords(table.columns[col]!.periodEnd);
 		const canWrite = unitKnown(table.unit);
 		const short = unitShort(table.unit);
 		const word = unitWords(table.unit).replace(/^₹ ?/, '');
@@ -180,12 +209,18 @@ export function summarize(input: {
 			const unit = compact ? short : word;
 			return `₹${whole.format(Math.abs(n))}${unit ? ` ${unit}` : ''}`;
 		};
-		const revIndex = table.rows.findIndex((r) => !r.perShare && REVENUE.test(norm(r.label)));
-		const profIndex = table.rows.findIndex((r) => !r.perShare && PROFIT.test(norm(r.label)));
-		const basicIndex = table.rows.findIndex(
-			(r) => r.perShare && /basic/.test(norm(`${r.section} ${r.label}`))
+		// The first matching line that the newest year prints: a line only an older filing prints
+		// (a heading renamed after a split, a section named differently) comes first sometimes.
+		const pick = (test: (row: FinancialRow) => boolean) =>
+			table.rows.findIndex((row) => test(row) && row.cells[col]?.status !== 'missing');
+		const named = (re: RegExp) => (row: FinancialRow) =>
+			!row.perShare && re.test(norm(bareLabel(row.label)));
+		const revIndex = pick(named(REVENUE));
+		const profIndex = pick(named(PROFIT));
+		const basicIndex = pick(
+			(row) => row.perShare && /basic/.test(norm(`${row.section} ${row.label}`))
 		);
-		const epsIndex = basicIndex >= 0 ? basicIndex : table.rows.findIndex((r) => r.perShare);
+		const epsIndex = basicIndex >= 0 ? basicIndex : pick((row) => row.perShare);
 		const rev = revIndex >= 0 ? reading(table.rows[revIndex]!, col) : null;
 		const prof = profIndex >= 0 ? reading(table.rows[profIndex]!, col) : null;
 
@@ -199,7 +234,7 @@ export function summarize(input: {
 			if (prof.before !== null && prof.before > 0 && prof.now > 0) {
 				profitFig.change = copy.summary.profitChange(
 					signedPct(change(prof.now, prof.before)),
-					fyLabel(table.columns[col - 1]!.periodEnd)
+					fyWords(table.columns[col - 1]!.periodEnd)
 				);
 			}
 			const revChange = rev && rev.before ? signedPct(change(rev.now, rev.before)) : null;
@@ -212,6 +247,7 @@ export function summarize(input: {
 
 		// "In 2025–26 its revenue grew 7.7% to ₹12,105 crore and its profit grew 27.5% to ₹1,459 crore."
 		// The first clause names the owner: "its" after the price sentence, the company otherwise.
+		// A loss that opens the sentence names the company the same way, never a bare "it".
 		// With no amount Maester can write (an unnamed unit, another currency) there is no clause.
 		const owner = ok ? 'its' : name.endsWith('s') ? `${name}’` : `${name}’s`;
 		const revClause = (who: string) =>
@@ -220,7 +256,7 @@ export function summarize(input: {
 				: rev.before
 					? `${who} revenue ${rev.now >= rev.before ? 'grew' : 'fell'} ${percent(Math.abs(change(rev.now, rev.before)))} to ${money(rev.now, false)}`
 					: `${who} revenue was ${money(rev.now, false)}`;
-		const profClause = (who: string) => {
+		const profClause = (who: string, subject: string) => {
 			if (!prof) return null;
 			if (prof.now >= 0 && prof.before !== null && prof.before > 0) {
 				return `${who} profit ${prof.now >= prof.before ? 'grew' : 'fell'} ${percent(Math.abs(change(prof.now, prof.before)))} to ${money(prof.now, false)}`;
@@ -234,17 +270,22 @@ export function summarize(input: {
 					: prof.before < 0
 						? `, against a loss of ${money(prof.before, false)} the year before`
 						: `, against a profit of ${money(prof.before, false)} the year before`;
-			return `it made a loss of ${money(prof.now, false)}${against}`;
+			return `${subject} made a loss of ${money(prof.now, false)}${against}`;
 		};
-		const clauses = rev ? [revClause(owner), profClause('its')] : [profClause(owner)];
+		const clauses = rev
+			? [revClause(owner), profClause('its', 'it')]
+			: [profClause(owner, ok ? 'it' : name)];
 		const said = clauses.filter((c): c is string => c !== null);
 		if (canWrite && said.length) business = `In ${fy} ${said.join(' and ')}.`;
 
 		// Price to earnings: the last close ÷ the printed basic earnings per share, newest year.
 		// Per share, so it does not depend on the table's unit.
 		// The figure is named as used only once price to earnings is worked out from it.
+		// A per-share figure is in the filing's currency: dividing a rupee close by it needs rupees.
 		const eps = epsIndex >= 0 ? reading(table.rows[epsIndex]!, col) : null;
+		const foreign = table.unit.currency !== null && table.unit.currency !== 'INR';
 		if (!ok) pe.reason = copy.summary.needsPrice;
+		else if (foreign) pe.reason = copy.summary.otherCurrency;
 		else if (!eps) pe.reason = copy.summary.noEps;
 		else if (eps.now <= 0) pe.reason = copy.summary.loss(fy);
 		else {
@@ -255,7 +296,8 @@ export function summarize(input: {
 				two.format(ok.last!.value),
 				two.format(eps.now),
 				fy,
-				(cell.source?.pageIndex ?? 0) + 1
+				(cell.source?.pageIndex ?? 0) + 1,
+				basicIndex >= 0
 			);
 		}
 	}

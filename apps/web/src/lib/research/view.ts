@@ -3,7 +3,14 @@
  * Indian grouping and a real minus; pages are counted from 1; unknown is "—" with its reason.
  */
 import { researchContent as copy } from '$lib/content/research';
-import type { FinancialCell, ResearchCompany, TableUnit } from './types';
+import type { ReportingBasis } from '$lib/documents/types';
+import type {
+	CompanyFiling,
+	FinancialCell,
+	ResearchCompany,
+	StatementTable,
+	TableUnit
+} from './types';
 
 const MINUS = '−';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -17,6 +24,35 @@ export function fyLabel(periodEnd: string): string {
 	const [y, m, d] = periodEnd.split('-').map(Number) as [number, number, number];
 	if (m === 3 && d === 31) return `${y - 1}–${String(y % 100).padStart(2, '0')}`;
 	return `Year to ${d} ${MONTHS[m - 1]} ${y}`;
+}
+
+/** A year inside a sentence: "2025–26", or "the year to 31 Dec 2025" for any other year end. */
+export function fyWords(periodEnd: string): string {
+	const [y, m, d] = periodEnd.split('-').map(Number) as [number, number, number];
+	if (m === 3 && d === 31) return fyLabel(periodEnd);
+	return `the year to ${d} ${MONTHS[m - 1]} ${y}`;
+}
+
+/** The years the counted annual reports cover, newest first, each named once. */
+export function yearsRead(filings: Pick<CompanyFiling, 'counted' | 'periodEnd'>[]): string[] {
+	const ends = filings.filter((f) => f.counted && f.periodEnd).map((f) => f.periodEnd as string);
+	return [...new Set(ends)].sort().reverse().map(fyLabel);
+}
+
+/**
+ * The basis the company page opens its profit and loss on: consolidated if it has years, then any
+ * basis with years, then one whose figures had no date (so its note shows), then consolidated.
+ */
+export function defaultBasis(
+	tables: Pick<StatementTable, 'statement' | 'basis' | 'columns'>[]
+): ReportingBasis {
+	const pl = tables.filter((t) => t.statement === 'income_statement');
+	const placed = pl.filter((t) => t.columns.length > 0);
+	for (const set of [placed, pl]) {
+		if (set.some((t) => t.basis === 'consolidated')) return 'consolidated';
+		if (set[0]) return set[0].basis;
+	}
+	return 'consolidated';
 }
 
 export const filingShort = (periodEnd: string | null) =>
@@ -96,19 +132,31 @@ export function addsUp(cell: FinancialCell): Words {
 	if (c.role === 'component')
 		return { text: copy.words.partOf(c.subjectLabel ?? '', c.status === 'passed') };
 	if (c.status === 'passed') return { text: copy.words.adds };
-	// `expected` is the subtotal as the page prints it; `actual` is what its lines add up to.
+	// `expected` is the total as the page prints it; `actual` is what its lines add up to, or for the
+	// balance identity what equity and liabilities come to.
 	const page = c.expected === null ? null : Number(c.expected);
-	const lines = c.actual === null ? null : Number(c.actual);
+	const other = c.actual === null ? null : Number(c.actual);
 	const difference =
-		page === null || lines === null ? null : figure(String(Math.abs(page - lines).toFixed(2)));
+		page === null || other === null ? null : figure(String(Math.abs(page - other).toFixed(2)));
+	const printed = c.expected === null ? '—' : figure(c.expected);
+	const reached = c.actual === null ? '—' : figure(c.actual);
+	const more = page !== null && other !== null && page > other;
+	if (c.checkType === 'balance_identity') {
+		const subject = (c.subjectLabel ?? 'Total assets').toLowerCase();
+		return {
+			strong: copy.words.identityFailed.strong,
+			text: copy.words.identityFailed.text(
+				subject.charAt(0).toUpperCase() + subject.slice(1),
+				printed,
+				reached,
+				difference,
+				more
+			)
+		};
+	}
 	return {
 		strong: copy.words.failed.strong,
-		text: copy.words.failed.text(
-			c.actual === null ? '—' : figure(c.actual),
-			c.expected === null ? '—' : figure(c.expected),
-			difference,
-			page !== null && lines !== null && page > lines
-		)
+		text: copy.words.failed.text(reached, printed, difference, more)
 	};
 }
 

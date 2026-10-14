@@ -49,7 +49,11 @@ export const researchContent = {
 		financialsFailed: {
 			title: 'The statements didn’t load.',
 			detail: 'Your filings are safe. Try again.',
-			retry: 'Try again'
+			/** Under Statements, when the prices above did load. */
+			detailWithPrices: 'Your filings are safe. The prices above are still current.',
+			retry: 'Try again',
+			busy: 'Asking for the statements again…',
+			again: 'Still didn’t load. Try again in a moment.'
 		},
 		stockFailed: {
 			title: 'The prices didn’t load.',
@@ -78,8 +82,9 @@ export const researchContent = {
 		dayChange: (change: string, pct: string) => `${change} (${pct}) on the day`,
 		rangeNote: (low: string, high: string) =>
 			`Low on ${low}, high on ${high}. The block is the last close.`,
-		peNote: (close: string, eps: string, fy: string, page: number) =>
-			`${close} ÷ ${eps}, the basic earnings per share for ${fy} (annual report, page ${page}).`,
+		/** `basic`: the line is the basic earnings per share; otherwise it is named plainly. */
+		peNote: (close: string, eps: string, fy: string, page: number, basic: boolean) =>
+			`${close} ÷ ${eps}, the ${basic ? 'basic ' : ''}earnings per share for ${fy} (annual report, page ${page}).`,
 		profitChange: (pct: string, fy: string) => `${pct} on ${fy}`,
 		profitNote: (basis: string, revenue: string | null, change: string | null) =>
 			[basis, revenue ? `Revenue ${revenue}${change ? `, ${change}` : ''}.` : null]
@@ -88,14 +93,19 @@ export const researchContent = {
 		noPrice: {
 			no_symbol: 'Maester has no NSE symbol for this company.',
 			not_connected: 'Connect Dhan in Settings to see prices.',
-			not_tracked: 'Maester keeps prices for Nifty 500 shares only, and this isn’t one.',
+			not_tracked:
+				'Maester has no closes for this share yet. It keeps prices for Nifty 500 shares, from your Dhan data.',
 			failed: 'The prices didn’t load.'
 		},
 		needsCloses: 'Needs the year’s closes.',
 		needsPrice: 'Needs a price.',
 		noEps: 'The filing’s earnings per share wasn’t read.',
+		otherCurrency: 'The filing reports in another currency.',
 		loss: (fy: string) => `The company made a loss in ${fy}, so there’s no price to earnings.`,
 		noFigures: 'No annual report read yet.',
+		/** An annual report was read, but none of its profit and loss figures has a date to place it by. */
+		noPlacedFigures: 'The profit and loss has no figures Maester could place by year.',
+		noStatements: 'The statements didn’t load.',
 		noProfit: 'Profit wasn’t found in the statement.',
 		unknownUnit: 'The statement’s unit isn’t one Maester can name.',
 		settings: 'Settings',
@@ -184,6 +194,19 @@ export const researchContent = {
 			/** `more`: the page prints more than the lines add up to. No difference when a number is unknown. */
 			text: (lines: string, page: string, difference: string | null, more: boolean) =>
 				`The lines add up to ${lines}; the page prints ${page}${difference ? `, ${difference} ${more ? 'more' : 'less'}` : ''}.`
+		},
+		/** The balance identity: total assets against equity and liabilities, said on the total alone. */
+		identityFailed: {
+			strong: 'No.',
+			/** `more`: the page prints more than equity and liabilities come to. */
+			text: (
+				subject: string,
+				page: string,
+				sides: string,
+				difference: string | null,
+				more: boolean
+			) =>
+				`${subject} doesn’t equal equity and liabilities: the page prints ${page}; equity and liabilities come to ${sides}${difference ? `, ${difference} ${more ? 'more' : 'less'}` : ''}.`
 		},
 		missing: (filing: string) => `Not printed under this name in ${filing}.`,
 		dash: (page: number) => `A dash printed on page ${page}. Maester doesn’t read it as zero.`,
