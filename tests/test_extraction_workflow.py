@@ -112,6 +112,7 @@ class HappyPathTests(unittest.TestCase):
         self.assertEqual(result.state, "complete")
         self.assertEqual(result.page_count, 4)
         self.assertEqual(result.model, "scripted-model")
+        self.assertEqual(result.pipeline_version, "extract-2")
         self.assertEqual(result.prompt_version, PROMPT_VERSION)
         self.assertEqual(result.company_name_as_printed, "SYNTHETIC INDUSTRIES LIMITED")
         self.assertEqual([(c.statement, c.pages, c.status) for c in result.coverage],
@@ -369,6 +370,23 @@ class PerShareFactTests(unittest.TestCase):
         self.assertEqual((basic.reported_value, basic.scale_factor, basic.normalized_value), ("12.50", "1", "12.50"))
         profit = next(f for f in result.facts if f.reported_label == "Profit")
         self.assertEqual((profit.scale_factor, profit.normalized_value), ("10000000", "20000000000"))
+
+
+class NumericPeriodFactTests(unittest.TestCase):
+    def test_numeric_period_labels_place_facts(self):
+        balance = StatementOutput(currency="INR", unit_label="Rs. in crores", periods=["As at 31.03.2026"], sections=[
+            lines_section("Assets", [("Cash", "1,200", ())], period="As at 31.03.2026"),
+        ])
+        quarter = StatementOutput(currency="INR", unit_label="Rs. in crores", periods=["Quarter ended 30-Jun-26"], sections=[
+            lines_section("Profit and loss", [("Revenue", "5,000", ())], period="Quarter ended 30-Jun-26"),
+        ])
+        model = ScriptedModel(extract={"balance_sheet": [balance], "income_statement": [quarter], "cash_flow": [cash_flow()]})
+        result = run_extraction(PDF, model=model, settings=FAST)
+
+        cash = next(f for f in result.facts if f.reported_label == "Cash")
+        self.assertEqual((cash.period_label, cash.as_of_date, cash.period_end), ("As at 31.03.2026", date(2026, 3, 31), None))
+        revenue = next(f for f in result.facts if f.reported_label == "Revenue")
+        self.assertEqual((revenue.period_end, revenue.as_of_date), (date(2026, 6, 30), None))
 
 
 if __name__ == "__main__":

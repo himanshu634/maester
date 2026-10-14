@@ -54,7 +54,7 @@ from pdf_financial_qa.workflow.values import (
     text_layer_match,
 )
 
-PIPELINE_VERSION = "extract-1"
+PIPELINE_VERSION = "extract-2"
 STATEMENT_ORDER = {"balance_sheet": 0, "income_statement": 1, "cash_flow": 2}
 BASIS_ORDER = {"consolidated": 0, "standalone": 1, "unknown": 2}
 

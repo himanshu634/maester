@@ -65,10 +65,46 @@ class UnitAndDateTests(unittest.TestCase):
         self.assertEqual(parse_label_date("Year ended March 31, 2025"), date(2025, 3, 31))
         self.assertEqual(parse_label_date("31st Mar. 2024"), date(2024, 3, 31))
         self.assertEqual(parse_label_date("30 Sept 2025"), date(2025, 9, 30))
+        self.assertEqual(parse_label_date("31-Mar-2026"), date(2026, 3, 31))
         self.assertIsNone(parse_label_date("FY2026"))
-        self.assertIsNone(parse_label_date("31.03.2026"))
         self.assertIsNone(parse_label_date("1 April 2025 to 31 March 2026"))
         self.assertIsNone(parse_label_date("31 February 2026"))
+
+    def test_numeric_dates_read_day_first(self):
+        cases = {
+            "As at 31.03.2026": date(2026, 3, 31),
+            "Year ended 31.03.2026": date(2026, 3, 31),
+            "Year ended 31/03/2026": date(2026, 3, 31),
+            "31-03-2026": date(2026, 3, 31),
+            "Quarter ended 30.06.2026": date(2026, 6, 30),
+            "As at 01.04.2025": date(2025, 4, 1),
+            "31.03.2026 (31 March 2026)": date(2026, 3, 31),
+        }
+        for label, expected in cases.items():
+            with self.subTest(label=label):
+                self.assertEqual(parse_label_date(label), expected)
+
+    def test_day_month_name_with_two_digit_year(self):
+        self.assertEqual(parse_label_date("31-Mar-26"), date(2026, 3, 31))
+        self.assertEqual(parse_label_date("Quarter ended 30-Jun-26"), date(2026, 6, 30))
+        self.assertEqual(parse_label_date("31-MAR-99"), date(1999, 3, 31))
+
+    def test_invalid_or_ambiguous_numeric_dates_are_none(self):
+        for label in [
+            "31.02.2026",  # no such day
+            "03.31.2026",  # month first: no month 31
+            "31.03/2026",  # mixed separators
+            "01.04.2025 to 31.03.2026",  # two dates
+            "01.04.2025-31.03.2026",
+            "131.03.2026",  # part of a longer number
+            "31.03.20261",
+            "31.03.26",  # two-digit year, numeric month
+            "FY 2025-26",
+            "2026-03-31",
+            "31-Feb-26",
+        ]:
+            with self.subTest(label=label):
+                self.assertIsNone(parse_label_date(label))
 
     def test_text_layer_match(self):
         page = "Cash and cash equivalents 1,23,456.50\nInventories (2,500)\nTotal 1, 25,956.50"

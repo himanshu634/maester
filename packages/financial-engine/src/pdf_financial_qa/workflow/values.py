@@ -90,21 +90,36 @@ _MONTHS = {
 _MONTH = "|".join(sorted(_MONTHS, key=len, reverse=True))
 _DAY_FIRST = re.compile(rf"\b(\d{{1,2}})(?:st|nd|rd|th)?[\s-]+({_MONTH})\.?,?[\s-]+(\d{{4}})\b", re.IGNORECASE)
 _MONTH_FIRST = re.compile(rf"\b({_MONTH})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?,?\s+(\d{{4}})\b", re.IGNORECASE)
+# "31-Mar-26": a two-digit year only with hyphens and a month name.
+_DAY_FIRST_SHORT_YEAR = re.compile(rf"\b(\d{{1,2}})-({_MONTH})-(\d{{2}})(?!\d)", re.IGNORECASE)
+# "31.03.2026", "31/03/2026", "31-03-2026": day first, one separator used twice, a four-digit year.
+_NUMERIC = re.compile(r"(?<!\d)(\d{1,2})([./-])(\d{1,2})\2(\d{4})(?!\d)")
 
 
 def parse_label_date(label: str) -> date | None:
-    """The single unambiguous day–month-name–year date in a period label, if any.
+    """The single unambiguous date in a period label, if any.
 
-    "As at 31 March 2026" and "Year ended March 31, 2026" yield a date;
-    "FY2026", numeric dates and labels naming two different dates yield None.
+    "As at 31 March 2026", "Year ended March 31, 2026", "31-Mar-26" and the
+    day-first numeric forms "31.03.2026", "31/03/2026" and "31-03-2026" yield a
+    date. "FY2026", impossible dates such as "31.02.2026", a two-digit year in
+    a numeric date and labels naming two different dates yield None.
     """
     found: set[date] = set()
     for day, month, year in _DAY_FIRST.findall(label):
         found.add(_safe_date(int(year), _MONTHS[month.lower()], int(day)))
     for month, day, year in _MONTH_FIRST.findall(label):
         found.add(_safe_date(int(year), _MONTHS[month.lower()], int(day)))
+    for day, month, year in _DAY_FIRST_SHORT_YEAR.findall(label):
+        found.add(_safe_date(_full_year(int(year)), _MONTHS[month.lower()], int(day)))
+    for day, _, month, year in _NUMERIC.findall(label):
+        found.add(_safe_date(int(year), int(month), int(day)))
     found.discard(None)  # type: ignore[arg-type]
     return found.pop() if len(found) == 1 else None
+
+
+def _full_year(year: int) -> int:
+    """A two-digit year as ``strptime``'s ``%y`` reads it: 69–99 are 1900s, 00–68 are 2000s."""
+    return year + (1900 if year >= 69 else 2000)
 
 
 def _safe_date(year: int, month: int, day: int) -> date | None:

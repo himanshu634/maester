@@ -57,7 +57,12 @@ Value rules:
 - `reported_text` is the cell exactly as printed. `(1,234.5)` parses to `-1234.5`; Indian grouping (`1,23,456`) and Western grouping both parse; a dash or "nil" is stored with `value_status = dash` and no value, because its meaning depends on the source convention.
 - `scale_factor` is derived deterministically from the unit label (`actuals` 1, `thousands` 10³, `lakhs` 10⁵, `millions` 10⁶, `crores` 10⁷, `billions` 10⁹). An unknown label leaves `scale_factor` and `normalized_value` null and adds an `UNKNOWN_UNIT` warning.
 - The extract prompt asks for earnings per share lines (basic and diluted) when a statement prints them. The extractor gives a whole statement one unit, so a per-share line (a section or label that matches "earnings per share", "earnings per equity share" or "EPS", case ignored) is stored at `scale_factor` 1 and its `normalized_value` is rupees a share. The API reads the `reported_value` of a per-share line, as printed, for the Research pages.
-- `period_end` (income statement, cash flow) or `as_of_date` (balance sheet) is set only when the label contains an unambiguous day–month-name–year date, such as "31 March 2024" or "March 31, 2024". "FY2024" and numeric dates stay null.
+- `period_end` (income statement, cash flow) or `as_of_date` (balance sheet) is set only when the label contains one unambiguous date. Numbers are read day first, as Indian filings print them. The forms read are:
+  - a month name: "31 March 2024", "31st Mar. 2024", "31-Mar-2024", "March 31, 2024";
+  - a month name with a two-digit year, joined by hyphens: "31-Mar-24" (00–68 are 2000s, 69–99 are 1900s);
+  - all numbers, the same separator twice and a four-digit year: "31.03.2024", "31/03/2024", "31-03-2024".
+
+  The date stays null for "FY2024" or "2023-24", an impossible date ("31.02.2024", or the month-first "03.31.2024"), mixed separators ("31.03/2024"), a numeric date with a two-digit year ("31.03.24"), a year-first date ("2024-03-31") and a label that names two different dates ("01.04.2023 to 31.03.2024"). The same date printed twice counts once. Numeric dates and "31-Mar-24" are read from `PIPELINE_VERSION` `extract-2`. Facts already stored keep the dates they were stored with; a filing read before then gains dates only when it is read again ("Read it again" on the Documents slip).
 - `text_layer_match` records whether the printed value appears among the numbers of that page's text layer, after normalising commas, spaces and signs. It is null when the page has no text layer (scanned).
 
 ## 4. Extraction workflow (LangGraph)

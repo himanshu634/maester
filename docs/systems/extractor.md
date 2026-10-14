@@ -185,7 +185,7 @@ The extractor uses one model provider: Gemini on Vertex AI, in the region `VERTE
 | Extraction (`locate`, `extract`, `correct`) | `GEMINI_MODEL`, default `gemini-2.5-pro` | 300 seconds | `max_retries=1` |
 | Classification | `GEMINI_CLASSIFY_MODEL`, default `gemini-2.5-flash` | `CLASSIFY_MODEL_TIMEOUT_SECONDS`, default 60 seconds | `max_retries=0` |
 
-`PROMPT_VERSION` is a hash of the prompt texts. Thus it changes when a prompt changes. `PIPELINE_VERSION` is the constant `extract-1`. The classification result has `rulesVersion`, which is `classify-rules-2`.
+`PROMPT_VERSION` is a hash of the prompt texts. Thus it changes when a prompt changes. `PIPELINE_VERSION` is the constant `extract-2`. The classification result has `rulesVersion`, which is `classify-rules-2`.
 
 ### Page provenance
 
