@@ -333,11 +333,24 @@
 				busy={retrying}
 				onretry={() => retry(onextract)}
 			/>
-		{:else if doc.intakeState === 'read' && !jobRunning && companyId}
-			<p class="figures-link">
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the id is known only at runtime; the path is resolve()d -->
-				<a href={companyHref(companyId)}>{copy.slip.seeFigures}</a>
-			</p>
+		{:else if doc.intakeState === 'read' && !jobRunning}
+			<!-- Both secondary: a link to the figures and an outline button to read the filing again. -->
+			<div class="actions">
+				{#if companyId}
+					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the id is known only at runtime; the path is resolve()d -->
+					<a href={companyHref(companyId)}>{copy.slip.seeFigures}</a>
+				{/if}
+				<button
+					class="button outline"
+					type="button"
+					disabled={retryBusy}
+					aria-describedby={retryBusy ? `${id}-read-again-busy` : undefined}
+					onclick={() => retry(onextract)}
+				>
+					{copy.slip.readAgain}
+				</button>
+				{#if retrying}<p class="busy-note" id="{id}-read-again-busy">{retrying}</p>{/if}
+			</div>
 		{/if}
 
 		{#if message}

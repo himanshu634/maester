@@ -20,6 +20,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page as here } from '$app/state';
 	import { content } from '$lib/content';
 	import { authClient } from '$lib/auth/client';
 	import { endSession, readSession } from '$lib/session';
@@ -37,6 +38,7 @@
 	let { page, children }: Props = $props();
 
 	let entry = $derived(terminalPage(page));
+	/** For the no-script link: a prerendered page cannot read its query, so it names the page alone. */
 	let signIn = $derived(resolve(signInAgainHref(entry.path)));
 
 	let user = $state<SessionUser | null>(known);
@@ -54,7 +56,9 @@
 			known = user = session.user;
 		} else {
 			known = user = null;
-			goto(signIn, { replaceState: true });
+			// Back to this exact address, query included (a company page carries its company there).
+			// Read here, in the browser: the query does not exist while the page is prerendered.
+			goto(resolve(signInAgainHref(here.url.pathname + here.url.search)), { replaceState: true });
 		}
 	}
 

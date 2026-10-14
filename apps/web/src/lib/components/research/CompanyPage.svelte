@@ -19,7 +19,7 @@
 		CompanyStock,
 		StatementTable as Table
 	} from '$lib/research/types';
-	import { filingLong, fyLabel, unitWords } from '$lib/research/view';
+	import { defaultBasis, filingLong, unitWords, yearsRead } from '$lib/research/view';
 	import SectionIssue from '$lib/components/errors/SectionIssue.svelte';
 	import Hatch from '$lib/components/loading/Hatch.svelte';
 	import StockSummary from './StockSummary.svelte';
@@ -30,6 +30,7 @@
 	const fetcher: Fetcher = (url, init) => fetch(url, init);
 	const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 	const KINDS: StatementKind[] = ['income_statement', 'balance_sheet', 'cash_flow'];
+	const failedCopy = copy.company.financialsFailed;
 	const BASES: ReportingBasis[] = ['consolidated', 'standalone', 'unknown'];
 
 	let companyId = $derived(page.url.searchParams.get('id'));
@@ -40,6 +41,10 @@
 	let stockFailed = $state(false);
 	let stockRetrying = $state(false);
 	let stockOutcome = $state('');
+	/** The statements did not load but the prices did: the page shows the prices and says so. */
+	let financialsFailed = $state(false);
+	let financialsRetrying = $state(false);
+	let financialsOutcome = $state('');
 	let statement = $state<StatementKind>('income_statement');
 	let basis = $state<ReportingBasis>('consolidated');
 	let selected = $state<Pos | null>(null);
@@ -47,10 +52,19 @@
 	/** Only the latest load may decide, so a slow answer for another company cannot overwrite it. */
 	let latest = 0;
 
+	function open(next: CompanyFinancials) {
+		financials = next;
+		financialsFailed = false;
+		statement = 'income_statement';
+		basis = defaultBasis(next.tables);
+	}
+
 	async function start(target: string | null) {
 		const mine = ++latest;
 		load = 'loading';
 		financials = null;
+		financialsFailed = false;
+		financialsOutcome = '';
 		stock = null;
 		stockFailed = false;
 		stockOutcome = '';
@@ -71,21 +85,49 @@
 			const [f, s] = await Promise.allSettled([client.financials(target), client.stock(target)]);
 			if (mine !== latest) return;
 			api = client;
-			if (f.status === 'rejected') {
-				load = f.reason instanceof ApiError && f.reason.status === 404 ? 'not-found' : 'failed';
+			if (f.status === 'rejected' && f.reason instanceof ApiError && f.reason.status === 404) {
+				load = 'not-found';
 				return;
 			}
-			financials = f.value;
 			stock = s.status === 'fulfilled' ? s.value : null;
 			stockFailed = s.status === 'rejected';
-			const read = f.value.tables
-				.filter((t) => t.statement === 'income_statement')
-				.map((t) => t.basis);
-			statement = 'income_statement';
-			basis = read.includes('consolidated') ? 'consolidated' : (read[0] ?? 'consolidated');
+			if (f.status === 'rejected') {
+				// With nothing loaded the page has one issue; with the prices in hand it shows them,
+				// and the statements say they didn't load.
+				if (stockFailed) {
+					load = 'failed';
+					return;
+				}
+				financialsFailed = true;
+			} else {
+				open(f.value);
+			}
 			load = 'ready';
 		} catch {
 			if (mine === latest) load = 'failed';
+		}
+	}
+
+	async function retryFinancials() {
+		const mine = latest;
+		const target = companyId;
+		if (!api || !target || financialsRetrying) return;
+		financialsRetrying = true;
+		financialsOutcome = '';
+		try {
+			const next = await api.financials(target);
+			if (mine !== latest) return;
+			open(next);
+		} catch (error) {
+			if (mine !== latest) return;
+			if (error instanceof ApiError && error.status === 404) {
+				load = 'not-found';
+				return;
+			}
+			await tick();
+			financialsOutcome = failedCopy.again;
+		} finally {
+			financialsRetrying = false;
 		}
 	}
 
@@ -116,26 +158,20 @@
 	});
 
 	let name = $derived(financials?.company.displayName ?? '');
-	let summary = $derived(summarize({ financials, stock, stockFailed }));
+	let summary = $derived(summarize({ financials, financialsFailed, stock, stockFailed }));
 	let table = $derived<Table | null>(
 		financials?.tables.find((t) => t.statement === statement && t.basis === basis) ?? null
 	);
 	let bases = $derived(BASES.filter((b) => financials?.tables.some((t) => t.basis === b)));
 	let counted = $derived(financials?.filings.filter((f) => f.counted) ?? []);
-	/** The years read, newest first; a filing with no period is counted but not named. */
-	let years = $derived(
-		counted
-			.map((f) => f.periodEnd)
-			.filter((d): d is string => d !== null && d !== '')
-			.sort()
-			.reverse()
-			.map(fyLabel)
-	);
+	/** The years read, newest first and each once; a filing with no period is counted but not named. */
+	let years = $derived(yearsRead(financials?.filings ?? []));
 	let results = $derived(financials?.filings.filter((f) => f.kind === 'financial_results') ?? []);
 	let identity = $derived.by(() => {
 		const c = financials?.company;
-		if (!c) return '';
 		const words = copy.company.identity;
+		// With no statements, the stock still names the share.
+		if (!c) return stock?.symbol ? `${words.nse} ${stock.symbol}` : '';
 		return [
 			c.nseSymbol ? `${words.nse} ${c.nseSymbol}` : null,
 			c.bseCode ? `${words.bse} ${c.bseCode}` : null,
@@ -220,10 +256,14 @@
 			retryLabel={copy.company.financialsFailed.retry}
 			onretry={() => start(companyId)}
 		/>
-	{:else if financials}
+	{:else}
 		<div class="intro">
 			{@render backLink()}
-			<h1>{name}</h1>
+			{#if name}
+				<h1>{name}</h1>
+			{:else}
+				<h1 class="visually-hidden">{copy.company.heading}</h1>
+			{/if}
 			{#if identity}<p class="identity num">{identity}</p>{/if}
 			{#if years.length}
 				<p class="read-from">
@@ -236,7 +276,7 @@
 		<StockSummary
 			{summary}
 			{stock}
-			{name}
+			name={name || stock?.symbol || ''}
 			failed={stockFailed}
 			onretry={retryStock}
 			retrying={stockRetrying}
@@ -245,7 +285,16 @@
 
 		<section class="statements" aria-labelledby="{id}-statements">
 			<h2 id="{id}-statements">{copy.statements.heading}</h2>
-			{#if counted.length === 0}
+			{#if financialsFailed}
+				<SectionIssue
+					title={failedCopy.title}
+					detail={failedCopy.detailWithPrices}
+					retryLabel={failedCopy.retry}
+					onretry={retryFinancials}
+					busy={financialsRetrying ? failedCopy.busy : null}
+					outcome={financialsOutcome}
+				/>
+			{:else if counted.length === 0}
 				<p>{copy.company.nothingRead(name)}</p>
 				<p><a href={resolve('/terminal/documents')}>{copy.company.addInDocuments}</a></p>
 			{:else}
@@ -274,7 +323,7 @@
 					{/if}
 				</div>
 
-				{#if table && api}
+				{#if table && api && table.columns.length > 0}
 					<div class="figures-layout">
 						<div class="table-col">
 							<div class="caption-line">
@@ -306,6 +355,12 @@
 								onback={back}
 							/>
 						</div>
+					</div>
+				{:else if table && (table.unplaced > 0 || leftOut.length > 0)}
+					<!-- Read, but no figure had a date to place it by year: say how many, not "not read". -->
+					<div class="unplaced">
+						{#if table.unplaced > 0}<p>{copy.statements.unplaced(table.unplaced)}</p>{/if}
+						{#each leftOut as note, index (index)}<p>{note}</p>{/each}
 					</div>
 				{:else}
 					<p>{copy.statements.notRead(basisLabel, kindLabel)}</p>
@@ -442,6 +497,13 @@
 
 	.panel-col {
 		min-width: 0;
+	}
+
+	.unplaced {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+		max-width: var(--measure);
 	}
 
 	@media (min-width: 768px) {

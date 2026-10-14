@@ -84,4 +84,13 @@ describe('signInAgainHref', () => {
 	it('never sends you off the site', () => {
 		expect(signInAgainHref('//evil.example')).toBe('/login?next=%2Fterminal');
 	});
+
+	it('keeps the query, so an expired session comes back to the same company', () => {
+		const here = new URL(
+			'https://maester.example/terminal/research/company?id=3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d'
+		);
+		expect(signInAgainHref(here.pathname + here.search)).toBe(
+			'/login?next=%2Fterminal%2Fresearch%2Fcompany%3Fid%3D3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d'
+		);
+	});
 });

@@ -58,7 +58,9 @@ export const documentsContent = {
 		cancel: 'Cancel',
 		notYet: 'Maester hasn’t worked this out yet.',
 		/** Once a document is read and its company confirmed: a link to the company's figures. */
-		seeFigures: 'See the figures'
+		seeFigures: 'See the figures',
+		/** Beside it, once a document is read: read the filing again (say, one read before earnings per share were asked for). */
+		readAgain: 'Read it again'
 	},
 
 	kind: {
