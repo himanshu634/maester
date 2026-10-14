@@ -2,7 +2,7 @@ import { z } from "zod";
 import { DecimalString, Uuid } from "./common.js";
 import { Company } from "./company.js";
 import { ClassificationKind, IntakeState } from "./classification.js";
-import { IsoDate, ReportingBasis, StatementKind } from "./extraction.js";
+import { CheckType, IsoDate, ReportingBasis, StatementKind } from "./extraction.js";
 
 /**
  * A company's statements put together across its read annual reports, and its NSE closes.
@@ -13,15 +13,21 @@ import { IsoDate, ReportingBasis, StatementKind } from "./extraction.js";
 export const CellStatus = z.enum(["value", "dash", "unparsed", "missing"]);
 export type CellStatus = z.infer<typeof CellStatus>;
 
-/** The arithmetic check covering a figure: as the subtotal itself, as one of its lines, or none. */
+/**
+ * The arithmetic check covering a figure: as the subtotal itself, as one of its lines, or none. A line
+ * carries only its subtotal's own check (`subtotal`); the balance identity (total assets against equity
+ * and liabilities) is about the total alone, so only the total carries it.
+ */
 export const CellCheck = z.object({
   role: z.enum(["subject", "component", "none"]),
   status: z.enum(["passed", "failed", "not_checked"]).nullable(),
+  /** Which check this is; null with no check. On a subject with two checks, the worst one's. */
+  checkType: CheckType.nullable(),
   /** The subtotal the check is about, as printed. */
   subjectLabel: z.string().nullable(),
   /** The subtotal as the page prints it, in the table's unit. */
   expected: DecimalString.nullable(),
-  /** What the subtotal's lines add up to, in the table's unit. */
+  /** What the subtotal's lines add up to (for the balance identity: equity and liabilities), in the table's unit. */
   actual: DecimalString.nullable(),
 });
 export type CellCheck = z.infer<typeof CellCheck>;
@@ -88,7 +94,7 @@ export const StatementTable = z.object({
   statement: StatementKind,
   basis: ReportingBasis,
   unit: TableUnit,
-  /** Oldest period first. */
+  /** Oldest period first. Empty when the statement was read but none of its figures has a date. */
   columns: z.array(FinancialColumn),
   rows: z.array(FinancialRow),
   /** Figures with no date to place them by. */

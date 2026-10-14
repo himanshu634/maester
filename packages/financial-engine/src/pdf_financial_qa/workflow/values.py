@@ -66,7 +66,8 @@ def scale_for(unit_label: str | None) -> Decimal | None:
     return None
 
 
-_PER_SHARE = re.compile(r"earnings per (equity )?share|\beps\b", re.IGNORECASE)
+# "Earnings per share" or the singular "Earning per share", with or without "equity", or "EPS" as a word.
+_PER_SHARE = re.compile(r"earnings? per (equity )?share|\beps\b", re.IGNORECASE)
 
 
 def is_per_share(section: str, label: str) -> bool:

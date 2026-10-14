@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CompanyFinancials, CompanyStock, ResearchCompanies } from "../src/index.js";
+import { CellCheck, CompanyFinancials, CompanyStock, ResearchCompanies } from "../src/index.js";
 
 const ID = "3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
 const company = { id: ID, workspaceId: ID, displayName: "Synthetic Cements Limited", country: "IN", cin: null, bseCode: null, nseSymbol: "SYNCEM", createdAt: "2026-10-13T10:00:00.000Z" };
@@ -18,7 +18,7 @@ describe("research contracts", () => {
           cells: [{
             status: "value", value: "12105.4", printed: "12,105.40", factId: ID, revisionId: ID,
             source: { documentId: ID, pageIndex: 212, pageCount: 286, textLayerMatch: true },
-            check: { role: "component", status: "passed", subjectLabel: "Total income", expected: "12480", actual: "12480" },
+            check: { role: "component", status: "passed", checkType: "subtotal", subjectLabel: "Total income", expected: "12480", actual: "12480" },
             restated: null,
           }],
         }],
@@ -26,6 +26,20 @@ describe("research contracts", () => {
       }],
     });
     expect(body.tables[0]!.rows[0]!.cells[0]!.source!.pageIndex).toBe(212);
+  });
+
+  it("parses a table with no columns, whose figures had no date", () => {
+    const body = CompanyFinancials.parse({
+      company, filings: [],
+      tables: [{ statement: "balance_sheet", basis: "standalone", unit: { label: null, scale: null, currency: null }, columns: [], rows: [], unplaced: 42, leftOut: [] }],
+    });
+    expect(body.tables[0]!.unplaced).toBe(42);
+  });
+
+  it("refuses a check of an unknown type", () => {
+    const check = { role: "subject", status: "failed", checkType: "made_up", subjectLabel: "Total assets", expected: "300", actual: "290" };
+    expect(() => CellCheck.parse(check)).toThrow();
+    expect(CellCheck.parse({ ...check, checkType: "balance_identity" }).checkType).toBe("balance_identity");
   });
 
   it("parses a stock with no price", () => {

@@ -340,6 +340,21 @@ class PerShareTest(unittest.TestCase):
         self.assertTrue(is_per_share("Other", "Basic EPS (₹)"))
         self.assertFalse(is_per_share("Income", "Revenue from operations"))
 
+    def test_spots_the_singular_and_any_case(self):
+        from pdf_financial_qa.workflow.values import is_per_share
+
+        self.assertTrue(is_per_share("Earning per share", "Basic (₹)"))
+        self.assertTrue(is_per_share("Income", "Earning per equity share - Basic"))
+        self.assertTrue(is_per_share("Earnings per share (face value ₹2)", "Diluted"))
+        self.assertTrue(is_per_share("EARNING PER EQUITY SHARE", "BASIC"))
+        self.assertTrue(is_per_share("Other", "eps - diluted"))
+
+    def test_matches_eps_only_as_a_word(self):
+        from pdf_financial_qa.workflow.values import is_per_share
+
+        self.assertFalse(is_per_share("Next steps", "Provision"))
+        self.assertFalse(is_per_share("Income", "Share of profit from Repsol joint venture"))
+
 
 class PerShareFactTests(unittest.TestCase):
     def test_per_share_lines_are_stored_at_scale_one(self):

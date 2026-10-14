@@ -67,6 +67,16 @@ describe("GET /companies/:id/financials", () => {
     expect(t.rows[0]!.cells[0]).toMatchObject({ value: "2401.6", restated: { documentId: ar25, value: "2389.1", pageIndex: 197 } });
   });
 
+  it("keeps a figure's printed decimals through the database, so 2,401.60 is not read as 2,401.6", async () => {
+    // Restated compares at the coarser printed precision: a trimmed trailing zero would hide this change.
+    const a = await ctx.signUp("fin-e@example.com");
+    const company = await ctx.createCompany(a.workspaceId, a.cookie, "Synthetic Cements Limited");
+    const ar25 = await seedFiling(a.workspaceId, a.userId, company, "2025-03-31", [{ label: "Other income", period: "2025-03-31", printed: "2,401.60", page: 198 }]);
+    await seedFiling(a.workspaceId, a.userId, company, "2026-03-31", [{ label: "Other income", period: "2025-03-31", printed: "2,401.63" }]);
+    const body = CompanyFinancials.parse(await (await ctx.app.request(`/v1/workspaces/${a.workspaceId}/companies/${company}/financials`, { headers: { cookie: a.cookie } })).json());
+    expect(body.tables[0]!.rows[0]!.cells[0]).toMatchObject({ value: "2401.63", restated: { documentId: ar25, value: "2401.6", printed: "2,401.60" } });
+  });
+
   it("is not found in another workspace", async () => {
     const a = await ctx.signUp("fin-b@example.com");
     const b = await ctx.signUp("fin-c@example.com");

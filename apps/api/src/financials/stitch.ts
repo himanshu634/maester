@@ -6,7 +6,8 @@ import type { ExtractionCheckRow, FactWithSource } from "@maester/db";
  * (docs/superpowers/specs/2026-10-13-company-financials-design.md, "The table").
  * Each column comes whole from the newest filing that prints its period, so a column never
  * mixes filings; an older filing that printed a different figure for the same line and year marks
- * the cell restated. Lines match across filings by printed name. Pure: no database.
+ * the cell restated (compared at the coarser of the two printed precisions, so a change of unit alone
+ * is not a restatement). Lines match across filings by printed name. Pure: no database.
  */
 
 export type Filing = {
@@ -21,7 +22,8 @@ export type Filing = {
 
 const STATEMENTS = ["income_statement", "balance_sheet", "cash_flow"] as const;
 const BASES = ["consolidated", "standalone", "unknown"] as const;
-const PER_SHARE = /earnings per (equity )?share|\beps\b/;
+/** Earnings per share, singular or plural, "equity" or not, or "EPS" as a word. Matched on normalised text. */
+const PER_SHARE = /earnings? per (equity )?share|\beps\b/;
 
 export function normalise(text: string): string {
   return text
@@ -47,6 +49,28 @@ export function moveDecimal(value: string, places: number): string {
   let out = scale ? `${s.slice(0, -scale)}.${s.slice(-scale)}` : s;
   if (out.includes(".")) out = out.replace(/0+$/, "").replace(/\.$/, "");
   return sign && digits !== 0n ? `-${out}` : out;
+}
+
+/**
+ * Rounds a decimal string half away from zero to `decimals` places; a negative `decimals` rounds to tens,
+ * hundreds and so on. Exact, like `moveDecimal`, and trims trailing zeros the same way.
+ */
+export function roundTo(value: string, decimals: number): string {
+  const m = /^(-?)(\d*)(?:\.(\d*))?$/.exec(value);
+  if (!m) throw new Error(`not a decimal: ${value}`);
+  const [, sign, int = "", frac = ""] = m;
+  const drop = frac.length - decimals;
+  if (drop <= 0) return moveDecimal(value, 0);
+  const unit = 10n ** BigInt(drop);
+  const digits = BigInt(int + frac || "0");
+  const kept = digits / unit + (2n * (digits % unit) >= unit ? 1n : 0n);
+  return moveDecimal(`${sign}${kept}`, -decimals);
+}
+
+/** Decimal places as written: "12105.40" has 2. */
+function places(value: string): number {
+  const dot = value.indexOf(".");
+  return dot < 0 ? 0 : value.length - dot - 1;
 }
 
 /** The exponent of a power-of-ten scale ("10000000" → 7); null for anything else. */
@@ -82,7 +106,7 @@ function converter(facts: FactWithSource[], unit: Unit): { move: number | null; 
   return { move: from - to, reason: null };
 }
 
-const NO_CHECK: CellCheck = { role: "none", status: null, subjectLabel: null, expected: null, actual: null };
+const NO_CHECK: CellCheck = { role: "none", status: null, checkType: null, subjectLabel: null, expected: null, actual: null };
 
 type Placed = { filing: Filing; move: number; byKey: Map<string, FactWithSource>; keys: string[] };
 
@@ -106,12 +130,13 @@ const SEVERITY: Record<ExtractionCheckRow["status"], number> = { failed: 2, not_
 
 function checkFor(f: FactWithSource, filing: Filing, siblings: FactWithSource[], move: number): CellCheck {
   // A check names its section when it has one: two subtotals called "Total" are told apart by it. A check with no
-  // section (the balance identity, for one) covers every section, so a subtotal can have two checks: the worst
-  // status wins, and on a tie the check that names the section exactly, so the result never depends on array order.
-  const index = (subject: string, section: string) => {
+  // section (the balance identity) covers every section, so total assets can have two checks: the worst status
+  // wins, and on a tie the check that names the section exactly, so the result never depends on array order.
+  const index = (subject: string, section: string, types: readonly ExtractionCheckRow["checkType"][]) => {
     let best: ExtractionCheckRow | undefined;
     for (const c of filing.checks) {
       if (
+        !types.includes(c.checkType) ||
         c.statement !== f.fact.statement ||
         c.basis !== f.fact.basis ||
         (c.section !== null && normalise(c.section) !== normalise(section)) ||
@@ -130,15 +155,19 @@ function checkFor(f: FactWithSource, filing: Filing, siblings: FactWithSource[],
     return best;
   };
   const rescale = (v: string | null) => (v === null ? null : moveDecimal(v, move));
-  const own = index(f.fact.reportedLabel, f.fact.section);
-  if (own) return { role: "subject", status: own.status, subjectLabel: own.subjectLabel, expected: rescale(own.expected), actual: rescale(own.actual) };
+  const own = index(f.fact.reportedLabel, f.fact.section, ["subtotal", "balance_identity"]);
+  if (own) {
+    return { role: "subject", status: own.status, checkType: own.checkType, subjectLabel: own.subjectLabel, expected: rescale(own.expected), actual: rescale(own.actual) };
+  }
   const label = normalise(f.fact.reportedLabel);
   const parent = siblings.find(
     (s) => s.fact.isSubtotal && normalise(s.fact.section) === normalise(f.fact.section) && s.fact.componentLabels.some((l) => normalise(l) === label),
   );
-  const theirs = parent ? index(parent.fact.reportedLabel, parent.fact.section) : undefined;
+  // A line takes only its subtotal's own sum. The balance identity compares the total with equity and
+  // liabilities, which says nothing about whether this line is right.
+  const theirs = parent ? index(parent.fact.reportedLabel, parent.fact.section, ["subtotal"]) : undefined;
   if (parent && theirs) {
-    return { role: "component", status: theirs.status, subjectLabel: parent.fact.reportedLabel, expected: rescale(theirs.expected), actual: rescale(theirs.actual) };
+    return { role: "component", status: theirs.status, checkType: "subtotal", subjectLabel: parent.fact.reportedLabel, expected: rescale(theirs.expected), actual: rescale(theirs.actual) };
   }
   return NO_CHECK;
 }
@@ -150,6 +179,25 @@ function valueOf(f: FactWithSource, move: number, unit: Unit): string | null {
   const to = exponent(unit.scale);
   if (f.fact.normalizedValue !== null && to !== null) return moveDecimal(f.fact.normalizedValue, -to);
   return null;
+}
+
+/**
+ * How finely a figure is known in the table's unit: its printed decimals, less the places its decimal point
+ * moved ("12,10,543.21" lakh is 12105.4321 crore: 4 places). Negative when it is known only to tens or more
+ * (whole crore moved into lakh). A per-share figure never moves.
+ */
+function precisionOf(f: FactWithSource, move: number): number {
+  return places(f.fact.reportedValue ?? "") - (perShare(f) ? 0 : move);
+}
+
+/**
+ * Whether two filings printed the same figure: both brought to the coarser of their two precisions first, so
+ * a line printed in lakh one year and in crore the next is not "restated" by the extra decimals alone.
+ */
+function sameFigure(a: string | null, aPlaces: number, b: string | null, bPlaces: number): boolean {
+  if (a === null || b === null) return a === b;
+  const coarser = Math.min(aPlaces, bPlaces);
+  return roundTo(a, coarser) === roundTo(b, coarser);
 }
 
 function cellOf(f: FactWithSource, placed: Placed, unit: Unit, siblings: FactWithSource[]): FinancialCell {
@@ -201,7 +249,8 @@ function stitchOne(ordered: Filing[], statement: (typeof STATEMENTS)[number], ba
       byPeriod.set(day, placed);
     }
   }
-  if (byPeriod.size === 0) return null;
+  // Read, but nothing to place by year: a table with no columns still says how many figures were left out.
+  if (byPeriod.size === 0) return { statement, basis, unit, columns: [], rows: [], unplaced, leftOut };
 
   const periods = [...byPeriod.keys()].sort();
   const owners = periods.map((p) => byPeriod.get(p)![0]!);
@@ -240,7 +289,8 @@ function stitchOne(ordered: Filing[], statement: (typeof STATEMENTS)[number], ba
         const g = other.byKey.get(key);
         if (!g) continue;
         const theirs = valueOf(g, other.move, unit);
-        if (g.fact.valueStatus !== f.fact.valueStatus || theirs !== cell.value) {
+        const same = sameFigure(cell.value, precisionOf(f, owner.move), theirs, precisionOf(g, other.move));
+        if (g.fact.valueStatus !== f.fact.valueStatus || !same) {
           cell.restated = { documentId: other.filing.documentId, filingPeriodEnd: other.filing.periodEnd, pageIndex: g.source.pageIndex, value: theirs, printed: g.fact.reportedText };
         }
         break;
