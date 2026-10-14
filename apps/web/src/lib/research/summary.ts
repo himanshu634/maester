@@ -27,6 +27,7 @@ export interface SummaryFigure {
 export interface Summary {
 	sentence: string | null;
 	figures: [SummaryFigure, SummaryFigure, SummaryFigure, SummaryFigure];
+	/** The earnings per share price to earnings divides by; null unless it was worked out. */
 	epsCell: { tableIndex: number; row: number; col: number } | null;
 }
 
@@ -241,14 +242,15 @@ export function summarize(input: {
 
 		// Price to earnings: the last close ÷ the printed basic earnings per share, newest year.
 		// Per share, so it does not depend on the table's unit.
+		// The figure is named as used only once price to earnings is worked out from it.
 		const eps = epsIndex >= 0 ? reading(table.rows[epsIndex]!, col) : null;
-		if (eps) epsCell = { tableIndex: index, row: epsIndex, col };
 		if (!ok) pe.reason = copy.summary.needsPrice;
 		else if (!eps) pe.reason = copy.summary.noEps;
 		else if (eps.now <= 0) pe.reason = copy.summary.loss(fy);
 		else {
 			const cell = table.rows[epsIndex]!.cells[col]!;
 			pe.value = (ok.last!.value / eps.now).toFixed(1);
+			epsCell = { tableIndex: index, row: epsIndex, col };
 			pe.note = copy.summary.peNote(
 				two.format(ok.last!.value),
 				two.format(eps.now),

@@ -220,6 +220,29 @@ describe('summarize', () => {
 		});
 	});
 
+	it('names the earnings per share figure as used only when price to earnings is worked out', () => {
+		const loss = canvas([
+			r('Revenue from operations', '11240.75', '10105.4'),
+			r('Profit for the year', '-120', '-310', { isSubtotal: true }),
+			r('Basic', '-5.1', '-13.17', { section: 'Earnings per share', perShare: true })
+		]);
+		expect(summarize({ financials: canvas(), stock, stockFailed: false }).epsCell).toEqual({
+			tableIndex: 0,
+			row: 2,
+			col: 1
+		});
+		const notTracked = { ...stock, state: 'not_tracked' as const, ...noPrices };
+		const notConnected = { ...stock, state: 'not_connected' as const, ...noPrices };
+		expect(
+			summarize({ financials: canvas(), stock: notTracked, stockFailed: false }).epsCell
+		).toBeNull();
+		expect(
+			summarize({ financials: canvas(), stock: notConnected, stockFailed: false }).epsCell
+		).toBeNull();
+		expect(summarize({ financials: canvas(), stock: null, stockFailed: true }).epsCell).toBeNull();
+		expect(summarize({ financials: loss, stock, stockFailed: false }).epsCell).toBeNull();
+	});
+
 	it('leaves out what it doesn’t know, and never writes a sentence from nothing', () => {
 		const s = summarize({ financials: null, stock: null, stockFailed: true });
 		expect(s.sentence).toBeNull();

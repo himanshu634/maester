@@ -470,9 +470,12 @@
 			grid-template-columns: minmax(0, 1fr) clamp(18rem, 31%, 22.5rem);
 		}
 
+		/* Never taller than the window, so "Open the PDF" stays in reach on a short screen. */
 		.panel-col {
 			position: sticky;
 			top: var(--space-6);
+			max-height: calc(100vh - 2 * var(--space-6));
+			overflow-y: auto;
 		}
 	}
 </style>
