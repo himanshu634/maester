@@ -56,3 +56,14 @@ that session's scratchpad and was lost when the scratchpad was cleared, so it is
 published canvas is the durable copy: read a frame's source with the Artifact tool
 (`project/F1.dc.html` and so on) and build the next round from it. The built pages are
 `apps/web/src/lib/components/market-mood/` and `components/settings/`.
+
+## Financial tables round (2026-10-13)
+
+`financials.mjs`, `financials-notes.json` and `financials-heights.json` built round 1 of the
+"Maester Financial Tables" canvas (https://claude.ai/artifact/YHy12h78LC5WUBwNynizXQ): Today,
+A · The filing, opened, B · The company's years, C · The page beside the figures, D · Sums you
+can open. They add the signed-in rail with Market mood and Settings live, a synthetic company
+whose statements add up (Synthetic Cements Limited, three annual reports, one restatement, one
+misread total), the statement ledger with a selected figure, the figure panel, the three status
+axes, the toggles, a rendered PDF page and the openable sums.
+Run `node financials.mjs --measure`, measure, then `node financials.mjs financials-heights.json`.

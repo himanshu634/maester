@@ -1,0 +1,36 @@
+{
+ "rows": [
+  {
+   "title": "Today · the figures are read, and nowhere to be seen",
+   "note": "Drawn from the code, not the running page: signed-in pages need a session, and no extraction exists locally.\n\n• A read filing holds every line of its statements, both bases, with the page each figure came from and its sums checked.\n• Figures you can see in the app: 0. The slip stops at Ready and 'Read as'.\n• Ways from a figure to its page in the app: none. You download the PDF and search.\n• Research, where the rail says figures will live, is a coming-soon page.\n\nYardstick: figures shown 0 → every line; a figure to its page: not possible → select it, then open its page."
+  },
+  {
+   "title": "A · The filing, opened",
+   "note": "Where: the document's own page, opened from the slip's 'See the figures' and from Earlier.\n\nSource: a figure panel beside the table: 'Page 213 of 286', whether the figure is in the page's text, whether its sum adds up, whether you've reviewed it. 'Open the PDF at page 213' opens the filing in a new tab. An iPhone opens it at page 1, so the page number is always written.\n\nThe statement exactly as the filing prints it: its lines, its two columns, current year first.\n\nA3: a sum that doesn't add up says so beside its line and in the panel; a statement that didn't read is a note with Try again; a printed dash is not a zero.\n\nCost: web only. The facts, extraction and download endpoints exist. Research stays Soon.\n\nLength: 1.6 screens at 1440; 1.9 on a phone with one figure open."
+  },
+  {
+   "title": "B · The company’s years",
+   "note": "Where: Research works. It lists your companies; a company's page puts every year from every filing in one table.\n\nSource: A's figure panel, plus 'From' (which filing) and 'Restated' when an older filing printed something else.\n\nEach year comes whole from the newest filing that prints it, so every column adds up. Lines are matched across filings by printed name; a renamed line becomes two rows (B2: 'Freight and forwarding expenses', 2022–23 only). With one filing it shows the same two years as A.\n\nCost: a new read endpoint (a company's facts across its filings' latest revisions), the matching and restated rules, and a filing counts only once its company is confirmed. Research leaves Soon.\n\nLength: 1.5 screens at 1440 for four years; 1.4 on a phone."
+  },
+  {
+   "title": "C · The page beside the figures",
+   "note": "Where: the document's page, as A.\n\nSource: the printed page itself, drawn in the app beside the table, turning as you move between figures. The figure is boxed where its printed value appears in the page's text; a scanned page gets no box. On a phone, Figures and Page switch in place.\n\nCost: a PDF renderer in the browser (pdfjs-dist, a new dependency with its own loading and failure states); the stored PDF must be readable from the web origin; and a change to UI spec §9 (figures left, page right). Boxing the whole line, not just the number, would need the extractor to keep where on the page it read it.\n\nLength: 1.6 screens at 1440; 1.4 on a phone."
+  },
+  {
+   "title": "D · Sums you can open",
+   "note": "Where: the document's page, as A.\n\nSource: each sum states its page and its arithmetic inline ('12,105.40 + 374.60 = 12,480.00. Page 213.'); a line opens A's figure panel.\n\nThe statement reads as its five sums, closed; open one to see its lines. Two years fit a phone with no sideways scroll. D2: a sum that doesn't add up opens by itself and says by how much.\n\nCost: web only. Sums group their lines from the checks' line lists, which the API holds. Lines in no sum (exceptional items, other comprehensive income) need an 'Other lines' group.\n\nLength: 1.2 screens at 1440 with one sum open; 1.8 on a phone with the 7-line sum open."
+  }
+ ],
+ "shared": "In every direction\n\n• Statements named as the slip names them: Profit and loss, Balance sheet, Cash flow. Consolidated or standalone applies to the whole table.\n• Figures in the filing's unit, said once ('₹ crore, as printed'). A filing in another unit is converted; its own unit stays in the figure panel.\n• Three separate words per figure, never one score: On the page (found in its text / scanned / not found), Adds up (yes / no, by how much), Reviewed (not yet). No Correct button until corrections exist.\n• Unknown is '—' with its reason. A dash printed on the page is shown as printed, never read as zero.\n• Pages counted from 1, with the total: 'Page 213 of 286'.\n• Line names stay put while figures scroll, in a labelled region; arrow keys move between figures (UI spec §12).\n• The slip's Ready gets 'See the figures'.\n• The 'Synthetic example' tag marks this mockup. The real page shows your filings' figures.",
+ "questions": "Open questions\n\n1. Where do the figures live: on the filing (A, C, D) or on the company (B)?\n2. Match lines across filings by printed name only? (B)\n3. A dash printed on the page: show it as printed, or as 'nil'?",
+ "final": {
+  "rows": [
+   {
+    "title": "B · final — the company’s years, with the stock on top",
+    "color": "green",
+    "note": "Picked: B with A’s figure panel (B2 already had it), plus “a summary on top about the stock”.\n\nThe summary is one sentence filled from the figures by rule (no model writes it), then four figures:\n• Last close, with the day’s change as a sign, never a colour.\n• 52-week range, the close marked on a rule.\n• Price to earnings: the close ÷ the basic earnings per share the annual report prints, with its page.\n• Profit for the latest year, with revenue and the change on the year before.\n\nPrices come from the closes Maester already keeps for every Nifty 500 share from your Dhan data. Outside the Nifty 500 the price figures are “—” with the reason and the business figures still show (F3). With Dhan not connected, they say “Connect Dhan in Settings to see prices.”\n\nUnder the figures, the last year’s closes as a line (Market mood’s chart, ink only), the low and high marked, with “Show as a table”. No line when there’s no price (F3).\n\nSelect earnings per share in the table and the panel says price to earnings uses it.\n\nCost on top of B: the company page also reads the latest closes for the company’s NSE symbol, and earnings per share must be among the lines read (it is printed under the profit and loss).\n\nLength: F1 is 2.5 screens at 1440 (summary and price line add about a screen above B2); F2 is 2.3 phone screens."
+   }
+  ],
+  "questions": "Decided 13 Oct\n\n• No market value.\n• The one-year price line goes under the summary."
+ }
+}
