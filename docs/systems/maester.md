@@ -45,7 +45,7 @@ Maester also shows a market mood. It calculates the market mood from daily marke
 
 | Part | Location | Function |
 | --- | --- | --- |
-| [API](api.md) | `apps/api` | TypeScript HTTP service (Hono). It serves sign-in at `/api/auth/*` through Better Auth and the routes for workspaces, companies, documents and jobs at `/v1`. It writes documents and jobs and dispatches jobs. It also serves the market mood at `/v1/market-mood` and the market connections at `/v1/settings/connections`. |
+| [API](api.md) | `apps/api` | TypeScript HTTP service (Hono). It serves sign-in at `/api/auth/*` through Better Auth and the routes for workspaces, companies, documents and jobs at `/v1`. It writes documents and jobs and dispatches jobs. It also serves the market mood at `/v1/market-mood`, the market connections at `/v1/settings/connections` and the statements and prices of a company for Research. |
 | [Worker](worker.md) | `apps/worker` | TypeScript HTTP service (Hono). It receives a dispatch at `POST /tasks/:type`, takes a lease and runs `document.verify`, `document.classify` or `document.extract`. If `CONNECTIONS_KEY` has a value, it also runs the market refresh on a timer. |
 | [Extractor](extractor.md) | `apps/extractor` | Python HTTP service (FastAPI). It answers `POST /v1/classify` and `POST /v1/extract` for the worker and calls Gemini on Vertex AI. It does not write data. |
 | [Web client](web.md) | `apps/web` | Static SvelteKit site. In a container, nginx serves it and sends `/api/auth/`, `/v1/` and `/dev/` to the API. |
@@ -459,7 +459,7 @@ CAUTION: `pnpm stack:reset` deletes the `pgdata` and `blobs` volumes. Use `pnpm 
 - The deployed worker also has no `GOOGLE_CLOUD_PROJECT` and no `WORKER_INVOKER_SA` (`infra/deploy.sh:60`). Thus its dispatcher cannot send a `document.classify` job (`apps/worker/src/dispatch.ts:8-13`).
 - Each user has one personal workspace. The Documents page uses only the first workspace.
 - Approval of an email is a script. There is no screen for it.
-- Maester has no portfolio or holdings yet. In the terminal, Documents, Market mood and Settings work. The other pages tell what they will do.
+- Maester has no portfolio or holdings yet. In the terminal, Documents, Research, Market mood and Settings work. The other pages tell what they will do.
 - Each signed-in user reads and changes the same two market connections. The market data has no owner.
 - `infra/deploy.sh` does not set `CONNECTIONS_KEY`. Thus, the deployed API refuses the routes for market connections, and the deployed worker does not run the market refresh.
 - The CLI does not share data with the API, the worker or the database.

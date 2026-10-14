@@ -56,6 +56,7 @@ Value rules:
 - A line not disclosed for a period has no fact row.
 - `reported_text` is the cell exactly as printed. `(1,234.5)` parses to `-1234.5`; Indian grouping (`1,23,456`) and Western grouping both parse; a dash or "nil" is stored with `value_status = dash` and no value, because its meaning depends on the source convention.
 - `scale_factor` is derived deterministically from the unit label (`actuals` 1, `thousands` 10³, `lakhs` 10⁵, `millions` 10⁶, `crores` 10⁷, `billions` 10⁹). An unknown label leaves `scale_factor` and `normalized_value` null and adds an `UNKNOWN_UNIT` warning.
+- The extract prompt asks for earnings per share lines (basic and diluted) when a statement prints them. The extractor gives a whole statement one unit, so a per-share line ("earnings per share" or "EPS" in its section or label) is stored at `scale_factor` 1 and its `normalized_value` is rupees a share. The API reads the `reported_value` of a per-share line, as printed, for the Research pages.
 - `period_end` (income statement, cash flow) or `as_of_date` (balance sheet) is set only when the label contains an unambiguous day–month-name–year date, such as "31 March 2024" or "March 31, 2024". "FY2024" and numeric dates stay null.
 - `text_layer_match` records whether the printed value appears among the numbers of that page's text layer, after normalising commas, spaces and signs. It is null when the page has no text layer (scanned).
 

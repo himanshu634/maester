@@ -34,6 +34,13 @@ This document tells how the code of the web app works. For the visual rules (col
 | access token | The secret that Dhan gives for a market connection. |
 | API key | The secret that FRED gives for a market connection. |
 | settings item | One part of a group on the Settings page. A button in its heading opens and closes it. |
+| filing | A document that has a company. The API groups the filings by company. |
+| read annual report | A filing that is an annual report and that Maester read. Only these filings give figures to a statement table. |
+| statement table | One statement on one basis. It has a line for each printed label and a column for each financial year. The API makes it. |
+| company page | The page `/terminal/research/company`. The query `id` of the address gives the company. |
+| stock summary | The top part of the company page: one sentence, four figures and a chart of the closing prices of the last year. |
+| figure panel | The part of the company page that tells where the selected figure came from. |
+| closing price | The NSE price at the end of one day. The API reads it from the Dhan data that the worker stores. |
 | design token | A CSS custom property in `tokens.css`. |
 | reset token | The secret value in the emailed link for a new password. The link gives it as `token` in the address. |
 | design guard | The test file `design-guard.test.ts`. |
@@ -42,7 +49,7 @@ This document tells how the code of the web app works. For the visual rules (col
 
 The web app is the browser client of Maester for investors. It is a static site. The build makes all pages before deployment, and nginx serves them as files. The script in each page then calls the API through the proxy on the same origin. Thus, the session cookie is a first-party cookie.
 
-The web app has public pages, sign-in pages, one error page and the terminal. In the terminal, three pages work with real data: Documents, Market mood and Settings. Each other terminal page is a coming-soon page.
+The web app has public pages, sign-in pages, one error page and the terminal. In the terminal, four pages work with real data: Documents, Research, Market mood and Settings. Each other terminal page is a coming-soon page.
 
 ## Parts
 
@@ -56,12 +63,16 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 | Signed-in guard | `src/lib/components/terminal/SignedInPage.svelte` | Checks the session. Shows the terminal shell or sends the person to `/login`. |
 | Terminal shell | `src/lib/components/terminal/TerminalShell.svelte` | The rail, the menu for small screens, the context header and the account block. |
 | Page list | `src/lib/terminal/pages.ts` | The nine terminal pages, their paths, their groups and the `soon` flag. |
-| Coming-soon pages | `src/routes/terminal/*/+page.svelte`, `ComingSoon.svelte`, `components/terminal/sketches/` | Six pages that tell what each page will do. |
+| Coming-soon pages | `src/routes/terminal/*/+page.svelte`, `ComingSoon.svelte`, `components/terminal/sketches/` | Five pages that tell what each page will do. |
 | Demo | `src/routes/terminal/demo/`, `src/lib/terminal/` | The overview page with the synthetic data in `fixture.ts`. |
 | Documents page | `src/routes/terminal/documents/+page.svelte`, `src/lib/components/documents/` | Adds a PDF file, shows the progress and lets the investor correct the answers. |
 | Documents client | `src/lib/documents/client.ts` | Typed calls to the document routes of the API. |
 | Intake logic | `src/lib/documents/intake.ts` | Functions without Svelte for the Documents page: file checks, slip choice, ladder steps, error messages. |
 | API types | `src/lib/documents/types.ts` | A copy of a subset of the types in `packages/contracts`. |
+| Research pages | `src/routes/terminal/research/+page.svelte`, `src/routes/terminal/research/company/+page.svelte`, `src/lib/components/research/` | List the companies. Show the stock summary, the statement tables and the figure panel of one company. |
+| Research client | `src/lib/research/client.ts` | Typed calls to the Research routes of the API. `pageHref` makes the link to a page of a PDF. |
+| Research logic | `src/lib/research/view.ts`, `summary.ts`, `grid.ts`, `links.ts` | Functions without Svelte: words and numbers, the stock summary, the arrow-key moves and the link to a company page. |
+| Research types | `src/lib/research/types.ts` | A copy of the Research types in `packages/contracts`. |
 | Market mood page | `src/routes/terminal/market-mood/+page.svelte`, `src/lib/components/market-mood/` | Shows the market mood, the 10 readings, a chart of the last 12 months and the method. |
 | Reading pages | `src/routes/terminal/market-mood/[key]/`, `ReadingPage.svelte` | Ten pages, one for each reading. Each page shows the value and a chart of the last 2 years. |
 | Market mood client | `src/lib/market-mood/client.ts` | Typed calls to the market mood routes of the API. |
@@ -118,10 +129,10 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 ### Terminal shell and pages
 
 1. `TerminalShell` reads `pagesIn('portfolio')`, `pagesIn('research')` and `pagesIn('foot')` from `pages.ts`. It shows the pages in these three groups. Market mood is in the `portfolio` group, after Holdings.
-2. A page with `soon: true` shows "Soon" after its label. In `pages.ts`, `market-mood`, `documents` and `settings` have `soon: false`.
+2. A page with `soon: true` shows "Soon" after its label. In `pages.ts`, `market-mood`, `research`, `documents` and `settings` have `soon: false`.
 3. Under a session, the account block shows the email and a Sign out button. `endSession` calls `signOut()`.
 4. If `signOut()` succeeds, the page goes to `/`. If it fails, the shell shows a failure line, and the session stays.
-5. The six coming-soon routes put `ComingSoon` and one sketch in `SignedInPage`.
+5. The five coming-soon routes put `ComingSoon` and one sketch in `SignedInPage`.
 6. The demo routes do not use `SignedInPage`. They show `Overview` with `demo` or `quietDemo` from `fixture.ts`.
 7. In the demo, the code disables the three write buttons. Each button points to the read-only note with `aria-describedby`.
 8. `dueItems` in `due.ts` puts the due items in this order: review, position limit, price that Maester does not know. In each kind, the larger portfolio weight comes first.
@@ -170,6 +181,7 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 5. Each form calls `changeClassification` with `basedOn` set to the ID of the current answers.
 6. If the API returns `CONFLICT` for `basedOn`, the slip shows the latest answers and a message. It then reads the slip again with `reloadSlip`.
 7. "Try again" on a failed step calls `classify` or `extract`. Then the page reads the document again.
+8. If the intake state is `read`, no job runs and the document has a company, the slip shows "See the figures". This link goes to the company page, with `companyHref`.
 
 ### Market mood page
 
@@ -205,6 +217,53 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 4. The page shows the value, the change, the rank and what the reading measures.
 5. `MoodChart` draws the values of the reading for the last 2 years. `niceDomain` sets the range of the axis to whole steps of 1, 2 or 5.
 6. If the read fails, the page shows a `SectionIssue` with "Try again". The link back to the Market mood page always shows.
+
+### Research list page
+
+1. `ResearchPage` starts only after `SignedInPage` finds a user.
+2. On mount, `start()` calls `readMe`. It uses the first workspace in the answer. If the person has no workspace, the page shows a `SectionIssue` and stops.
+3. Then `start()` calls `companies()` of `researchApi` (`GET .../research/companies`). While the call runs, the page shows hatch boxes and one status line.
+4. If the call fails, the page shows a `SectionIssue` with "Try again".
+5. If the list is empty, the page tells how a company gets there. It has a link to the Documents page.
+6. If not, the page shows a table with one line for each company, in the order of the API. The name is a link that `companyHref` makes.
+7. The columns are Company, Read from, Latest year and Where it stands. `readFrom` gives the number of read annual reports in words. `fyLabel` gives the latest year, for example "2025–26".
+8. `standing` gives the last column. It selects the first of these that is true:
+   - `failed` is more than 0: "N filings didn’t read".
+   - `reading` is more than 0: "Reading N filings".
+   - `annualReportsRead` is more than 0: "Read".
+   - None of these: "Nothing read yet".
+9. If the container of the table is narrower than 36 rem, the columns Read from and Latest year do not show. Their words show in one line under the name.
+
+### Research company page
+
+1. `CompanyPage` reads `id` from the query of the address in the browser. The build makes one HTML file for the route. Thus the company travels in the query.
+2. If `id` is not a UUID, the page shows "This company isn’t in your workspace." and a link to Research. It shows the same text if the person has no workspace.
+3. If not, `start()` calls `financials()` and `stock()` at the same time with `Promise.allSettled`. Only the latest call of `start()` can change the page.
+4. If `financials()` fails with status 404, the page shows the same not-found text. If it fails in a different way, the page shows a `SectionIssue` with "Try again".
+5. If `stock()` fails, the stock summary shows a `SectionIssue` for the prices only. Its "Try again" calls `stock()` again. The statements stay on the screen.
+6. The head shows the name, the NSE symbol, the BSE code, the CIN and the periods of the read annual reports, newest first.
+7. `summarize` in `summary.ts` makes the stock summary. It uses no model. The sentence comes from fixed templates.
+8. `summarize` uses the income statement of the company. It takes the consolidated one, or the standalone one if there is no consolidated one, or the one with an unknown basis.
+9. Revenue, profit and earnings per share come from the newest column of this statement table only. A change compares the newest column with the column before it.
+10. If a line has no value in the newest column, `summarize` writes nothing for that line. An older column never stands in.
+11. `summarize` shows no amount for a currency other than `INR`. It also shows no amount if the scale has no value or `unitShort` cannot name it. The reason is "The statement’s unit isn’t one Maester can name."
+12. If no line has a profit name, the reason for the profit is "Profit wasn’t found in the statement."
+13. The price to earnings is the last closing price divided by the basic earnings per share of the newest column. If the statement table has no basic line, `summarize` uses the first per-share line.
+14. If the earnings per share is zero or less, there is no price to earnings. The reason says that the company made a loss.
+15. `StockSummary` shows the sentence and the four figures. A figure with no value shows "—". The reason is in the text for a screen reader or in the note.
+16. `RangeRuler` shows where the last closing price is between the low and the high of the last year.
+17. If the stock has a state other than `ok`, the page shows no chart. The reason is no NSE symbol, no Dhan connection (with a link to Settings), or a share that is not in the Nifty 500.
+18. If the stock has more than one closing price, `MoodChart` draws the last year of closing prices. It marks the low and the high and uses a left gutter of 72 px for the rupee labels.
+19. The Statements section has two groups of toggle buttons: the statement and the basis. A basis shows only if a statement table has it. A toggle clears the selected figure.
+20. `StatementTable` shows the selected statement table in a region that scrolls sideways. The region starts at the newest years. The names of the lines stay in place when the region scrolls.
+21. Each figure is a button with `aria-pressed`. Only one button has `tabindex="0"`. The arrow keys, Home and End call `move` in `grid.ts`.
+22. A click on a figure selects it. `FigurePanel` then shows the filing and the page of the figure.
+23. `onPage` tells if the text of the page has the printed figure. `addsUp` tells if the sum of the figure adds up.
+24. `FigurePanel` shows "Used in" only if the selected figure is the earnings per share that the price to earnings uses.
+25. If the browser is 1024 px wide or wider, the figure panel is beside the statement table. If not, a click moves the focus to the panel, and "Back to the table" moves it back to the figure.
+26. "Open the PDF at page N" is a link that opens in a new tab. It goes to `pageHref`: `.../documents/<id>/file#page=N`. The API redirects to the PDF, and the browser keeps the page.
+27. Under the statement table, notes tell that each year comes whole from the newest filing that prints it. They also tell how many figures have no date, and which filings the API left out.
+28. A last note names the results for a quarter or a half year. These are not in the statement tables.
 
 ### Settings page
 
@@ -284,6 +343,15 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 | First market refresh runs | `fetch.state` is `running`, and the API has no market points yet. | A `Notice` tells that Maester gets the first readings now. It has no link. |
 | `DHAN_TOKEN_EXPIRED`, `FRED_KEY_REFUSED` | The last market refresh failed with this code. | A `Notice` tells the last day of data. It has a link to Settings. |
 | `DHAN_RATE_LIMITED`, `SOURCE_UNAVAILABLE`, other codes | The last market refresh failed with a different code. | A `Notice` gives the day of the failure in India. It tells that Maester tries again within 30 minutes. |
+| Companies do not load | `readMe` or `companies()` fails. | The Research list shows a `SectionIssue` with "Try again". |
+| Company not found | `id` is not a UUID, the person has no workspace, or `financials()` fails with status 404. | The company page shows "This company isn’t in your workspace." |
+| Statements do not load | `financials()` fails in a different way. | The company page shows a `SectionIssue` with "Try again". |
+| Prices do not load | `stock()` fails. | The stock summary shows a `SectionIssue` for the prices. The figures that need a price show "—". The statements stay. |
+| No price | The stock has the state `no_symbol`, `not_connected` or `not_tracked`. | The figures that need a price show "—" with the reason. There is no chart. |
+| No annual report read | The company has no read annual report. | The Statements section tells this and links to the Documents page. |
+| Statement not read | No statement table has the chosen statement and basis. | The section tells that Maester did not read such a statement yet. |
+| Unit not named | The scale of the statement table has no value or `unitShort` cannot name it, or its currency is not `INR`. | The profit shows "—" with the reason. The sentence has no amount. |
+| Loss | The basic earnings per share is zero or less. | The price to earnings shows "—". The reason says that the company made a loss. |
 | Reading does not load | `GET /v1/market-mood/readings/<reading key>` fails. | The reading page shows a `SectionIssue` with "Try again". |
 | Unknown reading key | The path has a reading key that is not in `READING_KEYS`. | The error page shows the `not-found` view. |
 | Settings do not load | `readMe` or the list fails. The list also fails with `INVALID_STATE` when the API has no `CONNECTIONS_KEY`. | The page shows a `SectionIssue` with "Try again". The Account group does not show. |
@@ -318,6 +386,10 @@ The web app calls these API paths:
 | `/v1/workspaces/<id>/documents/<id>/extract` | `POST` | `extract` |
 | `/v1/workspaces/<id>/companies?limit=100` | `GET` | `listCompanies` |
 | `/v1/workspaces/<id>/companies/<id>` | `GET` | `getCompany` |
+| `/v1/workspaces/<id>/research/companies` | `GET` | `companies` in `research/client.ts` |
+| `/v1/workspaces/<id>/companies/<id>/financials` | `GET` | `financials` in `research/client.ts` |
+| `/v1/workspaces/<id>/companies/<id>/stock` | `GET` | `stock` in `research/client.ts` |
+| `/v1/workspaces/<id>/documents/<id>/file` | `GET` | The link "Open the PDF at page N". The browser opens it in a new tab. |
 | `/v1/market-mood` | `GET` | `mood` in `market-mood/client.ts` |
 | `/v1/market-mood/readings/<reading key>` | `GET` | `reading` in `market-mood/client.ts` |
 | `/v1/settings/connections` | `GET` | `list` in `settings/client.ts` |
@@ -412,9 +484,12 @@ CAUTION: When a type in `packages/contracts` changes, change its copy in the web
 
 ## Limits
 
-- Only the Documents, Market mood and Settings pages use real data. Each of these pages is a coming-soon page: overview, holdings, research, watchlist, analyst and activity.
+- Only the Documents, Research, Market mood and Settings pages use real data. Each other terminal page is a coming-soon page: overview, holdings, watchlist, analyst and activity.
 - After a failed poll, the Market mood page does not poll again until the person hides the tab and shows it again. The page shows no message for a failed poll.
 - The reading pages do not poll.
+- The Research pages do not poll. They read the companies, the statements and the prices one time for each visit.
+- The Research list reads up to 100 companies. The company page shows annual reports only.
+- The line "Reviewed" in the figure panel always says "Not yet". The web app has no function to review a figure.
 - If the API has no `CONNECTIONS_KEY`, the whole Settings page does not load. Thus, the message `noServerKey` of `saveFailure` cannot show.
 - For a `failing` market connection, the notice tells that the source did not answer. But the only cause of this state is a refused FRED API key.
 - The web app uses only the first workspace of the person.
@@ -461,6 +536,21 @@ CAUTION: When a type in `packages/contracts` changes, change its copy in the web
 - [`apps/web/src/lib/documents/client.ts`](../../apps/web/src/lib/documents/client.ts)
 - [`apps/web/src/lib/documents/intake.ts`](../../apps/web/src/lib/documents/intake.ts)
 - [`apps/web/src/lib/documents/types.ts`](../../apps/web/src/lib/documents/types.ts)
+- [`apps/web/src/routes/terminal/research/+page.svelte`](../../apps/web/src/routes/terminal/research/+page.svelte)
+- [`apps/web/src/routes/terminal/research/company/+page.svelte`](../../apps/web/src/routes/terminal/research/company/+page.svelte)
+- [`apps/web/src/lib/components/research/ResearchPage.svelte`](../../apps/web/src/lib/components/research/ResearchPage.svelte)
+- [`apps/web/src/lib/components/research/CompanyPage.svelte`](../../apps/web/src/lib/components/research/CompanyPage.svelte)
+- [`apps/web/src/lib/components/research/StockSummary.svelte`](../../apps/web/src/lib/components/research/StockSummary.svelte)
+- [`apps/web/src/lib/components/research/RangeRuler.svelte`](../../apps/web/src/lib/components/research/RangeRuler.svelte)
+- [`apps/web/src/lib/components/research/StatementTable.svelte`](../../apps/web/src/lib/components/research/StatementTable.svelte)
+- [`apps/web/src/lib/components/research/FigurePanel.svelte`](../../apps/web/src/lib/components/research/FigurePanel.svelte)
+- [`apps/web/src/lib/research/types.ts`](../../apps/web/src/lib/research/types.ts)
+- [`apps/web/src/lib/research/client.ts`](../../apps/web/src/lib/research/client.ts)
+- [`apps/web/src/lib/research/view.ts`](../../apps/web/src/lib/research/view.ts)
+- [`apps/web/src/lib/research/summary.ts`](../../apps/web/src/lib/research/summary.ts)
+- [`apps/web/src/lib/research/grid.ts`](../../apps/web/src/lib/research/grid.ts)
+- [`apps/web/src/lib/research/links.ts`](../../apps/web/src/lib/research/links.ts)
+- [`apps/web/src/lib/content/research.ts`](../../apps/web/src/lib/content/research.ts)
 - [`apps/web/src/routes/terminal/market-mood/+page.svelte`](../../apps/web/src/routes/terminal/market-mood/+page.svelte)
 - [`apps/web/src/routes/terminal/market-mood/[key]/+page.svelte`](../../apps/web/src/routes/terminal/market-mood/%5Bkey%5D/+page.svelte)
 - [`apps/web/src/routes/terminal/market-mood/[key]/+page.ts`](../../apps/web/src/routes/terminal/market-mood/%5Bkey%5D/+page.ts)
@@ -489,6 +579,7 @@ CAUTION: When a type in `packages/contracts` changes, change its copy in the web
 - [`apps/web/src/lib/settings/view.ts`](../../apps/web/src/lib/settings/view.ts)
 - [`apps/web/src/lib/content/settings.ts`](../../apps/web/src/lib/content/settings.ts)
 - [`apps/api/src/routes/market-mood.ts`](../../apps/api/src/routes/market-mood.ts)
+- [`apps/api/src/routes/research.ts`](../../apps/api/src/routes/research.ts)
 - [`apps/api/src/routes/connections.ts`](../../apps/api/src/routes/connections.ts)
 - [`apps/worker/src/market/refresh.ts`](../../apps/worker/src/market/refresh.ts)
 - [`apps/web/src/lib/errors/errors.ts`](../../apps/web/src/lib/errors/errors.ts)

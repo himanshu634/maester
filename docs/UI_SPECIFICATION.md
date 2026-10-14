@@ -19,7 +19,7 @@ The rail header contains Maester and the workspace picker. The context header co
 | Market mood | `/terminal/market-mood` and `/terminal/market-mood/:readingKey` | R1 (added 6 Oct 2026) | The market's mood from the investor's own Dhan and FRED data; personal, signed in only ([DESIGN.md](DESIGN.md) §10) |
 | Transactions | `/portfolios/:portfolioId/transactions` | R2 | Accounts within portfolio |
 | Performance | `/portfolios/:portfolioId/performance` | R2 | Supported complete interval |
-| Research | `/research` and `/companies/:companyId` | R1 | Companies in the workspace |
+| Research | `/research` and `/companies/:companyId` | R1 (built 13 Oct 2026 as `/terminal/research` and `/terminal/research/company?id=`) | Companies in the workspace. Works ([DESIGN.md](DESIGN.md) §10, Research) |
 | Watchlist | `/watchlists/:watchlistId` | R1 | Tracked companies, independent of ownership |
 | Documents | `/documents` and `/documents/:documentId` | R1 | Authorized uploads and sources |
 | Analyst | `/analyst/:conversationId` | R1 | Explicit question scope |
@@ -110,6 +110,8 @@ Tabs: Overview, Financials, Documents, Notes. Add Peers and Valuation in later r
 Financials contains income statement, balance sheet and cash flow subviews. Period columns are consistently ordered with fiscal end dates available. A visible control switches annual/quarterly data only when available. Unit and basis controls apply to the entire table; a cell with different source units is normalized before display and preserves its original unit in the inspector. Mixed currencies cannot be summed by presentation code.
 
 Clicking a cell opens the evidence inspector; opening a chart shows the same selected fact revisions. Values labeled Reported, Calculated, Estimated or User assumption use separate metadata. A revised filing shows a restated marker with access to earlier values. If source mapping is not available, label the limitation and withhold the source-verified state.
+
+Built so far: the Financials subview (years from annual reports, the figure panel) and a stock summary; Overview, Documents and Notes tabs are not built.
 
 Notes contains dated thesis, supporting evidence, risks, disconfirming conditions and next review date. These are user-authored, with optional AI drafts clearly marked until saved. Autosave feedback reads “Saving,” “Saved,” or “Unable to save”; it must not imply success before acknowledgement. Versioned evidence links survive note edits.
 

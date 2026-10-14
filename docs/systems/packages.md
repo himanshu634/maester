@@ -100,8 +100,9 @@ The `web` app does not import `@maester/contracts`. Three files keep a copy of a
 | `payloads.ts` | `DocumentVerifyResult`, `DocumentClassifyResult`, `DocumentExtractResult`. Each is the `result` of one job type. |
 | `market-mood.ts` | `ReadingKey`, `ReadingFamily`, `MoodBand`, `MissingReason`, `Reading`, `FetchStatus`, `MarketMood`, `ReadingDetail` |
 | `connection.ts` | `ConnectionProvider`, `Connection`, `ConnectionList`, `SaveDhanConnectionRequest`, `SaveFredConnectionRequest` |
+| `research.ts` | `CellStatus`, `CellCheck`, `CellSource`, `Restated`, `FinancialCell`, `FinancialRow`, `FinancialColumn`, `TableUnit`, `StatementTable`, `CompanyFiling`, `CompanyFinancials`, `StockPoint`, `CompanyStock`, `ResearchCompany`, `ResearchCompanies` |
 
-Each validator has a TypeScript type with the same name. `JobTypes` gives the three job types: `document.verify`, `document.classify` and `document.extract`. The package has no OpenAPI document and no generated client. Its `README.md` is the guide to the HTTP routes of the API. The README does not describe the routes for market mood or for market connections.
+Each validator has a TypeScript type with the same name. `JobTypes` gives the three job types: `document.verify`, `document.classify` and `document.extract`. The package has no OpenAPI document and no generated client. Its `README.md` is the guide to the HTTP routes of the API. The README does not describe the routes for market mood, for market connections or for Research.
 
 The market mood validators give the shape of the Market mood page:
 
@@ -111,6 +112,17 @@ The market mood validators give the shape of the Market mood page:
 - A `MarketMood` has exactly 10 readings. Its `scoredCount` is a maximum of 7. Each `rank` and `score` is an integer from 0 to 100, or `null`.
 - `FetchStatus.errorCode` has the five codes of `MarketSourceError`, the two codes `DHAN_NOT_CONNECTED` and `FRED_NOT_CONNECTED` that the refresher records, and `UNKNOWN`.
 - A `ReadingDetail` has one reading and its values for the last 2 years, oldest first.
+
+The Research validators give the shape of the Research pages:
+
+- A `StatementTable` has one statement on one basis, a `unit`, `columns` (oldest first), `rows`, the count `unplaced` and the list `leftOut`.
+- A `FinancialColumn` has the period of the year and the filing that the whole column comes from.
+- A `FinancialRow` has `perShare`. On a per-share row, the values are rupees a share, as printed.
+- A `FinancialCell` has a `status`: `value`, `dash`, `unparsed` or `missing`. It has `value` only when the status is `value`.
+- A `CellSource` has the 0-based `pageIndex`, the `pageCount` and `textLayerMatch`, which is `null` for a page with no text layer.
+- A `CellCheck` has the role `subject`, `component` or `none`. Its `expected` is the subtotal as the page prints it. Its `actual` is the sum of the lines.
+- A `CompanyStock` has the state `ok`, `no_symbol`, `not_connected` or `not_tracked`.
+- A `ResearchCompany` has a company and the counts `annualReportsRead`, `reading` and `failed`.
 
 The connection validators give the shape of a market connection on the Settings page:
 
@@ -134,6 +146,7 @@ The connection validators give the shape of a market connection on the Settings 
 | `listWorkspacesForUser`, `getWorkspaceForUser`, `ensurePersonalWorkspace` | Workspace queries. `ensurePersonalWorkspace` creates one workspace and one `owner` membership for a user, if the user has none. |
 | `getDocument`, `listDocuments`, `getJob`, `getLatestJobForSubject`, `getCompany`, `listCompanies` | Document, job and company queries. The lists give the newest row first. |
 | `getLatestRevision`, `getRevision`, `listChecks`, `listFactsWithSources` | Extraction queries. |
+| `listCompanyFilings`, `listFactsWithSourcesForRevisions`, `listChecksForRevisions`, `CompanyFilingRow` | Research queries. `listCompanyFilings` gives the documents that have a company, newest first, with the kind and the period end of the current classification. The other two queries give the facts with their pages, and the checks, of a list of revisions. |
 | `getCurrentClassification`, `listEvidence`, `getCurrentRevision` | Classification queries. |
 | `normalizeCompanyName`, `matchCompanies`, `findStoredDuplicate` | Company match and duplicate search for document intake. |
 | `admitOrWaitlist`, `approveWaitlistEmail`, `normalizeEmail` | Waitlist queries for sign-up. |
@@ -298,6 +311,8 @@ A model failure never stops classification. The result has a warning instead.
 8. If a check fails, the branch asks the model to correct the sections of that check. The maximum is 2 corrections.
 9. The branch refuses a correction that adds a value that is not on its page. It adds the warning `CORRECTION_REJECTED`.
 10. `assemble` makes the facts, the checks and the coverage. The state is `complete` if all statements give facts, else `partial`.
+
+The prompt for a statement asks for the earnings per share lines, basic and diluted, when the statement prints them. A line with `earnings per share` or `eps` in its section or label is a per-share line. `is_per_share` finds it. The fact of a per-share line has the scale 1, whatever the unit of the statement. Thus its `normalizedValue` is rupees a share. The other facts of a statement have the scale of the unit of the statement.
 
 The run has a budget. It stops if it needs more than 40 model calls or more than 840 seconds. Each model call has a maximum of 3 attempts. The workflow tries a call again only after a transient error.
 
@@ -723,6 +738,7 @@ CAUTION: Do not change a migration that a database already applied. Add a new mi
 - [`packages/financial-engine/src/pdf_financial_qa/workflow/contracts.py`](../../packages/financial-engine/src/pdf_financial_qa/workflow/contracts.py)
 - [`packages/financial-engine/src/pdf_financial_qa/workflow/model.py`](../../packages/financial-engine/src/pdf_financial_qa/workflow/model.py)
 - [`packages/financial-engine/src/pdf_financial_qa/workflow/values.py`](../../packages/financial-engine/src/pdf_financial_qa/workflow/values.py)
+- [`packages/financial-engine/src/pdf_financial_qa/workflow/prompts.py`](../../packages/financial-engine/src/pdf_financial_qa/workflow/prompts.py)
 - [`packages/financial-engine/src/pdf_financial_qa/extraction.py`](../../packages/financial-engine/src/pdf_financial_qa/extraction.py)
 - [`packages/financial-engine/src/pdf_financial_qa/qa.py`](../../packages/financial-engine/src/pdf_financial_qa/qa.py)
 - [`apps/api/src/env.ts`](../../apps/api/src/env.ts)
@@ -744,10 +760,12 @@ CAUTION: Do not change a migration that a database already applied. Add a new mi
 - [`tests/test_extraction_workflow.py`](../../tests/test_extraction_workflow.py)
 - [`packages/contracts/src/market-mood.ts`](../../packages/contracts/src/market-mood.ts)
 - [`packages/contracts/src/connection.ts`](../../packages/contracts/src/connection.ts)
+- [`packages/contracts/src/research.ts`](../../packages/contracts/src/research.ts)
 - [`packages/contracts/test/market-mood.test.ts`](../../packages/contracts/test/market-mood.test.ts)
 - [`packages/contracts/test/connection.test.ts`](../../packages/contracts/test/connection.test.ts)
 - [`packages/db/src/schema/market.ts`](../../packages/db/src/schema/market.ts)
 - [`packages/db/src/queries/market.ts`](../../packages/db/src/queries/market.ts)
+- [`packages/db/src/queries/research.ts`](../../packages/db/src/queries/research.ts)
 - [`packages/db/drizzle/0004_market.sql`](../../packages/db/drizzle/0004_market.sql)
 - [`packages/db/drizzle/0005_market_connection.sql`](../../packages/db/drizzle/0005_market_connection.sql)
 - [`packages/db/test/market.test.ts`](../../packages/db/test/market.test.ts)

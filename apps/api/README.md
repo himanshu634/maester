@@ -15,11 +15,15 @@ Status: implemented (base). `apps/api` is a [Hono](https://hono.dev/) HTTP servi
 - `POST /v1/workspaces/:ws/documents/:id/finalize` — confirm the upload and enqueue a `document.verify` job.
 - `GET /v1/workspaces/:ws/documents`, `GET /v1/workspaces/:ws/documents/:id` — cursor-paginated list and detail (detail includes the latest job).
 - `GET /v1/workspaces/:ws/documents/:id/download` — signed, time-limited read URL.
+- `GET /v1/workspaces/:ws/documents/:id/file` — a `302` to a signed, time-limited link to the stored PDF, never cached (`409 INVALID_STATE` unless the document is stored). Used as a plain link: `…/file#page=213` opens the PDF at page 213, because the browser keeps the fragment across the redirect.
 - `POST /v1/workspaces/:ws/documents/:id/extract` — enqueue a new `document.extract` job for a stored document (`202`); every call produces a new revision.
 - `GET /v1/workspaces/:ws/documents/:id/classification`, `POST /v1/workspaces/:ws/documents/:id/classification` — the current answers about what the document is (kind, company, period, with the page each came from), and a change to them (`409` if the answers have moved on since they were loaded).
 - `POST /v1/workspaces/:ws/documents/:id/classify` — enqueue a new `document.classify` job (`202`).
 - `GET /v1/workspaces/:ws/documents/:id/extraction` — the latest extraction revision with its checks.
 - `GET /v1/workspaces/:ws/documents/:id/facts?revisionId=` — a revision's facts with their page references (latest revision by default).
+- `GET /v1/workspaces/:ws/research/companies` — the workspace's companies for the Research list: for each, how many annual reports were read, the latest period end, and how many filings are being read or failed to read.
+- `GET /v1/workspaces/:ws/companies/:id/financials` — a company's statements put together across its read annual reports: one table per statement and basis, one column per financial year, each figure with the page it came from, its checks and any restatement; and the company's filings, with whether each is in the tables.
+- `GET /v1/workspaces/:ws/companies/:id/stock` — the share's NSE closes from the stored Dhan data: the last close, the one before, the one a year earlier, the year's low and high and the year of closes; or `no_symbol`, `not_connected` or `not_tracked` when there are none.
 - `GET /v1/workspaces/:ws/jobs/:id`, `POST /v1/workspaces/:ws/jobs/:id/retry` — job state and manual retry.
 - `GET /v1/workspaces/:ws/jobs/:id/events` — Server-Sent Events stream of job progress.
 - `GET /v1/market-mood`, `GET /v1/market-mood/readings/:key` — the market's mood worked out from stored Dhan and FRED series, every reading with its source and day, the 12-month history, the last fetch's state; and one reading with its last 2 years. Session only, no workspace; never public.

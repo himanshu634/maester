@@ -41,12 +41,22 @@ This document describes the HTTP service in `apps/api`. For the full system, rea
 | score | The part that a scored reading gives to the mood, 0 to 100. |
 | mood | The rounded average of the scores, 0 to 100. |
 | band | The name of the range that the mood is in, for example `cautious`. |
+| filing | A document that has a company. `listCompanyFilings` gives the filings of a workspace or of one company. |
+| read annual report | A filing with the kind `annual_report` and the intake state `read`. Only these filings go into the statement tables. |
+| statement table | One `StatementTable`: the lines of one statement on one basis, with one column for each financial year. |
+| line | One line of a statement table, with a section and a printed label. The contract calls it a row. |
+| column | One financial year of a statement table. Each column comes from one filing. |
+| cell | One figure of one line in one column. It has a status, a source page and a check. |
+| stock | The answer of `GET .../companies/:id/stock`: the NSE closing prices of the share of one company. |
+| closing price | The value of one day in the series `eq:<SYMBOL>`. |
 
 ## Function
 
 The API signs users in, keeps their sessions and admits only the emails that the waitlist approves. For a signed-in member of a workspace, it writes companies and documents, gives signed URLs for upload and download, and creates jobs. The worker does the slow work of each job. The API only writes the job row and tells the worker about it. The browser reads the result from the API later, or follows a job through a Server-Sent Events stream. The browser reaches the API through the proxy of the web origin.
 
 The API also has two groups of routes that need a session but no workspace. The market mood routes calculate the mood from the series that the worker stores. The Settings routes check a secret with its provider, then keep it encrypted as a connection.
+
+The Research routes need a workspace. They put the statements of a company together from its read annual reports. They also give the closing prices of its share from the series that the worker stores.
 
 In this document, `...` in a path is `/v1/workspaces/:ws`.
 
@@ -70,6 +80,9 @@ In this document, `...` in a path is `/v1/workspaces/:ws`.
 | Market mood routes | `apps/api/src/routes/market-mood.ts` | Read the series and the latest refresh run, then send the mood or one reading. |
 | Mood calculation | `apps/api/src/market-mood/compute.ts` | Calculates the readings, the ranks, the scores, the mood and the history. It uses no database and no clock. |
 | Connections routes | `apps/api/src/routes/connections.ts` | List, check, keep and remove the connections. |
+| Research routes | `apps/api/src/routes/research.ts` | Send the list of companies, the statement tables of one company and the stock of one company. |
+| Stitch | `apps/api/src/financials/stitch.ts` | `stitch` puts the facts of the read annual reports of one company into statement tables. It uses no database and no clock. |
+| Stock | `apps/api/src/financials/stock.ts` | `stockFrom` makes the stock from the points of one series. It uses no database. |
 | Logger | `apps/api/src/logger.ts` | Writes JSON log records with pino. Removes the `cookie` and `authorization` request headers from the log. |
 | Migrate | `apps/api/src/migrate.ts` | Applies the database migrations, then stops. |
 | Tests | `apps/api/test/` | Vitest tests. They use a real Postgres database. |
@@ -98,11 +111,15 @@ All routes under `/v1` need a session. All routes under `/v1/workspaces/:ws/` al
 | POST | `/v1/workspaces/:ws/companies` | Creates a company. Status 201. |
 | GET | `/v1/workspaces/:ws/companies` | A page of companies. |
 | GET | `/v1/workspaces/:ws/companies/:id` | One company. |
+| GET | `/v1/workspaces/:ws/research/companies` | The companies for the Research list, with the annual reports that Maester read. |
+| GET | `/v1/workspaces/:ws/companies/:id/financials` | The statement tables of one company, and its filings. |
+| GET | `/v1/workspaces/:ws/companies/:id/stock` | The stock of one company. |
 | POST | `/v1/workspaces/:ws/documents/uploads` | Creates a document and a signed upload URL. Status 201. |
 | POST | `/v1/workspaces/:ws/documents/:id/finalize` | Checks the upload and creates a `document.verify` job. |
 | GET | `/v1/workspaces/:ws/documents` | A page of documents. |
 | GET | `/v1/workspaces/:ws/documents/:id` | One document, with its latest job and its current classification. |
 | GET | `/v1/workspaces/:ws/documents/:id/download` | A signed download URL. |
+| GET | `/v1/workspaces/:ws/documents/:id/file` | A redirect to a signed download URL of the PDF. Status 302. The API does not cache the response. |
 | POST | `/v1/workspaces/:ws/documents/:id/extract` | Creates a new `document.extract` job. Status 202. |
 | GET | `/v1/workspaces/:ws/documents/:id/extraction` | The current revision and its checks. |
 | GET | `/v1/workspaces/:ws/documents/:id/facts` | The facts of a revision. The query `revisionId` is optional. |
@@ -277,6 +294,55 @@ Other rules for the mood:
 
 `GET /v1/market-mood/readings/:key` calculates the full mood, then sends one reading and the last 500 values of its series, oldest first. If `:key` is not one of the 10 readings, the result is `NOT_FOUND`.
 
+### Research
+
+1. `GET .../research/companies` reads up to 100 companies and the filings of all companies in the workspace.
+2. For each company, the response gives `annualReportsRead`, the number of read annual reports, and `latestPeriodEnd`, the newest period end of these filings.
+3. `reading` counts the filings of the company with the intake state `identifying` or `reading`. `failed` counts the filings with the state `identify_failed` or `read_failed`.
+4. The list is in the order of `displayName`.
+5. `GET .../companies/:id/financials` gets the company. If the company is not in the workspace, the result is `NOT_FOUND`.
+6. `listCompanyFilings` gives the filings of the company. The route keeps the read annual reports and gets the current revision of each. If a filing has no revision, the route does not use it.
+7. One query gets the facts of these revisions with their pages. One query gets their checks.
+8. `stitch` makes the statement tables. The response has the company, all its filings and the statement tables. A filing has `counted` when its facts are in the statement tables.
+
+The rule of `stitch` has three parts:
+
+- `stitch` sorts the read annual reports by period end, newest first, then by the time of the revision.
+- Each column takes all its figures from the first filing in this order that prints its period. Thus a column never mixes two filings.
+- A line of one filing matches a line of another filing when the section and the printed label are equal after `normalise`. Thus a renamed line is two lines.
+
+Other rules for the statement tables:
+
+- `stitch` makes one statement table for each statement and basis that a read annual report has.
+- The columns are in the order of their period, oldest first. A fact with no period end and no as-of date goes in no column. `unplaced` counts these facts.
+- The lines follow the order of the newest column. A line that only an older column has goes in after the line before it.
+- The unit of a statement table is the unit of the newest filing that has facts for the statement and the basis.
+- If an older filing has a different scale that is a power of 10, `stitch` moves the decimal point of its figures. If its currency is different, `leftOut` names the filing and `stitch` does not use it. `leftOut` also names a filing with a scale that has no value or is not a power of 10.
+- A per-share line is a line with `earnings per share` or `eps` in its section or label. The API sends the printed value of a per-share line and never moves its decimal point.
+- The `status` of a cell is `value`, `dash`, `unparsed` or `missing`. `missing` means that the filing of the column does not print the line.
+- If an older filing prints a different value or status for the same line and period, the cell has `restated`. It holds the page and the printed text of the older filing.
+- A cell has the check of the subtotal that it is, or the check of the subtotal that has the line as a component. If more than one check applies, the worst status wins: `failed`, then `not_checked`, then `passed`.
+- A filing with the kind `financial_results` is not in the statement tables.
+
+`GET .../companies/:id/stock` has these steps:
+
+1. The route gets the company. If the company is not in the workspace, the result is `NOT_FOUND`.
+2. The series of the company is `eq:` and its `nseSymbol`. `latestMarketDay` gives the newest day of this series.
+3. If the series has days, the route reads the closing prices of the last 380 days. Then `stockFrom` makes the stock.
+4. `last` is the newest closing price. `previous` is the closing price before it.
+5. `series` has the closing prices of the last 365 days, oldest first. `low` and `high` are the first lowest and the first highest value in `series`.
+6. `yearAgo` is the newest closing price on or before the day 365 days before `last`. If this closing price is more than 10 days older than that day, `yearAgo` is `null`.
+7. `source` is the `source` of the newest closing price.
+
+| State | Cause | Result |
+| --- | --- | --- |
+| `ok` | The series has closing prices. | `last`, `low`, `high` and `series` have values. `previous` and `yearAgo` can be `null`. |
+| `no_symbol` | The company has no `nseSymbol`. | All values are `null`, and `series` is empty. |
+| `not_connected` | The series has no closing price, and the install has no Dhan connection. | `symbol` has the symbol. All other values are `null`, and `series` is empty. |
+| `not_tracked` | The series has no closing price, and the install has a Dhan connection. The worker stores closing prices only for the Nifty 500 members. | `symbol` has the symbol. All other values are `null`, and `series` is empty. |
+
+`GET .../documents/:id/file` gets the document. If the state is not `stored`, the result is `INVALID_STATE`. If not, the API signs a download URL for the time `DOWNLOAD_URL_TTL_SECONDS` and sends a redirect with status 302 and `Cache-Control: no-store`. A browser keeps the fragment of an address across the redirect. Thus `.../file#page=213` opens the PDF at page 213.
+
 ### Settings connections
 
 1. The `requireSession` middleware checks the session.
@@ -335,7 +401,7 @@ Better Auth makes its own responses for `/api/auth/*`. These responses do not us
 | --- | --- | --- |
 | `pending_upload` | `POST .../uploads` writes the document. | `finalize` checks that the object exists. |
 | `uploaded` | `finalize` finds the object. | A `document.verify` job starts. |
-| `stored` | The API does not write this state. | `download`, `extract` and `classify` work only in this state. |
+| `stored` | The API does not write this state. | `download`, `file`, `extract` and `classify` work only in this state. |
 | `rejected` | The API does not write this state. | `finalize` gives `INVALID_STATE`. Make a new upload. |
 | `identifying` | `POST .../classify`. | A new `document.classify` job starts. |
 | `needs_kind` | The kind is `not_sure`. | The user must give the kind. |
@@ -401,7 +467,9 @@ The API writes these tables directly or through `@maester/db`:
 
 The API reads the `extraction_revision`, `extraction_check`, `financial_fact` and `source_reference` tables through `@maester/db`. It does not write them.
 
-The API reads the `market_point` and `market_fetch` tables through `listMarketSeries`, `latestMarketFetch` and `lastMarketReads`. It does not write them. The market refresher of the worker writes them. These tables have no workspace column.
+The Research routes read the `document` and `document_classification` tables with `listCompanyFilings`. They read the facts with their pages with `listFactsWithSourcesForRevisions`, and the checks with `listChecksForRevisions`. All three queries take the workspace ID.
+
+The API reads the `market_point` and `market_fetch` tables through `listMarketSeries`, `latestMarketDay`, `latestMarketFetch` and `lastMarketReads`. It does not write them. The market refresher of the worker writes them. These tables have no workspace column.
 
 ### Object store
 
@@ -542,6 +610,10 @@ CAUTION: Set `DATABASE_URL_TEST_API` only to a test database. The test setup emp
 - The API shows market data only to a user with a session. All users see the same market data, because it has no workspace.
 - `fpi_flows` and `dii_flows` have no provider. Thus the mood uses 6 of the 7 scored readings at most.
 - The API calculates the mood again for each request and keeps no cache. A request for one reading also calculates the full mood.
+- The Research list shows 100 companies at most. It has no pages.
+- The statement tables use only read annual reports. Results for a quarter or a half year are not in them.
+- The financials route reads all facts of each read annual report for each request. It keeps no cache.
+- The stock has the closing prices of the Nifty 500 members only. The worker stores no other closing price.
 - The API does not decrypt a secret and does not write market data. The market refresher of the worker does this work.
 - The deployment target of the API: Not known.
 - The port of the API in production: Not known. The Dockerfile declares port 8080, but the image does not set `PORT`, and the default is 8787.
@@ -561,6 +633,7 @@ CAUTION: Set `DATABASE_URL_TEST_API` only to a test database. The test setup emp
 - [apps/api/src/store.ts](../../apps/api/src/store.ts)
 - [apps/api/src/serialize.ts](../../apps/api/src/serialize.ts)
 - [apps/api/src/market-mood/compute.ts](../../apps/api/src/market-mood/compute.ts)
+- [apps/api/src/financials/](../../apps/api/src/financials/)
 - [apps/api/src/middleware/](../../apps/api/src/middleware/)
 - [apps/api/src/routes/](../../apps/api/src/routes/)
 - [apps/api/src/jobs/create.ts](../../apps/api/src/jobs/create.ts)
@@ -579,6 +652,8 @@ CAUTION: Set `DATABASE_URL_TEST_API` only to a test database. The test setup emp
 - [packages/contracts/src/job.ts](../../packages/contracts/src/job.ts)
 - [packages/contracts/src/market-mood.ts](../../packages/contracts/src/market-mood.ts)
 - [packages/contracts/src/connection.ts](../../packages/contracts/src/connection.ts)
+- [packages/contracts/src/research.ts](../../packages/contracts/src/research.ts)
+- [packages/db/src/queries/research.ts](../../packages/db/src/queries/research.ts)
 - [packages/db/src/queries/market.ts](../../packages/db/src/queries/market.ts)
 - [packages/market/src/secrets.ts](../../packages/market/src/secrets.ts)
 - [packages/market/src/dhan.ts](../../packages/market/src/dhan.ts)

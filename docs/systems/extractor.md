@@ -147,7 +147,7 @@ The workflow has two levels. The main graph is `prepare`, `locate`, one `stateme
 6. If `locate` finds no statement, the workflow stops with the error `NO_STATEMENTS_FOUND`.
 7. The workflow does not extract a statement on more than 6 pages. The coverage entry of that statement gets the status `failed`.
 8. The workflow starts one `statement` branch for each other statement. The branches run in parallel.
-9. `extract` sends an excerpt with only the pages of the statement. The model returns the currency, the unit label, the sections and the line items. The model copies each value as text, exactly as printed.
+9. `extract` sends an excerpt with only the pages of the statement. The model returns the currency, the unit label, the sections and the line items. The model copies each value as text, exactly as printed. The prompt also asks for the earnings per share lines, basic and diluted, when the statement prints them.
 10. `check` parses each value to a `Decimal` and does the checks. A dash or "nil" gets the status `dash` and no value. It is not zero.
 11. Each check has two limits: 1.0 in the units of the statement, and 0.5% of the larger value. A check passes if the difference is not more than the larger limit.
 12. If a check fails, `correct` sends the failed section back to the model. It also sends the problems and the previous output of the model.
@@ -157,7 +157,7 @@ The workflow has two levels. The main graph is `prepare`, `locate`, one `stateme
 16. If a branch fails, the coverage entry of its statement gets the status `failed`. The other branches continue.
 17. `assemble` makes the `ExtractionResult`. The state is `complete` if all statements have the status `extracted`. If not, the state is `partial`.
 18. If no statement has the status `extracted`, the workflow stops with the error `EXTRACTION_FAILED` or `NO_STATEMENTS_EXTRACTED`.
-19. If `assemble` does not know the unit label, it adds the result warning `UNKNOWN_UNIT`. The facts of that statement then have no `scaleFactor` and no `normalizedValue`.
+19. If `assemble` does not know the unit label, it adds the result warning `UNKNOWN_UNIT`. The facts of that statement then have no `scaleFactor` and no `normalizedValue`. A per-share line is the exception. Its fact has the `scaleFactor` 1.
 20. If the printed company name and `x-company-name` do not agree, `assemble` adds the result warning `COMPANY_NAME_MISMATCH`.
 
 ### Retries and budget
@@ -227,7 +227,7 @@ The extraction stream sends an error as an `error` event. The classification rou
 | `LOCATE_PAGE_OUT_OF_RANGE` | The model gave a page number outside the PDF. | Result warning. The workflow ignores that page. |
 | `CORRECTION_REJECTED` | A corrected value is not on the text layer of its page, or the correction has no line items. | Result warning. The workflow keeps the original section. |
 | `CORRECTION_FAILED` | The `correct` model call failed. | Result warning. The workflow keeps the original section. |
-| `UNKNOWN_UNIT` | The unit label has no known scale, or it has two scales. | Result warning. No `scaleFactor` and no `normalizedValue`. |
+| `UNKNOWN_UNIT` | The unit label has no known scale, or it has two scales. | Result warning. No `scaleFactor` and no `normalizedValue`, except for a per-share line. |
 | `COMPANY_NAME_MISMATCH` | The printed company name and `x-company-name` do not agree. | Result warning. |
 | `MODEL_UNAVAILABLE` (result warning) | The classification model is not available or failed. | Result warning. The classification keeps only the rule answers. |
 | `MODEL_ANSWER_DROPPED` | `_apply` dropped one or more model answers. | Result warning. The fields of those answers stay open. |
