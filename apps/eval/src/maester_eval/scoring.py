@@ -9,7 +9,7 @@ that fit with different figures are ambiguous, never a silent pick.
 from collections import Counter
 from decimal import Decimal
 import statistics
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, Field
 
@@ -21,10 +21,13 @@ from maester_eval.text import normalise
 # gold one and the scale is not. wrong_status: a figure where a dash is printed, a dash where a figure is, or a cell
 # that could not be read. ambiguous: lines fit with different figures. missing: no line fits.
 Outcome = Literal["match", "wrong_value", "wrong_scale", "wrong_status", "ambiguous", "missing"]
-OUTCOMES: tuple[Outcome, ...] = ("match", "wrong_value", "wrong_scale", "wrong_status", "ambiguous", "missing")
+OUTCOMES: tuple[Outcome, ...] = get_args(Outcome)
 
 
 class FactScore(BaseModel):
+    """One gold fact against a run. `read_printed`, `read_normalized` and `page_match` are None when no line fits
+    (missing) and when lines with different figures fit (ambiguous): none was picked, so none is shown."""
+
     concept: str
     statement: str
     basis: str
@@ -128,9 +131,10 @@ def _candidates(index: dict[tuple, list[dict]], sections: set[tuple], gold: Gold
     When a fact of its statement and basis has its section, the line must be in that section: "Borrowings" is
     printed under both non-current and current liabilities, and the one that was not read is not made up by
     the other. When none has it, the section is dropped from the key, so that a section typed by hand, which
-    the pipeline may have named otherwise, or none typed, does not lose the match."""
+    the pipeline may have named otherwise, does not lose the match. No section typed means any section, even
+    beside a section the pipeline left unnamed."""
     key = _key(gold.statement, gold.basis, gold.section, gold.label, gold.period_label)
-    if key[:3] in sections:
+    if key[2] and key[:3] in sections:
         return index.get(key, [])
     line = key[:2] + key[3:]
     return [f for other, facts in index.items() if other[:2] + other[3:] == line for f in facts]
@@ -153,11 +157,13 @@ def score_filing(artefact: Artefact, gold: GoldFiling) -> FilingScore:
         if not found:
             scores.append(FactScore(**base, outcome="missing", read_printed=None, read_normalized=None, page_match=None))
             continue
+        if len({_figure(f) for f in found}) > 1:
+            scores.append(FactScore(**base, outcome="ambiguous", read_printed=None, read_normalized=None, page_match=None))
+            continue
         fact = min(found, key=lambda f: f["lineOrder"])
-        outcome: Outcome = "ambiguous" if len({_figure(f) for f in found}) > 1 else _compare(g, fact)
         scores.append(FactScore(
-            **base, outcome=outcome, read_printed=fact["reportedText"], read_normalized=fact["normalizedValue"],
-            page_match=None if outcome == "ambiguous" else fact["pageIndex"] == g.page_index))
+            **base, outcome=_compare(g, fact), read_printed=fact["reportedText"], read_normalized=fact["normalizedValue"],
+            page_match=fact["pageIndex"] == g.page_index))
     # Scanned: a page the statements were found on has no text layer. With nothing found, any such page counts.
     located = {p for entry in result["coverage"] for p in entry["pages"]}
     no_text = set(artefact.pages_without_text)

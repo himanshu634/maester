@@ -10,7 +10,7 @@ from maester_eval.concepts import load_taxonomy
 from maester_eval.gold import freeze_sheet
 from maester_eval.manifest import Filing
 from maester_eval.runner import run_filing
-from maester_eval.scoring import Summary, score_filing, score_run
+from maester_eval.scoring import OUTCOMES, Summary, score_filing, score_run
 from pdf_financial_qa.workflow.errors import ModelOutputError
 from pdf_financial_qa.workflow.model import (
     ExtractedLine, ExtractedSection, ExtractedValue, LocatedStatement, LocateOutput, StatementOutput,
@@ -150,6 +150,15 @@ class ScoreFilingTests(unittest.TestCase):
         self.assertEqual(self.outcome(row(section="Current assets")), ["match"])
         self.assertEqual(self.outcome(row(section="")), ["match"])
 
+    def test_an_untyped_section_means_any_section_even_beside_a_section_the_pipeline_left_unnamed(self):
+        # One section came back with no name. A gold row with no section typed is not a row of that section.
+        artefact = read_balance_sheet(balance(lines_section("", [("Total", "2,000", ())]),
+                                              lines_section("Equity and liabilities", [("Total", "2,100", ())])))
+        untyped = row(label="Total", section="", concept="total_equity_and_liabilities", printed="2,100")
+        self.assertEqual(score_filing(artefact, gold(untyped)).facts[0].outcome, "ambiguous")
+        typed = row(label="Total", section="Equity and liabilities", concept="total_equity_and_liabilities", printed="2,100")
+        self.assertEqual(score_filing(artefact, gold(typed)).facts[0].outcome, "match")
+
     def test_a_line_not_read_in_its_section_is_missing_even_when_another_section_prints_the_label(self):
         # "Borrowings" is printed under non-current and under current liabilities; only the non-current line was read.
         artefact = read_balance_sheet(balance(
@@ -190,6 +199,13 @@ class ScoreFilingTests(unittest.TestCase):
         wrong = score_filing(artefact, gold(row(printed="1,200", period_label=columns[1], period_end="2025-03-31", **cash_row)))
         self.assertEqual(wrong.facts[0].outcome, "wrong_value")  # the 2026 figure is not the 2025 one
 
+    def test_an_ambiguous_fact_shows_no_figure_because_no_line_was_picked(self):
+        totals = read_balance_sheet(balance(lines_section("Assets", [("Total", "2,000", ())]),
+                                            lines_section("Equity and liabilities", [("Total", "2,100", ())])))
+        fact = score_filing(totals, gold(row(label="Total", section="", concept="total_assets"))).facts[0]
+        self.assertEqual((fact.outcome, fact.read_printed, fact.read_normalized, fact.page_match), ("ambiguous", None, None, None))
+        self.assertEqual((fact.gold_printed, fact.gold_normalized), ("2,000", "20000000000"))  # what the gold says is still shown
+
     def test_without_a_unit_lines_with_different_figures_are_still_ambiguous(self):
         # No unit, so no scale and no normalised value to tell the two lines apart by.
         other = row(section="Equity and liabilities", label="Other", concept="other_equity", printed="7")
@@ -205,7 +221,7 @@ class ScoreFilingTests(unittest.TestCase):
         def scanned(artefact):
             return score_filing(artefact, gold(row())).scanned
 
-        self.assertTrue(scanned(self.artefact))  # the cash flow is on page 3, which has no text
+        self.assertTrue(scanned(self.artefact))  # the cash flow is on page 4 (index 3), which has no text
         self.assertFalse(scanned(self.artefact.model_copy(update={"pages_without_text": []})))
         self.assertFalse(scanned(self.artefact.model_copy(update={"pages_without_text": [0]})))  # the cover is no statement
         failed = read(model=ScriptedModel(locate=[NOTHING_LOCATED]))  # nothing was located, so any page without text counts
@@ -221,9 +237,13 @@ class ScoreFilingTests(unittest.TestCase):
         wrong = balance_sheet(total="2,100")  # the page prints 2,000; the re-reads cannot fix it
         model = ScriptedModel(extract={"balance_sheet": [wrong], "income_statement": [income_statement()], "cash_flow": [cash_flow()]},
                               correct=[wrong.sections[0]])
-        checked = score_filing(read(model=model), gold(row()))
+        artefact = read(model=model)
+        checked = score_filing(artefact, gold(row()))
         self.assertEqual(checked.checks, {"failed": 2, "passed": 1})  # the subtotal and the balance identity fail
-        self.assertEqual((checked.warnings, checked.model_calls), (2, 8))
+        # How many re-reads and warnings the workflow makes is its own business: the score carries what the artefact holds.
+        self.assertGreater(artefact.model_calls.correct, 0)
+        self.assertGreater(len(artefact.result["warnings"]), 0)
+        self.assertEqual((checked.warnings, checked.model_calls), (len(artefact.result["warnings"]), artefact.model_calls.total))
         model = ScriptedModel(extract={"balance_sheet": [balance_sheet()], "income_statement": [income_statement()],
                                        "cash_flow": [ModelOutputError("unusable")]})
         partial = score_filing(read(model=model), gold(row()))
@@ -231,6 +251,10 @@ class ScoreFilingTests(unittest.TestCase):
 
 
 class SummaryTests(unittest.TestCase):
+    def test_every_outcome_has_a_count_in_the_summary(self):
+        self.assertEqual(OUTCOMES, ("match", "wrong_value", "wrong_scale", "wrong_status", "ambiguous", "missing"))
+        self.assertLessEqual(set(OUTCOMES), set(Summary.model_fields))  # a count for an outcome the summary lacks would be dropped
+
     def test_rates_are_rounded_down_to_one_decimal_so_only_everything_reads_100(self):
         self.assertEqual(Summary(gold_facts=3, match=2).rate("match"), "66.6%")
         self.assertEqual(Summary(gold_facts=2000, match=1999).rate("match"), "99.9%")
@@ -296,6 +320,26 @@ class ScoreRunTests(unittest.TestCase):
         self.assertEqual({value: summary.filings for value, summary in strata["stratum"].items()}, {"none": 1, "small": 1})
         self.assertEqual(strata["stratum"]["small"].match, 1)
         self.assertEqual(score_run("r", [], {}, [], eval_set="all").strata()["stratum"], {})
+
+    def test_strata_count_each_group_by_its_own_attribute(self):
+        year = dict(statement="income_statement", section="Profit and loss", period_label="Year ended 31 March 2026", page="3")
+        score = score_run("r", [read()], {FILING.id: gold(
+            row(),  # balance sheet, consolidated: matches
+            row(row="2", label="Revenue", concept="revenue_from_operations", printed="5,000", **year),  # income statement: matches
+            row(row="3", label="Profit", concept="profit_after_tax", printed="2,001", **year),  # income statement: the figure is wrong
+            row(row="4", basis="standalone"),  # balance sheet, standalone: only the consolidated statements were read
+        )}, [FILING.id], eval_set="dev")
+        strata = score.strata()
+
+        def counts(group, name):
+            return {value: getattr(summary, name) for value, summary in strata[group].items()}
+
+        self.assertEqual(counts("statement", "gold_facts"), {"balance_sheet": 2, "income_statement": 2})
+        self.assertEqual(counts("statement", "match"), {"balance_sheet": 1, "income_statement": 1})
+        self.assertEqual(counts("statement", "wrong_value"), {"balance_sheet": 0, "income_statement": 1})
+        self.assertEqual(counts("basis", "gold_facts"), {"consolidated": 3, "standalone": 1})
+        self.assertEqual(counts("basis", "match"), {"consolidated": 2, "standalone": 0})
+        self.assertEqual(counts("basis", "missing"), {"consolidated": 0, "standalone": 1})
 
     def test_filings_with_a_scanned_statement_page_are_told_from_the_rest(self):
         golds = {FILING.id: gold(row()), OTHER.id: freeze_sheet([row()], OTHER, TAXONOMY, WHEN)}
