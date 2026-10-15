@@ -53,7 +53,8 @@ class ManifestTests(unittest.TestCase):
 
     def test_bad_fields_are_refused(self):
         for bad in (dict(ONE, kind="brochure"), dict(ONE, set="test"), dict(ONE, period_end="31/03/2026"),
-                    dict(ONE, file="/abs/ar.pdf"), dict(ONE, file="../ar.pdf"), dict(ONE, extra="x")):
+                    dict(ONE, period_end="20260331"), dict(ONE, file="/abs/ar.pdf"), dict(ONE, file="../ar.pdf"),
+                    dict(ONE, extra="x")):
             with self.subTest(bad=bad), self.assertRaises(ManifestError):
                 load_manifest(self.write([bad]))
 
@@ -64,6 +65,16 @@ class ManifestTests(unittest.TestCase):
         self.paths.corpus.joinpath("synthetic-cements").mkdir(parents=True)
         self.paths.corpus.joinpath("synthetic-cements/ar-2025-26.pdf").write_bytes(b"%PDF-")
         self.assertEqual(missing_files(manifest, self.paths.corpus), ["other-metals/ar-2025-26.pdf"])
+
+    def test_truncated_json_is_a_manifest_error(self):
+        self.paths.manifest.write_text('{"filings": [', encoding="utf-8")
+        with self.assertRaisesRegex(ManifestError, "not valid JSON"):
+            load_manifest(self.paths.manifest)
+
+    def test_bytes_that_are_not_utf8_are_a_manifest_error(self):
+        self.paths.manifest.write_bytes(b"\xff\xfe")
+        with self.assertRaisesRegex(ManifestError, "not valid JSON"):
+            load_manifest(self.paths.manifest)
 
 
 class RunFolderTests(unittest.TestCase):
@@ -79,6 +90,11 @@ class RunFolderTests(unittest.TestCase):
         self.assertTrue(run.is_dir())
         with self.assertRaises(FileExistsError):
             self.paths.new_run("baseline", now=when)
+
+    def test_a_label_that_would_nest_the_folder_is_refused_and_nothing_is_created(self):
+        with self.assertRaisesRegex(ValueError, "run label 'a/b'"):
+            self.paths.new_run("a/b")
+        self.assertEqual(list(self.paths.runs.rglob("*")), [])
 
     def test_resolve_latest_name_and_path(self):
         first = self.paths.new_run(now=datetime(2026, 10, 16, 9, 0, 0, tzinfo=timezone.utc))

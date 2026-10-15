@@ -44,6 +44,8 @@ class Filing(BaseModel):
     @field_validator("period_end")
     @classmethod
     def _iso_date(cls, value: str) -> str:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            raise ValueError("period_end must be a calendar date written YYYY-MM-DD")
         date.fromisoformat(value)
         return value
 
@@ -72,6 +74,8 @@ def load_manifest(path: Path) -> Manifest:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise ManifestError(f"no manifest at {path}") from None
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ManifestError(f"{path} is not valid JSON: {exc}") from None
     try:
         manifest = Manifest.model_validate(data)
     except ValidationError as exc:

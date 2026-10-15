@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+import re
 
 # apps/eval/src/maester_eval/paths.py → the repository root. `parents[4]` holds for a checkout
 # or an editable install; the harness is never installed as a wheel elsewhere.
@@ -35,7 +36,12 @@ class EvalPaths:
         return self.base / "runs"
 
     def new_run(self, label: str | None = None, now: datetime | None = None) -> Path:
-        """A fresh run folder named by UTC time, `20261016T093005Z[-label]`. Never reuses one."""
+        """A fresh run folder named by UTC time, `20261016T093005Z[-label]`. Never reuses one.
+
+        A label is letters, digits, dot, dash or underscore, so it cannot nest the folder.
+        """
+        if label is not None and not re.fullmatch(r"[A-Za-z0-9._-]+", label):
+            raise ValueError(f"run label {label!r}: use letters, digits, dot, dash or underscore")
         stamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
         path = self.runs / (f"{stamp}-{label}" if label else stamp)
         path.mkdir(parents=True, exist_ok=False)
