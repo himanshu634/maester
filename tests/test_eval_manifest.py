@@ -1,6 +1,6 @@
 """The corpus manifest, the run folders and label normalisation. Offline."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import tempfile
@@ -43,6 +43,11 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(ManifestError, "not in the manifest: nope"):
             manifest.select("all", only=["nope"])
 
+    def test_an_id_outside_the_chosen_set_is_an_error(self):
+        manifest = load_manifest(self.write([ONE, OTHER]))
+        with self.assertRaisesRegex(ManifestError, "other-metals/ar-2025-26 is in set heldout, not dev"):
+            manifest.select("dev", only=["other-metals/ar-2025-26"])
+
     def test_duplicate_ids_are_refused(self):
         with self.assertRaisesRegex(ManifestError, "duplicate filing ids"):
             load_manifest(self.write([ONE, dict(ONE, company="Someone Else Limited")]))
@@ -51,10 +56,25 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(ManifestError, "one set only.*Synthetic Cements Limited"):
             load_manifest(self.write([ONE, dict(TWO, set="heldout")]))
 
+    def test_a_company_is_in_one_set_only_however_its_name_is_written(self):
+        elsewhere = dict(OTHER, company=" SYNTHETIC cements, limited ", set="heldout")  # another folder
+        with self.assertRaisesRegex(ManifestError, "one set only.*Synthetic Cements Limited"):
+            load_manifest(self.write([ONE, elsewhere]))
+
+    def test_a_corpus_folder_is_in_one_set_only(self):
+        # normalise() keeps "Limited" and "Ltd" apart, so it is the shared folder that ties these two together.
+        limited = dict(ONE, company="Synthetic Cements Limited", set="dev")
+        ltd = dict(TWO, company="Synthetic Cements Ltd ", set="heldout")
+        with self.assertRaisesRegex(ManifestError, "one set only.*synthetic-cements"):
+            load_manifest(self.write([limited, ltd]))
+
     def test_bad_fields_are_refused(self):
-        for bad in (dict(ONE, kind="brochure"), dict(ONE, set="test"), dict(ONE, period_end="31/03/2026"),
-                    dict(ONE, period_end="20260331"), dict(ONE, file="/abs/ar.pdf"), dict(ONE, file="../ar.pdf"),
-                    dict(ONE, extra="x")):
+        for bad in (dict(ONE, kind="brochure"), dict(ONE, set="test"), dict(ONE, extra="x"),
+                    dict(ONE, period_end="31/03/2026"), dict(ONE, period_end="20260331"),
+                    dict(ONE, period_end="2026-W13-2"), dict(ONE, period_end="2026-02-30"),
+                    dict(ONE, file="/abs/ar.pdf"), dict(ONE, file="../ar.pdf"),
+                    dict(ONE, file="./synthetic-cements/ar-2025-26.pdf"),
+                    dict(ONE, file="synthetic-cements//ar-2025-26.pdf")):
             with self.subTest(bad=bad), self.assertRaises(ManifestError):
                 load_manifest(self.write([bad]))
 
@@ -76,6 +96,13 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(ManifestError, "not valid JSON"):
             load_manifest(self.paths.manifest)
 
+    def test_an_empty_manifest_file_names_the_file_and_is_a_manifest_error(self):
+        self.paths.manifest.write_text("", encoding="utf-8")
+        with self.assertRaises(ManifestError) as caught:
+            load_manifest(self.paths.manifest)
+        self.assertIn(str(self.paths.manifest), str(caught.exception))
+        self.assertIn("not valid JSON", str(caught.exception))
+
 
 class RunFolderTests(unittest.TestCase):
     def setUp(self):
@@ -91,10 +118,24 @@ class RunFolderTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             self.paths.new_run("baseline", now=when)
 
+    def test_an_aware_time_is_stamped_in_utc(self):
+        india = timezone(timedelta(hours=5, minutes=30))
+        run = self.paths.new_run(now=datetime(2026, 10, 16, 15, 0, 5, tzinfo=india))
+        self.assertEqual(run.name, "20261016T093005Z")
+
+    def test_a_naive_time_is_taken_as_utc(self):
+        run = self.paths.new_run(now=datetime(2026, 10, 16, 9, 30, 5))
+        self.assertEqual(run.name, "20261016T093005Z")
+
     def test_a_label_that_would_nest_the_folder_is_refused_and_nothing_is_created(self):
         with self.assertRaisesRegex(ValueError, "run label 'a/b'"):
             self.paths.new_run("a/b")
-        self.assertEqual(list(self.paths.runs.rglob("*")), [])
+        self.assertFalse(self.paths.runs.exists())
+
+    def test_a_label_may_use_letters_digits_dot_dash_and_underscore(self):
+        run = self.paths.new_run("v1.2_try-3", now=datetime(2026, 10, 16, 9, 30, 5, tzinfo=timezone.utc))
+        self.assertEqual(run, self.paths.runs / "20261016T093005Z-v1.2_try-3")
+        self.assertTrue(run.is_dir())
 
     def test_resolve_latest_name_and_path(self):
         first = self.paths.new_run(now=datetime(2026, 10, 16, 9, 0, 0, tzinfo=timezone.utc))
@@ -104,6 +145,28 @@ class RunFolderTests(unittest.TestCase):
         self.assertEqual(self.paths.resolve_run(str(first)), first)
         with self.assertRaises(FileNotFoundError):
             self.paths.resolve_run("20000101T000000Z")
+
+    def test_latest_ignores_folders_that_are_not_runs(self):
+        run = self.paths.new_run(now=datetime(2026, 10, 16, 9, 0, 0, tzinfo=timezone.utc))
+        (self.paths.runs / "archive").mkdir()
+        self.assertEqual(self.paths.resolve_run("latest"), run)
+
+    def test_latest_with_only_folders_that_are_not_runs(self):
+        (self.paths.runs / "archive").mkdir(parents=True)
+        with self.assertRaises(FileNotFoundError):
+            self.paths.resolve_run("latest")
+
+    def test_a_name_must_be_a_folder_directly_inside_runs(self):
+        run = self.paths.new_run(now=datetime(2026, 10, 16, 9, 0, 0, tzinfo=timezone.utc))
+        (run / "inside").mkdir()
+        for name in ("", ".", "..", f"{run.name}/inside", f"{run.name}/.."):
+            with self.subTest(name=name), self.assertRaises(FileNotFoundError):
+                self.paths.resolve_run(name)
+
+    def test_a_path_may_point_at_a_run_folder_anywhere(self):
+        elsewhere = self.paths.base / "archive" / "20260101T000000Z-old"
+        elsewhere.mkdir(parents=True)
+        self.assertEqual(self.paths.resolve_run(str(elsewhere)), elsewhere)
 
     def test_latest_with_no_runs(self):
         with self.assertRaises(FileNotFoundError):

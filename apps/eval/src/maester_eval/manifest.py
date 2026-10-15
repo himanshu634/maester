@@ -1,6 +1,7 @@
 """The corpus manifest: which filings exist, whose they are, and which set each belongs to.
 
-A company is in one set only, so nothing tuned on `dev` has seen a `heldout` filing.
+A company is in one set only, so nothing tuned on `dev` has seen a `heldout` filing. A company is
+told by its name, with case, punctuation and spacing ignored, and by its corpus folder.
 """
 
 from datetime import date
@@ -10,6 +11,8 @@ import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+
+from maester_eval.text import normalise
 
 FilingKind = Literal["annual_report", "financial_results"]
 EvalSet = Literal["dev", "heldout"]
@@ -36,9 +39,10 @@ class Filing(BaseModel):
     @field_validator("file")
     @classmethod
     def _relative_pdf(cls, value: str) -> str:
-        parts = Path(value).parts
-        if value.startswith("/") or ".." in parts or len(parts) < 2 or not value.lower().endswith(".pdf"):
-            raise ValueError("file must be `<company-folder>/<name>.pdf`, relative to the corpus")
+        path = Path(value)
+        if (value != path.as_posix() or value.startswith("/") or ".." in path.parts or len(path.parts) < 2
+                or not value.lower().endswith(".pdf")):
+            raise ValueError("file must be `<company-folder>/<name>.pdf`, relative to the corpus (no `./`, no `//`)")
         return value
 
     @field_validator("period_end")
@@ -65,7 +69,11 @@ class Manifest(BaseModel):
             unknown = [i for i in only if i not in known]
             if unknown:
                 raise ManifestError(f"not in the manifest: {', '.join(unknown)}")
-            chosen = [f for f in chosen if f.id in set(only)]
+            wanted = set(only)
+            outside = [f for f in self.filings if f.id in wanted and eval_set != "all" and f.set != eval_set]
+            if outside:
+                raise ManifestError("; ".join(f"{f.id} is in set {f.set}, not {eval_set}" for f in outside))
+            chosen = [f for f in chosen if f.id in wanted]
         return chosen
 
 
@@ -84,14 +92,37 @@ def load_manifest(path: Path) -> Manifest:
     duplicates = sorted({i for i in ids if ids.count(i) > 1})
     if duplicates:
         raise ManifestError(f"duplicate filing ids: {', '.join(duplicates)}")
-    sets: dict[str, set[str]] = {}
-    for filing in manifest.filings:
-        sets.setdefault(filing.company, set()).add(filing.set)
-    mixed = sorted(company for company, members in sets.items() if len(members) > 1)
+    mixed = _mixed_sets(manifest.filings)
     if mixed:
-        raise ManifestError(f"a company must be in one set only: {', '.join(mixed)}")
+        raise ManifestError(f"each company and corpus folder must be in one set only: {'; '.join(mixed)}")
     return manifest
 
 
 def missing_files(manifest: Manifest, corpus: Path) -> list[str]:
     return [f.file for f in manifest.filings if not (corpus / f.file).is_file()]
+
+
+def _mixed_sets(filings: list[Filing]) -> list[str]:
+    """The companies and corpus folders that have filings in more than one set, each with its sets.
+
+    A company is told by its name with case, punctuation and spacing ignored, and a folder by the
+    first part of `file`: two filings that share either one belong together.
+    """
+    by_company: dict[str, list[Filing]] = {}
+    by_folder: dict[str, list[Filing]] = {}
+    for filing in filings:
+        by_company.setdefault(normalise(filing.company), []).append(filing)
+        by_folder.setdefault(Path(filing.file).parts[0], []).append(filing)
+
+    def split(groups: dict[str, list[Filing]]) -> list[list[Filing]]:
+        return [members for members in groups.values() if len({f.set for f in members}) > 1]
+
+    def sets(members: list[Filing]) -> str:
+        return ", ".join(sorted({f.set for f in members}))
+
+    def names(members: list[Filing]) -> str:
+        return " / ".join(dict.fromkeys(f.company.strip() for f in members))
+
+    companies = [f"{names(members)} ({sets(members)})" for members in split(by_company)]
+    folders = [f"folder {Path(members[0].file).parts[0]} ({sets(members)})" for members in split(by_folder)]
+    return sorted(companies) + sorted(folders)
