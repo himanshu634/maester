@@ -1,0 +1,26 @@
+{
+ "rows": [
+  {
+   "title": "Today · Analyst is a coming-soon page",
+   "note": "Drawn from the code (lib/content/terminal.ts, LampSketch); signed-in pages need a session.\n\n• Analyst is in the rail as Soon. It promises answers to questions, with the working shown.\n• Nothing anywhere says that a desk of agents will review your holdings, what each one may do, or that you decide.\n• Ways to see how a review reaches its view: none.\n\nYardstick: the roles explained 0 → 6; a review's view traced to its pages: not possible → every sentence to its page."
+  },
+  {
+   "title": "A · The desk, drawn",
+   "note": "Where: the Analyst coming-soon page, until the first agent ships.\n\nThe bet: explain it before it exists. What runs today comes first (DESIGN §7), then the six steps of a review as a numbered list. Each step says who does it, what it reads, what it writes and what it never does, and whether it is built yet. Step 6, Your call, is the ink block.\n\nCost: web only, copy in lib/content/terminal.ts. It shows nothing real, so it is replaced when A1 ships.\n\nLength: 1.9 screens at 1440; 2.8 on a phone."
+  },
+  {
+   "title": "B · One review, traced",
+   "note": "Where: the Analyst page, one company's review. Until the first run exists, the page is coming soon.\n\nThe bet: show a real review, verdict first. A five-step ladder (Read, Argue, Weigh, Limits, Your call), the reviewer's view on an ink block with what would change it, then the two cases side by side, your limits as a ledger, what the analysts read, and 'Note your call'. Every sentence has its page under it.\n\nB3: a limit you set overrules the reviewer (one way only: stricter), and a case that cited a figure nobody read is refused and the review stops, saying where.\n\nCost: the whole agent backend (plan phases A0–A2). The limits need Holdings (A3).\n\nLength: 2.3 screens at 1440; 2.6 on a phone (the case against comes first)."
+  },
+  {
+   "title": "C · The rulebook",
+   "note": "Where: the Analyst coming-soon page, as A.\n\nThe bet: trust before mechanics. It leads with what the desk will never do (place an order, make up a number, say how sure it is, see the future, overrule you), then who is on the desk as a ledger with when each arrives, then one sentence of a bear case opened up: each number to its page and calculation.\n\nCost: web only, copy. The opened sentence is synthetic until A2.\n\nLength: 1.4 screens at 1440; 1.8 on a phone."
+  },
+  {
+   "title": "D · Where it lands",
+   "note": "Where: no page of its own first. A review that says more than 'no change' arrives as an item in Overview's due panel (Trigger, Evidence, Your call, the existing pattern). 'Read both cases' opens the review in Analyst, with earlier reviews beside it.\n\nThe bet: the agents are worth seeing only when they find something; the rest stays quiet.\n\nCost: needs Holdings and a working Overview, both coming soon; the due panel exists in the demo. Plan phase A3.\n\nLength: 1 screen at 1440 for each."
+  }
+ ],
+ "shared": "In every direction\n\n• The desk is shown as people at work, not as technology: no model names, no 'AI', no 'agents' in the copy. Roles: filings analyst, price analyst, bull, bear, reviewer, your limits, you.\n• What runs today is said before what is planned.\n• Every number a role writes has its source under it: the filing and page, or the calculation. A number nobody read is refused before you see it.\n• No confidence, no scores, no buy or sell. The reviewer says one of three things: No change, Look closer, Review your position.\n• Your limits can only make a review stricter. Only you loosen one.\n• Maester never places an order, and says so.\n• Bull and bear are told apart by heading and position, never colour.\n• Each review states the moment it reads up to ('Evidence up to the close on Friday 9 October').\n• The 'Synthetic example' tag marks this mockup. The real page shows your companies.",
+ "questions": "Open questions\n\n1. Where does the explanation live: on Analyst (A, B, C) or in Overview's due panel (D)?\n2. May the reviewer say 'consider trimming', or only 'Review your position'?\n3. Build Holdings before the debate (B and D need it for the limits)?"
+}
