@@ -57,6 +57,18 @@ class ManifestTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(ManifestError):
                 load_manifest(self.write([bad]))
 
+    def test_stratum_scope_and_spreads(self):
+        bank = dict(OTHER, stratum="financials", out_of_scope="bank statements are outside taxonomy v1",
+                    printed_pages_per_page=2)
+        manifest = load_manifest(self.write([ONE, bank]))
+        plain, marked = manifest.filings
+        self.assertEqual((plain.stratum, plain.out_of_scope, plain.printed_pages_per_page), (None, None, 1))
+        self.assertEqual((marked.stratum, marked.printed_pages_per_page), ("financials", 2))
+        self.assertEqual(marked.out_of_scope, "bank statements are outside taxonomy v1")
+        for bad in (dict(ONE, stratum="banks"), dict(ONE, printed_pages_per_page=3)):
+            with self.subTest(bad=bad), self.assertRaises(ManifestError):
+                load_manifest(self.write([bad]))
+
     def test_missing_manifest_and_missing_files(self):
         with self.assertRaisesRegex(ManifestError, "no manifest at"):
             load_manifest(self.paths.manifest)

@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 FilingKind = Literal["annual_report", "financial_results"]
 EvalSet = Literal["dev", "heldout"]
+Stratum = Literal["large", "mid", "small", "financials"]
 SetChoice = Literal["dev", "heldout", "all"]
 
 
@@ -28,6 +29,12 @@ class Filing(BaseModel):
     kind: FilingKind
     period_end: str
     set: EvalSet
+    # The size band the split was stratified by; banks and NBFCs are their own stratum.
+    stratum: Stratum | None = None
+    # Why a baseline should leave this filing out, such as statements the taxonomy does not cover yet.
+    out_of_scope: str | None = None
+    # 2 when each PDF page is a spread of two printed pages, so page N of the PDF holds printed pages 2N-1 and 2N.
+    printed_pages_per_page: Literal[1, 2] = 1
 
     @property
     def id(self) -> str:

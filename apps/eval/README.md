@@ -29,6 +29,7 @@ packages/contracts/concepts.json   the concepts the gold set is labelled with
 
 - Public filings only. Never put a private document in the corpus.
 - A company is in one set only, `dev` or `heldout`. Tune on `dev`; run `heldout` only to decide whether a change lands.
+- A filing may say its `stratum` (`large`, `mid`, `small` or `financials`, the bands the split was drawn from), why a baseline should leave it out (`out_of_scope`: banks and NBFCs, whose statements taxonomy v1 does not cover) and, for an annual report laid out as spreads, `printed_pages_per_page: 2`, so PDF page N holds printed pages 2N−1 and 2N, give or take the cover.
 - The console never shows a label or a figure; the files do.
 - Figures are compared as exact decimals. A match means value, sign, scale, basis and period all agree.
 
