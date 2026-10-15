@@ -69,3 +69,25 @@ def live(
                          log=lambda line: console.print(line, markup=False))
     read = sum(1 for a in artefacts if a.result)
     console.print(f"done: {read} read, {len(artefacts) - read} failed → {run_dir}")
+
+
+from maester_eval.sheets import export_run
+
+
+@app.command()
+def export(
+    run: Annotated[str, typer.Option(help="A run folder's name, a path, or `latest`.")] = "latest",
+    only: Annotated[Optional[list[str]], typer.Option("--only", help="A filing id; repeatable.")] = None,
+    force: Annotated[bool, typer.Option(help="Overwrite a sheet that exists.")] = False,
+) -> None:
+    """Write a labelling sheet per filing of a run to data/eval/sheets. Never overwrites without --force."""
+    try:
+        run_dir = DEFAULT.resolve_run(run)
+    except FileNotFoundError as exc:
+        _fail(str(exc))
+    written, skipped = export_run(run_dir, DEFAULT.sheets, only, force)
+    for path in written:
+        console.print(f"wrote {path.relative_to(DEFAULT.base)}", markup=False)
+    for path in skipped:
+        console.print(f"kept  {path.relative_to(DEFAULT.base)} (exists; --force to overwrite)", markup=False)
+    console.print(f"{len(written)} written, {len(skipped)} kept")
