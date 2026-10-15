@@ -118,6 +118,16 @@ The [feature roadmap](docs/FEATURE_ROADMAP.md) lists every feature with acceptan
 
 Maester is pre-alpha, part-way through **R1 · A**. Nothing is hosted for investors yet; everything below runs on your own machine, as the [contributing guide](CONTRIBUTING.md) explains.
 
+How the codebase fits together, with what is built and what is still pending:
+
+![How the Maester codebase fits together: the web app, API, worker and Python extractor are built over Postgres, a job queue and an object store, calling Google sign-in, Resend, Dhan, FRED and Gemini; the agent tools, the evaluation app, the calculation package, several terminal pages and hosting are pending](docs/diagrams/codebase.png)
+
+How a company filing moves through it:
+
+![How Maester processes a company filing: intake, worker jobs, the extractor, Postgres and Research are built; automatic filing fetch, quarterly results, review, accuracy measurement, calculations, the Analyst, alerts and hosting are pending](docs/diagrams/filing-pipeline.png)
+
+Both diagrams are Excalidraw files in [`docs/diagrams/`](docs/diagrams/); open one at [excalidraw.com](https://excalidraw.com) to edit it.
+
 **Working now**
 
 - Sign in with Google or with email and password, behind an invite waitlist. Each account gets a private workspace, and no other workspace can see its companies, documents or jobs.
