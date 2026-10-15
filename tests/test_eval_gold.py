@@ -35,6 +35,12 @@ def gold_of(*rows, **keywords):
     return freeze_sheet(list(rows), FILING, TAXONOMY, WHEN, **keywords)
 
 
+def reread(artefact, label, **changes):
+    """The artefact of a second run over the same filing, in which the line `label` was read differently."""
+    facts = [dict(fact, **changes) if fact["reportedLabel"] == label else fact for fact in artefact.result["facts"]]
+    return artefact.model_copy(update={"result": dict(artefact.result, facts=facts)})
+
+
 class FreezeTests(unittest.TestCase):
     def test_keeps_verified_rows_only_and_computes_the_normalised_value(self):
         rows = [row(concept="total_assets", verified="yes"), row(row="2", label="Inventories", printed="800", value="800")]
@@ -79,6 +85,14 @@ class FreezeTests(unittest.TestCase):
         self.assertEqual([(c.concept, c.basis, c.period_label, c.adds_up) for c in checks],
                          [("total_assets", "consolidated", "As at 31 March 2026", True),
                           ("total_equity_and_liabilities", "consolidated", "As at 31 March 2026", False)])
+
+    def test_an_adds_up_that_is_not_yes_or_no_is_refused(self):
+        for adds_up in ("Y", "TRUE", "1", "maybe"):
+            with self.subTest(adds_up=adds_up):
+                with self.assertRaises(FreezeError) as caught:
+                    gold_of(scored_row(adds_up=adds_up))
+                self.assertEqual(str(caught.exception), "sheet row 2: adds_up must be yes, no or empty")
+        self.assertEqual(len(gold_of(scored_row(), row(row="2", adds_up="Y")).facts), 1)  # a row not kept is not read
 
     def test_hand_added_rows_follow_the_same_rules(self):
         added = row(row="", concept="trade_payables", verified="yes", section="Current liabilities", label="Trade payables",
@@ -225,6 +239,23 @@ class RetypedCellsTests(unittest.TestCase):
                          f"sheet row 2: gold_period_end '30/03/2026' is not a date written YYYY-MM-DD {self.TEXT_HINT}")
         self.assertEqual(self.refusal(gold_scale="1E+05"), f"sheet row 2: gold_scale '1E+05' is not a whole number {self.TEXT_HINT}")
 
+    def test_a_scale_of_zero_or_with_a_leading_zero_is_refused(self):
+        for column in ("scale_factor", "gold_scale"):
+            for scale in ("0", "00", "007", "010000000"):
+                with self.subTest(column=column, scale=scale):
+                    self.assertEqual(
+                        self.refusal(**{column: scale}),
+                        f"sheet row 2: {column} '{scale}' is not a scale: use a whole number from 1 without a leading zero")
+        for scale in ("1", "1000", "10000000"):
+            self.assertEqual(gold_of(scored_row(scale_factor=scale)).facts[0].scale, scale)
+
+    def test_a_row_added_by_hand_is_not_pointed_at_the_artefact(self):
+        # `--run` has no fact behind a row with no `row` number, so it cannot give that row anything back.
+        self.assertEqual(self.refusal(row="", period_end="31/03/2026"),
+                         f"sheet row 2: period_end '31/03/2026' is not a date written YYYY-MM-DD {self.TEXT_HINT}")
+        self.assertEqual(self.refusal(row="", scale_factor="1E+07"),
+                         f"sheet row 2: scale_factor '1E+07' is not a whole number {self.TEXT_HINT}")
+
     def test_a_date_must_be_a_real_calendar_date_in_iso_form(self):
         for text in ("2026-02-30", "2026-13-01", "20260331", "2026-3-31", "31-03-2026", "2026-03-31T00:00", "March 2026"):
             with self.subTest(date=text):
@@ -262,9 +293,11 @@ class FreezeFromTheArtefactTests(unittest.TestCase):
         return gold_of(*rows, artefact=self.artefact)
 
     def test_the_cells_a_spreadsheet_retyped_are_read_again_from_the_artefact(self):
-        retyped = dict(printed="2000", scale_factor="1E+07", period_end="31/03/2026", page="2.0")
-        total = self.checked("Total assets", "total_assets", **retyped)
-        expenses = self.checked("Expenses", "total_expenses", **dict(retyped, printed="3000", page="3.0"))
+        # What a spreadsheet makes of the pipeline's cells: 2,000 as 2,000.00, (3,000) as -3000, 10000000 as 1E+07,
+        # a date as the machine's locale writes it, 2 as 2.0.
+        retyped = dict(scale_factor="1E+07", period_end="31/03/2026")
+        total = self.checked("Total assets", "total_assets", printed="2,000.00", page="2.0", **retyped)
+        expenses = self.checked("Expenses", "total_expenses", printed="-3000", page="3.0", **retyped)
         with self.assertRaises(FreezeError):  # the same sheet, without the artefact
             gold_of(total, expenses)
         assets_fact, expenses_fact = self.freeze(total, expenses).facts
@@ -278,6 +311,85 @@ class FreezeFromTheArtefactTests(unittest.TestCase):
         self.assertEqual((assets_fact.statement, assets_fact.basis, assets_fact.section, assets_fact.label,
                           assets_fact.period_label),
                          ("balance_sheet", "consolidated", "Assets", "Total assets", "As at 31 March 2026"))
+
+    def test_a_cell_that_only_looks_different_still_agrees(self):
+        looks_different = (
+            ("statement", "Balance sheet"), ("basis", "CONSOLIDATED"), ("section", "assets"),
+            ("period_label", "AS AT 31 MARCH 2026"), ("period_label", "31/03/2026"),  # the same words, or the same date
+            ("period_end", "2026-03-31"), ("period_end", "31/03/2026"), ("period_end", "31/3/2026"),
+            ("printed", "2000"), ("printed", "2,000.00"), ("printed", "₹ 2,000"),
+            ("scale_factor", "1E+07"), ("scale_factor", "10000000.0"), ("page", "2.0"), ("page", "02"),
+        )
+        for column, value in looks_different:
+            with self.subTest(column=column, value=value):
+                fact = self.freeze(self.checked("Total assets", "total_assets", **{column: value})).facts[0]
+                self.assertEqual((fact.statement, fact.basis, fact.section, fact.period_label, fact.period_end,
+                                  fact.printed, fact.scale, fact.page_index),
+                                 ("balance_sheet", "consolidated", "Assets", "As at 31 March 2026", "2026-03-31",
+                                  "2,000", "10000000", 1))
+
+    def test_an_edited_cell_is_refused_naming_its_column_and_never_dropped(self):
+        edited = (
+            ("statement", "income_statement"), ("basis", "standalone"), ("section", "Liabilities"),
+            ("statement", "balance"), ("basis", "consolidate"), ("section", "Asset"), ("section", "ssets"),  # a part of it
+            ("statement", "balance sheet notes"), ("basis", "consolidated and standalone"), ("section", "Assets held"),  # more
+            ("period_label", "As at 31 March 2025"), ("period_label", "As at 31 March"), ("period_label", "FY2026"),
+            ("period_end", "2025-03-31"), ("period_end", "31/03/2025"), ("period_end", "03/31/2026"), ("period_end", "March"),
+            ("printed", "2,100"), ("printed", "-2,000"), ("printed", "-"), ("printed", "two thousand"),
+            ("scale_factor", "100000"), ("scale_factor", "crore"), ("scale_factor", "sNaN"),
+            ("page", "3"), ("page", "2.5"), ("page", "NaN"), ("page", "Infinity"), ("page", "x"),
+        )
+        for column, value in edited:
+            with self.subTest(column=column, value=value):
+                with self.assertRaises(FreezeError) as caught:
+                    self.freeze(self.checked("Total assets", "total_assets", **{column: value}))
+                self.assertEqual(str(caught.exception), f"sheet row 2: {column} no longer matches the artefact")
+
+    def test_an_edited_cell_of_a_line_with_no_date_is_refused_too(self):
+        # "FY2026" and the blank period_end read as no date on either side, and no date on both sides is not agreement.
+        flow = "net_cash_from_operating_activities"
+        for column, value in (("period_label", "FY2025"), ("period_end", "March"), ("period_end", "31-03-2026")):
+            with self.subTest(column=column, value=value):
+                with self.assertRaises(FreezeError) as caught:
+                    self.freeze(self.checked("Net cash from operations", flow, **{column: value}))
+                self.assertEqual(str(caught.exception), f"sheet row 2: {column} no longer matches the artefact")
+        undated = self.freeze(self.checked("Net cash from operations", flow, period_label="fy2026")).facts[0]
+        self.assertEqual(undated.period_label, "FY2026")  # the same words, written another way
+
+    def test_a_date_typed_where_the_pipeline_read_none_is_refused_and_belongs_in_gold_period_end(self):
+        flow = self.checked("Net cash from operations", "net_cash_from_operating_activities", period_end="2026-03-31")
+        with self.assertRaises(FreezeError) as caught:
+            self.freeze(flow)
+        self.assertEqual(str(caught.exception), "sheet row 2: period_end no longer matches the artefact")
+
+    def test_the_printed_cell_is_not_compared_when_the_person_gave_gold_text(self):
+        corrected = self.checked("Total assets", "total_assets", printed="9,999", gold_text="2,001")
+        self.assertEqual(self.freeze(corrected).facts[0].printed, "2,001")
+
+    def test_a_second_read_of_the_filing_is_refused_where_it_differs_from_the_sheet(self):
+        # The sheet was exported from the first run; the second read the Total assets line differently. The label
+        # still matches, so only the figure the person saw can tell them apart.
+        second = reread(self.artefact, "Total assets", reportedText="2,100", reportedValue="2100", normalizedValue="21000000000")
+        total = self.checked("Total assets", "total_assets")
+        with self.assertRaises(FreezeError) as caught:
+            gold_of(total, artefact=second)
+        self.assertEqual(str(caught.exception), "sheet row 2: printed no longer matches the artefact")
+        elsewhere = reread(self.artefact, "Cash", reportedText="1,300", reportedValue="1300", normalizedValue="13000000000")
+        self.assertEqual(gold_of(total, artefact=elsewhere).facts[0].printed, "2,000")  # a line the sheet row does not name
+
+    def test_a_figure_the_pipeline_could_not_read_is_not_called_an_edit(self):
+        # The sheet shows the same text the artefact holds, so the row is stopped by the figure, not by a mismatch.
+        unread = reread(self.artefact, "Total assets", reportedText="n.a.", reportedValue=None, valueStatus="unparsed",
+                        normalizedValue=None)
+        total = dict(sheet_rows(unread)[2], concept="total_assets", verified="yes")
+        self.assertEqual((total["label"], total["printed"]), ("Total assets", "n.a."))
+        with self.assertRaises(FreezeError) as caught:
+            gold_of(total, artefact=unread)
+        self.assertEqual(str(caught.exception), "sheet row 2: cannot read printed as a figure")
+        self.assertEqual(gold_of(dict(total, gold_text="2,000"), artefact=unread).facts[0].printed, "2,000")
+        with self.assertRaises(FreezeError) as caught:  # a figure typed over it is an edit
+            gold_of(dict(total, printed="2,100"), artefact=unread)
+        self.assertEqual(str(caught.exception), "sheet row 2: printed no longer matches the artefact")
 
     def test_a_fact_with_no_date_read_stays_undated_until_the_person_dates_it(self):
         flow = self.checked("Net cash from operations", "net_cash_from_operating_activities")  # its column is headed "FY2026"
@@ -369,6 +481,17 @@ class ReadSheetTests(unittest.TestCase):
     def test_cells_are_stripped_and_cells_beyond_the_header_are_dropped(self):
         self.path.write_text("row,verified\n 1 , yes ,stray\n2\n", encoding="utf-8")
         self.assertEqual(read_sheet(self.path), [{"row": "1", "verified": "yes"}, {"row": "2", "verified": ""}])
+
+    def test_a_sheet_with_no_verified_column_is_a_message_about_the_delimiter(self):
+        message = "the sheet has no 'verified' column; was it saved with a different delimiter?"
+        for content in ("row;verified;concept\n1;yes;total_assets\n", "row\tverified\n1\tyes\n", "row,concept\n1,total_assets\n", ""):
+            self.path.write_text(content, encoding="utf-8")
+            with self.subTest(content=content):
+                with self.assertRaises(FreezeError) as caught:
+                    read_sheet(self.path)
+                self.assertEqual(str(caught.exception), message)
+        self.path.write_text("row,verified\n", encoding="utf-8")
+        self.assertEqual(read_sheet(self.path), [])  # a header and no rows is a sheet
 
     def test_a_sheet_that_is_not_utf8_is_a_message_not_a_traceback(self):
         # What a spreadsheet's plain "CSV" save does to the en dash of a printed-pages cell.
@@ -525,6 +648,31 @@ class FreezeCommandTests(unittest.TestCase):
         self.assertEqual((gold.facts[0].scale, gold.facts[0].period_end), ("10000000", "2026-03-31"))
         self.assertEqual(gold.exported_from, self.record)  # the run, the versions and the model; not the run's other keys
 
+    def test_latest_after_a_second_read_of_the_filing_cannot_replace_what_the_sheet_showed(self):
+        line = self.write_checked_sheet()
+        second = self.paths.new_run("reread", now=datetime(2099, 1, 1, tzinfo=timezone.utc))  # the latest run
+        write_run(second, self.record)
+        write_artefact(second, reread(self.artefact, "Total assets", reportedText="2,100", reportedValue="2100",
+                                      normalizedValue="21000000000"))
+        result = self.freeze(FILING.id, "--run", "latest")
+        self.assert_refused(result, f"sheet row {line}: printed no longer matches the artefact")
+        for text in ("2,100", "2,000"):  # never a figure
+            self.assertNotIn(text, result.output)
+        self.assertFalse(self.gold.exists())
+        self.assertEqual(self.freeze(FILING.id, "--run", self.run_dir.name).exit_code, 0)  # the run it came from still works
+
+    def test_a_cell_edited_since_the_export_is_refused_with_its_column(self):
+        line = self.write_checked_sheet(basis="standalone")
+        self.assert_refused(self.freeze(FILING.id, "--run", self.run_dir.name),
+                            f"sheet row {line}: basis no longer matches the artefact")
+        self.assertFalse(self.gold.exists())
+
+    def test_a_sheet_saved_with_another_delimiter_is_a_message_not_nothing_to_freeze(self):
+        self.sheet.write_text("row;verified;concept\n1;yes;total_assets\n", encoding="utf-8")
+        result = self.freeze(FILING.id)
+        self.assert_refused(result, "the sheet has no 'verified' column; was it saved with a different delimiter?")
+        self.assertNotIn("nothing to freeze", result.output)
+
     def test_a_run_that_lacks_the_filing_is_named(self):
         elsewhere = self.paths.new_run("elsewhere", now=datetime(2099, 1, 1, tzinfo=timezone.utc))  # the latest run
         write_run(elsewhere, self.record)
@@ -590,7 +738,9 @@ class FreezeCommandTests(unittest.TestCase):
     def test_the_help_names_the_options(self):
         result = self.freeze("--help")
         self.assertEqual(result.exit_code, 0, result.output)
-        for text in ("--run", "--force", "artefact", "verified"):
+        for text in ("--run", "--force", "verified",
+                     "Read the machine columns back from the run's artefact (a spreadsheet may have retyped them); "
+                     "a cell you edited must still agree with it, or the row is refused."):
             self.assertIn(text, result.output)
 
 

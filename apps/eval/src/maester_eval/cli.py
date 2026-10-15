@@ -110,8 +110,8 @@ from maester_eval.sheets import sheet_path
 def freeze(
     filing_id: Annotated[str, typer.Argument(help="The filing id, `<company-folder>/<name>`.")],
     run: Annotated[Optional[str], typer.Option(
-        help="The run the sheet was exported from. Its record goes into the gold file, and its artefact gives back the "
-             "columns a spreadsheet may have retyped, such as dates and scales.")] = None,
+        help="Read the machine columns back from the run's artefact (a spreadsheet may have retyped them); a cell you "
+             "edited must still agree with it, or the row is refused. The run's record goes into the gold file.")] = None,
     force: Annotated[bool, typer.Option(help="Replace a gold file that exists.")] = False,
 ) -> None:
     """Turn a checked sheet into data/eval/gold/<filing-id>.json. Only rows marked verified are kept; each needs a concept."""
