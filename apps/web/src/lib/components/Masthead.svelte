@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import type { Link } from '$lib/content';
+	import Wordmark from '$lib/components/Wordmark.svelte';
 
 	interface Props {
 		wordmark: string;
@@ -13,7 +14,7 @@
 
 <header class="masthead">
 	<div class="inner">
-		<a class="wordmark" href={resolve('/')}>{wordmark}</a>
+		<a class="wordmark" href={resolve('/')} aria-label={wordmark}><Wordmark decorative /></a>
 		<nav aria-label="Primary">
 			{#each nav as item (item.href)}
 				<a href={resolve(item.href)}>{item.label}</a>
@@ -38,12 +39,10 @@
 		padding: var(--space-4) var(--gutter);
 	}
 
+	/* The logo at the old 28px type: 30px tall, rules included. */
 	.wordmark {
-		font-stretch: var(--wdth-wide);
-		font-weight: 800;
-		font-size: var(--text-xl);
-		letter-spacing: var(--tracking-heading);
-		line-height: 1;
+		display: block;
+		height: 30px;
 		text-decoration: none;
 		margin-right: auto;
 	}

@@ -1,6 +1,11 @@
 <div align="center">
 
-# Maester
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/maester-total-lockup-paper.svg" />
+    <img alt="Maester" src="docs/brand/maester-total-lockup.svg" width="280" />
+  </picture>
+</h1>
 
 **The open-source portfolio management platform that tracks your portfolio autonomously and tells you what to do next.**
 

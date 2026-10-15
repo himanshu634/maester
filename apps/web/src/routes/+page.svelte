@@ -63,7 +63,7 @@
 </main>
 
 <Register label="Maester" headingId="footer" as="footer">
-	<SiteFooter wordmark={content.masthead.wordmark} {...content.footer} />
+	<SiteFooter {...content.footer} />
 </Register>
 
 <style>

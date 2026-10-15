@@ -1,13 +1,13 @@
 <script lang="ts">
 	import type { ExternalLink } from '$lib/content';
+	import Wordmark from '$lib/components/Wordmark.svelte';
 
 	interface Props {
-		wordmark: string;
 		note: string;
 		links: readonly ExternalLink[];
 	}
 
-	let { wordmark, note, links }: Props = $props();
+	let { note, links }: Props = $props();
 </script>
 
 <div class="footer">
@@ -19,7 +19,7 @@
 			<a href={link.href} rel="me noopener">{link.label}</a>
 		{/each}
 	</nav>
-	<span class="wordmark" aria-hidden="true">{wordmark}</span>
+	<span class="wordmark"><Wordmark decorative /></span>
 </div>
 
 <style>
@@ -37,9 +37,8 @@
 	}
 
 	.wordmark {
-		font-stretch: var(--wdth-wide);
-		font-weight: 800;
-		font-size: var(--text-lg);
-		letter-spacing: var(--tracking-heading);
+		display: block;
+		height: 24px;
+		align-self: flex-start;
 	}
 </style>

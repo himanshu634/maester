@@ -72,6 +72,7 @@ Sentence case everywhere. No all-caps labels, no letter-spaced eyebrows, no acce
 
 ## 5. Components
 
+- **Logo** (`Wordmark`): the name on a double rule, the way a total is ruled off in a set of accounts ([brand guide](brand/LOGO.md)). Archivo 125% / 800 as outlines with two rules the full width of the word, drawn inline in `currentColor`, so it is ink on paper and paper on an ink block. It sits in the masthead (30px tall), the terminal rail (26px, 30px from 1024px) and the index footer (24px). Inside a link the link carries the name ("Maester") and the drawing is hidden from screen readers. It never moves: the rules do not draw in, because the page's one motion belongs to the content. The favicon and home-screen icons are the mark, the m on its rules.
 - **Button** (`.button`): 2px border, 44px minimum height, 24px horizontal padding, weight 700. Filled ink on paper for the screen's one primary action; `.outline` for secondary actions. Hover and focus invert hard, with no transition. On inverted panels the border becomes paper.
 - **Disabled button** (`.button:disabled`): a write action that cannot run here. `--ink-muted` text and a 2px `--ink-muted` border on paper, `--paper-muted` on inverted panels; no fill, no hover inversion, `cursor: not-allowed`. It is a real `<button disabled>`, and it always points at a visible note that says why, through `aria-describedby`.
 - **Link**: always underlined, offset 3px, 1.5px thick. Hover inverts to an ink block. Never remove the underline to make a link look like a button; use `.button`.

@@ -13,6 +13,7 @@
 	import { content } from '$lib/content';
 	import { terminalContent } from '$lib/content/terminal';
 	import OfflineBanner from '$lib/components/errors/OfflineBanner.svelte';
+	import Wordmark from '$lib/components/Wordmark.svelte';
 	import { pagesIn, type TerminalPage, type TerminalPageKey } from '$lib/terminal/pages';
 
 	interface Props {
@@ -75,7 +76,9 @@
 <div class="shell">
 	<header class="rail">
 		<div class="bar">
-			<a class="wordmark" href={resolve('/')}>{content.masthead.wordmark}</a>
+			<a class="wordmark" href={resolve('/')} aria-label={content.masthead.wordmark}
+				><Wordmark decorative /></a
+			>
 			<button
 				bind:this={menuButton}
 				class="button outline menu"
@@ -169,11 +172,8 @@
 	}
 
 	.wordmark {
-		font-stretch: var(--wdth-wide);
-		font-weight: 800;
-		font-size: 1.5rem;
-		letter-spacing: var(--tracking-heading);
-		line-height: 1;
+		display: block;
+		height: 26px;
 		text-decoration: none;
 	}
 
@@ -345,7 +345,7 @@
 		}
 
 		.wordmark {
-			font-size: var(--text-xl);
+			height: 30px;
 		}
 
 		.menu {
