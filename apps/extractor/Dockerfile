@@ -6,6 +6,7 @@ COPY pyproject.toml uv.lock ./
 # Every workspace member's manifest is needed to resolve the lockfile; only the
 # extractor and the engine are installed.
 COPY apps/cli/pyproject.toml ./apps/cli/pyproject.toml
+COPY apps/eval/pyproject.toml ./apps/eval/pyproject.toml
 COPY apps/extractor ./apps/extractor
 COPY packages/financial-engine ./packages/financial-engine
 RUN uv sync --locked --no-dev --no-editable --package maester-extractor

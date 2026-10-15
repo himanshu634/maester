@@ -10,6 +10,7 @@ resolution-markers = [
 [manifest]
 members = [
     "maester-cli",
+    "maester-eval",
     "maester-extractor",
     "maester-financial-engine",
     "maester-platform",
@@ -704,6 +705,27 @@ requires-dist = [
 ]
 
 [[package]]
+name = "maester-eval"
+version = "0.1.0"
+source = { editable = "apps/eval" }
+dependencies = [
+    { name = "maester-financial-engine" },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "rich" },
+    { name = "typer" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "maester-financial-engine", editable = "packages/financial-engine" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "rich", specifier = ">=13.7" },
+    { name = "typer", specifier = ">=0.12" },
+]
+
+[[package]]
 name = "maester-extractor"
 version = "0.1.0"
 source = { editable = "apps/extractor" }
@@ -751,6 +773,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "maester-cli" },
+    { name = "maester-eval" },
     { name = "maester-extractor" },
 ]
 
@@ -762,6 +785,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "maester-cli", editable = "apps/cli" },
+    { name = "maester-eval", editable = "apps/eval" },
     { name = "maester-extractor", editable = "apps/extractor" },
 ]
 

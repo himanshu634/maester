@@ -5,6 +5,8 @@ data/cache/*
 !data/cache/.gitkeep
 data/blobs/
 data/gcloud/
+data/eval/corpus/
+data/eval/runs/
 __pycache__/
 *.pyc
 .venv/
