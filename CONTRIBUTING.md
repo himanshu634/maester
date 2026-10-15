@@ -16,7 +16,7 @@ Before starting significant work, open an issue referencing the feature ID from 
 
 ## What exists today
 
-Maester is a two-language monorepo: a Python document engine, extraction service and CLI, and a TypeScript platform of an HTTP API, a job worker and a SvelteKit web client. The investor journeys, the ledger and portfolio accounting are specified in the docs and not implemented.
+Maester is a two-language monorepo: a Python document engine, extraction service, CLI and evaluation harness, and a TypeScript platform of an HTTP API, a job worker and a SvelteKit web client. The investor journeys, the ledger and portfolio accounting are specified in the docs and not implemented.
 
 Working now:
 
@@ -29,6 +29,7 @@ Working now:
 - Serve the public pages, the sign-in pages and the error pages, which carry the design system in [DESIGN.md](docs/DESIGN.md), and the portfolio overview as a read-only demo on a synthetic portfolio at `/terminal/demo`.
 - See how cautious or eager the market is, from your own Dhan and FRED data (Market mood), and save, replace or remove those two keys in Settings.
 - See a company's statements year by year from its read annual reports, each figure with the page it came from and a link that opens the PDF there, with a summary of the stock from the investor's Dhan data.
+- An evaluation harness, `maester-eval` (`apps/eval`), that runs the extraction workflow over public filings in `data/eval/corpus` and scores it against a hand-checked gold set.
 
 The whole hosted stack runs locally in Docker with no Google Cloud account, apart from fact extraction itself; see [setup](#setup).
 
@@ -94,6 +95,7 @@ apps/
   api/                      Working Hono HTTP service: auth, workspaces, documents, jobs
   worker/                   Working Hono job runner: leasing, document.verify, document.classify, document.extract
   extractor/                Working FastAPI extraction sidecar over the engine's LangGraph workflow
+  eval/                     Working evaluation harness: live runs, labelling sheets, gold set, report
   web/                      SvelteKit static pages; investor journeys planned
 packages/
   financial-engine/         Working LangGraph extraction workflow, plus the CLI's extraction, checks, cache and Q&A
@@ -107,14 +109,14 @@ infra/                      Cloud Run bootstrap and deploy scripts
 scripts/                    Workspace checks, database init, smoke test
 tests/                      Offline Python regression tests
 .github/workflows/          CI definitions
-data/                       Local extraction cache and uploads, ignored by version control
+data/                       Local extraction cache and uploads, ignored by version control; data/eval holds the evaluation manifest and gold set, which are committed
 docker-compose.yml          The local stack
 pyproject.toml, uv.lock     uv workspace and Python dependency resolution
 package.json, pnpm-*.yaml   pnpm workspace and TypeScript dependency resolution
 Makefile                    Python development commands
 ```
 
-Only `apps/cli`, `apps/extractor` and `packages/financial-engine` are uv workspace members. `apps/api`, `apps/worker` and `packages/*` are the pnpm workspace. `apps/web` is a standalone pnpm project with its own lockfile, so a root `pnpm install` does not install it. The engine keeps the `pdf_financial_qa` import namespace for compatibility.
+Only `apps/cli`, `apps/eval`, `apps/extractor` and `packages/financial-engine` are uv workspace members. `apps/api`, `apps/worker` and `packages/*` are the pnpm workspace. `apps/web` is a standalone pnpm project with its own lockfile, so a root `pnpm install` does not install it. The engine keeps the `pdf_financial_qa` import namespace for compatibility.
 
 ## Development commands
 
@@ -143,6 +145,7 @@ make sync
 make check
 make test
 make cli
+uv run --locked maester-eval --help   # the evaluation harness
 ```
 
 For the web client, use pnpm directly (from the repository root, or drop `--dir apps/web` inside that directory):
