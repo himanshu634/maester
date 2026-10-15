@@ -4,9 +4,23 @@ Console output is filing ids, codes, counts and seconds. Labels, printed values
 and figures go only into files under data/eval and the report.
 """
 
+from datetime import datetime, timezone
+from pathlib import Path
+import shutil
+from typing import Annotated, Optional
+
 import typer
 from dotenv import load_dotenv
 from rich.console import Console
+
+from maester_eval.artefacts import read_artefacts, read_run
+from maester_eval.concepts import load_taxonomy
+from maester_eval.gold import FreezeError, count_unverified, freeze_sheet, read_sheet, write_gold
+from maester_eval.manifest import ManifestError, load_manifest
+from maester_eval.paths import DEFAULT
+from maester_eval.report import score_run_dir, write_report
+from maester_eval.runner import EvalConfigError, gemini_model_factory, run_live, workflow_settings_from_env
+from maester_eval.sheets import export_run, sheet_path
 
 app = typer.Typer(
     help="Maester evaluation harness: run the extraction workflow over real filings and score it against the gold set.",
@@ -19,13 +33,6 @@ console = Console()
 @app.callback()
 def _main() -> None:
     load_dotenv()
-
-
-from typing import Annotated, Optional
-
-from maester_eval.manifest import ManifestError, load_manifest
-from maester_eval.paths import DEFAULT
-from maester_eval.runner import EvalConfigError, gemini_model_factory, run_live, workflow_settings_from_env
 
 
 def _fail(message: str) -> None:
@@ -61,18 +68,18 @@ def live(
     except EvalConfigError as exc:
         _fail(str(exc))
     try:
+        settings = workflow_settings_from_env()  # before the run folder exists: a bad setting must not leave an empty one
+    except ValueError as exc:
+        _fail(f"EXTRACT_DEADLINE_SECONDS: {exc}")
+    try:
         run_dir = DEFAULT.new_run(label)
     except ValueError as exc:
         _fail(str(exc))
     console.print(f"run {run_dir.name}: {len(filings)} filing(s), set {eval_set}")
-    artefacts = run_live(filings, DEFAULT.corpus, run_dir, factory, workflow_settings_from_env(), eval_set,  # type: ignore[arg-type]
+    artefacts = run_live(filings, DEFAULT.corpus, run_dir, factory, settings, eval_set,  # type: ignore[arg-type]
                          log=lambda line: console.print(line, markup=False))
     read = sum(1 for a in artefacts if a.result)
-    console.print(f"done: {read} read, {len(artefacts) - read} failed → {run_dir}")
-
-
-from maester_eval.artefacts import read_artefacts
-from maester_eval.sheets import export_run
+    console.print(f"done: {read} read, {len(artefacts) - read} failed → {run_dir}", markup=False)
 
 
 @app.command()
@@ -87,6 +94,8 @@ def export(
     except FileNotFoundError as exc:
         _fail(str(exc))
     artefacts = read_artefacts(run_dir)
+    if not artefacts:
+        _fail("no artefacts in this run")
     missing = set(only or []) - {artefact.filing_id for artefact in artefacts}
     if missing:
         _fail("not in this run: " + ", ".join(sorted(missing)))
@@ -96,14 +105,6 @@ def export(
     for path in skipped:
         console.print(f"kept  {path.relative_to(DEFAULT.base)} (exists; --force to overwrite)", markup=False)
     console.print(f"{len(written)} written, {len(skipped)} kept")
-
-
-from datetime import datetime, timezone
-
-from maester_eval.artefacts import read_run
-from maester_eval.concepts import load_taxonomy
-from maester_eval.gold import FreezeError, count_unverified, freeze_sheet, read_sheet, write_gold
-from maester_eval.sheets import sheet_path
 
 
 @app.command()
@@ -144,3 +145,41 @@ def freeze(
     shown = written.relative_to(DEFAULT.base)
     console.print(f"froze {len(gold.facts)} fact(s), {len(gold.expected_checks)} expected check(s); "
                   f"{count_unverified(rows)} row(s) not verified → {shown}", markup=False)
+
+
+@app.command()
+def report(
+    run: Annotated[str, typer.Option(help="A run folder's name, a path, or `latest`.")] = "latest",
+    eval_set: Annotated[str, typer.Option("--set", help="dev, heldout or all.")] = "all",
+    against: Annotated[Optional[str], typer.Option(help="An earlier run to show the change against.")] = None,
+    to: Annotated[Optional[Path], typer.Option(help="Also copy the Markdown here, e.g. docs/eval/2026-10-16-baseline.md.")] = None,
+) -> None:
+    """Score a run against the gold set; write report.md and report.json into the run folder."""
+    if eval_set not in ("dev", "heldout", "all"):
+        _fail("--set must be dev, heldout or all")
+    try:
+        manifest = load_manifest(DEFAULT.manifest)
+        ids = [f.id for f in manifest.filings]
+        out_of_scope = {f.id: f.out_of_scope or "" for f in manifest.out_of_scope(eval_set)}  # type: ignore[arg-type]
+        run_dir = DEFAULT.resolve_run(run)
+        score = score_run_dir(run_dir, DEFAULT.gold, ids, eval_set, out_of_scope)
+        # The earlier run is read and scored before anything is written, and against the gold set as it is now.
+        earlier = None if against is None else score_run_dir(DEFAULT.resolve_run(against), DEFAULT.gold, ids, eval_set, out_of_scope)
+    except (ManifestError, FileNotFoundError) as exc:
+        _fail(str(exc))
+    md, _ = write_report(run_dir, score, earlier, out_of_scope_reasons=out_of_scope)
+    s = score.summary()
+    console.print(f"{run_dir.name} ({eval_set}): {s.filings} filing(s), {s.gold_facts} gold fact(s), "
+                  f"exact match {s.rate('match')}, missing {s.rate('missing')}", markup=False)
+    if score.not_run or score.gold_missing:
+        console.print(f"not run: {len(score.not_run)}; no gold yet: {len(score.gold_missing)}", markup=False)
+    if score.out_of_scope:
+        console.print(f"out of scope: {len(score.out_of_scope)}", markup=False)
+    console.print(f"report → {md}", markup=False)
+    if to is not None:
+        try:
+            to.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(md, to)
+        except OSError as exc:
+            _fail(f"cannot write {to}: {exc.strerror or exc}")
+        console.print(f"published → {to}", markup=False)
