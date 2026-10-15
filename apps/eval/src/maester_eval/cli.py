@@ -71,6 +71,7 @@ def live(
     console.print(f"done: {read} read, {len(artefacts) - read} failed → {run_dir}")
 
 
+from maester_eval.artefacts import read_artefacts
 from maester_eval.sheets import export_run
 
 
@@ -85,7 +86,11 @@ def export(
         run_dir = DEFAULT.resolve_run(run)
     except FileNotFoundError as exc:
         _fail(str(exc))
-    written, skipped = export_run(run_dir, DEFAULT.sheets, only, force)
+    artefacts = read_artefacts(run_dir)
+    missing = set(only or []) - {artefact.filing_id for artefact in artefacts}
+    if missing:
+        _fail("not in this run: " + ", ".join(sorted(missing)))
+    written, skipped = export_run(run_dir, DEFAULT.sheets, only, force, artefacts=artefacts)
     for path in written:
         console.print(f"wrote {path.relative_to(DEFAULT.base)}", markup=False)
     for path in skipped:

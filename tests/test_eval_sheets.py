@@ -12,7 +12,7 @@ from test_extraction_workflow import FAST, PDF, ScriptedModel
 from typer.testing import CliRunner
 
 from maester_eval import cli
-from maester_eval.artefacts import write_artefact
+from maester_eval.artefacts import read_artefacts, write_artefact
 from maester_eval.manifest import Filing
 from maester_eval.paths import EvalPaths
 from maester_eval.runner import run_filing
@@ -31,6 +31,12 @@ SPREAD = Filing(file="synthetic-industries/ar-2025-26.pdf", company="Synthetic I
 def failed_artefact(filing):
     """A filing the model finds no statements in: an error and no result."""
     return run_filing(filing, PDF, lambda: ScriptedModel(locate=[LocateOutput(statements=[])]), FAST)
+
+
+def with_first_fact(artefact, **changes):
+    """The artefact with the first fact's wire fields changed: facts the scripted model cannot produce."""
+    facts = artefact.result["facts"]
+    return artefact.model_copy(update={"result": dict(artefact.result, facts=[dict(facts[0], **changes), *facts[1:]])})
 
 
 class SheetRowTests(unittest.TestCase):
@@ -58,6 +64,16 @@ class SheetRowTests(unittest.TestCase):
         self.assertEqual(by_label["Total assets"], "yes")
         self.assertEqual(by_label["Profit"], "yes")
         self.assertEqual(by_label["Inventories"], "")
+
+    def test_material_hint_covers_the_lines_the_column_promises(self):
+        flagged = ("Total income", "Revenue", "Revenue from operations", "Profit before tax", "Loss for the year",
+                   "Basic earnings per share (₹)", "Cash", "Cash and cash equivalents",
+                   "Net cash from operating activities", "Non-current borrowings", "Finance costs", "Dividend paid")
+        unflagged = ("Inventories", "Trade payables", "Goodwill", "Other equity", "Property, plant and equipment")
+        for label in (*flagged, *unflagged):
+            with self.subTest(label=label):
+                row = sheet_rows(with_first_fact(self.artefact, reportedLabel=label))[0]
+                self.assertEqual(row["material"], "yes" if label in flagged else "")
 
     def test_a_failed_filing_gives_one_note_row(self):
         failed = run_filing(FILING, PDF, lambda: ScriptedModel(locate=[LocateOutput(statements=[])]), FAST)
@@ -87,19 +103,24 @@ class SheetRowTests(unittest.TestCase):
                                      ("Net cash from operations", "4", "7\u20138")):
             self.assertEqual((rows[label]["page"], rows[label]["printed_pages"]), (page, printed), label)
 
-    def test_period_end_is_as_the_pipeline_read_it(self):
+    def test_period_end_is_the_facts_one_date_whichever_field_holds_it(self):
+        facts = {fact["reportedLabel"]: fact for fact in self.artefact.result["facts"]}
+        # The premise: the pipeline keeps a balance sheet date in asOfDate and a profit and loss date in periodEnd.
+        self.assertEqual((facts["Total assets"]["periodEnd"], facts["Total assets"]["asOfDate"]), (None, "2026-03-31"))
+        self.assertEqual((facts["Expenses"]["periodEnd"], facts["Expenses"]["asOfDate"]), ("2026-03-31", None))
         by_label = {r["label"]: r["period_end"] for r in sheet_rows(self.artefact)}
-        self.assertEqual(by_label["Expenses"], "2026-03-31")
-        # A balance sheet column is an "as at" date. The pipeline keeps it in asOfDate and reads no period end,
-        # so the row is blank and the person gives the date in gold_period_end.
-        self.assertEqual(by_label["Cash"], "")
+        self.assertEqual(by_label["Total assets"], "2026-03-31")  # from asOfDate
+        self.assertEqual(by_label["Expenses"], "2026-03-31")  # from periodEnd
+        # "FY2026" is not a date, so neither field holds one and the cell stays blank for gold_period_end.
+        self.assertEqual(by_label["Net cash from operations"], "")
+        # No fact has both, but were both set the period end would win.
+        both = with_first_fact(self.artefact, periodEnd="2026-03-31", asOfDate="2025-03-31")
+        self.assertEqual(sheet_rows(both)[0]["period_end"], "2026-03-31")
 
     def test_flags_are_words_and_missing_figures_are_blank(self):
-        facts = self.artefact.result["facts"]
-        dash = dict(facts[0], reportedText="-", reportedValue=None, valueStatus="dash", unitLabel=None,
-                    scaleFactor=None, normalizedValue=None, periodEnd=None, textLayerMatch=False)
-        edited = self.artefact.model_copy(update={"result": dict(self.artefact.result, facts=[dash, *facts[1:]])})
-        rows = sheet_rows(edited)
+        rows = sheet_rows(with_first_fact(
+            self.artefact, reportedText="-", reportedValue=None, valueStatus="dash", unitLabel=None, scaleFactor=None,
+            normalizedValue=None, periodEnd=None, asOfDate=None, textLayerMatch=False))
         picked = ("printed", "value", "unit_label", "scale_factor", "normalized_value", "period_end",
                   "text_layer_match", "is_subtotal")
         self.assertEqual({column: rows[0][column] for column in picked},
@@ -183,6 +204,12 @@ class ExportRunTests(unittest.TestCase):
         self.assertEqual((written, skipped), ([sheet_path(self.paths.sheets, OTHER.id)], []))
         self.assertFalse(sheet_path(self.paths.sheets, FILING.id).exists())
 
+    def test_artefacts_already_read_are_not_read_again(self):
+        artefacts = read_artefacts(self.run_dir)
+        gone = Path(self.temp.name) / "no-such-run"  # nothing to read there: the sheet can only come from `artefacts`
+        written, skipped = export_run(gone, self.paths.sheets, artefacts=artefacts)
+        self.assertEqual((written, skipped), ([sheet_path(self.paths.sheets, FILING.id)], []))
+
     def test_a_failed_filing_gets_a_sheet_with_its_note(self):
         write_artefact(self.run_dir, failed_artefact(OTHER))
         export_run(self.run_dir, self.paths.sheets, only=[OTHER.id])
@@ -246,6 +273,20 @@ class ExportCommandTests(unittest.TestCase):
         self.assertIn("1 written, 0 kept", result.output)
         self.assertTrue(sheet_path(self.paths.sheets, OTHER.id).is_file())
         self.assertFalse(self.sheet.exists())
+
+    def test_an_id_that_is_not_in_the_run_is_refused_before_anything_is_written(self):
+        result = self.export("--only", "someone/else", "--only", FILING.id, "--only", "a/b[c]")
+        self.assertEqual(result.exit_code, 1)
+        self.assertIsInstance(result.exception, SystemExit)  # a crash would leave the exception itself here
+        self.assertIn("not in this run: a/b[c], someone/else", result.output)
+        self.assertFalse(self.paths.sheets.exists())  # not even the id that is in the run
+
+    def test_the_artefacts_are_read_once(self):
+        with mock.patch.object(cli, "read_artefacts", wraps=read_artefacts) as in_command, \
+                mock.patch("maester_eval.sheets.read_artefacts", wraps=read_artefacts) as in_sheets:
+            result = self.export("--only", FILING.id)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(in_command.call_count + in_sheets.call_count, 1)
 
     def test_a_filing_id_is_printed_as_written(self):
         # Rich would read `[final]` as a style tag and drop it, from the wrote line and from the kept line.

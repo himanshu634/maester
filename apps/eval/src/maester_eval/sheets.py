@@ -20,8 +20,8 @@ SHEET_COLUMNS = [
 
 # Labelling aid only: rows worth checking first. Not a mapping; see the module docstring.
 MATERIAL_HINT = re.compile(
-    r"\btotal\b|revenue from operations|\bprofit\b|\bloss\b|earnings? per|cash and cash equivalents"
-    r"|\bborrowings?\b|net cash|finance costs?|\bdividend"
+    r"\btotal\b|\brevenue\b|revenue from operations|\bprofit\b|\bloss\b|earnings? per"
+    r"|\bcash\b|cash and cash equivalents|\bborrowings?\b|net cash|finance costs?|\bdividend"
 )
 
 
@@ -51,7 +51,9 @@ def sheet_rows(artefact: Artefact) -> list[dict[str, str]]:
         rows.append(dict(
             blank,
             row=str(index), statement=fact["statement"], basis=fact["basis"], section=fact["section"],
-            label=fact["reportedLabel"], period_label=fact["periodLabel"], period_end=fact["periodEnd"] or "",
+            label=fact["reportedLabel"], period_label=fact["periodLabel"],
+            # The fact's one date: a balance sheet fact is "as at" and keeps it in asOfDate, a period fact in periodEnd.
+            period_end=fact["periodEnd"] or fact["asOfDate"] or "",
             printed=fact["reportedText"], value=fact["reportedValue"] or "", unit_label=fact["unitLabel"] or "",
             scale_factor=fact["scaleFactor"] or "", normalized_value=fact["normalizedValue"] or "",
             page=str(page), printed_pages=_printed_pages(page, artefact.printed_pages_per_page),
@@ -74,11 +76,14 @@ def write_sheet(path: Path, rows: list[dict[str, str]]) -> None:
         writer.writerows(rows)
 
 
-def export_run(run_dir: Path, sheets_dir: Path, only: list[str] | None = None, force: bool = False) -> tuple[list[Path], list[Path]]:
-    """Writes a sheet per artefact. A sheet that exists is a person's work: skipped unless `force`."""
+def export_run(run_dir: Path, sheets_dir: Path, only: list[str] | None = None, force: bool = False,
+               *, artefacts: list[Artefact] | None = None) -> tuple[list[Path], list[Path]]:
+    """Writes a sheet per artefact. A sheet that exists is a person's work: skipped unless `force`.
+
+    The artefacts are read from `run_dir`, unless the caller has read them already and passes them as `artefacts`."""
     written: list[Path] = []
     skipped: list[Path] = []
-    for artefact in read_artefacts(run_dir):
+    for artefact in read_artefacts(run_dir) if artefacts is None else artefacts:
         if only and artefact.filing_id not in only:
             continue
         path = sheet_path(sheets_dir, artefact.filing_id)
