@@ -151,6 +151,8 @@ Editing opens a draft with value, sign, unit/scale, concept, period and basis. S
 
 ## 10. Analyst
 
+The Analyst page will also hold reviews of each holding by a desk of readers (a filings analyst, a price analyst, a bull, a bear and a reviewer), checked by the investor's own limits, with the investor making the call ([agents plan](superpowers/specs/2026-10-15-agents-design.md)). Until the first step works, its coming-soon page explains the steps ([design specification](DESIGN.md) section 5, `ReviewSteps`).
+
 Use a conversation list on the left of the Analyst page only, main answer area in the center, and an on-demand evidence panel. Avoid an always-open chatbot overlay on every page. A contextual “Ask” action carries company/portfolio and selected facts into a draft with visible scope chips.
 
 The composer shows permitted companies/documents, period/basis where selected, and an evidence cutoff. Broaden scope only through an explicit user action. New messages retain the last scope visibly. Ask for clarification if a company has incompatible reporting periods or bases; do not silently switch from consolidated to standalone.
