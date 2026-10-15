@@ -16,6 +16,7 @@ Out of scope here: the source reader and review/corrections (F06), the financial
 - Added codes: `CORRECTION_FAILED` (warning), `MODEL_REQUEST_REJECTED`, `NO_STATEMENTS_EXTRACTED`, `DEADLINE_EXCEEDED`, `CANCELLED`.
 - Job creation and dispatch moved to `@maester/jobs` so the worker can enqueue `document.extract`.
 - Document intake (5 October 2026): verify now hands over to `document.classify`, which works out what the PDF is before anything is read; see the [intake spec](superpowers/specs/2026-10-05-document-intake-classification-design.md). `EXTRACT_MAX_BYTES` defaults to 50 MiB.
+- Next (15 October 2026): concepts over these facts, a second reader, more checks, a period model, calculations and agent access are designed in [financial data layer](superpowers/specs/2026-10-15-financial-data-layer-design.md) ([ADR 0006](decisions/0006-concepts-calculations-agent-access.md)). Everything after `extract-2` is specified there; this document describes the pipeline as it runs today.
 
 ## 2. Architecture
 

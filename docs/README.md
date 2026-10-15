@@ -30,6 +30,8 @@ Maester's product plan connects portfolio tracking with company research and ver
 | [TypeScript backend decision](decisions/0003-typescript-backend.md) | Hono API and worker on Cloud Run, Zod contracts, Drizzle | Engineering |
 | [Extraction sidecar decision](decisions/0004-python-extraction-sidecar.md) | Python extraction service with LangGraph behind the TypeScript worker | Engineering |
 | [Sign-in decision](decisions/0005-sign-in-google-email-waitlist.md) | Better Auth with Google and email, a waitlist gate, Resend and the web-origin proxy | Engineering and product |
+| [Financial data layer decision](decisions/0006-concepts-calculations-agent-access.md) | Concepts over as-printed facts, two readers, calculations in TypeScript, a read-only MCP server, evaluation before change | Engineering and data |
+| [Financial data layer design](superpowers/specs/2026-10-15-financial-data-layer-design.md) | The extraction pipeline's gaps, the concept and period model, checks, the metric registry, agent access, evaluation and phases | Backend, data and platform |
 
 ## Document status
 
