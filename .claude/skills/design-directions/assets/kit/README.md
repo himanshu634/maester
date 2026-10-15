@@ -67,3 +67,13 @@ whose statements add up (Synthetic Cements Limited, three annual reports, one re
 misread total), the statement ledger with a selected figure, the figure panel, the three status
 axes, the toggles, a rendered PDF page and the openable sums.
 Run `node financials.mjs --measure`, measure, then `node financials.mjs financials-heights.json`.
+
+## Agents round (2026-10-15)
+
+`agents.mjs`, `agents-notes.json` and `agents-heights.json` built round 1 of the "Maester Agents"
+canvas (https://claude.ai/artifact/JpETfGRFisGxpjYGnn4Xpj): Today (the Analyst coming-soon page),
+A · The desk, drawn, B · One review, traced, C · The rulebook, D · Where it lands. They add the
+numbered review steps, the run ladder, the reviewer's ink verdict, the two cases with a source under
+every sentence, the limits ledger and the agent due-panel item. Plan:
+`docs/superpowers/specs/2026-10-15-agents-design.md`.
+Run `node agents.mjs --measure`, measure, then `node agents.mjs agents-heights.json`.
