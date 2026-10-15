@@ -16,6 +16,7 @@ from maester_eval.text import normalise
 
 FilingKind = Literal["annual_report", "financial_results"]
 EvalSet = Literal["dev", "heldout"]
+Stratum = Literal["large", "mid", "small", "financials"]
 SetChoice = Literal["dev", "heldout", "all"]
 
 
@@ -31,6 +32,12 @@ class Filing(BaseModel):
     kind: FilingKind
     period_end: str
     set: EvalSet
+    # The size band the split was stratified by; banks and NBFCs are their own stratum.
+    stratum: Stratum | None = None
+    # Why a baseline should leave this filing out, such as statements the taxonomy does not cover yet.
+    out_of_scope: str | None = None
+    # 2 when each PDF page is a spread of two printed pages, so page N of the PDF holds printed pages 2N-1 and 2N.
+    printed_pages_per_page: Literal[1, 2] = 1
 
     @property
     def id(self) -> str:
@@ -62,8 +69,17 @@ class Manifest(BaseModel):
     def by_id(self) -> dict[str, Filing]:
         return {f.id: f for f in self.filings}
 
-    def select(self, eval_set: SetChoice = "all", only: list[str] | None = None) -> list[Filing]:
-        chosen = [f for f in self.filings if eval_set == "all" or f.set == eval_set]
+    def _in_set(self, eval_set: SetChoice) -> list[Filing]:
+        return [f for f in self.filings if eval_set == "all" or f.set == eval_set]
+
+    def select(self, eval_set: SetChoice = "all", only: list[str] | None = None,
+               include_out_of_scope: bool = False) -> list[Filing]:
+        """The filings of a set, in manifest order.
+
+        A filing marked out of scope is left out unless `include_out_of_scope` is set or `only` names it:
+        naming a filing is explicit.
+        """
+        chosen = self._in_set(eval_set)
         if only:
             known = self.by_id()
             unknown = [i for i in only if i not in known]
@@ -73,8 +89,18 @@ class Manifest(BaseModel):
             outside = [f for f in self.filings if f.id in wanted and eval_set != "all" and f.set != eval_set]
             if outside:
                 raise ManifestError("; ".join(f"{f.id} is in set {f.set}, not {eval_set}" for f in outside))
-            chosen = [f for f in chosen if f.id in wanted]
-        return chosen
+            return [f for f in chosen if f.id in wanted]
+        if include_out_of_scope:
+            return chosen
+        skipped = {f.id for f in self.out_of_scope(eval_set)}
+        return [f for f in chosen if f.id not in skipped]
+
+    def out_of_scope(self, eval_set: SetChoice = "all") -> list[Filing]:
+        """The filings of a set that a baseline leaves out, in manifest order.
+
+        A command uses it to say how many filings it skipped.
+        """
+        return [f for f in self._in_set(eval_set) if f.out_of_scope is not None]
 
 
 def load_manifest(path: Path) -> Manifest:

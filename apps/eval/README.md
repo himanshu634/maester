@@ -25,6 +25,8 @@ docs/eval/                published reports (committed)
 packages/contracts/concepts.json   the concepts the gold set is labelled with
 ```
 
+A filing may also carry `stratum` (`large`, `mid`, `small`, `financials`: the size band the split was stratified by), `out_of_scope` (why a baseline leaves it out; `live` and `report` skip it unless named with `--only`) and `printed_pages_per_page` (`2` when each PDF page is a spread of two printed pages).
+
 ## Rules
 
 - Public filings only. Never put a private document in the corpus.

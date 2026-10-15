@@ -57,7 +57,11 @@ class EvalPaths:
         return path
 
     def resolve_run(self, name_or_path: str) -> Path:
-        """`latest`, the name of a run folder inside `runs/`, or a path to a run folder."""
+        """`latest`, the name of a run folder inside `runs/`, or a path to a run folder.
+
+        A bare name is looked up under `runs/` only. A path is absolute or has a folder part
+        (`archive/20261016T093005Z`), and may point anywhere.
+        """
         if name_or_path == "latest":
             found = self.runs.glob("*") if self.runs.is_dir() else ()
             runs = sorted(p for p in found if _RUN_NAME.fullmatch(p.name) and p.is_dir())
@@ -70,8 +74,10 @@ class EvalPaths:
             if candidate.is_dir() and candidate.resolve().parent == self.runs.resolve():
                 return candidate
             given = Path(name_or_path)
-            # A path must end in a real name, or `.` and `..` would pass as the current or the parent folder.
-            if given.name not in ("", "..") and given.is_dir():
+            # A folder of the same name in the current folder cannot answer for a bare name. A path must also
+            # end in a real name: `archive/..` and `/` are folders, but not runs.
+            is_path = given.is_absolute() or len(given.parts) > 1
+            if is_path and given.name not in ("", "..") and given.is_dir():
                 return given
         raise FileNotFoundError(f"no run {name_or_path!r} under {self.runs}")
 

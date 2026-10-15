@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -16,6 +17,9 @@ TWO = {"file": "synthetic-cements/q1-2026-27.pdf", "company": "Synthetic Cements
        "kind": "financial_results", "period_end": "2026-06-30", "set": "dev"}
 OTHER = {"file": "other-metals/ar-2025-26.pdf", "company": "Other Metals Limited",
          "kind": "annual_report", "period_end": "2026-03-31", "set": "heldout"}
+BANK = {"file": "synthetic-bank/ar-2025-26.pdf", "company": "Synthetic Bank Limited",
+        "kind": "annual_report", "period_end": "2026-03-31", "set": "dev", "stratum": "financials",
+        "out_of_scope": "bank: statements not in the taxonomy yet", "printed_pages_per_page": 2}
 
 
 class ManifestTests(unittest.TestCase):
@@ -103,6 +107,37 @@ class ManifestTests(unittest.TestCase):
         self.assertIn(str(self.paths.manifest), str(caught.exception))
         self.assertIn("not valid JSON", str(caught.exception))
 
+    def test_a_filing_may_carry_a_stratum_a_scope_note_and_a_page_spread(self):
+        manifest = load_manifest(self.write([ONE, BANK]))
+        plain, bank = manifest.filings
+        self.assertEqual((plain.stratum, plain.out_of_scope, plain.printed_pages_per_page), (None, None, 1))
+        self.assertEqual(manifest.by_id()["synthetic-bank/ar-2025-26"].stratum, "financials")
+        self.assertEqual((bank.out_of_scope, bank.printed_pages_per_page),
+                         ("bank: statements not in the taxonomy yet", 2))
+
+    def test_a_stratum_or_page_spread_outside_the_vocabulary_is_refused(self):
+        for bad in (dict(ONE, stratum="huge"), dict(ONE, printed_pages_per_page=3)):
+            with self.subTest(bad=bad), self.assertRaises(ManifestError):
+                load_manifest(self.write([bad]))
+
+    def test_select_leaves_out_of_scope_filings_out_unless_asked_or_named(self):
+        manifest = load_manifest(self.write([ONE, BANK, OTHER]))
+        one, bank, other = "synthetic-cements/ar-2025-26", "synthetic-bank/ar-2025-26", "other-metals/ar-2025-26"
+        self.assertEqual([f.id for f in manifest.select("dev")], [one])
+        self.assertEqual([f.id for f in manifest.select("all")], [one, other])
+        self.assertEqual([f.id for f in manifest.select("dev", include_out_of_scope=True)], [one, bank])
+        self.assertEqual([f.id for f in manifest.select("dev", only=[bank])], [bank])
+        self.assertEqual([f.id for f in manifest.select("all", only=[bank, one])], [one, bank])
+
+    def test_out_of_scope_lists_the_left_out_filings_of_the_set_in_manifest_order(self):
+        held_back = dict(OTHER, out_of_scope="bank: statements not in the taxonomy yet")
+        manifest = load_manifest(self.write([ONE, BANK, held_back]))
+        self.assertEqual([f.id for f in manifest.out_of_scope("dev")], ["synthetic-bank/ar-2025-26"])
+        self.assertEqual([f.id for f in manifest.out_of_scope("heldout")], ["other-metals/ar-2025-26"])
+        self.assertEqual([f.id for f in manifest.out_of_scope()],
+                         ["synthetic-bank/ar-2025-26", "other-metals/ar-2025-26"])
+        self.assertEqual(load_manifest(self.write([ONE, OTHER])).out_of_scope(), [])
+
 
 class RunFolderTests(unittest.TestCase):
     def setUp(self):
@@ -167,6 +202,30 @@ class RunFolderTests(unittest.TestCase):
         elsewhere = self.paths.base / "archive" / "20260101T000000Z-old"
         elsewhere.mkdir(parents=True)
         self.assertEqual(self.paths.resolve_run(str(elsewhere)), elsewhere)
+
+    def stray_folders(self):
+        """Make the current folder one that holds a folder named like a run and one called `archive`."""
+        here = Path(self.temp.name) / "here"
+        (here / "20260101T000000Z-old").mkdir(parents=True)
+        (here / "archive" / "20250101T000000Z-older").mkdir(parents=True)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(here)
+
+    def test_a_bare_name_is_looked_up_under_runs_only(self):
+        run = self.paths.new_run(now=datetime(2026, 10, 16, 9, 0, 0, tzinfo=timezone.utc))
+        self.stray_folders()
+        with self.assertRaises(FileNotFoundError):
+            self.paths.resolve_run("20260101T000000Z-old")
+        self.assertEqual(self.paths.resolve_run(run.name), run)
+        self.assertEqual(self.paths.resolve_run(str(run)), run)
+        self.assertEqual(self.paths.resolve_run("archive/20250101T000000Z-older"),
+                         Path("archive/20250101T000000Z-older"))
+
+    def test_a_path_must_end_in_a_real_name(self):
+        self.stray_folders()
+        for path in ("archive/..", "/"):
+            with self.subTest(path=path), self.assertRaises(FileNotFoundError):
+                self.paths.resolve_run(path)
 
     def test_latest_with_no_runs(self):
         with self.assertRaises(FileNotFoundError):
