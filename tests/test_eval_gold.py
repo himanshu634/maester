@@ -18,7 +18,8 @@ from maester_eval import cli
 from maester_eval.artefacts import write_artefact, write_run
 from maester_eval.concepts import load_taxonomy
 from maester_eval.gold import (
-    ExpectedCheck, FreezeError, GoldFact, GoldFiling, freeze_sheet, gold_path, read_gold, read_sheet, write_gold,
+    ExpectedCheck, FreezeError, GoldFact, GoldFiling, count_unverified, freeze_sheet, gold_path, read_gold, read_sheet,
+    write_gold,
 )
 from maester_eval.paths import EvalPaths
 from maester_eval.runner import run_filing
@@ -159,6 +160,33 @@ class FreezeTests(unittest.TestCase):
             for text in ("two thousand", "Total assets", "As at 31 March 2026", "Assets", "₹"):
                 self.assertNotIn(text, str(caught.exception))
 
+    def test_a_sheet_with_nothing_verified_is_refused_so_no_empty_gold_is_sealed(self):
+        blank = {column: "" for column in SHEET_COLUMNS}
+        nothing_verified = (
+            [],
+            [row(concept="total_assets"), row(row="2", concept="total_assets", verified="no"), row(row="3", verified="y")],
+            [dict(blank, note="extraction failed: NO_STATEMENTS_FOUND")],  # the sheet of a filing that failed
+        )
+        for rows in nothing_verified:
+            with self.subTest(rows=len(rows)):
+                with self.assertRaises(FreezeError) as caught:
+                    gold_of(*rows)
+                self.assertEqual(str(caught.exception), "no row is marked verified=yes; nothing to freeze")
+
+    def test_the_rows_freeze_leaves_out_are_those_with_something_in_them_that_are_not_marked_yes(self):
+        blank = {column: "" for column in SHEET_COLUMNS}
+        rows = [
+            scored_row(),  # kept
+            scored_row(row="2", verified="YES"),  # kept: case does not matter
+            row(row="3"),  # not marked
+            row(row="4", verified="y"),  # marked, but not with "yes"
+            dict(blank, verified="no"),  # only a verdict in it
+            dict(blank, note="extraction failed: NO_STATEMENTS_FOUND"),  # the one row of a filing that failed
+            blank, blank,  # the empty lines a spreadsheet leaves at the end of a sheet
+        ]
+        self.assertEqual(count_unverified(rows), 4)
+        self.assertEqual(count_unverified([]), 0)
+
     def test_the_row_number_is_read_only_when_the_artefact_is_given(self):
         self.assertEqual(gold_of(scored_row(row="x")).facts[0].concept, "total_assets")
 
@@ -297,10 +325,11 @@ class FreezeFromTheArtefactTests(unittest.TestCase):
     def test_a_row_number_with_no_fact_behind_it_is_refused(self):
         count = len(self.artefact.result["facts"])
         for number in ("0", "-1", str(count + 1), "99"):
-            with self.subTest(row=number), self.assertRaises(FreezeError) as caught:
-                self.freeze(self.checked("Total assets", "total_assets", row=number))
-            self.assertEqual(str(caught.exception),
-                             f"sheet row 2: row {int(number)} no longer matches the artefact; re-export or fix `row`")
+            with self.subTest(row=number):
+                with self.assertRaises(FreezeError) as caught:
+                    self.freeze(self.checked("Total assets", "total_assets", row=number))
+                self.assertEqual(str(caught.exception),
+                                 f"sheet row 2: row {int(number)} no longer matches the artefact; re-export or fix `row`")
         with self.assertRaisesRegex(FreezeError, "sheet row 2: row 'x' is not a whole number"):
             self.freeze(self.checked("Total assets", "total_assets", row="x"))
 
@@ -449,13 +478,42 @@ class FreezeCommandTests(unittest.TestCase):
     def test_freezes_the_verified_rows_and_says_where_without_naming_a_figure(self):
         result = self.freeze(FILING.id)
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn(f"froze 1 fact(s), 0 expected check(s) → {self.gold.relative_to(self.paths.base)}", result.output)
+        left_out = len(self.artefact.result["facts"]) - 1  # every line of the sheet but Total assets
+        self.assertIn(f"froze 1 fact(s), 0 expected check(s); {left_out} row(s) not verified → "
+                      f"{self.gold.relative_to(self.paths.base)}", result.output)
         gold = read_gold(self.paths.gold)[FILING.id]
         self.assertEqual([fact.concept for fact in gold.facts], ["total_assets"])
         self.assertIsNone(gold.exported_from)
         self.assertEqual((gold.stratum, gold.printed_pages_per_page), (None, 1))
         for text in ("Total assets", "2,000", "As at 31 March"):  # never a label or a figure
             self.assertNotIn(text, result.output)
+
+    def test_the_summary_counts_the_rows_it_left_out(self):
+        write_sheet(self.sheet, [row(label="Cash"), scored_row(row="2"), row(row="3", label="Inventories")])
+        result = self.freeze(FILING.id)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn(f"froze 1 fact(s), 0 expected check(s); 2 row(s) not verified → "
+                      f"{self.gold.relative_to(self.paths.base)}", result.output)
+
+    def test_blank_lines_are_not_counted_and_the_note_of_a_failed_filing_is_one_row(self):
+        blank = {column: "" for column in SHEET_COLUMNS}
+        note = dict(blank, note="extraction failed: NO_STATEMENTS_FOUND")
+        added = scored_row(row="", concept="trade_payables", label="Trade payables", gold_text="1,23,456", gold_page="3")
+        write_sheet(self.sheet, [note, added, blank, blank])
+        result = self.freeze(FILING.id)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("froze 1 fact(s), 0 expected check(s); 1 row(s) not verified → ", result.output)
+
+    def test_a_sheet_with_nothing_verified_is_refused_and_seals_nothing(self):
+        message = "no row is marked verified=yes; nothing to freeze"
+        write_sheet(self.sheet, sheet_rows(self.artefact))  # exported, not checked yet
+        self.assert_refused(self.freeze(FILING.id), message)
+        failed = run_filing(FILING, PDF, lambda: ScriptedModel(locate=[LocateOutput(statements=[])]), FAST)
+        write_sheet(self.sheet, sheet_rows(failed))  # the one note row of a filing that failed
+        self.assert_refused(self.freeze(FILING.id), message)
+        self.assertFalse(self.gold.exists())
+        self.write_checked_sheet()
+        self.assertEqual(self.freeze(FILING.id).exit_code, 0)  # nothing was sealed, so no --force is needed
 
     def test_a_run_gives_back_what_a_spreadsheet_retyped_and_is_recorded(self):
         self.write_checked_sheet(scale_factor="1E+07", period_end="31/03/2026")

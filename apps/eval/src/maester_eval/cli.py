@@ -102,7 +102,7 @@ from datetime import datetime, timezone
 
 from maester_eval.artefacts import read_run
 from maester_eval.concepts import load_taxonomy
-from maester_eval.gold import FreezeError, freeze_sheet, read_sheet, write_gold
+from maester_eval.gold import FreezeError, count_unverified, freeze_sheet, read_sheet, write_gold
 from maester_eval.sheets import sheet_path
 
 
@@ -136,9 +136,11 @@ def freeze(
             _fail(f"no artefact for {filing_id} in {run_dir.name}")
         exported_from = {k: record.get(k) for k in ("run", "pipeline_version", "prompt_version", "model")}
     try:
-        gold = freeze_sheet(read_sheet(path), filing, load_taxonomy(), datetime.now(timezone.utc), exported_from, artefact)
+        rows = read_sheet(path)
+        gold = freeze_sheet(rows, filing, load_taxonomy(), datetime.now(timezone.utc), exported_from, artefact)
         written = write_gold(DEFAULT.gold, gold, force)
     except (FreezeError, FileExistsError) as exc:
         _fail(str(exc))
     shown = written.relative_to(DEFAULT.base)
-    console.print(f"froze {len(gold.facts)} fact(s), {len(gold.expected_checks)} expected check(s) → {shown}", markup=False)
+    console.print(f"froze {len(gold.facts)} fact(s), {len(gold.expected_checks)} expected check(s); "
+                  f"{count_unverified(rows)} row(s) not verified → {shown}", markup=False)

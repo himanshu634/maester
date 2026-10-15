@@ -160,9 +160,22 @@ def _period_end(row: dict[str, str], line: int, artefact: Artefact | None) -> st
     return text or None
 
 
+def _verified(row: dict[str, str]) -> bool:
+    return row.get("verified", "").lower() == "yes"
+
+
+def count_unverified(rows: list[dict[str, str]]) -> int:
+    """How many rows freeze leaves out: those with something in them that are not marked `verified=yes`.
+
+    A row with every cell empty is a blank line a spreadsheet left behind, not a row."""
+    return sum(1 for row in rows if any(row.values()) and not _verified(row))
+
+
 def freeze_sheet(rows: list[dict[str, str]], filing: Filing, taxonomy: Taxonomy, frozen_at: datetime,
                  exported_from: dict | None = None, artefact: Artefact | None = None) -> GoldFiling:
     """Keep the rows marked verified, each as a gold fact. A bad row is a `FreezeError` naming its sheet row.
+
+    So is a sheet with no verified row: it would seal an empty gold file.
 
     With the `artefact` the sheet was exported from, a row that has a `row` number takes the columns the
     pipeline wrote from that artefact's fact, whatever a spreadsheet made of them; the sheet supplies the
@@ -174,7 +187,7 @@ def freeze_sheet(rows: list[dict[str, str]], filing: Filing, taxonomy: Taxonomy,
     seen: dict[tuple, int] = {}
     for offset, sheet_row in enumerate(rows):
         line = offset + 2  # the sheet's header is line 1
-        if sheet_row.get("verified", "").lower() != "yes":
+        if not _verified(sheet_row):
             continue
         row = _as_exported(sheet_row, line, exported)
         concept = taxonomy.get(row.get("concept", ""))
@@ -221,6 +234,8 @@ def freeze_sheet(rows: list[dict[str, str]], filing: Filing, taxonomy: Taxonomy,
         if adds_up in ("yes", "no"):
             checks.append(ExpectedCheck(
                 concept=fact.concept, basis=fact.basis, period_label=fact.period_label, adds_up=adds_up == "yes"))
+    if not facts:
+        raise FreezeError("no row is marked verified=yes; nothing to freeze")
     return GoldFiling(
         filing_id=filing.id, file=filing.file, company=filing.company, kind=filing.kind, period_end=filing.period_end,
         set=filing.set, stratum=filing.stratum, printed_pages_per_page=filing.printed_pages_per_page,
