@@ -96,3 +96,49 @@ def export(
     for path in skipped:
         console.print(f"kept  {path.relative_to(DEFAULT.base)} (exists; --force to overwrite)", markup=False)
     console.print(f"{len(written)} written, {len(skipped)} kept")
+
+
+from datetime import datetime, timezone
+
+from maester_eval.artefacts import read_run
+from maester_eval.concepts import load_taxonomy
+from maester_eval.gold import FreezeError, freeze_sheet, read_sheet, write_gold
+from maester_eval.sheets import sheet_path
+
+
+@app.command()
+def freeze(
+    filing_id: Annotated[str, typer.Argument(help="The filing id, `<company-folder>/<name>`.")],
+    run: Annotated[Optional[str], typer.Option(
+        help="The run the sheet was exported from. Its record goes into the gold file, and its artefact gives back the "
+             "columns a spreadsheet may have retyped, such as dates and scales.")] = None,
+    force: Annotated[bool, typer.Option(help="Replace a gold file that exists.")] = False,
+) -> None:
+    """Turn a checked sheet into data/eval/gold/<filing-id>.json. Only rows marked verified are kept; each needs a concept."""
+    try:
+        filing = load_manifest(DEFAULT.manifest).by_id().get(filing_id)
+    except ManifestError as exc:
+        _fail(str(exc))
+    if filing is None:
+        _fail(f"{filing_id} is not in the manifest")
+    path = sheet_path(DEFAULT.sheets, filing_id)
+    if not path.is_file():
+        _fail(f"no sheet at {path}; run `maester-eval export` first")
+    exported_from = artefact = None
+    if run is not None:
+        try:
+            run_dir = DEFAULT.resolve_run(run)
+            record = read_run(run_dir)
+        except FileNotFoundError as exc:
+            _fail(str(exc))
+        artefact = next((a for a in read_artefacts(run_dir) if a.filing_id == filing_id), None)
+        if artefact is None:
+            _fail(f"no artefact for {filing_id} in {run_dir.name}")
+        exported_from = {k: record.get(k) for k in ("run", "pipeline_version", "prompt_version", "model")}
+    try:
+        gold = freeze_sheet(read_sheet(path), filing, load_taxonomy(), datetime.now(timezone.utc), exported_from, artefact)
+        written = write_gold(DEFAULT.gold, gold, force)
+    except (FreezeError, FileExistsError) as exc:
+        _fail(str(exc))
+    shown = written.relative_to(DEFAULT.base)
+    console.print(f"froze {len(gold.facts)} fact(s), {len(gold.expected_checks)} expected check(s) → {shown}", markup=False)
