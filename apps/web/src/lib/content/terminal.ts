@@ -118,81 +118,8 @@ export const terminalContent = {
 				}
 			},
 			analyst: {
-				what: 'Each week, and whenever a filing is read, a small desk will review each company you own. Five of them write, your own limits check what they say, and you make the call.',
-				needs:
-					'The first of them starts once Maester can calculate from your filings, such as growth and margins.',
-				/**
-				 * How a review will run, until the first step works (plan:
-				 * docs/superpowers/specs/2026-10-15-agents-design.md). Say what runs today before
-				 * what is planned; no step promises advice, an order or a certainty.
-				 */
-				desk: {
-					today: {
-						title: 'What runs today',
-						body: 'Your filings are read and every sum is checked. Each figure Maester shows comes from the page or from a named calculation, never from a guess. The desk will read only those figures.'
-					},
-					stepsHeading: 'How a review will run',
-					labels: { reads: 'Reads', writes: 'Writes', never: 'Never' },
-					steps: [
-						{
-							name: 'Read the filings',
-							who: 'Filings analyst · writes',
-							reads: 'Your filings’ figures and Maester’s calculations',
-							writes: 'What changed in the business, and what looks wrong',
-							never: 'Works out a figure itself or estimates a fair value',
-							status: 'Not built yet',
-							yours: false
-						},
-						{
-							name: 'Read the price',
-							who: 'Price analyst · writes',
-							reads: 'Your Dhan closes',
-							writes: 'Where the share stands against its own last two years',
-							never: 'Predicts a price',
-							status: 'Not built yet',
-							yours: false
-						},
-						{
-							name: 'Argue both sides',
-							who: 'Bull and bear · write',
-							reads: 'Only what steps 1 and 2 cited',
-							writes: 'The strongest case for, and the strongest case against',
-							never: 'Brings in a figure nobody cited',
-							status: 'Not built yet',
-							yours: false
-						},
-						{
-							name: 'Weigh them',
-							who: 'Reviewer · writes',
-							reads: 'Both cases, your thesis and the market mood',
-							writes: 'Which case is stronger, and what would change that',
-							never: 'Tells you to buy or sell',
-							status: 'Not built yet',
-							yours: false
-						},
-						{
-							name: 'Check your limits',
-							who: 'Limits · rules you set',
-							reads: 'Your holdings and your limits',
-							writes: 'Within or over, for each limit',
-							never: 'Adds risk. It can only make a review stricter.',
-							status: 'Needs Holdings',
-							yours: false
-						},
-						{
-							name: 'Your call',
-							who: 'You',
-							reads: 'All of the above',
-							writes: 'What you decided, and why',
-							never: 'Maester never places an order',
-							status: 'Today: you',
-							yours: true
-						}
-					],
-					sourceHeading: 'Every number has a source',
-					sourceBody:
-						'A writer may only repeat a figure Maester read or calculated, with its page. A sentence with any other number is refused before you see it.'
-				},
+				what: 'Ask about a company you own and get an answer that shows its working and the page behind every figure.',
+				needs: 'It answers from your filings, so it starts once they are read.',
 				sketch: {
 					label:
 						'A sketch of a desk lamp beside an empty chair. Pulling the lamp’s cord switches the light on, and it shows the chair is still empty.',
