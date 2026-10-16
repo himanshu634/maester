@@ -7,7 +7,7 @@ and figures go only into files under data/eval and the report.
 from datetime import datetime, timezone
 from pathlib import Path
 import shutil
-from typing import Annotated, Optional
+from typing import Annotated, NoReturn, Optional
 
 import typer
 from dotenv import load_dotenv
@@ -16,7 +16,7 @@ from rich.console import Console
 from maester_eval.artefacts import read_artefacts, read_run
 from maester_eval.concepts import load_taxonomy
 from maester_eval.gold import FreezeError, count_unverified, freeze_sheet, read_sheet, write_gold
-from maester_eval.manifest import ManifestError, load_manifest
+from maester_eval.manifest import ManifestError, SetChoice, load_manifest
 from maester_eval.paths import DEFAULT
 from maester_eval.report import score_run_dir, write_report
 from maester_eval.runner import EvalConfigError, gemini_model_factory, run_live, workflow_settings_from_env
@@ -27,7 +27,10 @@ app = typer.Typer(
     pretty_exceptions_enable=False,
     no_args_is_help=True,
 )
-console = Console()
+# soft_wrap: a path or an id stays on one line, also where no terminal gives a width (`live` in the background).
+console = Console(soft_wrap=True)
+# The values `--set` takes, each the set it names.
+_SETS: dict[str, SetChoice] = {"dev": "dev", "heldout": "heldout", "all": "all"}
 
 
 @app.callback()
@@ -35,9 +38,17 @@ def _main() -> None:
     load_dotenv()
 
 
-def _fail(message: str) -> None:
+def _fail(message: str) -> NoReturn:
     console.print(message, style="red", markup=False)
     raise typer.Exit(1)
+
+
+def _set_choice(value: str) -> SetChoice:
+    """`--set` as the set it names. Any other value stops the command."""
+    chosen = _SETS.get(value)
+    if chosen is None:
+        _fail("--set must be dev, heldout or all")
+    return chosen
 
 
 @app.command()
@@ -47,15 +58,14 @@ def live(
     label: Annotated[Optional[str], typer.Option(help="A word for the run folder's name: letters, digits, dot, dash or underscore.")] = None,
 ) -> None:
     """Read the set's filings with the real model and keep an artefact per filing. Costs model calls."""
-    if eval_set not in ("dev", "heldout", "all"):
-        _fail("--set must be dev, heldout or all")
+    chosen = _set_choice(eval_set)
     try:
         manifest = load_manifest(DEFAULT.manifest)
-        filings = manifest.select(eval_set, only)  # type: ignore[arg-type]
+        filings = manifest.select(chosen, only)
     except ManifestError as exc:
         _fail(str(exc))
     if not only:
-        left_out = len(manifest.out_of_scope(eval_set))  # type: ignore[arg-type]
+        left_out = len(manifest.out_of_scope(chosen))
         if left_out:
             console.print(f"left out as out of scope: {left_out}")
     absent = [f.file for f in filings if not (DEFAULT.corpus / f.file).is_file()]
@@ -75,8 +85,8 @@ def live(
         run_dir = DEFAULT.new_run(label)
     except ValueError as exc:
         _fail(str(exc))
-    console.print(f"run {run_dir.name}: {len(filings)} filing(s), set {eval_set}")
-    artefacts = run_live(filings, DEFAULT.corpus, run_dir, factory, settings, eval_set,  # type: ignore[arg-type]
+    console.print(f"run {run_dir.name}: {len(filings)} filing(s), set {chosen}", markup=False)
+    artefacts = run_live(filings, DEFAULT.corpus, run_dir, factory, settings, chosen,
                          log=lambda line: console.print(line, markup=False))
     read = sum(1 for a in artefacts if a.result)
     console.print(f"done: {read} read, {len(artefacts) - read} failed → {run_dir}", markup=False)
@@ -155,21 +165,20 @@ def report(
     to: Annotated[Optional[Path], typer.Option(help="Also copy the Markdown here, e.g. docs/eval/2026-10-16-baseline.md.")] = None,
 ) -> None:
     """Score a run against the gold set; write report.md and report.json into the run folder."""
-    if eval_set not in ("dev", "heldout", "all"):
-        _fail("--set must be dev, heldout or all")
+    chosen = _set_choice(eval_set)
     try:
         manifest = load_manifest(DEFAULT.manifest)
         ids = [f.id for f in manifest.filings]
-        out_of_scope = {f.id: f.out_of_scope or "" for f in manifest.out_of_scope(eval_set)}  # type: ignore[arg-type]
+        out_of_scope = {f.id: f.out_of_scope or "" for f in manifest.out_of_scope(chosen)}
         run_dir = DEFAULT.resolve_run(run)
-        score = score_run_dir(run_dir, DEFAULT.gold, ids, eval_set, out_of_scope)
+        score = score_run_dir(run_dir, DEFAULT.gold, ids, chosen, out_of_scope)
         # The earlier run is read and scored before anything is written, and against the gold set as it is now.
-        earlier = None if against is None else score_run_dir(DEFAULT.resolve_run(against), DEFAULT.gold, ids, eval_set, out_of_scope)
+        earlier = None if against is None else score_run_dir(DEFAULT.resolve_run(against), DEFAULT.gold, ids, chosen, out_of_scope)
     except (ManifestError, FileNotFoundError) as exc:
         _fail(str(exc))
     md, _ = write_report(run_dir, score, earlier, out_of_scope_reasons=out_of_scope)
     s = score.summary()
-    console.print(f"{run_dir.name} ({eval_set}): {s.filings} filing(s), {s.gold_facts} gold fact(s), "
+    console.print(f"{run_dir.name} ({chosen}): {s.filings} filing(s), {s.gold_facts} gold fact(s), "
                   f"exact match {s.rate('match')}, missing {s.rate('missing')}", markup=False)
     if score.not_run or score.gold_missing:
         console.print(f"not run: {len(score.not_run)}; no gold yet: {len(score.gold_missing)}", markup=False)

@@ -107,6 +107,14 @@ class LiveTests(CommandCase):
         self.assertIn(f"done: 1 read, 0 failed → {run_dir}", result.output)
         self.assertIn("data[final]", result.output)
 
+    def test_a_path_longer_than_the_terminal_stays_on_one_line(self):
+        # `live` in the background has no terminal to give a width; a path cut in two cannot be copied back.
+        result = self.run_command("live", COLUMNS="40")
+        self.assertEqual(result.exit_code, 0, result.output)
+        (run_dir,) = self.paths.runs.iterdir()
+        self.assertGreater(len(str(run_dir)), 40)
+        self.assertIn(f"done: 1 read, 0 failed → {run_dir}", result.output)
+
 
 class ExportTests(CommandCase):
     def test_a_run_with_no_artefacts_is_a_message_and_writes_nothing(self):
