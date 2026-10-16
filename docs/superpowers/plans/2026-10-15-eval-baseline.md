@@ -2863,10 +2863,12 @@ Expected: an artefact and a sheet; the console shows `<id>: complete in …s, N 
 
 ```bash
 uv run --locked maester-eval live --set dev --label baseline
-uv run --locked maester-eval export --run latest
+uv run --locked maester-eval export --run latest --force
 ```
 
-This costs about ten model calls per annual report and takes minutes per filing; run it in the background and read the console afterwards.
+`--force` matters when the smoke filing of Step 3 is in `dev`: without it its sheet from the smoke run is kept, and the baseline sheet must come from the baseline run. Nothing is labelled yet, so nothing is lost; never repeat the command with `--force` after Step 5 starts.
+
+This costs about ten model calls for a report under 60 pages, more for a long one (one `locate` call per 30 pages, plus corrections), and takes minutes per filing; run it in the background and read the console afterwards.
 
 - [ ] **Step 5: You: label the sheets**
 
@@ -2881,7 +2883,7 @@ For each sheet under `data/eval/sheets/`, open the PDF beside it. For the rows m
 5. `period_end` is the line's one date (the as-at date on a balance-sheet line). A blank one means an undated column: the workflow could not read a date from the column header. If it is blank or wrong, put the ISO date in `gold_period_end`.
 6. For a subtotal you checked by hand, put `yes` or `no` in `adds_up`.
 7. Put `yes` in `verified`.
-8. A line the pipeline missed: add a row at the end with `statement`, `basis`, `section`, `label`, `period_label`, `gold_text`, `gold_scale`, `gold_page`, `concept`, `verified`.
+8. A line the pipeline missed, or one whose `statement`, `basis`, `section`, `label` or `period_label` is wrong (these five have no `gold_` column, so leave that row unverified): add a row at the end with `statement`, `basis`, `section`, `label`, `period_label`, `gold_text`, `gold_scale`, `gold_page`, `concept`, `verified`.
 
 Material values (totals, PAT, revenue, cash, borrowings, EPS) get a second look on another day before freezing, as `QUALITY.md` §2 asks.
 
@@ -2894,7 +2896,7 @@ uv run --locked maester-eval report --run latest --set dev --to docs/eval/$(date
 
 Expected: a gold file per dev filing; the report on the console as `exact match N%`, and the Markdown under `docs/eval/`. Read the Mismatches appendix once: a mismatch that is a labelling slip goes back to the sheet (`freeze --force` after the fix); a real misread stays, that is the baseline.
 
-A row refused as "no longer matches the artefact" means a machine column was edited (`statement`, `basis`, `section`, `label`, `period_label`, `period_end`, `printed`, `scale_factor` or `page`). Put the cell back as it was and move the correction to its `gold_` column (`gold_text`, `gold_scale`, `gold_page` or `gold_period_end`); the first five have none, so restore them. If you ran `live` again after the export, give the export's run folder name in place of `latest`.
+A row refused as "no longer matches the artefact" means a machine column was edited (`statement`, `basis`, `section`, `label`, `period_label`, `period_end`, `printed`, `scale_factor` or `page`). Put the cell back as it was and move the correction to its `gold_` column (`gold_text`, `gold_scale`, `gold_page` or `gold_period_end`); the first five have none, so restore them, and if the value was wrong leave the row unverified and add the corrected row by hand (Step 5, point 8). If you ran `live` again after the export, give the export's run folder name in place of `latest`.
 
 - [ ] **Step 7: The held-out set, then seal it**
 

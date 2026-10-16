@@ -24,11 +24,11 @@ This document describes the Python command-line application in `apps/eval`. For 
 | artefact | One JSON file in the folder `artefacts` of a run. It holds the result or the error of the workflow for one filing. |
 | statement | One financial statement: `balance_sheet`, `income_statement` or `cash_flow`. |
 | basis | The scope of a statement: `consolidated`, `standalone` or `unknown`. |
-| section | A named group of lines in a statement, for example `Assets`. |
-| line | One row of a statement. It has a label and one printed text for each period. |
-| label | The words that the filing prints for a line, for example `Total assets`. |
+| section | A named group of rows in a statement, for example `Assets`. |
+| row | One row of a table. A row of a statement has a label and one printed text for each period. A row of a sheet holds one read fact. |
+| label | The words that the filing prints for a row of a statement, for example `Total assets`. |
 | period label | The words that the filing prints at the head of a column, for example `As at 31 March 2026`. |
-| fact | One value of one line for one period. |
+| fact | One value of one row of a statement for one period. |
 | check | An arithmetic test that the workflow runs on a statement. The two types are `subtotal` and `balance_identity`. |
 | read fact | A fact that the workflow read. The artefact keeps it. |
 | printed text | The number of a fact exactly as the filing prints it, for example `(1,234.50)`. A dash is also printed text. |
@@ -46,7 +46,7 @@ This document describes the Python command-line application in `apps/eval`. For 
 | gold fact | One fact in a gold file. It has a concept. |
 | expected check | A record in a gold file of what a person found by hand: a subtotal adds up (`yes`) or does not add up (`no`). |
 | outcome | The result of the comparison of one gold fact with a run: `match`, `wrong_value`, `wrong_scale`, `wrong_status`, `ambiguous` or `missing`. |
-| exact match | The outcome `match`. The read fact and the gold fact agree in value, sign, scale, basis and period. |
+| exact match | The outcome `match`. The read fact and the gold fact agree in the normalized value (value, sign and scale together), the basis and the period. |
 | report | The files `report.md` and `report.json` in a run folder. |
 | exit code | The number that a command gives to the shell when it stops. 0 means success. |
 
@@ -66,7 +66,7 @@ A person corrects each sheet against the PDF between `export` and `freeze`. The 
 | Part | Location | Function |
 | --- | --- | --- |
 | Command line | `apps/eval/src/maester_eval/cli.py` | Defines the four commands and their options with Typer. Reads `.env` before each command. Shows filing ids, codes, counts and seconds. Shows no label and no value of a fact. |
-| Entry point | `apps/eval/src/maester_eval/__main__.py`, `apps/eval/pyproject.toml` | Start the command line when you run `maester-eval` or `python -m maester_eval`. |
+| Entry point | `apps/eval/src/maester_eval/__main__.py`, `apps/eval/pyproject.toml` | `pyproject.toml` installs the command `maester-eval`. `__main__.py` starts the command line for `python -m maester_eval`. |
 | Paths | `apps/eval/src/maester_eval/paths.py` | Gives the folders under `data/eval` and the path of the taxonomy. Makes a run folder. Finds a run from `latest`, a name or a path. |
 | Manifest | `apps/eval/src/maester_eval/manifest.py` | Reads and checks the manifest. Selects the filings of a set. Lists the filings that are out of scope. |
 | Taxonomy | `apps/eval/src/maester_eval/concepts.py` | Reads `packages/contracts/concepts.json`. |
@@ -77,7 +77,7 @@ A person corrects each sheet against the PDF between `export` and `freeze`. The 
 | Scorer | `apps/eval/src/maester_eval/scoring.py` | Finds each gold fact among the read facts, compares the values as exact decimals and counts the outcomes. |
 | Report | `apps/eval/src/maester_eval/report.py` | Writes `report.md` and `report.json`. |
 | Text helper | `apps/eval/src/maester_eval/text.py` | `normalise`: makes lower case, changes `&` to `and`, removes punctuation and joins spaces. It follows `normalise` in `apps/api/src/financials/stitch.ts`. |
-| Engine functions | `packages/financial-engine/src/pdf_financial_qa/workflow/` | Give `run_extraction`, `GeminiExtractionModel`, `PdfDocument`, `parse_reported`, `parse_label_date` and `format_decimal`. |
+| Engine functions | `packages/financial-engine/src/pdf_financial_qa/workflow/` | The harness calls `run_extraction`, `GeminiExtractionModel`, `PdfDocument`, `parse_reported`, `parse_label_date` and `format_decimal`. |
 | Tests | `tests/test_eval_*.py`, `tests/test_concepts_json.py` | Offline tests. They make no model call. |
 
 ## Operation
@@ -102,7 +102,7 @@ Usage: `maester-eval live [--set <set>] [--only <filing id>] [--label <word>]`. 
 14. It writes the artefact before it starts the next filing. If the workflow fails, the artefact holds the error code and no result. The run continues.
 15. At the end, the harness adds `finished_at` and `model` to `run.json`. It shows `done: <n> read, <m> failed → <run folder>`.
 
-The artefact counts the model calls of each kind. `locate` finds the pages of the statements. It makes one call for each part of 30 pages if the PDF has more than 60 pages or more than 15 MiB. `extract` reads one statement of one basis. `correct` reads a section again after a failed check.
+The harness counts the model calls of each kind, and the artefact stores the counts. `locate` finds the pages of the statements. It makes one call for each part of 30 pages if the PDF has more than 60 pages or more than 15 MiB. `extract` reads one statement of one basis. `correct` reads a section again after a failed check.
 
 The workflow limits the work for each filing. If a filing needs more than 40 model calls, the workflow stops with the error `MODEL_CALL_BUDGET_EXCEEDED`. If the time since the start is more than `EXTRACT_DEADLINE_SECONDS`, the workflow stops with the error `DEADLINE_EXCEEDED`.
 
@@ -299,9 +299,21 @@ These rules hold for the whole manifest:
 
 ### The sheet
 
-A spreadsheet application can retype a cell. It can change `10000000` to `1E+07`, or `2026-03-31` to `31/03/2026`. Keep every column as text, and keep each date in the form `YYYY-MM-DD`. With `--run`, `freeze` reads the machine columns again from the artefact, and thus a retyped machine cell does not matter.
+A spreadsheet application can retype a cell. It can change `10000000` to `1E+07`, or `2026-03-31` to `31/03/2026`. Keep every column as text, and keep each date in the form `YYYY-MM-DD`. With `--run`, `freeze` reads the machine columns again from the artefact. A retype that still agrees with the artefact is harmless:
 
-Without `--run`, `freeze` uses the cells as they are. It stops at a cell that it cannot read. For a machine column, the message tells you to give `--run`. For another column, it tells you to keep the column as text.
+- A number or a figure written another way, for example `1E+07` for `10000000`, or `2000` for `2,000`.
+- A date written `YYYY-MM-DD` or day first with slashes, for example `31/03/2026`.
+- The same words with another case or other punctuation.
+
+Any other difference refuses the row.
+
+Without `--run`, `freeze` uses the cells as they are. A cell that it cannot read stops the command. The message depends on the column:
+
+- A `scale_factor` or a `period_end` on a numbered row: the message tells you to give `--run`.
+- A `gold_scale` or a `gold_period_end`: the message tells you to keep the column as text.
+- A `scale_factor` or a `period_end` on a row without a `row` number: the same message.
+- A `page` or a `gold_page` that is not a whole number: a message of its own.
+- A `printed` or a `gold_text` that `parse_reported` cannot read: a message of its own.
 
 | Column | Written by | Meaning |
 | --- | --- | --- |
@@ -311,7 +323,7 @@ Without `--run`, `freeze` uses the cells as they are. It stops at a cell that it
 | `section` | Harness | The section. A machine column. |
 | `label` | Harness | The label. A machine column. |
 | `period_label` | Harness | The period label. A machine column. |
-| `period_end` | Harness | The one date of the fact: the period end, or the as-at date of a line of the balance sheet. Empty if the workflow could not read a date from the head of the column. A machine column. |
+| `period_end` | Harness | The one date of the fact: the period end, or the as-at date of a row of the balance sheet. Empty if the workflow could not read a date from the head of the column. A machine column. |
 | `printed` | Harness | The printed text. A machine column. |
 | `value` | Harness | The value. Empty if the text has no value. |
 | `unit_label` | Harness | The unit of the statement as the filing prints it. |
@@ -320,7 +332,7 @@ Without `--run`, `freeze` uses the cells as they are. It stops at a cell that it
 | `page` | Harness | The PDF page of the fact, counted from 1. A machine column. |
 | `printed_pages` | Harness | The printed pages on the PDF page. For a spread of two printed pages it is `3–4`, with an en dash. Else it is the PDF page. |
 | `text_layer_match` | Harness | `yes` if the value is in the text layer of the page, `no` if it is not. Empty if the page has no text layer or the fact has no value. |
-| `is_subtotal` | Harness | `yes` if the workflow found that the line is a subtotal, else `no`. |
+| `is_subtotal` | Harness | `yes` if the workflow found that the row is a subtotal, else `no`. |
 | `material` | Harness | `yes` as a hint, else empty. |
 | `concept` | Person | The concept of the fact. Each kept row needs one. |
 | `gold_text` | Person | The printed text, if `printed` is wrong. |
@@ -355,7 +367,7 @@ A gold file holds these fields:
 - `facts`, the gold facts.
 - `expected_checks`: one entry with `concept`, `basis`, `period_label` and `adds_up` for each kept row that has `yes` or `no` in `adds_up`.
 
-A gold fact holds `concept`, `statement`, `basis`, `section`, `label`, `period_label`, `period_end`, `printed`, `value_status`, `value`, `scale`, `normalized_value`, `page_index`, `span` and `dimensions`. `period_end` is the date that places the fact: the period end, or the as-at date of a line of the balance sheet. It can be empty. `value_status` is `value` or `dash`. `page_index` counts from 0. `span` is empty and `dimensions` has no entry in this version.
+A gold fact holds `concept`, `statement`, `basis`, `section`, `label`, `period_label`, `period_end`, `printed`, `value_status`, `value`, `scale`, `normalized_value`, `page_index`, `span` and `dimensions`. `period_end` is the date that places the fact: the period end, or the as-at date of a row of the balance sheet. It can be empty. `value_status` is `value` or `dash`. `page_index` counts from 0. `span` is empty and `dimensions` has no entry in this version.
 
 ### The report
 
@@ -363,7 +375,7 @@ A gold fact holds `concept`, `statement`, `basis`, `section`, `label`, `period_l
 
 1. The title `Evaluation report: <run>`, and a line with the set, the UTC time, and the pipeline version, the prompt version and the model of the run. The line shows `unknown` for a version that `run.json` does not hold.
 2. Summary: the count and the rate of each measure. The measures are Filings, Read, Failed, Gold facts, the six outcomes, Page match, Checks passed, Checks failed and Checks not checked. The median and the maximum of the seconds and of the model calls for each filing follow.
-3. `Against <run>`, only with `--against`: for each rate, the value for this run, the value for the earlier run and the change in percentage points.
+3. `Against <run>`, only with `--against`: a table with nine rows, the six outcomes, Page match, Checks passed and Checks failed. Each row gives the rate for this run, the rate for the earlier run and the change in percentage points.
 4. By kind, By scanned, By basis, By statement and By stratum. Each table has the columns Filings, Gold facts, Exact match, Missing and Page match. The harness leaves out a table that has no row.
 5. Filings: one row for each scored filing, with the columns Kind, Scanned, Outcome, Gold facts, Exact match, Seconds, Model calls, Size (MB) and Stratum.
 6. Not run, No gold yet and Out of scope: a list for each, only if it has an entry. An out-of-scope entry shows the reason of the manifest.
@@ -445,7 +457,7 @@ WARNING: Read one filing first. `live` sends the PDFs to Google and can cause ch
 
 2. Open the PDF of the filing beside its sheet in `data/eval/sheets`.
 3. Keep every column as text and each date in the form `YYYY-MM-DD`.
-4. Do not change a machine column: write the correction in its `gold_` column, if it has one.
+4. Do not change a machine column.
 5. Start with the rows that have `yes` in `material`.
 6. In `concept`, write the id of the concept from the taxonomy.
 7. Check each cell against the page of the PDF:
@@ -453,11 +465,13 @@ WARNING: Read one filing first. `live` sends the PDFs to Google and can cause ch
    - `scale_factor`: if it is wrong or empty, write the scale in `gold_scale`. Use `10000000` for crore, `100000` for lakh, `1000` for thousand and `1` for whole units.
    - `page`: if it is wrong, write the PDF page in `gold_page`.
    - `period_end`: if it is wrong or empty, write the date in `gold_period_end`.
+   - `statement`, `basis`, `section`, `label` and `period_label` have no `gold_` column. If one is wrong, leave that row unverified and add the corrected row by hand.
 8. For a subtotal that you checked by hand, write `yes` or `no` in `adds_up`.
 9. Write `yes` in `verified`.
-10. To add a line that the workflow did not read, add a row at the end and leave `row` empty.
-11. In the new row, write `statement`, `basis`, `label`, `period_label`, `gold_text`, `gold_scale`, `gold_page`, `concept` and `verified`.
-12. If the same label is in two sections, also write `section`.
+10. To add a row by hand, add it at the end of the sheet.
+11. Leave `row` empty in the new row.
+12. In the new row, write `statement`, `basis`, `label`, `period_label`, `gold_text`, `gold_scale`, `gold_page`, `concept` and `verified`.
+13. If the same label is in two sections, also write `section`.
 
 ### To freeze a sheet
 
@@ -471,7 +485,8 @@ WARNING: Read one filing first. `live` sends the PDFs to Google and can cause ch
 3. If the harness refuses a row, read the message, which names the sheet row and the column.
 4. If the message says "no longer matches the artefact", put the cell back as it was.
 5. If the cell has a `gold_` column, write the correction there.
-6. To replace a gold file, run the command again with `--force`.
+6. For `statement`, `basis`, `section`, `label` or `period_label`, leave the row unverified and add the corrected row by hand.
+7. To replace a gold file, run the command again with `--force`.
 
 ### To make a report
 
@@ -525,7 +540,7 @@ CAUTION: Do not tune a prompt or a rule on the `heldout` set. Run it only to dec
 
 ## Limits
 
-- The harness finds a gold fact by its printed words: the statement, the basis, the section, the label and the period label. A read line with another label is `missing`, also when its value is right. It does not use the concept or the date. Phase 1 adds a way to find a gold fact by its concept.
+- The harness finds a gold fact by its printed words: the statement, the basis, the section, the label and the period label. A read fact with another label is `missing`, also when its value is right. It does not use the concept or the date. Phase 1 adds a way to find a gold fact by its concept.
 - A gold fact has no `span` and no `dimensions` yet. The gold files hold facts of the three statements only.
 - `freeze` writes `adds_up` as an expected check. The report does not use the expected checks. It counts the checks that the workflow ran.
 - The harness has the `live` mode only. It has no `replay` mode, thus every run calls the model. Phase 1 adds `replay`.

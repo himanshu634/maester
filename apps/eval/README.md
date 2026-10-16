@@ -8,7 +8,7 @@
 | --- | --- |
 | `maester-eval live --set dev` | Reads every filing of the set with the real model, exactly as the extractor would, and writes one artefact per filing under `data/eval/runs/<timestamp>[-label]/`. `--label` takes letters, digits, dot, dash or underscore. Costs model calls. |
 | `maester-eval export --run latest` | Writes a labelling sheet per filing to `data/eval/sheets/`, pre-filled with what the pipeline read. Never overwrites a sheet without `--force`. |
-| `maester-eval freeze <filing-id> --run latest` | Turns a checked sheet into `data/eval/gold/<filing-id>.json`, reading the machine columns back from the run's artefact. Only rows marked `verified` with a concept from the taxonomy are kept. Never overwrites gold without `--force`. |
+| `maester-eval freeze <filing-id> --run latest` | Turns a checked sheet into `data/eval/gold/<filing-id>.json`, reading the machine columns back from the run's artefact. Only rows marked `verified` are kept, and each needs a concept from the taxonomy or the freeze stops. Never overwrites gold without `--force`. |
 | `maester-eval report --run latest` | Scores the run against the gold set and writes `report.md` and `report.json` into the run folder; `--to docs/eval/<date>-<label>.md` publishes the Markdown; `--against <run>` adds the delta. |
 
 A filing id is its path under the corpus without `.pdf`: `synthetic-cements/ar-2025-26`.
@@ -32,7 +32,7 @@ A filing may also carry `stratum` (`large`, `mid`, `small`, `financials`: the si
 - Public filings only. Never put a private document in the corpus.
 - A company is in one set only, `dev` or `heldout`. Tune on `dev`; run `heldout` only to decide whether a change lands.
 - The console never shows a label or a figure; the files do.
-- Figures are compared as exact decimals. A match means value, sign, scale, basis and period all agree.
+- Figures are compared as exact decimals. A match means value, sign and scale together (the normalised figure), basis and period all agree.
 - Freeze from the run you exported (`freeze <id> --run latest`): a cell you edit must still agree with the artefact, or put the correction in its `gold_` column.
 
 ## Configuration
