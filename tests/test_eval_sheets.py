@@ -162,6 +162,8 @@ class WriteSheetTests(unittest.TestCase):
         self.assertTrue(raw.startswith(b"\xef\xbb\xbf"))
         self.assertFalse(raw.startswith(b"\xef\xbb\xbf\xef\xbb\xbf"))  # one BOM, not two
         self.assertEqual(raw.decode("utf-8-sig").splitlines()[0], ",".join(SHEET_COLUMNS))
+        self.assertTrue(raw.endswith(b"\r\n"))  # the CSV writer's line ends, written as they are
+        self.assertNotIn(b"\r\r\n", raw)
 
 
 class ExportRunTests(unittest.TestCase):

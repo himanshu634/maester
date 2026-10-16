@@ -7,6 +7,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
+from maester_eval.files import write_text_atomically
 from maester_eval.manifest import EvalSet, FilingKind
 
 
@@ -56,8 +57,7 @@ def artefact_path(run_dir: Path, filing_id: str) -> Path:
 
 def write_artefact(run_dir: Path, artefact: Artefact) -> Path:
     path = artefact_path(run_dir, artefact.filing_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(artefact.model_dump(mode="json"), ensure_ascii=False, indent=1), encoding="utf-8")
+    write_text_atomically(path, json.dumps(artefact.model_dump(mode="json"), ensure_ascii=False, indent=1))
     return path
 
 
@@ -71,7 +71,7 @@ def read_artefacts(run_dir: Path) -> list[Artefact]:
 
 
 def write_run(run_dir: Path, record: dict) -> None:
-    (run_dir / "run.json").write_text(json.dumps(record, indent=1), encoding="utf-8")
+    write_text_atomically(run_dir / "run.json", json.dumps(record, indent=1))
 
 
 def read_run(run_dir: Path) -> dict:

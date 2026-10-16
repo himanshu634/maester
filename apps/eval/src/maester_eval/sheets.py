@@ -5,10 +5,12 @@ person's concept, corrections and verdict. `material` is only a hint for where t
 every kept row is checked by a person, and phase 1's mapping replaces the hint."""
 
 import csv
+import io
 from pathlib import Path
 import re
 
 from maester_eval.artefacts import Artefact, read_artefacts
+from maester_eval.files import write_text_atomically
 from maester_eval.text import normalise
 
 SHEET_COLUMNS = [
@@ -68,12 +70,12 @@ def sheet_path(sheets_dir: Path, filing_id: str) -> Path:
 
 
 def write_sheet(path: Path, rows: list[dict[str, str]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    text = io.StringIO(newline="")
+    writer = csv.DictWriter(text, fieldnames=SHEET_COLUMNS)
+    writer.writeheader()
+    writer.writerows(rows)
     # A BOM so spreadsheet applications read the UTF-8 (₹ in unit notes) correctly.
-    with path.open("w", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=SHEET_COLUMNS)
-        writer.writeheader()
-        writer.writerows(rows)
+    write_text_atomically(path, text.getvalue(), encoding="utf-8-sig")
 
 
 def export_run(run_dir: Path, sheets_dir: Path, only: list[str] | None = None, force: bool = False,

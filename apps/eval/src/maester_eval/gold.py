@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from maester_eval.artefacts import Artefact
 from maester_eval.concepts import Concept, Taxonomy
+from maester_eval.files import write_text_atomically
 from maester_eval.manifest import EvalSet, Filing, FilingKind
 from maester_eval.sheets import sheet_rows
 from maester_eval.text import normalise
@@ -333,8 +334,7 @@ def write_gold(gold_dir: Path, gold: GoldFiling, force: bool = False) -> Path:
     path = gold_path(gold_dir, gold.filing_id)
     if path.exists() and not force:
         raise FileExistsError(f"{path} exists; gold is sealed, pass --force to replace it")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(gold.model_dump(mode="json"), ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    write_text_atomically(path, json.dumps(gold.model_dump(mode="json"), ensure_ascii=False, indent=1) + "\n")
     return path
 
 
