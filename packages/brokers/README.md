@@ -30,4 +30,6 @@ A template may use only the values that exist where it is used: credentials ever
 - **Figures stay decimal strings as printed.** A JSON number keeps the digits JSON printed. An exponent, or a value that is not a number, is refused.
 - **A broker's error text is never logged or passed on.** It can echo a key. Errors carry a code only: `BROKER_UNAVAILABLE`, `BROKER_SIGNED_OUT`, `BROKER_REFUSED` or `BROKER_ANSWER_UNREADABLE`.
 
+**Treat the definitions folder as code.** A definition decides which host receives the decrypted credentials and token, so only the operator should be able to write to `BROKER_DEFINITIONS_DIR`.
+
 A broker that needs something outside this vocabulary, such as a PIN and TOTP sign-in, a different checksum or a paged list, needs a new term here, with tests, before its file can be written.

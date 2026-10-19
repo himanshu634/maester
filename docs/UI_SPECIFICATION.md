@@ -83,7 +83,7 @@ Use a line chart for value or indexed cumulative return; use bars for period con
 
 ## 5. Holdings and position detail
 
-The table is the primary working surface. Controls are account, asset type, search and grouping; density/column selection are secondary. Default columns: security/company, exchange, quantity, quote with timestamp, market value, portfolio weight, cost basis if known, unrealized gain if available, and data status. R2 adds realized gain and income as optional columns. The sticky identity column always retains a visible text link.
+As built first (19 Oct 2026, [design](DESIGN.md) §10 Holdings), the page connects brokers read-only and shows a snapshot across the accounts: where each holding is held, quantity, the NSE close, value and weight. Account and asset-type controls, cost and gain columns, and position detail are still to come. The table is the primary working surface. Controls are account, asset type, search and grouping; density/column selection are secondary. Default columns: security/company, exchange, quantity, quote with timestamp, market value, portfolio weight, cost basis if known, unrealized gain if available, and data status. R2 adds realized gain and income as optional columns. The sticky identity column always retains a visible text link.
 
 Sort and filters persist in the URL or saved view. Numeric sort uses raw values, not formatted currency strings. The total row states which rows are included and whether filtering affects totals. Unknown quantity/cost/price shows an em dash with a reason; zero renders as zero. CSV export preserves full precision and includes metadata rather than copying abbreviated display text.
 

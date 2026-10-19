@@ -132,6 +132,7 @@ describe("connecting Kite", () => {
   it("marks the account signed out when Zerodha refuses the token, and keeps the last read", async () => {
     await signIn();
     await ctx.db.execute(sql`UPDATE holding_read SET started_at = started_at - interval '1 minute'`);
+    await ctx.db.execute(sql`UPDATE broker_connection SET saved_at = saved_at - interval '1 minute'`);
     holdings = { status: 403, body: { status: "error", error_type: "TokenException" } };
     const res = await ctx.app.request(`${base()}/brokers/kite/read`, { method: "POST", headers: headers() });
     expect(BrokerAccount.parse(await res.json())).toMatchObject({ state: "signed_out", lastReadCount: 2 });
@@ -152,6 +153,11 @@ describe("connecting Kite", () => {
     expect((await getBrokerConnection(ctx.db, ws, "kite"))?.credentialsCiphertext).toBeNull();
     const snap = HoldingsSnapshot.parse(await (await ctx.app.request(`${base()}/holdings`, { headers: { cookie } })).json());
     expect(snap).toMatchObject({ accounts: [], rows: [] });
+    // Saving a key again starts afresh: the reads from before do not come back.
+    expect((await save()).status).toBe(200);
+    const again = HoldingsSnapshot.parse(await (await ctx.app.request(`${base()}/holdings`, { headers: { cookie } })).json());
+    expect(again.rows).toEqual([]);
+    expect(again.accounts[0]).toMatchObject({ state: "saved", lastReadAt: null });
   });
 });
 

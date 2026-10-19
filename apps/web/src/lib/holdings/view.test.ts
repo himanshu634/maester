@@ -4,6 +4,7 @@ import type { BrokerAccount, BrokerSummary, HoldingsSnapshot } from './types';
 import {
 	accountAction,
 	addable,
+	olderCloseDay,
 	dayWords,
 	heldAtWords,
 	readWords,
@@ -150,6 +151,25 @@ describe('view', () => {
 			returnMessage(new URLSearchParams('broker=kite&error=SOMETHING_NEW'), [kite], [])?.kind
 		).toBe('alert');
 		expect(returnMessage(new URLSearchParams(''), [kite], [])).toBeNull();
+	});
+
+	it('names a close older than the page’s close day', () => {
+		const row = {
+			isin: 'I',
+			symbol: 'X',
+			exchange: 'NSE',
+			parts: [],
+			quantity: '1',
+			cost: null,
+			value: null,
+			weight: null,
+			unknown: [],
+			close: { value: '10', day: '2026-04-03', source: 'Dhan · NSE close' }
+		};
+		expect(olderCloseDay(row, '2026-10-16')).toBe('3 Apr');
+		expect(
+			olderCloseDay({ ...row, close: { ...row.close, day: '2026-10-16' } }, '2026-10-16')
+		).toBeNull();
 	});
 
 	it('offers only enabled brokers not yet connected', () => {

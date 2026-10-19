@@ -9,7 +9,7 @@
 	import { holdingsContent as copy } from '$lib/content/holdings';
 	import { percentText, rupees, shares } from '$lib/holdings/format';
 	import type { HoldingsSnapshot } from '$lib/holdings/types';
-	import { heldAtWords, staleNote } from '$lib/holdings/view';
+	import { heldAtWords, olderCloseDay, staleNote } from '$lib/holdings/view';
 
 	interface Props {
 		snapshot: HoldingsSnapshot;
@@ -55,9 +55,11 @@
 						<td>{heldAtWords(row, names)}</td>
 						<td class="r num">{shares(row.quantity)}</td>
 						<td class="r num"
-							>{#if row.close}{rupees(row.close.value)}{:else}{@render unknown(
-									copy.table.noClose
-								)}{/if}</td
+							>{#if row.close}{rupees(
+									row.close.value
+								)}{#if olderCloseDay(row, snapshot.closeDay)}<span class="muted small block"
+										>{copy.table.closeOn(olderCloseDay(row, snapshot.closeDay)!)}</span
+									>{/if}{:else}{@render unknown(copy.table.noClose)}{/if}</td
 						>
 						<td class="r num"
 							>{#if row.value}{rupees(row.value)}{:else}{@render unknown(
@@ -143,6 +145,10 @@
 
 	.strong {
 		font-weight: 700;
+	}
+
+	.block {
+		display: block;
 	}
 
 	.small {

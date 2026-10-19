@@ -113,6 +113,7 @@ export const holdingsContent = {
 			weight: 'Weight'
 		},
 		total: 'Total',
+		closeOn: (day: string) => `close of ${day}`,
 		noCloseNote:
 			'— means Maester has no NSE close for the share. It keeps closes for Nifty 500 shares, from your Dhan data.',
 		noClose:

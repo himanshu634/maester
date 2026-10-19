@@ -6,7 +6,7 @@ import {
 import {
   createBrokerLoginState, finishHoldingRead, forgetBrokerCredentials, getBrokerConnection, getBrokerConnectionById, latestCloses, latestHoldings, listBrokerConnections,
   markBrokerError, readStartedSince, saveBrokerCredentials, saveBrokerSession, startHoldingRead, takeBrokerLoginState,
-  type BrokerConnectionRow, type HoldingReadRow,
+  type BrokerConnectionRow, type HoldingReadRow, type LatestHoldings,
 } from "@maester/db";
 import { BrokerClient, BrokerError, builtInDefinitions, loadDefinitions } from "@maester/brokers";
 import { HOLDINGS_CALCULATIONS, holdingQuantity, holdingsSnapshot } from "@maester/financial-engine";
@@ -186,10 +186,24 @@ export function brokerAccountRoutes(deps: AppDeps) {
   return r;
 }
 
+/**
+ * Each account's latest reads, leaving out any made before its key was last saved: a key saved
+ * after a disconnect starts the account afresh, so reads from before it do not come back.
+ */
+async function currentReads(deps: AppDeps, rows: BrokerConnectionRow[]): Promise<LatestHoldings[]> {
+  const latest = await latestHoldings(deps.db, rows.map((r) => r.id));
+  return latest.map((l, i) => {
+    const savedAt = rows[i]!.savedAt;
+    const fresh = (r: HoldingReadRow | null) => (r && r.startedAt >= savedAt ? r : null);
+    const lastOk = fresh(l.lastOk);
+    return { connectionId: l.connectionId, lastRead: fresh(l.lastRead), lastOk, lines: lastOk ? l.lines : [] };
+  });
+}
+
 /** The workspace's connected accounts (a disconnected one keeps its row and reads, but is not listed). */
 async function accounts(deps: AppDeps, defs: Map<string, BrokerDefinition>, workspaceId: string): Promise<BrokerAccount[]> {
   const rows = (await listBrokerConnections(deps.db, workspaceId)).filter((r) => r.credentialsCiphertext && defs.has(r.broker));
-  const latest = await latestHoldings(deps.db, rows.map((r) => r.id));
+  const latest = await currentReads(deps, rows);
   const now = new Date();
   return rows.map((row, i) => accountOf(defs.get(row.broker)!, row, latest[i]!, now));
 }
@@ -208,7 +222,7 @@ export function holdingsRoutes(deps: AppDeps) {
     needKey(deps);
     const workspaceId = c.get("workspace").id;
     const rows = (await listBrokerConnections(deps.db, workspaceId)).filter((row) => row.credentialsCiphertext && defs.has(row.broker));
-    const latest = await latestHoldings(deps.db, rows.map((row) => row.id));
+    const latest = await currentReads(deps, rows);
     const now = new Date();
     const accts = rows.map((row, i) => accountOf(defs.get(row.broker)!, row, latest[i]!, now));
 

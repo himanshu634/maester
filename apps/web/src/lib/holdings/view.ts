@@ -114,6 +114,14 @@ export function returnMessage(
 	return { kind: 'alert', text: say(name), broker: id };
 }
 
+/**
+ * The close's own day when it is older than the day the page names, so a share whose last
+ * stored close is from months ago never reads as valued at this week's close. Null otherwise.
+ */
+export function olderCloseDay(row: HoldingRow, closeDay: string | null): string | null {
+	return row.close && closeDay && row.close.day !== closeDay ? dayWords(row.close.day) : null;
+}
+
 /** Brokers the investor can still add: enabled, not connected yet. */
 export function addable(brokers: BrokerSummary[], accounts: BrokerAccount[]): BrokerSummary[] {
 	return brokers.filter((b) => b.enabled && !accounts.some((a) => a.broker === b.id));
