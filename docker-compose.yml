@@ -4,8 +4,9 @@
 #
 # Everything below runs with local development defaults and no Google Cloud
 # account: uploads are kept on a shared Docker volume by STORAGE_DRIVER=disk,
-# and jobs are dispatched over plain HTTP instead of Cloud Tasks. Nothing here
-# is a deployment template — see infra/README.md for how Maester is deployed.
+# and the worker pulls its jobs from Postgres (DISPATCH_MODE=queue) instead of
+# Cloud Tasks pushing them. Nothing here is a deployment template — see
+# infra/README.md for how Maester is deployed.
 #
 # Fact extraction (the extractor service) calls Gemini on Vertex AI, which does
 # need Google Cloud. Without GOOGLE_CLOUD_PROJECT and Application Default

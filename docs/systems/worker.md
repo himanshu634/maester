@@ -107,7 +107,7 @@ The worker uses five shared packages. For more information, see [shared packages
 
 1. A dispatcher in the API or in the worker runs `pg_notify('job_ready', <job type>)`. `QueueNotifier` is this dispatcher. The job row is already `queued`.
 2. At start, the worker reads `JOB_CONCURRENCY`. It makes one claim loop for each job type in the handler registry.
-3. Each claim loop listens for notifications on a separate database connection. It also polls the database every `JOB_POLL_MS`.
+3. The worker listens for notifications on one database connection for all claim loops. `pgListen` opens this connection. Each claim loop also polls the database every `JOB_POLL_MS`.
 4. A claim loop claims a job only if the jobs of its type that run now are fewer than the limit.
 5. `claimNext` selects the oldest `queued` job of the type with `run_after` not later than now. It orders the jobs by `run_after`, then by `created_at`.
 6. The same statement sets the job to `running`, adds 1 to `attempt` and writes a new lease token. The lease ends after `LEASE_SECONDS`.

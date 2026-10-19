@@ -132,7 +132,7 @@ PORT=8788 pnpm dev:worker
 uv run --locked maester-extractor     # :8790; optional, only for extraction
 ```
 
-All three read the root `.env`. With the shipped defaults the API and worker store uploads under `data/blobs`, dispatch jobs over plain HTTP and need no cloud credentials, and the worker sends classify and extract jobs to the extractor at `EXTRACTOR_URL`. Comment out `EXTRACTOR_URL` and uploads are verified but not identified: `document.classify` fails with `CLASSIFIER_NOT_CONFIGURED`. The web client is separate and uses pnpm from its own directory:
+All three read the root `.env`. With the shipped defaults the API and worker store uploads under `data/blobs` and need no cloud credentials, the worker pulls its jobs from Postgres (`DISPATCH_MODE=queue`) and sends classify and extract jobs to the extractor at `EXTRACTOR_URL`. Comment out `EXTRACTOR_URL` and uploads are verified but not identified: `document.classify` fails with `CLASSIFIER_NOT_CONFIGURED`. The web client is separate and uses pnpm from its own directory:
 
 ```bash
 pnpm --dir apps/web install --frozen-lockfile
