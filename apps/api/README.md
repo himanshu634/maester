@@ -53,9 +53,8 @@ Loaded from the root `.env` (see `.env.example`) via `loadEnv()` in `src/env.ts`
 | `STORAGE_DIR` | Required when `STORAGE_DRIVER=disk`; directory holding uploaded objects |
 | `GCS_BUCKET` | Required when `STORAGE_DRIVER=gcs`; private object storage bucket |
 | `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` | GCP project and Cloud Tasks queue region; the project is required when `DISPATCH_MODE=cloud-tasks` |
-| `DISPATCH_MODE` | `local` (in-process dispatcher) or `cloud-tasks` |
-| `DISPATCH_SECRET` | Required when `DISPATCH_MODE=local`; shared secret the worker checks |
-| `WORKER_URL` | Base URL of `apps/worker`, used to build Cloud Tasks targets |
+| `DISPATCH_MODE` | `queue` (default; the API sends `pg_notify('job_ready', <type>)` and the worker pulls the job) or `cloud-tasks` |
+| `WORKER_URL` | Base URL of `apps/worker`, used to build Cloud Tasks targets (`cloud-tasks` mode only) |
 | `WORKER_INVOKER_SA` | Required when `DISPATCH_MODE=cloud-tasks`; service account Cloud Tasks uses to call the worker |
 | `CONNECTIONS_KEY` | 32 bytes, base64 (`openssl rand -base64 32`). Encrypts the Dhan and FRED keys saved in Settings (AES-256-GCM). Without it the connection routes answer `409`. The worker needs the same value |
 | `MAX_UPLOAD_BYTES`, `UPLOAD_URL_TTL_SECONDS`, `DOWNLOAD_URL_TTL_SECONDS` | Upload/download limits (defaulted) |

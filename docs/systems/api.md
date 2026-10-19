@@ -25,7 +25,7 @@ This document describes the HTTP service in `apps/api`. For the full system, rea
 | revision | One result of the extraction of financial statements from a document. |
 | fact | One figure in a revision, with its page. |
 | job | A row in the `job` table. The worker (`apps/worker`) does the work of a job. |
-| dispatcher | The part that tells the worker to start a job. It sends an HTTP request or makes a Cloud Tasks task. |
+| dispatcher | The part that tells the worker to start a job. It sends a Postgres notification or makes a Cloud Tasks task. |
 | trace ID | The value of the `x-request-id` header. The API puts it in each error and in the log. |
 | error envelope | The JSON body of an API error: `{ "error": { "code", "message", "fields", "traceId" } }`. |
 | provider | A market data source that the user connects in Settings: `dhan` (Dhan) or `fred` (FRED). |
@@ -231,15 +231,15 @@ A read starts only when all these conditions are true:
 
 The dispatcher has two modes:
 
-- `local`: the API sends `POST <WORKER_URL>/tasks/<type>` with the body `{ "jobId" }` and the `x-dispatch-secret` header. The API does not wait for the response. It only writes the result to the log.
-- `cloud-tasks`: the API makes a Cloud Tasks task with the name `<jobId>-<attempt>`. The task calls the same worker path with an OIDC token for `WORKER_INVOKER_SA`. If the task exists, the API ignores the error.
+- `queue`: the API runs `pg_notify('job_ready', <type>)` after the transaction commits the job row. The queue runner of the worker claims the job. If the notification does not arrive, the poll of the worker finds the job.
+- `cloud-tasks`: the API makes a Cloud Tasks task with the name `<jobId>-<attempt>`. The task calls the worker path `/tasks/<type>` with an OIDC token for `WORKER_INVOKER_SA`. If the task exists, the API ignores the error.
 
 `POST .../jobs/:id/retry` starts a job again only in one of these states:
 
 - `failed`.
 - `queued`, with no change for more than 5 minutes.
 
-For a retry, the API sets the state to `queued`, sets `maxAttempts` to `attempt` plus 5 and clears `finishedAt` and `progress`. Then it dispatches the job again. In all other states, the result is `INVALID_STATE`.
+For a retry, the API sets the state to `queued`, sets `maxAttempts` to `attempt` plus 5, sets `run_after` to now and clears `finishedAt` and `progress`. Then it dispatches the job again. In all other states, the result is `INVALID_STATE`.
 
 ### Job events
 
@@ -419,7 +419,7 @@ The API does not write the other intake states or the state `verifying`.
 
 | State | Cause | Result |
 | --- | --- | --- |
-| `queued` | `createJob` or a retry. | The dispatcher sends the job to the worker. |
+| `queued` | `createJob` or a retry. | The queue runner of the worker claims the job. In `cloud-tasks` mode, Cloud Tasks sends it. |
 | `running`, `succeeded`, `failed`, `cancelled` | The API does not write these states. | The events stream ends after `succeeded`, `failed` or `cancelled`. |
 
 ### Reading states
@@ -450,7 +450,6 @@ A reading without a value or without a rank has a value in `missing`:
 
 - A value does not agree with its schema.
 - `STORAGE_DRIVER=gcs` and `GCS_BUCKET` has no value.
-- `DISPATCH_MODE=local` and `DISPATCH_SECRET` has no value.
 - `DISPATCH_MODE=cloud-tasks` and `WORKER_INVOKER_SA` or `GOOGLE_CLOUD_PROJECT` has no value.
 - Only one of `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` has a value.
 - `MAIL_DRIVER=resend` and `RESEND_API_KEY` or `MAIL_FROM` has no value.
@@ -478,14 +477,14 @@ The API reads the `market_point` and `market_fetch` tables through `listMarketSe
 ### Object store
 
 - `gcs`: a Cloud Storage bucket, `GCS_BUCKET`.
-- `disk`: a local directory, `STORAGE_DIR`. The API signs URLs to its own `/dev/blobs/*` routes with `DISPATCH_SECRET`, or with `BETTER_AUTH_SECRET` if `DISPATCH_SECRET` has no value.
+- `disk`: a local directory, `STORAGE_DIR`. The API signs URLs to its own `/dev/blobs/*` routes with `BETTER_AUTH_SECRET`.
 
 ### External services
 
 - Google, for sign-in.
 - Resend (`https://api.resend.com/emails`), for mail when `MAIL_DRIVER=resend`. The API stops a call to Resend after 10 seconds.
 - Cloud Tasks, when `DISPATCH_MODE=cloud-tasks`.
-- The worker, at `WORKER_URL`.
+- The worker, at `WORKER_URL`, in `cloud-tasks` mode only. Cloud Tasks calls it.
 - Dhan (`https://api.dhan.co/v2`), to check a Dhan secret. Only `PUT .../connections/dhan` calls it.
 - FRED (`https://api.stlouisfed.org/fred`), to check a FRED secret. Only `PUT .../connections/fred` calls it.
 
@@ -507,9 +506,8 @@ The `dev` script reads the root `.env` file. A value that is an empty string cou
 | `GCS_BUCKET` | None | Necessary for `gcs`. |
 | `GOOGLE_CLOUD_PROJECT` | None | Necessary for `cloud-tasks`. |
 | `GOOGLE_CLOUD_LOCATION` | `asia-south1` | The location of the Cloud Tasks queue. |
-| `DISPATCH_MODE` | `local` | `local` or `cloud-tasks`. |
-| `WORKER_URL` | None | Always necessary. The base URL of the worker. |
-| `DISPATCH_SECRET` | None | Necessary for `local`. |
+| `DISPATCH_MODE` | `queue` | `queue` or `cloud-tasks`. |
+| `WORKER_URL` | None | Always necessary. The base URL of the worker. The API uses it only in `cloud-tasks` mode. |
 | `CLOUD_TASKS_QUEUE` | `maester-jobs` | The name of the Cloud Tasks queue. |
 | `WORKER_INVOKER_SA` | None | Necessary for `cloud-tasks`. The service account for the OIDC token. |
 | `MAX_UPLOAD_BYTES` | `52428800` | The largest upload, 50 MiB. |
@@ -596,7 +594,7 @@ Note: The script `scripts/db/init.sql` creates the test database on the first st
 
 WARNING: Set `NODE_ENV=production` on a public server. If `NODE_ENV` has no value, the API uses `development`. In `development` and `test`, `POST /dev/auth/admit` approves and confirms any email without a check. The rate limiter is also off unless `AUTH_RATE_LIMIT=on`. The Docker image sets `production`, but other start methods do not.
 
-WARNING: Keep `DISPATCH_SECRET`, `BETTER_AUTH_SECRET` and `CONNECTIONS_KEY` private. A person with `CONNECTIONS_KEY` and the database can decrypt the Dhan and FRED secrets. The API sends `DISPATCH_SECRET` to the worker in each local dispatch. With the `disk` driver, a person with the secret can make a valid signed URL for any object.
+WARNING: Keep `BETTER_AUTH_SECRET` and `CONNECTIONS_KEY` private. A person with `CONNECTIONS_KEY` and the database can decrypt the Dhan and FRED secrets. With the `disk` driver, a person with `BETTER_AUTH_SECRET` can make a valid signed URL for any object.
 
 CAUTION: Set `DATABASE_URL_TEST_API` only to a test database. The test setup empties the user, session, workspace, document, job and waitlist tables in that database.
 
@@ -606,7 +604,7 @@ CAUTION: Set `DATABASE_URL_TEST_API` only to a test database. The test setup emp
 - The API has no route to cancel a job, and no route to delete a document or a company.
 - `GET /v1/workspaces` does not use pages. `nextCursor` is always `null`.
 - The document list reads the latest job and the classification of each document with separate queries.
-- In `local` mode, if the request to the worker fails, the API only writes a log record. The job stays `queued` until a retry.
+- In `queue` mode, a lost notification does not stop the job. The poll of the worker finds it.
 - The Cloud Tasks dispatcher of the API sets no dispatch deadline. Cloud Tasks then uses its default.
 - The events stream ignores `Last-Event-ID`. Each event has the full job.
 - The connections are global to the install. Any approved user with a session can replace or delete the Dhan and FRED secrets.
