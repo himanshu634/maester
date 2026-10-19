@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadWorkerEnv } from "../src/env.js";
+import { dispatchModeWarning, loadWorkerEnv } from "../src/env.js";
 import { handlers } from "../src/jobs/index.js";
 import { silentLogger } from "../src/logger.js";
 import { buildQueueOptions } from "../src/start.js";
@@ -21,6 +21,17 @@ describe("worker env: the queue", () => {
     expect(env.JOB_SWEEP_MS).toBe(30000);
     expect(env.JOB_HEARTBEAT_MS).toBe(15000);
     expect(env).not.toHaveProperty("EXTRACTOR_TIMEOUT_SECONDS");
+  });
+
+  it("reads the old DISPATCH_MODE=local as queue, and warns once at start", () => {
+    expect(loadWorkerEnv({ ...base, DISPATCH_MODE: "local" }).DISPATCH_MODE).toBe("queue");
+    expect(dispatchModeWarning({ ...base, DISPATCH_MODE: "local" })).toBe("DISPATCH_MODE=local is now queue; update .env");
+    expect(dispatchModeWarning(base)).toBeNull();
+    expect(dispatchModeWarning({ ...base, DISPATCH_MODE: undefined })).toBeNull();
+  });
+
+  it("still refuses an unknown DISPATCH_MODE", () => {
+    expect(() => loadWorkerEnv({ ...base, DISPATCH_MODE: "http" })).toThrow(/DISPATCH_MODE/);
   });
 
   it("refuses a heartbeat that does not renew well inside the lease", () => {

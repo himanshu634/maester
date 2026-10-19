@@ -147,6 +147,8 @@ Do not run both this and the full compose stack at once: they compete for ports 
 
 Copy [`.env.example`](../.env.example) to `.env`. The TypeScript services validate their environment at boot and refuse to start on anything invalid, so a typo is a clear error rather than a runtime surprise. The compose file sets its own values inline; from `.env` it reads only `GOOGLE_CLOUD_PROJECT`, `GCLOUD_CONFIG_DIR`, `VERTEX_LOCATION`, `GEMINI_MODEL` and `GEMINI_CLASSIFY_MODEL`, for the extractor, and `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, for Google sign-in.
 
+**Upgrading an older `.env`.** `cp -n` keeps the `.env` you already have, so it may still set `DISPATCH_MODE=local` and `DISPATCH_SECRET`. The API and the worker read `local` as `queue` and log "DISPATCH_MODE=local is now queue; update .env" at start; change it to `queue` when convenient. `DISPATCH_SECRET` is ignored and can be deleted. Recreate the Postgres container once for the pgvector image (`docker compose up -d --force-recreate postgres`, see section 3).
+
 | Variable | Used by | Required | Local default |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | api, worker | Always | `postgres://maester:maester@localhost:5433/maester` |

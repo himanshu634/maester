@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { dispatchModeWarning } from "../src/env.js";
 import { testEnv } from "./env.js";
 
 describe("env", () => {
@@ -46,6 +47,23 @@ describe("env", () => {
 
   it("needs a key and a sender for Resend", () => {
     expect(() => testEnv({ MAIL_DRIVER: "resend", RESEND_API_KEY: undefined })).toThrow(/RESEND_API_KEY/);
+  });
+});
+
+describe("env: DISPATCH_MODE", () => {
+  it("defaults to queue", () => {
+    expect(testEnv({ DISPATCH_MODE: undefined }).DISPATCH_MODE).toBe("queue");
+  });
+
+  it("reads the old DISPATCH_MODE=local as queue, and warns once at start", () => {
+    expect(testEnv({ DISPATCH_MODE: "local" }).DISPATCH_MODE).toBe("queue");
+    expect(dispatchModeWarning({ DISPATCH_MODE: "local" })).toBe("DISPATCH_MODE=local is now queue; update .env");
+    expect(dispatchModeWarning({ DISPATCH_MODE: "queue" })).toBeNull();
+    expect(dispatchModeWarning({})).toBeNull();
+  });
+
+  it("still refuses an unknown DISPATCH_MODE", () => {
+    expect(() => testEnv({ DISPATCH_MODE: "http" })).toThrow(/DISPATCH_MODE/);
   });
 });
 

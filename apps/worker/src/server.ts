@@ -2,7 +2,7 @@ import { serve } from "@hono/node-server";
 import { createDb } from "@maester/db";
 import { createWorkerApp } from "./app.js";
 import { createDispatcher } from "./dispatch.js";
-import { loadWorkerEnv } from "./env.js";
+import { dispatchModeWarning, loadWorkerEnv } from "./env.js";
 import { HttpExtractorClient } from "./extractor.js";
 import { handlers } from "./jobs/index.js";
 import { createLogger } from "./logger.js";
@@ -15,6 +15,8 @@ import { createStore } from "./store.js";
 
 const env = loadWorkerEnv();
 const logger = createLogger(env.LOG_LEVEL);
+const dispatchWarning = dispatchModeWarning();
+if (dispatchWarning) logger.warn(dispatchWarning);
 const db = createDb(env.DATABASE_URL);
 const store = createStore(env);
 const dispatcher = createDispatcher(env, logger, db);

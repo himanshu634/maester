@@ -8,7 +8,8 @@ const Schema = z.object({
   STORAGE_DRIVER: z.enum(["gcs", "disk"]).default("gcs"),
   STORAGE_DIR: z.string().default("data/blobs"),
   GCS_BUCKET: z.string().min(1).optional(),
-  DISPATCH_MODE: z.enum(["queue", "cloud-tasks"]).default("queue"),
+  // "local" is the old name of queue: an existing .env may still say it. It is read as queue, so no code sees "local".
+  DISPATCH_MODE: z.preprocess((v) => (v === "local" ? "queue" : v), z.enum(["queue", "cloud-tasks"]).default("queue")),
   WORKER_URL: z.url(),
   API_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
   MAX_UPLOAD_BYTES: z.coerce.number().int().default(52428800),
@@ -45,6 +46,11 @@ const Schema = z.object({
   MARKET_REFRESH_MINUTES: z.coerce.number().int().positive().default(30),
 });
 export type WorkerEnv = z.infer<typeof Schema>;
+
+/** The warning to log at start when the environment still says DISPATCH_MODE=local, the old name of queue; otherwise null. */
+export function dispatchModeWarning(source: NodeJS.ProcessEnv = process.env): string | null {
+  return source.DISPATCH_MODE === "local" ? "DISPATCH_MODE=local is now queue; update .env" : null;
+}
 
 export function loadWorkerEnv(source: NodeJS.ProcessEnv = process.env): WorkerEnv {
   const parsed = Schema.safeParse(source);
