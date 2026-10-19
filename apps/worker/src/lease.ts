@@ -103,3 +103,29 @@ export async function failAttempt(
     })
     .where(and(eq(schema.job.id, job.id), eq(schema.job.leaseToken, leaseToken)));
 }
+
+/**
+ * Give back every job whose lease ran out (a worker died or stalled). One statement per
+ * outcome, each guarded by `lease_expires_at < now()`, so a job renewed meanwhile is untouched.
+ * The backoff is worked out in SQL from each row's own attempt, with the same formula and
+ * jitter as `backoffSeconds`: least(900, 30 * 2^(attempt-1)) * (1 + 0.2 * random()).
+ */
+export async function sweepExpired(db: Db): Promise<{ requeued: JobRow[]; failed: JobRow[] }> {
+  const expired = and(eq(schema.job.state, "running"), lt(schema.job.leaseExpiresAt, sql`now()`));
+  const cleared = { leaseToken: null, leaseExpiresAt: null, lastErrorCode: "LEASE_EXPIRED", updatedAt: sql`now()` };
+  const requeued = await db
+    .update(schema.job)
+    .set({
+      ...cleared,
+      state: "queued",
+      runAfter: sql`now() + make_interval(secs => least(900, 30 * power(2, greatest(${schema.job.attempt} - 1, 0))) * (1 + 0.2 * random()))`,
+    })
+    .where(and(expired, sql`${schema.job.attempt} < ${schema.job.maxAttempts}`))
+    .returning();
+  const failed = await db
+    .update(schema.job)
+    .set({ ...cleared, state: "failed", finishedAt: sql`now()` })
+    .where(and(expired, sql`${schema.job.attempt} >= ${schema.job.maxAttempts}`))
+    .returning();
+  return { requeued, failed };
+}
