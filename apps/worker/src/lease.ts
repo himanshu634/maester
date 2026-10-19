@@ -23,6 +23,39 @@ export async function acquireLease(db: Db, jobId: string, leaseSeconds: number):
   return row ?? null;
 }
 
+/** Seconds to wait before a failed attempt runs again: 30 s doubling to 900 s, plus up to 20% jitter. */
+export function backoffSeconds(attempt: number, random: () => number = Math.random): number {
+  return Math.min(900, 30 * 2 ** (attempt - 1)) * (1 + 0.2 * random());
+}
+
+/**
+ * Take the oldest ready job of one type, in one statement. SKIP LOCKED lets concurrent
+ * claimers pass over a row another claimer holds instead of waiting on it.
+ */
+export async function claimNext(db: Db, type: string, leaseSeconds: number): Promise<JobRow | null> {
+  const [row] = await db
+    .update(schema.job)
+    .set({
+      state: "running",
+      leaseToken: crypto.randomUUID(),
+      leaseExpiresAt: sql`now() + make_interval(secs => ${leaseSeconds}::int)`,
+      attempt: sql`${schema.job.attempt} + 1`,
+      startedAt: sql`coalesce(${schema.job.startedAt}, now())`,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      sql`${schema.job.id} = (
+        select ${schema.job.id} from ${schema.job}
+        where ${schema.job.type} = ${type} and ${schema.job.state} = 'queued' and ${schema.job.runAfter} <= now()
+        order by ${schema.job.runAfter}, ${schema.job.createdAt}
+        for update skip locked
+        limit 1
+      )`,
+    )
+    .returning();
+  return row ?? null;
+}
+
 /** Push the lease expiry forward while a long handler is still working. */
 export async function renewLease(db: Db, jobId: string, leaseToken: string, leaseSeconds: number): Promise<boolean> {
   const rows = await db
@@ -65,6 +98,7 @@ export async function failAttempt(
       leaseToken: null,
       leaseExpiresAt: null,
       finishedAt: final ? sql`now()` : null,
+      ...(final ? {} : { runAfter: sql`now() + make_interval(secs => ${backoffSeconds(job.attempt)}::double precision)` }),
       updatedAt: sql`now()`,
     })
     .where(and(eq(schema.job.id, job.id), eq(schema.job.leaseToken, leaseToken)));
