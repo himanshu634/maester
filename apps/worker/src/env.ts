@@ -16,6 +16,12 @@ const Schema = z.object({
   LEASE_SECONDS: z.coerce.number().int().default(600),
   // Milliseconds between timer renewals of a running job's lease.
   JOB_HEARTBEAT_MS: z.coerce.number().int().positive().default(15000),
+  // Jobs of one type run at once, over the defaults in queue.ts: "document.extract=3,document.verify=8".
+  JOB_CONCURRENCY: z.string().optional(),
+  // Milliseconds an idle claim loop waits before asking again when no job_ready notification comes.
+  JOB_POLL_MS: z.coerce.number().int().positive().default(1000),
+  // Milliseconds between sweeps that give back jobs whose lease ran out.
+  JOB_SWEEP_MS: z.coerce.number().int().positive().default(30000),
   // Extraction (apps/extractor). Unset EXTRACTOR_URL disables chaining document.extract after verify.
   EXTRACTOR_URL: z.url().optional(),
   EXTRACTOR_AUTH: z.enum(["secret", "oidc"]).default("secret"),
