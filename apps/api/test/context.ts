@@ -13,7 +13,7 @@ export async function createTestContext(overrides: Partial<NodeJS.ProcessEnv> = 
   const env = testEnv(overrides);
   const db = createDb(env.DATABASE_URL);
   await runMigrations(db);
-  await db.execute(sql`TRUNCATE TABLE "job", "document", "membership", "workspace", "session", "account", "verification", "user", "waitlist_entry", "rate_limit", "market_point", "market_fetch", "market_connection" CASCADE`);
+  await db.execute(sql`TRUNCATE TABLE "job", "document", "membership", "workspace", "session", "account", "verification", "user", "waitlist_entry", "rate_limit", "market_point", "market_fetch", "market_connection", "broker_connection", "broker_login_state", "holding_read", "holding_line" CASCADE`);
   const store = new MemoryObjectStore();
   const dispatcher = new RecordingDispatcher();
   const mailer = new RecordingMailer();

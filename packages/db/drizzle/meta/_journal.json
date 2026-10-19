@@ -43,6 +43,13 @@
       "when": 1791286297771,
       "tag": "0005_market_connection",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792408995483,
+      "tag": "0006_broker_holdings",
+      "breakpoints": true
     }
   ]
 }

@@ -24,7 +24,7 @@ export async function createWorkerContext(handlers: Record<string, JobHandler> =
   const env = workerTestEnv(envOverrides);
   const db = createDb(env.DATABASE_URL);
   await runMigrations(db);
-  await db.execute(sql`TRUNCATE TABLE "job", "document", "membership", "workspace", "session", "account", "verification", "user", "market_point", "market_fetch", "market_connection" CASCADE`);
+  await db.execute(sql`TRUNCATE TABLE "job", "document", "membership", "workspace", "session", "account", "verification", "user", "market_point", "market_fetch", "market_connection", "broker_connection", "broker_login_state", "holding_read", "holding_line" CASCADE`);
   const store = new MemoryObjectStore();
   const dispatcher = new RecordingDispatcher();
   const deps: WorkerDeps = { db, store, logger: silentLogger, env, handlers, dispatcher, extractor: null, ...overrides };
