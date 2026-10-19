@@ -22,6 +22,7 @@ These are the investor's calls, 19 October 2026. Everything else in this documen
 - **Parallel parsing and processing** of uploaded files.
 - **Accuracy is measured.**
 - **The Documents screen** shows the new pipeline (designed separately, §12).
+- **The XBRL on hand.** The investor downloads BSE results XBRL with their own script (`maester-filings/download-xbrl.mjs`): 806 instances so far, on SEBI's `in-capmkt` taxonomy (2025-01-31 and 2026-01-31 entry points), BSE's `in-bse-fin` (2020-03-31) and the banking taxonomy. No MCA AOC-4 instances: those need an MCA login and a fee.
 - **Order**: the text index before XBRL (the investor's first instruction was "focus on chunking and extracting information from the PDFs"); Claude as a statement reader comes after both.
 
 ## 3. Goals, non-goals, anti-goals
@@ -54,7 +55,7 @@ The pipeline as built is drawn in the artifact "Maester filing pipeline" and des
 - `document.verify` stores and hashes the file, accepts only PDFs (`%PDF-`), and marks a second copy a duplicate. It chains `document.classify`: rules over the title pages, then Gemini 2.5 Flash on a small sub-PDF. An annual report or results filing with a confirmed company goes to `document.extract`: Gemini 2.5 Pro locates, extracts, checks and corrects the three statements, and the worker writes an immutable revision of facts, each with a page.
 - Jobs are pushed to the worker over HTTP (`LocalHttpDispatcher`, or Cloud Tasks) with **no limit on how many run at once**. The extractor runs each request on a thread.
 - Nothing reads a scanned page's text, nothing reads XBRL, and nothing is kept for search.
-- `maester-eval` (on `feat/eval-baseline`) can run, label and score extraction against a gold set; the corpus is 491 BSE filings of 50 companies, split by company; the gold set is empty.
+- `maester-eval` (on `feat/eval-baseline`) can run, label and score extraction against a gold set; the gold set is empty. The corpus manifest of 491 BSE filings of 50 companies (99 annual reports, 392 results), split by company, is on `feat/eval-corpus`. Neither branch is on `staging` yet.
 
 ## 5. Architecture
 
@@ -85,7 +86,8 @@ The indexer is its own service so a 300-page scan running OCR on the CPU never h
 ### 6.1 Accepting XBRL
 
 - The drop strip and the upload route accept `.xml` (`application/xml`, `text/xml`) beside PDF, up to the same 50 MB. The screen's copy changes with the Documents design (§12).
-- `document.verify` accepts a file whose first non-whitespace bytes are `%PDF-`, or an XML declaration or root element whose name is `xbrl` in the XBRL instance namespace (`http://www.xbrl.org/2003/instance`). Anything else is refused as today (`NOT_A_PDF` becomes `UNSUPPORTED_TYPE`, with the copy updated).
+- `document.verify` keeps its exact check that a PDF starts with `%PDF-`, and adds: a file is XBRL when, after an optional byte-order mark and whitespace, it is XML whose root element is `xbrl` in the XBRL instance namespace (`http://www.xbrl.org/2003/instance`), read with a streaming parser that refuses DTDs. Anything else is refused (`NOT_A_PDF` becomes `UNSUPPORTED_TYPE`, with the copy updated).
+- **Many at once.** The 806 instances on hand are uploaded through the same API by a small command (`pnpm --filter @maester/cli import <folder>`, or the existing CLI if it fits), one upload per file, so a folder goes in without dragging; the job limits (§9) pace the work.
 - A new column `document.format` (`pdf`, `xbrl`) records which. The storage key's file name follows it (`original.pdf`, `original.xml`).
 - Inline XBRL (XHTML) is not accepted in this version; Indian filings are plain XBRL.
 
@@ -96,22 +98,29 @@ No model. The extractor's `/v1/xbrl` (§7) is called in classify mode and return
 | Answer | From |
 | --- | --- |
 | Kind | The entry point (`schemaRef`): MCA AOC-4 taxonomies give `annual_report`; the BSE results taxonomy (`in-bse-fin`) and SEBI's Integrated Filing taxonomy (`in-capmkt`) give `financial_results`. An unknown entry point is `not_sure`. |
-| Company | The context entity identifier: CIN under the scheme `http://www.mca.gov.in/CIN`, or the exchange's scheme where it uses a scrip code. Matched to the workspace's companies as today, CIN first. |
+| Company | The context entity identifier. BSE results instances carry a scrip code or a symbol, never a CIN, under several scheme URIs (at least six, one malformed: `http://www.bseindia.com/in-capmkt:/ScripCode`); the scheme is normalised by a tested table to "BSE code" or "NSE symbol" and matched to `company.bse_code` or `company.nse_symbol`. An MCA instance carries a CIN (`http://www.mca.gov.in/CIN`), matched first. A scheme not in the table leaves the company for the investor. |
 | Basis | `NatureOfReportStandaloneConsolidated` (or the results taxonomy's equivalent). An instance with both bases, or none, is `unknown` and is held for the investor. |
-| Period and span | The reporting period's contexts (start and end dates, or the instant). |
+| Period | The quarter's end (`DateOfEndOfReportingPeriod` on the `OneD` context). The classification's `results_span` is the quarter's. |
+| Periods inside | A results instance holds several periods with one end date: the quarter (`OneD`), the year to date (`FourD`: a half year in Q2, nine months in Q3, the full year in Q4) and balance-sheet instants (`OneI`, and the prior year's). Every fact carries its own span and start (§7.2). |
 
 The answers are written as a classification with evidence source `rule` and, instead of a page and quote, the element and context they came from. `decideIntake` then runs unchanged: a confirmed company goes on, an unknown company is held for the investor, exactly as for a PDF.
 
 ### 6.3 Which source the numbers come from
 
-A **filing slot** is one company, one kind, one period end, one span and one basis.
+A **slot** is one company, one statement, one basis, one period end and one span. Coverage is per statement: a Q1 results instance with no cash flow covers the P&L slot and not the cash-flow one.
 
-1. **XBRL wins a slot outright.** When a current XBRL revision covers a slot, every figure for that slot comes from it. A line XBRL does not carry is absent from that column, never filled from a PDF.
-2. **Skipping Gemini.** When a PDF is classified and XBRL revisions already cover every basis the classifier found statements for, `document.extract` is not enqueued: the PDF goes to `ready` with its numbers "from XBRL" (§11). When XBRL covers some bases only, Gemini reads the PDF and only the uncovered bases are used.
-3. **XBRL arriving later.** When XBRL lands after Gemini read the PDF, the XBRL revision takes the slot; the Gemini revision stays, unused for that slot, and is still scored by the evaluation (§10).
-4. **Removing XBRL.** If an XBRL document is deleted (deletion is not built yet), the slot falls back to the newest PDF revision.
+1. **XBRL wins a slot outright.** When a current XBRL revision has facts for a slot, every figure in that slot comes from it. A line XBRL does not carry is absent from that column, never filled from a PDF. A slot XBRL does not cover (a statement it does not tag) is read from the PDF as before.
+2. **Skipping Gemini.** When a PDF is classified and XBRL revisions already cover every statement and basis the classifier found, `document.extract` is not enqueued: the PDF goes to `ready` with its numbers "from XBRL" (§11). When XBRL covers some only, Gemini reads the PDF and only the uncovered slots are used.
+3. **Dropped together.** Before enqueuing `document.extract`, intake looks for XBRL documents of the same workspace that have not settled (verifying, identifying, or reading) or that are held for the investor and could match this PDF's company and period. If there are any, the PDF waits in a new intake state `waiting_for_xbrl`; when each such XBRL document settles (read, failed, kept, or confirmed for another company), the waiting PDFs of that company are decided again. A PDF never waits on an XBRL document that failed.
+4. **XBRL arriving later.** When XBRL lands after Gemini read the PDF, the XBRL revision takes the slots it covers; the Gemini revision stays, unused for those slots, and is still scored by the evaluation (§10).
+5. **Unknown taxonomies cover nothing.** A bank, insurer or NBFC instance (their own taxonomies, not vendored in this version) fails with `XBRL_TAXONOMY_UNKNOWN`, covers no slot, and the PDF is read as before.
+6. **Removing XBRL.** If an XBRL document is deleted (deletion is not built yet), its slots fall back to the newest PDF revision.
 
-The rule lives in one function used by the API's stitch, the series (data-layer phase 1) and the evaluation, so all three agree. It is the same rule `stitch.ts` already applies between filings ("a column comes whole from the newest filing that prints it"), with source precedence added before recency.
+The rule is one TypeScript function in `@maester/financial-engine`, used by the API's stitch and later the series, with a Python twin in `apps/eval`; both are tested against the same fixture file of slot cases, so they cannot drift.
+
+It is the same rule `stitch.ts` already applies between filings ("a column comes whole from the newest filing that prints it"), with source precedence added before recency.
+
+**Open, the investor's call: annual figures from a Q4 instance.** An audited March-quarter (Q4) results instance carries the full year's P&L and cash flow (`FourD`) and the year-end balance sheet (`OneI`). Whether those full-year facts fill the annual slots of the Research table, so Gemini need not read the annual report's statements for that year, is undecided. They are the results format, with fewer lines than the annual report's statements.
 
 ## 7. Numbers from XBRL
 
@@ -119,7 +128,7 @@ The rule lives in one function used by the API's stitch, the series (data-layer 
 
 `/v1/xbrl` on the extractor, behind `EXTRACTOR_SECRET`, takes the instance and answers NDJSON like `/v1/extract` (`started`, `progress`, `result` or `error`).
 
-- **Parser**: Arelle (Apache-2.0), in-process, offline (`internetConnectivity = offline`), with the taxonomies vendored in the image as pinned packages (MCA Ind AS, MCA C&I, the BSE results taxonomy, SEBI's `in-capmkt`), mapped by an XML catalog from their official URLs. An instance whose entry point is not vendored fails with `XBRL_TAXONOMY_UNKNOWN`, not a network fetch.
+- **Parser**: Arelle (Apache-2.0), in-process, offline (`internetConnectivity = offline`), with the taxonomies vendored in the image as pinned packages: SEBI's `in-capmkt` (2025-01-31 and 2026-01-31 entry points) and BSE's `in-bse-fin` (`Ind-AS_entry_point_2020-03-31.xsd`, `in-bse-fin-2020-03-31.xsd`), the ones the investor's files use. MCA's Ind AS and C&I taxonomies are added only when an AOC-4 instance is on hand. The instances' `schemaRef` is a bare file name (`in-capmkt-ent-2026-01-31.xsd`), not a URL, so the extractor resolves it by file name against the vendored packages before Arelle loads it; an XML catalog then maps the packages' own absolute imports. An entry point that is not vendored fails with `XBRL_TAXONOMY_UNKNOWN`, never a network fetch.
 - **Untrusted input**: external entities and DTDs off, no network, a size and fact-count limit, a parse deadline. A malformed instance fails `XBRL_UNREADABLE`.
 - **What comes back**, per fact: element QName, context (entity, period start and end or instant, dimension members), unit, `decimals`, the value as a decimal string or nil, footnotes; per statement, from the presentation linkbase, the statement, the section, the order and the standard label; and the calculation linkbase's results.
 
@@ -130,10 +139,11 @@ An XBRL read writes an `extraction_revision` like a PDF read, so the Research ta
 - `extraction_revision` gains `source` (`pdf`, `xbrl`). For XBRL: `model` is `arelle-<version>`, `prompt_version` is the entry point and taxonomy version, `page_count` is 0.
 - One `financial_fact` per numeric fact of the three statements, with no dimension member (dimensional facts, such as segments, wait for the data layer's phase 5):
   - `statement`, `section`, `line_order`, `reported_label` from the presentation linkbase and the standard label;
-  - `period_label` from the context, written the way the statement table heads columns;
-  - `reported_text` the value as written in the instance; `reported_value` and `normalized_value` that value; `scale_factor` 1, `unit_label` `₹`, `currency` from the unit (`INR`). Indian XBRL values are full rupees with no scale.
+  - `period_label` from the context, written the way the statement table heads columns, and two new columns pulled forward from the data layer's phase 4 with its names: `span` (`quarter`, `half_year`, `nine_months`, `full_year`, null for an instant) and `period_start`;
+  - **unit as the filing states it.** Values in the instance are full rupees. The rounding the filing declares (`LevelOfRoundingUsedInFinancialStatements`: crores, lakhs, millions, thousands, actual) gives `unit_label` (`₹ crore`) and `scale_factor` (10,000,000); `reported_value` is the value divided by it and `normalized_value` the value itself, so the Research table keeps the statement's own unit and an XBRL filing never switches a table into full rupees. `reported_text` is the value as written in the instance. `currency` from the unit (`INR`). `decimals` is not the unit (one Mahindra & Mahindra instance declares crores and mixes −5, −6 and −7 in one statement); it is kept in `xbrl_source` and used only as the tolerance of the taxonomy checks. Restatement compares at the declared rounding.
   - nil (`xsi:nil="true"`) is `value_status = unparsed` with the reason `XBRL_NIL`: unknown, never zero.
-- A new `xbrl_source` row per fact replaces `source_reference`: the XBRL document, element, context id, `decimals` and footnote ids. `decimals` is the printed precision (−5 is lakh, −7 crore), which the restatement rule's "coarser printed precision" already needs.
+- A new `xbrl_source` row per fact takes the place of `source_reference`: the XBRL document, element, context id, `decimals` and footnote ids. Readers of facts change with it: `listFactsWithSourcesForRevisions` inner-joins `source_reference` today and would drop every XBRL fact, so it left-joins both; the research contract's `CellSource` (and `Restated`) gains a source variant `{ kind: "xbrl", documentId, element, context }` beside the page one, which today requires a page. These ship in phase 4 with the figure panel built from the design round (§12).
+- **Where results figures show.** The Research table shows annual figures only today (`counts()` and stitch read annual reports). Quarter, half-year and nine-month facts from XBRL are stored now and appear when the data layer's phase 4 builds the quarter view.
 - **Concepts.** Each element maps to a concept in `packages/contracts/concepts.json` by an explicit table (`xbrl_element_map`, versioned with the mapping rules). An "Others" or next-best-fit element maps to nothing. Until the data layer's phase 1 builds `concept_mapping`, the map is used by the evaluation only; then it writes mappings with source `xbrl_rule`.
 
 ### 7.3 Checks
@@ -190,7 +200,8 @@ A result carries no figure. No screen in this project.
 
 Today every job is pushed to the worker the moment it is created, with nothing to stop ten large files reading at once and exhausting the machine. The worker becomes a **pull-based runner over the existing `job` table**:
 
-- **Claiming.** Each worker process runs one loop per job type. A loop claims the oldest queued job of its type with `UPDATE … WHERE id = (SELECT id FROM job WHERE type = $1 AND (state = 'queued' OR (state = 'running' AND lease_expires_at < now())) ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING *`, using the lease, attempt and progress columns that already exist (`acquireLease`, `renewLease`). Two worker processes never take the same job.
+- **Retries with backoff.** `job` gains `run_after` (default now). A failed attempt that will be retried sets it to now plus 30 seconds doubled per attempt, at most 15 minutes, so a Vertex 429 or a down indexer does not burn all five attempts in seconds. The claim query takes only jobs whose `run_after` has passed. `retryJob` in the API, which re-queues by hand, also notifies.
+- **Claiming.** Each worker process runs one loop per job type. A loop claims the oldest ready job of its type with `UPDATE … WHERE id = (SELECT id FROM job WHERE type = $1 AND ((state = 'queued' AND run_after <= now()) OR (state = 'running' AND lease_expires_at < now())) ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING *`, using the lease, attempt and progress columns that already exist (`acquireLease`, `renewLease`). Two worker processes never take the same job.
 - **Limits per type**, as settings, defaults chosen for one machine:
 
 | Job | Concurrent jobs | Why |
@@ -219,7 +230,7 @@ The gold set is the investor's time: sheets exported pre-filled, each cell check
 
 ### 10.2 Gemini against XBRL, on every filing that has both
 
-A new `maester-eval compare --run <run> --xbrl` scores a Gemini run against the XBRL revisions of the same slots, cell by cell, with no gold needed: agreement, disagreement and lines only one side has, by format tag. A disagreement is not proof Gemini is wrong, because XBRL can be wrong too; the report lists disagreements for the investor to settle against the PDF, and settled cells can be frozen into gold. This scales the measure to every corpus filing with an XBRL version.
+A new `maester-eval compare --run <run> --xbrl` scores a Gemini run against the XBRL revisions of the same slots, cell by cell, with no gold needed. The manifest gains an `xbrl` list per filing, pairing each PDF with its instances by BSE code, period and basis (filled from the investor's `xbrl-manifest.csv`), and a matching rule: XBRL facts carry concepts through `xbrl_element_map`, Gemini facts through the gold sheet's concept column, and cells are compared by concept, basis, span and period. The gold set is already keyed by concept (freeze refuses a verified row without one), so the evaluation matches XBRL facts to gold by concept in this project, before the data layer's phase 1 builds concept mapping for Gemini facts in the product. The report gives agreement, disagreement and lines only one side has, by format tag. A disagreement is not proof Gemini is wrong, because XBRL can be wrong too; the report lists disagreements for the investor to settle against the PDF, and settled cells can be frozen into gold. This scales the measure to every corpus filing with an XBRL version.
 
 ### 10.3 Retrieval
 
@@ -265,6 +276,9 @@ One migration (the next free number when built; the data layer's phase 1 has 000
 | --- | --- |
 | `create extension vector` | |
 | `document.format` | `pdf`, `xbrl`. |
+| `job.run_after` | Retry backoff (§9). |
+| `intake_state` | Gains `waiting_for_xbrl`. |
+| `financial_fact.span`, `financial_fact.period_start` | Pulled forward from the data layer's phase 4, with its names; null for PDF facts until that phase fills them. |
 | `extraction_revision.source` | `pdf`, `xbrl`; existing rows `pdf`. |
 | `xbrl_source` | Per XBRL fact: document, element, context id, `decimals`, footnote ids. |
 | `check_type` | Gains `xbrl_in_pdf`. |
@@ -317,11 +331,11 @@ Each phase is its own implementation plan from this document and lands on `stagi
 | 1 · Runner | The pull-based job runner with per-type limits, `NOTIFY`, the notifier replacing the HTTP dispatcher; the pgvector image. | Twenty files dropped at once process with no more than the configured jobs per type running, and nothing is lost on a worker restart. |
 | 2 · Index | The indexer service (Docling, local OCR, chunker, `/v1/embed`); the index tables; `document.index`; the backfill; the search function and route. | Every stored document in the investor's workspace has a current index; a search returns pages. |
 | 3 · Measure the index | The OCR spot check, the retrieval set and report; `EMBEDDING_MODEL` and the OCR engine chosen. | Both reports committed under `docs/eval/`. |
-| 4 · XBRL | Accepting XML; `/v1/xbrl` with vendored taxonomies; XBRL classification; `document.xbrl`; facts and `xbrl_source`; the taxonomy checks and `xbrl_in_pdf`; the source rule in stitch; skipping Gemini. | An MCA AOC-4 instance and a BSE results instance for one corpus company become facts the Research table shows, and the PDF is not read by Gemini. |
+| 4 · XBRL | Accepting XML and the folder import; `/v1/xbrl` with vendored taxonomies; XBRL classification; `document.xbrl`; facts, `span`, `xbrl_source`; the taxonomy checks and `xbrl_in_pdf`; the source rule and the reads that join sources; `waiting_for_xbrl`; skipping Gemini; the figure panel's XBRL source. | The investor's 806 instances import; a corpus company's results PDF dropped with its instance is not read by Gemini. |
 | 5 · Measure the numbers | The source and format strata in `maester-eval`; `compare --xbrl`; the element map scored. Needs phase 0's gold set. | A report with exact match by source and format tag, and Gemini-against-XBRL agreement on every corpus filing that has both. |
-| 6 · Screen | The `design-directions` round, then the build of the Documents screen and the figure panel's XBRL source. | The investor picked a direction and it is built. |
+| 6 · Screen | The build of the Documents screen (several files, two tracks, waiting for XBRL) from the chosen direction. | It is built and `DESIGN.md` §5 is amended. |
 
-Phases 1 to 3 do not wait for the data layer's phase 0, because the index changes no figure. Phase 4 needs `concepts.json` from phase 0 on `staging`. Phase 5 needs phase 0's gold set.
+The `design-directions` round for the Documents screen and the figure panel runs while phases 1 to 3 are built, so phase 4 ships the panel's XBRL source from a chosen direction and no figure without a page appears before its design exists. Phases 1 to 3 do not wait for the data layer's phase 0, because the index changes no figure. Phase 4 uses `concepts.json`, already on `staging`. Phase 5 needs phase 0's gold set and the `feat/eval-corpus` manifest.
 
 ## 17. Testing
 
