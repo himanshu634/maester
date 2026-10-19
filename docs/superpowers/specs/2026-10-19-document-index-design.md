@@ -56,7 +56,7 @@ Search and chat over the index are the next consumer. This project gives them a 
 | Axis | Decision | Why | Rejected |
 | --- | --- | --- | --- |
 | Vector store | **pgvector in the existing Postgres.** | One database, one backup, workspace scoping in the same transaction as the document. A personal corpus is thousands of filings at most. | A second database instance now (§11 says when); a hosted vector service (another vendor holding filing text). |
-| Embeddings | **Voyage** (the investor's choice), through its official SDK. The model is chosen between `voyage-finance-2` and `voyage-4-large` by the retrieval test in §10. Both give 1024 dimensions. | Anthropic offers no embedding model and recommends Voyage. `voyage-finance-2` is tuned for financial text but is older than the 4 series; the test decides. | Gemini embeddings on Vertex. |
+| Embeddings | **Voyage** (the investor's choice), through its official TypeScript SDK (`voyageai` on npm). The model is chosen between `voyage-finance-2` and `voyage-4-large` by the retrieval test in §10. Both give 1024 dimensions. | Anthropic offers no embedding model and recommends Voyage. `voyage-finance-2` is tuned for financial text but is older than the 4 series; the test decides. | Gemini embeddings on Vertex. |
 | OCR | **Claude reads a scanned page**, given as a one-page PDF, and returns its text as printed. Stored with its source, model and prompt version. Used for search only. | The investor has an Anthropic Console account and wants Claude in the pipeline. Claude reads page images well, including tables. | Tesseract (weak on tables and Indian number layouts); Gemini (keeps one vendor reading every page). |
 | Where work runs | **The extractor reads pages, runs OCR and chunks** (Python, where the PDF code is). **The worker embeds and writes** (TypeScript, the runtime the API searches from, so documents and queries go through one Voyage client). | Keeps the extractor stateless and gives one embedding client for both sides. | Embedding in the extractor (a second Voyage client in a second runtime, and query embedding would still need TypeScript). |
 | Search | **Hybrid**: vector similarity plus Postgres full-text, merged by reciprocal rank. | Filing questions name exact things ("Note 25", "CSR", a subsidiary's name) that keyword search finds and vectors blur. | Vectors alone. |
@@ -81,7 +81,7 @@ One row per index run, immutable once complete, in the same pattern as `extracti
 | `state` | enum `complete`, `partial` | `partial`: some pages have no text (§7.4). |
 | `index_version` | text | `index-1`; bumped when what a chunk means changes (§9). |
 | `chunker_version` | text | |
-| `ocr_model`, `ocr_prompt_version` | text, null | Null when no page needed OCR. |
+| `ocr_model`, `ocr_prompt_version` | text, null | The configured `OCR_MODEL` and the prompt hash. Null when no page needed OCR. Pages say which model actually answered (§5.2). |
 | `embedding_model` | text | e.g. `voyage-finance-2`. |
 | `page_count`, `text_layer_pages`, `ocr_pages`, `empty_pages` | integer | |
 | `warnings` | jsonb | Codes only, never text. |
@@ -99,6 +99,7 @@ A document has one current index per embedding model: its newest `complete` or `
 | `text_source` | enum `text_layer`, `ocr`, `none` | `none`: a scan with no OCR text. |
 | `text` | text | As read. Empty for `none`. |
 | `none_reason` | text, null | `OCR_FAILED`, `OCR_REFUSED`, `OCR_BUDGET`, `OCR_NOT_CONFIGURED`. |
+| `ocr_served_model` | text, null | For an OCR page, the model that answered: the configured one, or the fallback after a refusal (§7.5). |
 
 Primary key `(revision_id, page_number)`.
 
@@ -138,7 +139,8 @@ A cache of OCR results, so a page is paid for once per model and prompt version,
 | `workspace_id` | uuid | Scoped like everything else; never shared across workspaces. |
 | `content_sha256` | text | The document's stored hash. |
 | `page_number` | integer | |
-| `ocr_model`, `ocr_prompt_version` | text | |
+| `ocr_model`, `ocr_prompt_version` | text | The configured model, so a page answered by the fallback is still found on retry. |
+| `ocr_served_model` | text | The model that answered. |
 | `text` | text | |
 | `created_at` | timestamptz | |
 
@@ -204,7 +206,7 @@ Results carry no figure. A consumer that wants a figure follows the document and
 2. It is never read by the extraction workflow, the `correct` step's text-layer guard, the classifier's quote check ("Page 3 (scanned)" stays as it is), reader B or any check. Those keep using the text layer, and a scan still has none.
 3. Feeding OCR text to reader B or to the correction guard later is a change to reader B. It needs its own design and an evaluation run.
 4. **Failures.** A refusal (`stop_reason: "refusal"`), a failed call after retries, or no `ANTHROPIC_API_KEY` on the extractor (`OCR_NOT_CONFIGURED`) leaves the page `none` with its reason, and the revision `partial` with the warning code. A filing with more scanned pages than the OCR page budget (a setting, default 400) OCRs the first that many and marks the rest `OCR_BUDGET`.
-5. **Client.** The official `anthropic` Python SDK with `ANTHROPIC_API_KEY` from the Console account; not LangChain. The model is a setting (`OCR_MODEL`), default `claude-sonnet-5-5` (the investor's choice, on cost: an estimated $0.02 a scanned page against $0.04 on Opus 5.5). Effort is `low`; no `temperature` (a 400 on current models). Server-side refusal fallback is on (`fallbacks: "default"`), and the page records the model that actually answered (`response.model`) as its `ocr_model`; a refusal that survives the fallback is checked before reading the text; pages run with bounded concurrency (a setting, default 4) inside the job's deadline.
+5. **Client.** The official `anthropic` Python SDK with `ANTHROPIC_API_KEY` from the Console account; not LangChain. The model is a setting (`OCR_MODEL`), default `claude-sonnet-5-5` (the investor's choice, on cost: an estimated $0.02 a scanned page against $0.04 on Opus 5.5). Effort is `low`; no `temperature` (a 400 on current models). Server-side refusal fallback is on: `client.beta.messages.create` with the beta `server-side-fallback-2026-07-01` and `fallbacks: "default"`, so a page Sonnet declines is read by the model the API routes it to, which may cost more. The page records that model (`response.model`) as `ocr_served_model`; the revision and the cache keep the configured model. A refusal that survives the fallback is checked before reading the text; pages run with bounded concurrency (a setting, default 4) inside the job's deadline.
 
 ## 8. Privacy and secrets
 
