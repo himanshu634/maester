@@ -1,5 +1,34 @@
 # Broker connections on Holdings: implementation plan
 
+## As built (19 Oct 2026, branch `feat/holdings-kite`)
+
+The user asked for "support only for Kite, but broker support should be driven solely by JSON so we can configure it from the backend as well." Built as direction A · Accounts, then one table.
+
+- **Brokers are JSON.** Each one is a file: `packages/brokers/definitions/kite.json`, plus `BROKER_DEFINITIONS_DIR`. The schema is `BrokerDefinition` in `packages/contracts/src/brokers.ts`, and the vocabulary is in `packages/brokers/README.md`. A file holds the page copy, the fields, the sign-in and the holdings call. `BrokerClient` interprets it, https only and only to the definition's own hosts. The web reads `/v1/brokers` and has no broker list of its own.
+- **Tables** (migration `0006_broker_holdings`):
+  - `broker_connection`: per workspace; the credentials and the day's token encrypted under `CONNECTIONS_KEY`.
+  - `broker_login_state`: a single-use 10-minute nonce.
+  - `holding_read` and `holding_line`: immutable reads with `numeric` figures.
+- **Routes:**
+  - `GET /v1/brokers` lists the definitions.
+  - `GET /v1/brokers/:broker/return` is the address the broker sends the investor back to. It exchanges the code, reads the holdings, then redirects to `/terminal/holdings?broker=…&signedIn=1|error=CODE`.
+  - Under `/v1/workspaces/:ws`:
+    - `brokers`: GET, PUT `/:broker`, POST `/:broker/sign-in`, POST `/:broker/read` (one per 10 s), DELETE `/:broker`.
+    - `holdings`: GET.
+  - The read runs in the API, with no worker job, because a read is one GET made while the investor is there.
+- **Figures:** the calculations `holding_quantity`, `holding_cost`, `holding_value`, `holdings_totals` and `holding_weight` (v1) live in `@maester/financial-engine`, with fixtures worked by hand. Closes are Maester's stored NSE closes (`market_point` `eq:<SYMBOL>`), read as text. A share with no close is unknown, never valued at the broker's own price.
+- **Web:** `components/holdings/` (HoldingsPage, AccountsLedger, AddBroker, HoldingsStrip, HoldingsLedger, BrokerDisconnectDialog), `lib/holdings/` and `lib/content/holdings.ts`. Holdings is live in the rail, and CraneSketch is gone.
+- **Decisions taken by default:**
+  - A disconnected broker's holdings leave the page; its rows and reads are kept in the database.
+  - Values carry paise, because the web never rounds.
+  - Rows are ordered by symbol.
+- **Open:**
+  - A live run with the investor's own Kite Connect app: create the app, paste the redirect URL `<BETTER_AUTH_URL>/v1/brokers/kite/return`, save the key and secret, and sign in.
+  - Whether Kite accepts an http localhost redirect URL.
+  - Dhan as a second definition, which needs a "use the Settings connection" term.
+
+The plan below was written before the pick and stays as the record of what was weighed.
+
 Status: draft, 19 Oct 2026. The backend tasks are written now. The web tasks wait until a direction is picked on the "Maester Broker Connections" canvas (<https://claude.ai/artifact/2YSB5bYQ5beYq5aanK7Sm6>): A · Accounts, then one table; B · Each account, its own ledger; C · The statement first. The facts behind it are in [`docs/research/2026-10-19-broker-apis.md`](../../research/2026-10-19-broker-apis.md).
 
 ## Goal

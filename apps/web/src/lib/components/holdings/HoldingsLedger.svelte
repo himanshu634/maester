@@ -89,7 +89,7 @@
 		</table>
 	</div>
 	{#if snapshot.rows.some((r) => r.unknown.includes('NO_CLOSE'))}
-		<p class="muted small">{copy.table.noClose}</p>
+		<p class="muted small">{copy.table.noCloseNote}</p>
 	{/if}
 	{#if footnote}<p class="muted small">{footnote}</p>{/if}
 {/if}

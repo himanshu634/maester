@@ -8,6 +8,8 @@ import { BrokerClient, BrokerError, builtInDefinitions, DefinitionError, loadDef
 const kite = builtInDefinitions().get("kite")!;
 const creds = { apiKey: "kitekey123", apiSecret: "kitesecret456" };
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+// A loose copy to break on purpose; the parser is what checks it.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const clone = () => JSON.parse(JSON.stringify(kite)) as Record<string, any>;
 
 describe("definitions", () => {

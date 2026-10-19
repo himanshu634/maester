@@ -54,6 +54,7 @@ A seventh TypeScript package, `packages/financial-engine-ts`, is empty. For the 
 | `@maester/db` | `packages/db` | Gives the database schema, the migrations, a PostgreSQL client and the query functions. |
 | `@maester/jobs` | `packages/jobs` | Creates jobs, sends tasks and calculates the next intake state of a document. |
 | `@maester/storage` | `packages/storage` | Gives the `ObjectStore` interface and three object stores. |
+| `@maester/brokers` | `packages/brokers` | Broker definitions as JSON, and a read-only client that makes the calls a definition describes (sign-in, holdings). Zerodha (Kite Connect) first. |
 | `@maester/market` | `packages/market` | Gets daily market data from Dhan and FRED. Encrypts and decrypts the secrets of market connections. |
 | `maester-financial-engine` | `packages/financial-engine` | A Python library with the import name `pdf_financial_qa`. It classifies PDF filings and extracts facts from them. |
 | `@maester/financial-engine` | `packages/financial-engine-ts` | An empty TypeScript package. It exports only `ENGINE_VERSION`, with the value `"0.0.0"`. |

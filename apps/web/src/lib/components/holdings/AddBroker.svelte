@@ -104,8 +104,8 @@
 							onclick={() => choose(b)}
 						>
 							<span class="name">{b.name}</span>
-							<span class="line">{b.copy.pickerLine}</span>
 							<span class="cost num">{b.copy.cost}</span>
+							<span class="line">{b.copy.pickerLine}</span>
 						</button>
 					</li>
 				{/each}
@@ -156,7 +156,7 @@
 							id="{id}-{f.key}"
 							label={f.label}
 							autocomplete="off"
-							showLabel="Show {f.label.toLowerCase()}"
+							showLabel="Show {f.label}"
 							hint={f.hint}
 							bind:value={values[f.key]}
 							bind:input={inputs[f.key]}
@@ -264,18 +264,23 @@
 
 	.pick {
 		display: grid;
-		grid-template-columns: 8rem minmax(0, 1fr) auto;
-		gap: var(--space-3);
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 2px var(--space-3);
 		align-items: baseline;
 		width: 100%;
 		min-height: 48px;
-		padding: var(--space-2) var(--space-3);
+		padding: var(--space-3);
 		border: 0;
 		background: transparent;
 		color: var(--ink);
 		text-align: left;
 		font: inherit;
 		cursor: pointer;
+	}
+
+	.pick .line {
+		grid-column: 1 / -1;
+		grid-row: 2;
 	}
 
 	.pick[aria-pressed='true'] {
