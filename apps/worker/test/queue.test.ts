@@ -182,6 +182,47 @@ describe("queue runner", () => {
     }
   });
 
+  it("stop(500) waits for a 200 ms job to finish", async () => {
+    let started = 0, finished = 0;
+    const c = await createWorkerContext({ "test.short": async () => { started++; await new Promise((r) => setTimeout(r, 200)); finished++; } });
+    const runner = startQueueRunner(c, { concurrency: {}, pollMs: 20, sweepMs: 60_000, listen: noListen });
+    try {
+      const { workspaceId } = await seedWorkspace(c.db);
+      await seedJob(c.db, workspaceId, { type: "test.short" });
+      await waitFor(() => started === 1, 5_000);
+      const t0 = Date.now();
+      await runner.stop(500);
+      expect(finished).toBe(1);
+      expect(Date.now() - t0).toBeLessThan(500);
+      expect(await countState(c.db, "succeeded", "test.short")).toBe(1);
+    } finally {
+      await runner.stop(1_000);
+      await c.close();
+    }
+  });
+
+  it("stop(500) gives up at about 500 ms on a 2 s job and leaves it to its lease", async () => {
+    let started = 0, finished = 0;
+    const c = await createWorkerContext({ "test.long": async () => { started++; await new Promise((r) => setTimeout(r, 2_000)); finished++; } });
+    const runner = startQueueRunner(c, { concurrency: {}, pollMs: 20, sweepMs: 60_000, listen: noListen });
+    try {
+      const { workspaceId } = await seedWorkspace(c.db);
+      await seedJob(c.db, workspaceId, { type: "test.long" });
+      await waitFor(() => started === 1, 5_000);
+      const t0 = Date.now();
+      await runner.stop(500);
+      const took = Date.now() - t0;
+      expect(took).toBeGreaterThanOrEqual(450);
+      expect(took).toBeLessThan(1_000);
+      expect(finished).toBe(0);
+      expect(await countState(c.db, "running", "test.long")).toBe(1);
+    } finally {
+      await waitFor(() => finished === 1, 5_000);
+      await waitFor(async () => (await countState(c.db, "running", "test.long")) === 0, 5_000);
+      await c.close();
+    }
+  });
+
   it("stop wakes loops mid-sleep and closes the listener", async () => {
     let closed = false;
     const c = await createWorkerContext({ "test.idle": async () => {} });

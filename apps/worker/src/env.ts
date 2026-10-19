@@ -25,7 +25,8 @@ const Schema = z.object({
   EXTRACTOR_URL: z.url().optional(),
   EXTRACTOR_AUTH: z.enum(["secret", "oidc"]).default("secret"),
   EXTRACTOR_SECRET: z.string().optional(),
-  EXTRACTOR_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
+  // Seconds one extraction request may take, with its whole stream. Thirty minutes: a long annual report takes that.
+  EXTRACT_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(1800),
   EXTRACT_MAX_BYTES: z.coerce.number().int().positive().default(52428800),
   // Needed only to enqueue follow-up jobs through Cloud Tasks.
   GOOGLE_CLOUD_PROJECT: z.string().min(1).optional(),

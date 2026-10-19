@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { loadWorkerEnv } from "../src/env.js";
+import { handlers } from "../src/jobs/index.js";
+import { silentLogger } from "../src/logger.js";
+import { buildQueueOptions } from "../src/start.js";
 
 const base = {
   NODE_ENV: "test",
@@ -8,6 +11,37 @@ const base = {
   DISPATCH_MODE: "queue",
   WORKER_URL: "http://localhost:8788",
 };
+
+describe("worker env: the queue", () => {
+  it("defaults to the in-process queue with a 30-minute extract timeout", () => {
+    const env = loadWorkerEnv({ ...base, DISPATCH_MODE: undefined });
+    expect(env.DISPATCH_MODE).toBe("queue");
+    expect(env.EXTRACT_TIMEOUT_SECONDS).toBe(1800);
+    expect(env.JOB_POLL_MS).toBe(1000);
+    expect(env.JOB_SWEEP_MS).toBe(30000);
+    expect(env.JOB_HEARTBEAT_MS).toBe(15000);
+    expect(env).not.toHaveProperty("EXTRACTOR_TIMEOUT_SECONDS");
+  });
+
+  it("reads EXTRACT_TIMEOUT_SECONDS", () => {
+    expect(loadWorkerEnv({ ...base, EXTRACT_TIMEOUT_SECONDS: "60" }).EXTRACT_TIMEOUT_SECONDS).toBe(60);
+  });
+
+  it("fails at start on a bad JOB_CONCURRENCY", () => {
+    const env = loadWorkerEnv({ ...base, JOB_CONCURRENCY: "bad" });
+    expect(() => buildQueueOptions(env, handlers, silentLogger)).toThrow(/JOB_CONCURRENCY/);
+    const zero = loadWorkerEnv({ ...base, JOB_CONCURRENCY: "document.verify=0" });
+    expect(() => buildQueueOptions(zero, handlers, silentLogger)).toThrow(/document\.verify/);
+  });
+
+  it("builds the runner's options from the environment", () => {
+    const env = loadWorkerEnv({ ...base, JOB_CONCURRENCY: "document.extract=3", JOB_POLL_MS: "250", JOB_SWEEP_MS: "5000" });
+    const opts = buildQueueOptions(env, handlers, silentLogger);
+    expect(opts.concurrency).toEqual({ "document.verify": 4, "document.classify": 2, "document.extract": 3 });
+    expect(opts).toMatchObject({ pollMs: 250, sweepMs: 5000 });
+    expect(typeof opts.listen).toBe("function");
+  });
+});
 
 describe("worker env: extraction", () => {
   it("leaves extraction off without EXTRACTOR_URL", () => {

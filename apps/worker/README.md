@@ -36,7 +36,7 @@ Loaded from the root `.env` (see `.env.example`) via `loadWorkerEnv()` in `src/e
 | `EXTRACTOR_URL` | Base URL of `apps/extractor`. Unset: documents are verified, but classification fails with `CLASSIFIER_NOT_CONFIGURED` (the document is `identify_failed`), so nothing is read |
 | `EXTRACTOR_AUTH` | `secret` (default, sends `x-extractor-secret`) or `oidc` (Cloud Run ID token for `EXTRACTOR_URL`) |
 | `EXTRACTOR_SECRET` | Required with `EXTRACTOR_URL` and `EXTRACTOR_AUTH=secret`; must match the extractor's |
-| `EXTRACTOR_TIMEOUT_SECONDS`, `EXTRACT_MAX_BYTES` | Whole-request timeout (900 s) and largest PDF sent for extraction (50 MiB) |
+| `EXTRACT_TIMEOUT_SECONDS`, `EXTRACT_MAX_BYTES` | Whole-request timeout (1800 s) and largest PDF sent for extraction (50 MiB) |
 | `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `CLOUD_TASKS_QUEUE`, `WORKER_INVOKER_SA`, `TASK_DISPATCH_DEADLINE_SECONDS` | Required with `EXTRACTOR_URL` when `DISPATCH_MODE=cloud-tasks`, to enqueue `document.extract` |
 | `CONNECTIONS_KEY` | 32 bytes, base64 (`openssl rand -base64 32`); must match the API's. Decrypts the saved Dhan and FRED keys and encrypts a renewed Dhan token. Unset: the market refresher does not run |
 | `DHAN_REQUESTS_PER_SECOND` | Dhan Data API calls per second (default 4, at most 5) |

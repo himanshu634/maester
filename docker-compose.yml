@@ -36,8 +36,8 @@ x-api-env: &api-env
   STORAGE_DIR: /var/lib/maester/blobs
   # Confirmation and reset links are written to the api log instead of being sent.
   MAIL_DRIVER: console
-  DISPATCH_MODE: local
-  DISPATCH_SECRET: local-dispatch-secret
+  # The worker pulls jobs from Postgres; the API wakes it with NOTIFY job_ready.
+  DISPATCH_MODE: queue
   WORKER_URL: http://worker:8788
   # Market mood. CONNECTIONS_KEY (generate with: openssl rand -base64 32) encrypts the Dhan and
   # FRED keys saved in Settings; unset, those routes refuse and the worker does not refresh.
@@ -107,6 +107,8 @@ services:
       PORT: 8788
       EXTRACTOR_URL: http://extractor:8790
       EXTRACTOR_SECRET: local-extractor-secret
+    # On stop the worker waits up to 25 s for running jobs; Docker's default 10 s would kill it mid-wait.
+    stop_grace_period: 30s
     ports:
       - "8788:8788"
     volumes:
