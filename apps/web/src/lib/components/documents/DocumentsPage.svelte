@@ -52,6 +52,8 @@
 	let uploadingIds = $state.raw<string[]>([]);
 	/** The drop strip's line while a batch is checked and sent. */
 	let busy = $state<string | null>(null);
+	/** Files are being sent: closing the tab would stop them. */
+	let sending = $state(false);
 	/** How the last batch went. */
 	let outcome = $state.raw<Outcome | null>(null);
 	let message = $state<string | null>(null);
@@ -94,7 +96,8 @@
 
 	/** Say once, politely, that the slip's document has moved on. */
 	function announceIfMoved(before: DocumentRecord | undefined, next: DocumentRecord) {
-		if (slip?.id !== next.id) return;
+		// A batch says its start and end once; the slip's changes would be said per file.
+		if (busy || slip?.id !== next.id) return;
 		const was = before ? stateLabel(before) : null;
 		const now = stateLabel(next);
 		if (was !== now) announcement = copy.announce(next.originalName, now);
@@ -284,8 +287,8 @@
 	/**
 	 * Add a batch: check every file in the browser, send the rest a few at a time, one document
 	 * per file, then say once how it went. The start and the end are announced, never each file.
-	 * A lone file opens its slip and takes focus as soon as the API has it; a batch leaves focus
-	 * where it is and opens the first file sent once it ends.
+	 * A lone file opens its slip and takes focus as soon as the API has it; a batch holds the slip
+	 * on its first file without moving focus, and opens the first file sent once it ends.
 	 */
 	async function addFiles(picked: Picked[]) {
 		const client = api;
@@ -308,6 +311,8 @@
 		if (accepted.length > 0) {
 			busy = sendingLine(0, accepted, folder);
 			say(startAloud(accepted, folder));
+			let pinned = false;
+			sending = true;
 			result = await sendAll(
 				accepted,
 				folder,
@@ -323,6 +328,10 @@
 									opened = doc.id;
 									// The new slip is where the file now stands.
 									tick().then(() => slipHeading?.focus());
+								} else if (!pinned) {
+									// Held on one file, so the slip does not follow each new one.
+									pinned = true;
+									opened = doc.id;
 								}
 							}
 						});
@@ -334,6 +343,7 @@
 				},
 				(settled) => (busy = sendingLine(settled, accepted, folder))
 			);
+			sending = false;
 		}
 		const ended: Outcome = {
 			total: picked.length,
@@ -422,7 +432,7 @@
 
 	/** Sending the bytes is the one step closing the tab would stop. */
 	function beforeunload(event: BeforeUnloadEvent) {
-		if (busy) event.preventDefault();
+		if (sending) event.preventDefault();
 	}
 </script>
 
@@ -498,7 +508,7 @@
 						/>
 					{/key}
 					<p class="leaving muted">
-						{busy ? copy.leavingWhileSending : copy.leaving}
+						{sending ? copy.leavingWhileSending : copy.leaving}
 					</p>
 				</div>
 			{/if}
