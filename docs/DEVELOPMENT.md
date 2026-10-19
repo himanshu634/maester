@@ -274,7 +274,7 @@ Uninstall any older `pdf-financial-qa` distribution first; it owned the same con
 | API logs `EACCES … /var/lib/maester/blobs` | The blob volume predates the image that owns that directory. `pnpm stack:reset` and rebuild. |
 | A signed upload or download returns 403 | The URL expired (15 minutes for uploads, 5 for downloads) or was altered. The API both signs and verifies these URLs, so the worker is not involved. Create a new upload. |
 | `invalid environment: …` at boot | A required variable is missing for the driver or dispatch mode you selected. The message names the variable; section 6 says when each one is required. |
-| A job stays `queued` | The worker is down, or it has no handler for the job type (it logs "queued jobs of a type this worker has no handler for" at start-up), or all places under the limit for that type are busy, or `run_after` is still in the future after a failure. Check `docker compose logs worker`. |
+| A job stays `queued` | The worker is down, or it has no handler for the job type (it logs "queued jobs of a type this worker has no handler for" at start-up), or the limit for that type is reached, or `run_after` is still in the future after a failure. Check `docker compose logs worker`. |
 | A document is rejected with `OBJECT_MISSING` | The API and the worker are pointed at different `STORAGE_DIR` paths, so the worker cannot find what the API wrote. Outside Docker the default resolves against each service's own directory; use `../../data/blobs` as `.env.example` does. |
 | Code changes do nothing | Containers do not hot-reload. Rebuild the service, or run it as a local process. |
 | Extract jobs fail with `EXTRACTOR_NOT_CONFIGURED` | The extractor has no `GOOGLE_CLOUD_PROJECT` or cannot find Application Default Credentials. See section 7; the job does not retry. |
@@ -326,7 +326,7 @@ The document engine and CLI carry the prototype's limits, and the hosted service
 - Extraction is not deployed: the Cloud Run steps are listed in [document extraction](EXTRACTION.md) section 7.
 - Identity is Google or email and password, behind a waitlist: approval is a script, with no admin screen, and nothing is emailed on approval. Every user gets one personal workspace; there is no invitation or role management. [SIGN_IN.md](SIGN_IN.md) section 3.8 lists the known limits, including pre-registration through the email link.
 - The web client is a set of static pages. Sign-in and recovery call the API through the web origin; under a real session `/terminal/documents` adds filings and shows what Maester read them as, `/terminal/research` shows a company's statements year by year, and `/terminal/market-mood` and `/terminal/settings` work, all through the API, while the terminal's other first-release pages (`/terminal` and four more: holdings, watchlist, analyst and activity) are coming-soon pages, and the overview is a synthetic demo that does not read the API.
-- Local dispatch does not retry a failed job automatically.
+- In `queue` mode, a failed job is retried with backoff until `maxAttempts`. The retry endpoint resets the wait (`run_after`) and adds attempts.
 - There is no ledger, market data, portfolio accounting, evidence-backed Analyst or autonomous loop. Extraction accuracy is not measured.
 
 Feature IDs F04–F09 address the evidence gaps and F17–F24 the accounting foundation; see the [feature roadmap](FEATURE_ROADMAP.md) and [delivery plan](DELIVERY_PLAN.md).

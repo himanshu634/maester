@@ -119,12 +119,13 @@ The worker uses five shared packages. For more information, see [shared packages
 12. If a claim fails, the claim loop writes the error to the log and waits for one poll interval.
 13. `executeJob` finds the handler from the `type` column of the job.
 14. If the handler registry has no handler for the job type, the job gets a final failure with the code `UNKNOWN_JOB_TYPE`.
-15. A timer calls `renewLease` every `JOB_HEARTBEAT_MS`, also while the handler is quiet. If `renewLease` finds that the lease token changed, the timer stops. The outcome is then `lease_lost`.
-16. The handler runs. It can write progress to the `progress` column. It can also renew the lease with `heartbeat`.
-17. `heartbeat` renews the lease a maximum of one time in each 5 seconds (`HEARTBEAT_THROTTLE_MS`).
-18. If the handler returns a value, `completeJob` sets the job to `succeeded` and writes the value to the `result` column.
-19. If a different process took the lease while the handler ran, `completeJob` changes nothing. The outcome is then `lease_lost`.
-20. If the handler throws an error, the worker records the error. See [Retries](#retries).
+15. A timer calls `renewLease` every `JOB_HEARTBEAT_MS`, also while the handler is quiet.
+16. If `renewLease` finds that the lease token changed, the timer stops. The outcome is then `lease_lost`.
+17. The handler runs. It can write progress to the `progress` column. It can also renew the lease with `heartbeat`.
+18. `heartbeat` renews the lease a maximum of one time in each 5 seconds (`HEARTBEAT_THROTTLE_MS`).
+19. If the handler returns a value, `completeJob` sets the job to `succeeded` and writes the value to the `result` column.
+20. If a different process took the lease while the handler ran, `completeJob` changes nothing. The outcome is then `lease_lost`.
+21. If the handler throws an error, the worker records the error. See [Retries](#retries).
 
 At start, `logUnhandledQueued` writes one log line for each job type with queued jobs and no handler in this worker. No claim loop takes these jobs.
 
@@ -132,10 +133,11 @@ At start, `logUnhandledQueued` writes one log line for each job type with queued
 
 1. Every `JOB_SWEEP_MS`, the queue runner calls `sweepExpired`.
 2. `sweepExpired` finds each `running` job with `lease_expires_at` in the past. A worker that stopped or stalled leaves such a job.
-3. If `attempt` is less than `maxAttempts`, the sweep sets the job to `queued` with `last_error_code` = `LEASE_EXPIRED` and a new `run_after`. The backoff rules apply.
-4. If `attempt` is equal to or more than `maxAttempts`, the sweep sets the job to `failed` with `last_error_code` = `LEASE_EXPIRED` and `finished_at`.
-5. After a final failure, the sweep calls the `onFinalFailure` function of the handler, if the handler has one.
-6. Each statement of the sweep checks `lease_expires_at` again. Thus a job that a timer renewed in the meantime does not change.
+3. If `attempt` is less than `maxAttempts`, the sweep sets the job to `queued` with `last_error_code` = `LEASE_EXPIRED`.
+4. The sweep also sets a new `run_after`. The backoff rules apply.
+5. If `attempt` is equal to or more than `maxAttempts`, the sweep sets the job to `failed` with `last_error_code` = `LEASE_EXPIRED` and `finished_at`.
+6. After a final failure, the sweep calls the `onFinalFailure` function of the handler, if the handler has one.
+7. Each statement of the sweep checks `lease_expires_at` again. Thus a job that a timer renewed in the meantime does not change.
 
 ### Stop of the worker
 
@@ -154,7 +156,7 @@ At start, `logUnhandledQueued` writes one log line for each job type with queued
 5. If the job state is `succeeded`, `failed` or `cancelled`, the worker sends status 200 and does not run the job.
 6. `acquireLease` sets the job to `running`, adds 1 to `attempt` and writes a new lease token. The lease ends after `LEASE_SECONDS`.
 7. `acquireLease` changes only a `queued` job, or a `running` job with an expired lease. If another process holds the lease, the worker sends status 409 with the outcome `lease_held`.
-8. `runJob` calls `executeJob`. The `:type` value in the path goes only into the log. The steps from 13 to 20 of the queue mode then apply.
+8. `runJob` calls `executeJob`. The `:type` value in the path goes only into the log. The steps from 13 to 21 of the queue mode then apply.
 9. The worker sends status 200 for each outcome, except `retry`. For `retry`, it sends status 500.
 
 ### `document.verify`
@@ -231,7 +233,7 @@ A rejected document does not make the job fail. The job is `succeeded`, and its 
 3. For a final failure, `failAttempt` sets the job to `failed`. It writes `last_error_code`, `last_error_message` and `finished_at`. The message keeps the first 2000 characters.
 4. After a final failure, the worker calls the `onFinalFailure` function of the handler, if the handler has one. The worker sends status 200 with the outcome `failed`.
 5. For a failure that is not final, `failAttempt` sets the job to `queued`, removes the lease and sets `run_after`.
-6. The backoff is the smaller of 900 and 30 × 2^(`attempt` − 1) seconds, plus a random extra of up to 20%. `backoffSeconds` calculates it.
+6. The backoff is the smaller of 900 and 30 × 2^(`attempt` − 1) seconds, plus a random extra of up to 20%. `backoffSeconds` calculates it. The longest wait is 900 seconds plus 20%, thus 1080 seconds.
 7. In `queue` mode, a claim loop takes the job when `run_after` is past. No notification is necessary, because the poll finds the job.
 8. In `cloud-tasks` mode, the worker sends status 500 with the outcome `retry`. Cloud Tasks sends the dispatch request again. The script `infra/bootstrap.sh` sets the retry schedule of the queue.
 9. A retry through the API (`POST .../jobs/:id/retry`) sets `run_after` to now. The job then runs at once.
@@ -351,7 +353,8 @@ The breadth uses the current member list for all past days. Thus the past breadt
 | --- | --- | --- |
 | Status 200 | The job is `succeeded`, `failed`, `cancelled` or not in the database. | The caller does not send the request again. |
 | Status 400 | The body has no valid UUID in `jobId`. | The worker does not run the job. |
-| Status 401 | The secret or the OIDC token is not correct. | The worker does not run the job. |
+| Status 401 | In `cloud-tasks` mode, the OIDC token is not correct. | The worker does not run the job. |
+| Status 404 | A request to `/tasks/:type` in `queue` mode. The worker does not mount this route in `queue` mode. | The worker does not run the job. |
 | Status 409 | A different process holds the lease. | The worker does not run the job. |
 | Status 500, outcome `retry` | A failure that is not final. | The job is `queued` again. |
 | Status 500, error `internal` | An error that `runJob` does not catch. Examples: a database error before the handler starts, or an error in `failAttempt`. | The worker writes the error to the log. |

@@ -162,7 +162,7 @@ The repository has three package managers:
 | Intake `read_failed` | The last run of `document.extract` failed. | The investor can send `POST .../extract`. |
 | Job `queued`, `running`, `succeeded`, `failed` | The worker changes the state under its lease. | The API returns the latest job of a document as `latestJob`. |
 | Job `cancelled` | Not known. No code in `apps` or `packages` sets this state. | Not known. |
-| Error that the worker can try again | The handler failed, the error is not a permanent `JobFailure`, and the job has runs left. The default maximum is 5 runs. | The job goes back to `queued` and the worker answers 500. In the `queue` mode, the worker claims the job again after the backoff. In the `cloud-tasks` mode, Cloud Tasks sends the task again. |
+| Error that the worker can try again | The handler failed, the error is not a permanent `JobFailure`, and the job has runs left. The default maximum is 5 runs. | The job goes back to `queued`. In the `queue` mode, the worker claims the job again after the backoff. In the `cloud-tasks` mode, the worker answers 500 and Cloud Tasks sends the task again. |
 | Permanent error, or the last run | The handler failed with a permanent `JobFailure`, or the job has no runs left. | The job goes to `failed`. The handler can set `identify_failed` or `read_failed`. |
 | `lease_held` (409 from the worker) | Another run holds a lease that did not expire. | The worker does not run the job. |
 | `CLASSIFIER_NOT_CONFIGURED` | The worker has no `EXTRACTOR_URL`. | The classify job fails without a second run. The intake state goes to `identify_failed`. |
