@@ -54,6 +54,9 @@ export function loadWorkerEnv(source: NodeJS.ProcessEnv = process.env): WorkerEn
   if (parsed.data.STORAGE_DRIVER === "gcs" && !parsed.data.GCS_BUCKET) throw new Error("GCS_BUCKET required when STORAGE_DRIVER=gcs");
   if (parsed.data.STORAGE_DRIVER === "disk" && parsed.data.NODE_ENV === "production")
     throw new Error("STORAGE_DRIVER=disk is a local development driver and is refused in production");
+  // A renewal that comes later than the lease lets a sweep hand a running job to another worker.
+  if (parsed.data.JOB_HEARTBEAT_MS * 2 > parsed.data.LEASE_SECONDS * 1000)
+    throw new Error("JOB_HEARTBEAT_MS must be at most half of LEASE_SECONDS, so one missed renewal does not lose the lease");
   if (parsed.data.DISPATCH_MODE === "cloud-tasks" && !parsed.data.API_SERVICE_ACCOUNT_EMAIL) throw new Error("API_SERVICE_ACCOUNT_EMAIL required when DISPATCH_MODE=cloud-tasks");
   if (parsed.data.EXTRACTOR_URL) {
     if (parsed.data.EXTRACTOR_AUTH === "secret" && !parsed.data.EXTRACTOR_SECRET) throw new Error("EXTRACTOR_SECRET required when EXTRACTOR_AUTH=secret");

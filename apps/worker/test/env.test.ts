@@ -23,6 +23,12 @@ describe("worker env: the queue", () => {
     expect(env).not.toHaveProperty("EXTRACTOR_TIMEOUT_SECONDS");
   });
 
+  it("refuses a heartbeat that does not renew well inside the lease", () => {
+    expect(() => loadWorkerEnv({ ...base, LEASE_SECONDS: "10" })).toThrow(/JOB_HEARTBEAT_MS/);
+    expect(() => loadWorkerEnv({ ...base, LEASE_SECONDS: "10", JOB_HEARTBEAT_MS: "5001" })).toThrow(/JOB_HEARTBEAT_MS/);
+    expect(loadWorkerEnv({ ...base, LEASE_SECONDS: "10", JOB_HEARTBEAT_MS: "5000" }).JOB_HEARTBEAT_MS).toBe(5000);
+  });
+
   it("reads EXTRACT_TIMEOUT_SECONDS", () => {
     expect(loadWorkerEnv({ ...base, EXTRACT_TIMEOUT_SECONDS: "60" }).EXTRACT_TIMEOUT_SECONDS).toBe(60);
   });
