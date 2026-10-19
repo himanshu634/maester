@@ -1,6 +1,6 @@
 # Documents by filing, and the XBRL figure panel: design
 
-Status: picked 19 October 2026. The investor chose direction **C · Filings, not files** on the canvas "Maester Ingestion Screens" (https://claude.ai/artifact/AhK6e5k9RMQvTBogXeibng, boards C1–C4 and the shared words board S1). This document is the screen half of the [ingestion pipeline](2026-10-19-ingestion-pipeline-design.md) spec (on `docs/document-index-design`, §11 and §12). Phase 4 of that spec builds the figure panel's XBRL source from §8 here. Phase 6 builds the Documents screen from §2–§7 here. Nothing is built before the API it reads exists, because no screen runs on synthetic data.
+Status: picked 19 October 2026. The investor chose direction **C · Filings, not files** on the canvas "Maester Ingestion Screens" (https://claude.ai/artifact/AhK6e5k9RMQvTBogXeibng, boards C1–C4 and the shared words board S1). This document is the screen half of the ingestion pipeline spec (`docs/superpowers/specs/2026-10-19-ingestion-pipeline-design.md`, on branch `docs/document-index-design` until it merges; §11 and §12). Phase 4 of that spec builds the figure panel's XBRL source from §8 here. Phase 6 builds the Documents screen from §2–§7 here. Nothing is built before the API it reads exists, because no screen runs on synthetic data.
 
 Two things in this document correct the canvas: the bases inside a filing (§3) and where ink blocks are used (§4).
 
