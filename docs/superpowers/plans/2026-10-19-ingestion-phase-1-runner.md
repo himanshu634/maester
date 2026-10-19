@@ -29,7 +29,7 @@
 1. **A worker dies mid-job.** The job's lease expires; the sweeper puts it back to `queued` with backoff, or fails it with `LEASE_EXPIRED` (running `onFinalFailure`) when its attempts are spent. Task 3.
 2. **A notification is missed** (the listener's connection drops, or a job is created while the worker is down). The poll still finds it within `JOB_POLL_MS`, and the listener reconnects. Task 5.
 3. **A failed job is retried by hand** (`POST /v1/jobs/:id/retry`). `retryJob` resets `run_after` to now and notifies, so it runs at once rather than after its old backoff. Task 6.
-4. **SIGTERM while jobs run.** Loops stop claiming at once; the process waits up to 25 s for running handlers, then exits; an unfinished job's lease expires and the sweeper recovers it. Task 7.
+4. **SIGTERM while jobs run.** Loops stop claiming at once; the process waits up to 25 s for running handlers (compose gives the worker `stop_grace_period: 30s`, so Docker does not kill it first), then exits; an unfinished job's lease expires and the sweeper recovers it. Task 7.
 5. **A queued job of a type with no handler** (an old type, a typo). No loop claims it, so it stays `queued`; the sweeper does not touch queued rows. The worker logs the queued count per unknown type once at start. Task 7.
 
 ---
@@ -292,7 +292,7 @@ git commit -m "feat(worker): execute a leased job with a timer heartbeat; runJob
 - Produces:
   - `parseConcurrency(spec: string | undefined, types: string[]): Record<string, number>`: `"document.extract=3,document.verify=8"` over the defaults in Global Constraints; any other type 1; a value below 1 or not an integer throws.
   - `startQueueRunner(deps: WorkerDeps, opts: { concurrency: Record<string, number>; pollMs: number; sweepMs: number; listen: (onReady: (type: string) => void) => Promise<() => Promise<void>> }): { stop(graceMs: number): Promise<void>; running(): Record<string, number> }`: for each type in `deps.handlers`, a loop that, while running jobs of that type are below its limit, calls `claimNext` and starts `executeJob` without awaiting it; when `claimNext` returns null the loop sleeps until `pollMs` passes or `onReady(type)` fires. A sweep runs every `sweepMs`; for each `failed` job it calls the handler's `onFinalFailure`. `stop` stops claiming at once and waits up to `graceMs` for running jobs.
-  - `pgListen(connectionString: string, logger: Logger)`: the `listen` implementation: a dedicated `pg.Client` that runs `LISTEN job_ready`, calls `onReady(payload)`, and on error or end reconnects after 1 s (doubling to at most 30 s), logging each reconnect. Returns a close function.
+  - `pgListen(connectionString: string, logger: Logger): (onReady: (type: string) => void) => Promise<() => Promise<void>>`: the `listen` implementation. Called with `onReady`, it opens a dedicated `pg.Client`, runs `LISTEN job_ready`, calls `onReady(payload)` for each notification, and on error or end reconnects after 1 s (doubling to at most 30 s), logging each reconnect; it resolves to a close function.
   - `WorkerEnv` gains `JOB_CONCURRENCY` (optional string), `JOB_POLL_MS` (1000), `JOB_SWEEP_MS` (30000).
 
 - [ ] **Step 1: Write the failing tests** in `apps/worker/test/queue.test.ts`:
@@ -371,7 +371,7 @@ git commit -m "feat(worker): queue runner with a limit per job type, LISTEN wake
 
 **Interfaces:**
 - Produces:
-  - `class QueueNotifier implements Dispatcher { constructor(db: Db) }`: `enqueue(job)` runs `select pg_notify('job_ready', ${job.type})`.
+  - `class QueueNotifier implements Dispatcher { constructor(db: Db) }`: `enqueue(job)` runs `select pg_notify('job_ready', ${job.type})` on a pool connection. Callers enqueue after their transaction commits, as `decideIntake` already does; a notify sent too early only costs a poll interval, because the poll finds the job anyway.
   - `DISPATCH_MODE` becomes `z.enum(["queue", "cloud-tasks"]).default("queue")` in both apps. `cloud-tasks` authenticates with OIDC (`apps/worker/src/auth.ts`), so `DISPATCH_SECRET` is no longer used by any mode: its env entries, its start-up check and the `local` branch of `verifyDispatchRequest` are removed. `LocalHttpDispatcher` is deleted with its test cases.
   - `retryJob` also sets `run_after: sql\`now()\``.
 
@@ -402,11 +402,11 @@ git commit -m "feat(jobs): enqueue by NOTIFY in queue mode; retry resets run_aft
 **Interfaces:**
 - Consumes: `startQueueRunner`, `pgListen`, `parseConcurrency` (Task 5); `QueueNotifier` (Task 6).
 - Produces:
-  - In `queue` mode `server.ts` starts `startQueueRunner(deps, { concurrency: parseConcurrency(env.JOB_CONCURRENCY, Object.keys(handlers)), pollMs: env.JOB_POLL_MS, sweepMs: env.JOB_SWEEP_MS, listen: (cb) => pgListen(env.DATABASE_URL, logger)(cb) })`, logs once per type with queued jobs but no handler (type and count only), and on `SIGTERM` calls `runner.stop(25_000)` before closing the server.
+  - In `queue` mode `server.ts` starts `startQueueRunner(deps, { concurrency: parseConcurrency(env.JOB_CONCURRENCY, Object.keys(handlers)), pollMs: env.JOB_POLL_MS, sweepMs: env.JOB_SWEEP_MS, listen: pgListen(env.DATABASE_URL, logger) })`, logs once per type with queued jobs but no handler (type and count only), and on `SIGTERM` calls `runner.stop(25_000)` before closing the server. The existing 10-second forced exit in `server.ts` becomes 28 seconds, and the worker service in `docker-compose.yml` gets `stop_grace_period: 30s` (Docker's default of 10 s would kill it mid-wait).
   - `createWorkerApp` mounts `/tasks/:type` only when `env.DISPATCH_MODE === "cloud-tasks"`; `/healthz` always.
   - `EXTRACT_TIMEOUT_SECONDS` (default 1800) feeds `HttpExtractorClient`; `EXTRACTOR_TIMEOUT_SECONDS` is removed.
 
-- [ ] **Step 1: Write the failing tests.** `env.test.ts`: defaults give `DISPATCH_MODE === "queue"`, `EXTRACT_TIMEOUT_SECONDS === 1800`, `JOB_POLL_MS === 1000`, `JOB_SWEEP_MS === 30000`, `JOB_HEARTBEAT_MS === 15000`; `JOB_CONCURRENCY=bad` fails at start through `parseConcurrency`. `app.test.ts`: in `queue` mode `POST /tasks/test.noop` answers 404; in `cloud-tasks` mode it reaches `verifyDispatchRequest` (401 without a token).
+- [ ] **Step 1: Write the failing tests.** `env.test.ts`: defaults give `DISPATCH_MODE === "queue"`, `EXTRACT_TIMEOUT_SECONDS === 1800`, `JOB_POLL_MS === 1000`, `JOB_SWEEP_MS === 30000`, `JOB_HEARTBEAT_MS === 15000`; `JOB_CONCURRENCY=bad` fails at start through `parseConcurrency`. `app.test.ts`: in `queue` mode `POST /tasks/test.noop` answers 404; in `cloud-tasks` mode it reaches `verifyDispatchRequest` (401 without a token). `queue.test.ts`: `runner.stop(500)` resolves only after a running 200 ms handler finishes, and resolves at about 500 ms while a 2 s handler is still running (that job is left to its lease).
 
 - [ ] **Step 2: Run to see them fail** — `pnpm --filter @maester/worker exec vitest run test/env.test.ts test/app.test.ts` — FAIL.
 
@@ -414,7 +414,7 @@ git commit -m "feat(jobs): enqueue by NOTIFY in queue mode; retry resets run_aft
 
 - [ ] **Step 4: Run the worker suite** — `pnpm --filter @maester/worker exec vitest run` — PASS.
 
-- [ ] **Step 5: Live check on the compose stack.** `docker compose up -d --build`; upload 20 small PDFs through the API in a loop (`for f in data/eval/corpus/**/*.pdf …`, or any 20 PDFs); while they process, run `docker compose exec postgres psql -U maester -c "select type, count(*) from job where state = 'running' group by type"` every few seconds. Expected: `document.verify` never above 4, `document.classify` never above 2, `document.extract` never above 2. Then `docker compose restart worker` with a job running; expected: within `LEASE_SECONDS` plus a sweep, the job is queued again and completes (`select state, attempt, last_error_code from job where id = …`).
+- [ ] **Step 5: Live check on the compose stack, with no model calls.** The project has no budget, so this step must not reach Gemini: run the stack with `EXTRACTOR_URL` unset for the worker (`docker compose up -d --build postgres migrate api worker`, the extractor not started, or `EXTRACTOR_URL=` in the worker's environment). Upload 20 small PDFs through the API in a loop; verify runs, classification fails at once with `CLASSIFIER_NOT_CONFIGURED`, and nothing is sent to a model. While they process, run `docker compose exec postgres psql -U maester -c "select type, count(*) from job where state = 'running' group by type"` every second. Expected: `document.verify` never above 4. Then `docker compose restart worker` while a verify job runs (slow it by uploading a 50 MB PDF); expected: after `LEASE_SECONDS` plus a sweep the job is queued again and completes (`select state, attempt, last_error_code from job where id = …`). Any check that would call a model is asked of the investor first.
 
 - [ ] **Step 6: Commit**
 

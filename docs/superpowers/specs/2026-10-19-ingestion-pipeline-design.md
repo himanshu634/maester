@@ -206,7 +206,7 @@ A result carries no figure. No screen in this project.
 Today every job is pushed to the worker the moment it is created, with nothing to stop ten large files reading at once and exhausting the machine. The worker becomes a **pull-based runner over the existing `job` table**:
 
 - **Retries with backoff.** `job` gains `run_after` (default now). A failed attempt that will be retried sets it to now plus 30 seconds doubled per attempt, at most 15 minutes, so a Vertex 429 or a down indexer does not burn all five attempts in seconds. The claim query takes only jobs whose `run_after` has passed. `retryJob` in the API, which re-queues by hand, also notifies.
-- **Claiming.** Each worker process runs one loop per job type. A loop claims the oldest ready job of its type with `UPDATE … WHERE id = (SELECT id FROM job WHERE type = $1 AND ((state = 'queued' AND run_after <= now()) OR (state = 'running' AND lease_expires_at < now())) ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING *`, using the lease, attempt and progress columns that already exist (`acquireLease`, `renewLease`). Two worker processes never take the same job.
+- **Claiming.** Each worker process runs one loop per job type. A loop claims the oldest ready job of its type with `UPDATE … WHERE id = (SELECT id FROM job WHERE type = $1 AND state = 'queued' AND run_after <= now() ORDER BY run_after, created_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING *`, using the lease, attempt and progress columns that already exist. Jobs whose lease expired are not claimed directly; the sweeper (below) returns them to `queued` first. Two worker processes never take the same job.
 - **Limits per type**, as settings, defaults chosen for one machine:
 
 | Job | Concurrent jobs | Why |
@@ -217,7 +217,7 @@ Today every job is pushed to the worker the moment it is created, with nothing t
 | `document.extract` | 2 | Many Gemini calls; the Vertex quota. |
 | `document.index` | 1 | Docling, OCR and embedding use every core and most of the memory (§19). |
 
-- **Waking.** A created job is picked up by the next poll (every second while a loop is idle, `JOB_POLL_MS`) and, to start at once, by `NOTIFY job_created` from `createJob`, which the loops `LISTEN` for. The `Dispatcher` interface stays for tests; `LocalHttpDispatcher` is replaced by the notifier. The Cloud Tasks dispatcher is kept but unused while hosting is undecided.
+- **Waking.** A created job is picked up by the next poll (every second while a loop is idle, `JOB_POLL_MS`) and, to start at once, by `NOTIFY job_ready` (payload: the job type) from `createJob` and `retryJob`, sent after the job's transaction commits, which the loops `LISTEN` for. The `Dispatcher` interface stays for tests; `LocalHttpDispatcher` is replaced by the notifier. The Cloud Tasks dispatcher is kept but unused while hosting is undecided.
 - **Fairness.** Within a type, jobs run oldest first. Classification and XBRL reads are short and have their own loops, so a long index job never delays a new upload's "what is it" step.
 - **Uploads.** The API already accepts any number of uploads; several files dropped at once each get their own document and jobs. The one-file rule is the screen's, and it changes with the Documents design (§12).
 - **Recovery.** A sweeper (every 30 s) returns jobs whose lease expired to `queued` with backoff, so a job whose worker died runs again. Heartbeats run on a timer (every 15 s) as well as on stream events, so a quiet stretch of a long read never loses its lease. The extractor and indexer timeouts become per job type (`EXTRACT_TIMEOUT_SECONDS` 1800, `INDEX_TIMEOUT_SECONDS` 7200), replacing the single 900-second `EXTRACTOR_TIMEOUT_SECONDS` that aborts any read over 15 minutes.
@@ -327,11 +327,11 @@ Every table carries `workspace_id` and every query filters on it. A duplicate do
 | `XBRL_ROUNDING_MISMATCH` | revision, `partial` | The coarsest `decimals` disagrees with the declared rounding. |
 | `XBRL_MIXED_BASIS` | classify | One instance with both bases or none; held for the investor. |
 | `XBRL_NIL` | fact | A nil value; unknown. |
-| `INDEXER_NOT_CONFIGURED` | `document.index`, search | No indexer URL. The backfill recovers documents once configured. |
+| `INDEXER_NOT_CONFIGURED` | `document.index` | No indexer or embedder URL. The backfill recovers documents once configured. |
 | `UNREADABLE_PDF` | `document.index` | As the extractor reports it. |
 | `OCR_FAILED`, `OCR_BUDGET` | page `none_reason`, revision warnings | A scanned page has no text; the revision is `partial`. `OCR_BUDGET`: over `OCR_PAGE_BUDGET` (default 400) scanned pages. |
-| `EMBEDDING_FAILED` | `document.index` | The indexer failed to embed after retries. |
-| `SEARCH_UNAVAILABLE` | search route | The indexer is down or has no model; 503. |
+| `EMBEDDING_FAILED` | `document.index` | The embedder failed after retries; the revision stays `building` and the next attempt resumes. |
+| `SEARCH_UNAVAILABLE` | search route | The embedder is down or not configured; 503. |
 
 ## 16. Phases
 
@@ -339,7 +339,7 @@ Each phase is its own implementation plan from this document and lands on `stagi
 
 | Phase | Builds | Done when |
 | --- | --- | --- |
-| 1 · Runner | The pull-based job runner with per-type limits, `NOTIFY`, the notifier replacing the HTTP dispatcher; the pgvector image. | Twenty files dropped at once process with no more than the configured jobs per type running, and nothing is lost on a worker restart. |
+| 1 · Runner | The pull-based job runner with per-type limits, `NOTIFY`, the notifier replacing the HTTP dispatcher; the pgvector image. | Twenty seeded jobs of a test type with a sleeping handler, and twenty PDFs uploaded with no extractor configured (verify only, no model calls), run with no more than the configured jobs per type at once, and a job interrupted by a worker restart runs again. |
 | 2 · Index | The indexer service (Docling, RapidOCR, the chunker); the embedder service (TEI); the index tables; `document.index` writing as it goes; the backfill; the search function and route. | Every stored document in the investor's workspace has a current index; a search returns pages. |
 | 3 · Measure the index | The OCR spot check, the retrieval set and report; `EMBEDDING_MODEL` and the OCR engine chosen. | Both reports committed under `docs/eval/`. |
 | 4 · XBRL | Accepting XML and the folder import; `/v1/xbrl` with its own parser and the Ind AS element maps; XBRL classification; `document.xbrl`; facts, `span`, `xbrl_source`; the taxonomy checks and `xbrl_in_pdf`; the source rule and the reads that join sources; `waiting_for_xbrl`; skipping Gemini; the figure panel's XBRL source. | The investor's 806 instances import; a corpus company's results PDF dropped with its instance is not read by Gemini. |
