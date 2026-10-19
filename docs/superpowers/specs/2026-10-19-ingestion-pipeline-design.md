@@ -1,6 +1,6 @@
 # Ingestion pipeline: design
 
-Status: draft for review, 19 October 2026. The decisions it rests on are recorded in [ADR 0007](../../decisions/0007-ingestion-pipeline.md). It amends the [financial data layer](2026-10-15-financial-data-layer-design.md) in two places, named in §14: XBRL ingestion and OCR leave its out-of-scope list, and for a filing with XBRL the reader is XBRL, not the two PDF readers of [ADR 0006](../../decisions/0006-concepts-calculations-agent-access.md).
+Status: draft for review, 19 October 2026, revised the same day after the [research](../../research/2026-10-19-ingestion-research.md). The decisions it rests on are recorded in [ADR 0007](../../decisions/0007-ingestion-pipeline.md). It amends the [financial data layer](2026-10-15-financial-data-layer-design.md) in two places, named in §14: XBRL ingestion and OCR leave its out-of-scope list, and for a filing with XBRL the reader is XBRL, not the two PDF readers of [ADR 0006](../../decisions/0006-concepts-calculations-agent-access.md).
 
 ## 1. Goal
 
@@ -67,19 +67,20 @@ document.verify ── type, hash, duplicate ─┬─► document.classify ─�
    (worker)                               │       ├─ XBRL document ─────────► document.xbrl ─► facts (source xbrl)
                                           │       └─ PDF, no XBRL covers it ─► document.extract ─► facts (source pdf)
                                           │
-                                          └─► document.index ─► indexer: read pages, OCR scans, chunk, embed ─► pgvector
+                                          └─► document.index ─► indexer: read pages, OCR, chunk ─► embedder ─► pgvector
 ```
 
-Four services, as today plus one:
+Five services, as today plus two:
 
 | Service | Runtime | Does | New |
 | --- | --- | --- | --- |
-| API | TypeScript | Uploads, documents, research, search route. Embeds a search query through the indexer. | Accepts XML; pipeline status per document; search route. |
+| API | TypeScript | Uploads, documents, research, search route. Embeds a search query through the embedder. | Accepts XML; pipeline status per document; search route. |
 | Worker | TypeScript | Runs jobs, writes the database. | Pulls jobs from Postgres with per-type limits (§9); `document.xbrl`, `document.index`. |
-| Extractor | Python | Classification and Gemini extraction, stateless. | `/v1/xbrl`: reads an XBRL instance into facts. |
-| **Indexer** | Python | Reads pages (text layer, Docling layout, local OCR), chunks, embeds. Stateless; holds the embedding model in memory. | All of it. |
+| Extractor | Python | Classification and Gemini extraction, stateless. | `/v1/xbrl`: reads an XBRL instance into facts with its own parser. |
+| **Indexer** | Python | Reads pages with Docling (text layer, layout, tables, local OCR) and chunks them. Stateless. | All of it. |
+| **Embedder** | Hugging Face text-embeddings-inference, `cpu-arm64` image | Turns text into vectors over HTTP (`/embed`); holds the model in memory. | All of it; no code of ours. |
 
-The indexer is its own service so a 300-page scan running OCR on the CPU never holds up classification or a Gemini read, and so the embedding model is loaded once. It never touches the database or the blobs; the worker streams it the file and writes what comes back, as with the extractor.
+The indexer and the embedder are their own services so a 300-page scan running OCR on the CPU never holds up classification or a Gemini read, and so the embedding model is loaded once and shared by the worker (chunks) and the API (queries). Neither touches the database or the blobs; the worker streams the file to the indexer and writes what comes back, as with the extractor. Postgres keeps every role: records, facts, the job queue and the vectors (the research found no workload here that needs a second database).
 
 ## 6. Intake
 
@@ -97,11 +98,11 @@ No model. The extractor's `/v1/xbrl` (§7) is called in classify mode and return
 
 | Answer | From |
 | --- | --- |
-| Kind | The entry point (`schemaRef`): MCA AOC-4 taxonomies give `annual_report`; the BSE results taxonomy (`in-bse-fin`) and SEBI's Integrated Filing taxonomy (`in-capmkt`) give `financial_results`. An unknown entry point is `not_sure`. |
-| Company | The context entity identifier. BSE results instances carry a scrip code or a symbol, never a CIN, under several scheme URIs (at least six, one malformed: `http://www.bseindia.com/in-capmkt:/ScripCode`); the scheme is normalised by a tested table to "BSE code" or "NSE symbol" and matched to `company.bse_code` or `company.nse_symbol`. An MCA instance carries a CIN (`http://www.mca.gov.in/CIN`), matched first. A scheme not in the table leaves the company for the investor. |
-| Basis | `NatureOfReportStandaloneConsolidated` (or the results taxonomy's equivalent). An instance with both bases, or none, is `unknown` and is held for the investor. |
-| Period | The quarter's end (`DateOfEndOfReportingPeriod` on the `OneD` context). The classification's `results_span` is the quarter's. |
-| Periods inside | A results instance holds several periods with one end date: the quarter (`OneD`), the year to date (`FourD`: a half year in Q2, nine months in Q3, the full year in Q4) and balance-sheet instants (`OneI`, and the prior year's). Every fact carries its own span and start (§7.2). |
+| Kind and format | The namespace family (SEBI `in-capmkt`, BSE `in-bse-fin`) gives `financial_results`. The `schemaRef` is a bare file name that does not identify the format: one entry point covers Ind AS, banking, NBFC and "other than Ind AS" with one namespace. The format comes from the elements (banking instances carry `InterestEarned` and `CapitalAndLiabilities`; a tested rule list) and, as a cross-check, from the BSE file name's format token. An MCA AOC-4 instance would be `annual_report`; none is on hand. Anything else is `not_sure`. |
+| Company | The `ScripCode`, `Symbol` and `ISIN` facts, matched to `company.bse_code`, `company.nse_symbol` and then by ISIN. The context's entity scheme has five variants, one malformed, so it is not used. An MCA instance would carry a CIN, matched first. No match leaves the company for the investor. |
+| Basis | `NatureOfReportStandaloneConsolidated`. No file on hand mixes bases; one that does, or has none, is `unknown` and is held for the investor. Audit status from `WhetherResultsAreAuditedOrUnaudited`. |
+| Period | The reporting period's end and `ReportingQuarter` (and `TypeOfReportingPeriod` in `in-capmkt`). The classification's `results_span` is the filing's own (quarter, half year or year). |
+| Periods inside | Context ids are the filing tool's names, so spans come from the dates. A results instance holds the quarter (`OneD`; the half year in BSE "Main" half-year files), the year to date (`FourD`: 6, 9 or 12 months, absent in Q1), the closing balance sheet (`OneI`) and the prior year end (`PY_I`, opening cash only). **The comparative columns the PDF prints are not in the instance**: a prior period comes from that period's own instance. The balance sheet and cash flow appear only in half-year and Q4 or annual files. Every fact carries its own span and start (§7.2). |
 
 The answers are written as a classification with evidence source `rule` and, instead of a page and quote, the element and context they came from. `decideIntake` then runs unchanged: a confirmed company goes on, an unknown company is held for the investor, exactly as for a PDF.
 
@@ -113,7 +114,7 @@ A **slot** is one company, one statement, one basis, one period end and one span
 2. **Skipping Gemini.** When a PDF is classified and XBRL revisions already cover every statement and basis the classifier found, `document.extract` is not enqueued: the PDF goes to `ready` with its numbers "from XBRL" (§11). When XBRL covers some only, Gemini reads the PDF and only the uncovered slots are used.
 3. **Dropped together.** Before enqueuing `document.extract`, intake looks for XBRL documents of the same workspace that have not settled (verifying, identifying, or reading) or that are held for the investor and could match this PDF's company and period. If there are any, the PDF waits in a new intake state `waiting_for_xbrl`; when each such XBRL document settles (read, failed, kept, or confirmed for another company), the waiting PDFs of that company are decided again. A PDF never waits on an XBRL document that failed.
 4. **XBRL arriving later.** When XBRL lands after Gemini read the PDF, the XBRL revision takes the slots it covers; the Gemini revision stays, unused for those slots, and is still scored by the evaluation (§10).
-5. **Unknown taxonomies cover nothing.** A bank, insurer or NBFC instance (their own taxonomies, not vendored in this version) fails with `XBRL_TAXONOMY_UNKNOWN`, covers no slot, and the PDF is read as before.
+5. **Unmapped formats cover nothing.** Banking, NBFC and "other than Ind AS" instances use the same entry points with different elements. This version maps the Ind AS formats (SEBI `in-capmkt` Ind AS and BSE "Main" Ind AS), which are 550 of the 807 instances on hand. Any other format is read (so its text blocks reach the index) but writes no facts, fails nothing, covers no slot, and the PDF is read by Gemini as before. Its revision says `XBRL_FORMAT_UNMAPPED`.
 6. **Removing XBRL.** If an XBRL document is deleted (deletion is not built yet), its slots fall back to the newest PDF revision.
 
 The rule is one TypeScript function in `@maester/financial-engine`, used by the API's stitch and later the series, with a Python twin in `apps/eval`; both are tested against the same fixture file of slot cases, so they cannot drift.
@@ -128,27 +129,27 @@ It is the same rule `stitch.ts` already applies between filings ("a column comes
 
 `/v1/xbrl` on the extractor, behind `EXTRACTOR_SECRET`, takes the instance and answers NDJSON like `/v1/extract` (`started`, `progress`, `result` or `error`).
 
-- **Parser**: Arelle (Apache-2.0), in-process, offline (`internetConnectivity = offline`), with the taxonomies vendored in the image as pinned packages: SEBI's `in-capmkt` (2025-01-31 and 2026-01-31 entry points) and BSE's `in-bse-fin` (`Ind-AS_entry_point_2020-03-31.xsd`, `in-bse-fin-2020-03-31.xsd`), the ones the investor's files use. MCA's Ind AS and C&I taxonomies are added only when an AOC-4 instance is on hand. The instances' `schemaRef` is a bare file name (`in-capmkt-ent-2026-01-31.xsd`), not a URL, so the extractor resolves it by file name against the vendored packages before Arelle loads it; an XML catalog then maps the packages' own absolute imports. An entry point that is not vendored fails with `XBRL_TAXONOMY_UNKNOWN`, never a network fetch.
-- **Untrusted input**: external entities and DTDs off, no network, a size and fact-count limit, a parse deadline. A malformed instance fails `XBRL_UNREADABLE`.
-- **What comes back**, per fact: element QName, context (entity, period start and end or instant, dimension members), unit, `decimals`, the value as a decimal string or nil, footnotes; per statement, from the presentation linkbase, the statement, the section, the order and the standard label; and the calculation linkbase's results.
+- **Parser: our own, over the instance alone.** Everything a value needs is in the instance: facts, contexts, units, `decimals`, the entity, the dates, the basis and the rounding (all 807 files on hand read in 2.5 s with the standard library). The official taxonomy packages could not be fetched during research and their licence is unconfirmed, and Arelle would need the format detected first anyway (one entry-point file name covers several taxonomies), is not thread-safe, and lifts libxml2's size limits. So: `lxml` with `resolve_entities=False`, `no_network=True`, `load_dtd=False`, a DOCTYPE refused outright (none occurs in the corpus), at most 20 MB and 100,000 facts (the largest on hand is 7.9 MB and 26,198 facts), and a 30-second deadline.
+- **The element map** replaces what a taxonomy would give. `packages/financial-engine/src/pdf_financial_qa/xbrl/maps/<format>.json`, one per mapped format, versioned (`XBRL_MAP_VERSION`), lists for each element: the statement, the section, the line order, the label (as the statement table shows it), the concept in `concepts.json` (or none), and the sums it takes part in. Element names are stable between the 2025 and 2026 `in-capmkt` entry points (29 marginal differences, listed in the map). The map is a mapping rule in `CLAUDE.md`'s sense, so a change to it ships with an evaluation run. Arelle, or maps generated from the vendored presentation and calculation linkbases, can replace the hand map later, compared in `apps/eval`.
+- **What comes back**, per fact: the element, the context (period start and end or instant, dimension members), the unit, `decimals`, the value as a decimal string or nil; the declared rounding; and, from the map, the statement, section, order and label. A malformed instance fails `XBRL_UNREADABLE`.
 
 ### 7.2 Facts
 
 An XBRL read writes an `extraction_revision` like a PDF read, so the Research table, the figure panel and the evaluation keep one shape.
 
-- `extraction_revision` gains `source` (`pdf`, `xbrl`). For XBRL: `model` is `arelle-<version>`, `prompt_version` is the entry point and taxonomy version, `page_count` is 0.
+- `extraction_revision` gains `source` (`pdf`, `xbrl`). For XBRL: `model` is `xbrl-parser-<version>`, `prompt_version` is the format and `XBRL_MAP_VERSION`, `page_count` is 0.
 - One `financial_fact` per numeric fact of the three statements, with no dimension member (dimensional facts, such as segments, wait for the data layer's phase 5):
-  - `statement`, `section`, `line_order`, `reported_label` from the presentation linkbase and the standard label;
+  - `statement`, `section`, `line_order`, `reported_label` from the element map; an element not in the map writes no fact and is counted in the revision's warnings (`XBRL_ELEMENT_UNMAPPED`, element names only);
   - `period_label` from the context, written the way the statement table heads columns, and two new columns pulled forward from the data layer's phase 4 with its names: `span` (`quarter`, `half_year`, `nine_months`, `full_year`, null for an instant) and `period_start`;
-  - **unit as the filing states it.** Values in the instance are full rupees. The rounding the filing declares (`LevelOfRoundingUsedInFinancialStatements`: crores, lakhs, millions, thousands, actual) gives `unit_label` (`₹ crore`) and `scale_factor` (10,000,000); `reported_value` is the value divided by it and `normalized_value` the value itself, so the Research table keeps the statement's own unit and an XBRL filing never switches a table into full rupees. `reported_text` is the value as written in the instance. `currency` from the unit (`INR`). `decimals` is not the unit (one Mahindra & Mahindra instance declares crores and mixes −5, −6 and −7 in one statement); it is kept in `xbrl_source` and used only as the tolerance of the taxonomy checks. Restatement compares at the declared rounding.
-  - nil (`xsi:nil="true"`) is `value_status = unparsed` with the reason `XBRL_NIL`: unknown, never zero.
-- A new `xbrl_source` row per fact takes the place of `source_reference`: the XBRL document, element, context id, `decimals` and footnote ids. Readers of facts change with it: `listFactsWithSourcesForRevisions` inner-joins `source_reference` today and would drop every XBRL fact, so it left-joins both; the research contract's `CellSource` (and `Restated`) gains a source variant `{ kind: "xbrl", documentId, element, context }` beside the page one, which today requires a page. These ship in phase 4 with the figure panel built from the design round (§12).
+  - **unit as the filing states it.** Values in the instance are full rupees. The rounding the filing declares (`LevelOfRounding` in `in-capmkt`, `LevelOfRoundingUsedInFinancialStatements` in `in-bse-fin`; Crores, Lakhs and Millions on hand, Thousands, Billions and Actual allowed) gives `unit_label` (`₹ crore`) and `scale_factor` (10,000,000); `reported_value` is the value divided by it and `normalized_value` the value itself, so the Research table keeps the statement's own unit and an XBRL filing never switches a table into full rupees. `reported_text` is the value as written in the instance. `currency` from the unit (`INR`). `decimals` is not the unit (one Mahindra & Mahindra instance declares crores and mixes −5, −6 and −7 in one statement); it is kept in `xbrl_source`. Two uses: the coarsest `decimals` in the file must equal the declared rounding (−7 crores, −6 millions, −5 lakhs; true in 807 of 807 files on hand), otherwise the revision is `partial` with `XBRL_ROUNDING_MISMATCH`; and the finest `decimals` is the tolerance of the sums. Restatement compares at the declared rounding.
+  - nil (`xsi:nil="true"`, never seen on hand) is `value_status = unparsed` with the reason `XBRL_NIL`: unknown, never zero. Earnings per share (`decimals="INF"`) keeps its rupees a share, as a per-share line does today.
+- A new `xbrl_source` row per fact takes the place of `source_reference`: the XBRL document, element, context id and `decimals`. Readers of facts change with it: `listFactsWithSourcesForRevisions` inner-joins `source_reference` today and would drop every XBRL fact, so it left-joins both; the research contract's `CellSource` (and `Restated`) gains a source variant `{ kind: "xbrl", documentId, element, context }` beside the page one, which today requires a page. These ship in phase 4 with the figure panel built from the design round (§12).
 - **Where results figures show.** The Research table shows annual figures only today (`counts()` and stitch read annual reports). Quarter, half-year and nine-month facts from XBRL are stored now and appear when the data layer's phase 4 builds the quarter view.
-- **Concepts.** Each element maps to a concept in `packages/contracts/concepts.json` by an explicit table (`xbrl_element_map`, versioned with the mapping rules). An "Others" or next-best-fit element maps to nothing. Until the data layer's phase 1 builds `concept_mapping`, the map is used by the evaluation only; then it writes mappings with source `xbrl_rule`.
+- **Concepts.** The element map gives each element's concept in `packages/contracts/concepts.json`. An "Others" or next-best-fit element maps to no concept (it is still a fact, with its label). Until the data layer's phase 1 builds `concept_mapping`, concepts are used by the evaluation only; then the map writes mappings with source `xbrl_rule`.
 
 ### 7.3 Checks
 
-- **The taxonomy's sums.** Each calculation relationship becomes an `extraction_check` (`subtotal`) with its expected and actual values, rounded per `decimals`; a failure names its cells, as today. A balance identity on total assets.
+- **The map's sums.** With no calculation linkbase, the sums come from the element map (for example `Income` = `RevenueFromOperations` + `OtherIncome`). Each becomes an `extraction_check` (`subtotal`) with its expected and actual values, within the finest `decimals`; a failure names its cells, as today. A balance identity: `Assets` = `EquityAndLiabilities`. Because the sums are our data, not the filer's, they are a check and a mapping rule at once and are evaluated as both.
 - **Against the PDF, never instead of XBRL.** When a PDF for the same slot is stored, each XBRL value is looked for on the text layer of the pages the classifier found for that statement and basis, in the units the PDF prints, with `text_layer_match` from `values.py`. The result is a check, `xbrl_in_pdf`: `passed`, `failed` with the value, or `not_checked` (no PDF, a scan, or no statement pages). A failure is shown on the figure ("Not found on the PDF's statement pages") and in the report; it never changes the figure. The investor can turn the check off (`XBRL_PDF_CHECK=false`).
 
 Why the check: MCA accepts that its XBRL rendering can differ from the published accounts, and in 2026 NSE queried several companies over XBRL results that did not match their PDFs. The investor chose XBRL exclusively; the check makes a mismatch visible at no cost.
@@ -159,15 +160,18 @@ Why the check: MCA accepts that its XBRL rendering can differ from the published
 
 The indexer's `/v1/index` takes the file and answers NDJSON: `started` (versions), `page`, `chunk`, `progress`, then `result` or `error`.
 
-- **PDF**: Docling (MIT), on the CPU, reads layout, reading order, headings and tables per page. A page with a usable text layer takes its words from it. A scan (no text layer, or one the indexer's rule finds unusable) goes through Docling's local OCR engine; which engine (RapidOCR, EasyOCR or Tesseract, all free) is chosen by the OCR spot check (§10.4). Pages are processed with a bounded number in flight (`INDEX_PAGE_CONCURRENCY`, default 2).
+- **PDF**: Docling (MIT; its models Apache-2.0 and CDLA-Permissive-2.0), version pinned, on the CPU. It reads layout, reading order, headings and tables (TableFormer, accurate mode). Docling decides OCR **per region**, not per page: a region is OCR'd when it overlaps an image, has no text, or has shapes the text layer does not explain, and it prefers visible text, then OCR, then an invisible text layer (what a scanner's own OCR usually is). So a page can mix text-layer and OCR text, and every item says which through its provenance.
+  - **The OCR engine is set explicitly**: RapidOCR on onnxruntime (Apache-2.0, runs natively on arm64), never Docling's automatic choice, because the engine is part of the cache key and of every chunk's source. Tesseract 5 is the second engine the spot check (§10.4) compares against.
+  - **Long documents.** Docling's suggested `document_timeout` of 90–120 s would cut a 300-page report off; the indexer reads in page ranges (`INDEX_PAGE_RANGE`, default 20 pages), with `page_batch_size` set for memory, and streams each range's pages and chunks as soon as they are read.
+  - `do_cell_matching` can break tables whose cells run together across columns, which packed right-aligned numbers do; the setting is decided by the OCR and table spot check.
 - **Claude OCR**, optional (`OCR_ENGINE=claude`): the page as a one-page PDF to `claude-sonnet-5-5` through the official `anthropic` SDK, asked for the text exactly as printed; refusal fallback on, the answering model recorded. Off by default because it is paid.
 - **XBRL**: text-block facts (accounting policies, notes, the directors' report where present, as escaped HTML) are converted to plain text and become chunks with `text_source = xbrl` and their element instead of a page.
 
-The "unusable text layer" rule lives in the indexer only. `PdfDocument` and everything that reads it stay as they are; moving the rule there would change the text-layer reader and need its own evaluation run. A page can therefore count as text layer on the slip and as OCR in search.
+Docling's region rule lives in the indexer only. `PdfDocument` and everything that reads it stay as they are; using Docling there would change the text-layer reader and need its own evaluation run. A page can therefore count as text layer on the slip and carry OCR text in search.
 
 ### 8.2 OCR rules
 
-1. OCR text is stored with `text_source = ocr` and the engine and version, and is labelled so wherever it appears.
+1. Every chunk's `text_source` comes from its items' provenance: `text_layer`, `ocr`, or `mixed` when it holds both; the engine and version are on the revision. Pages keep counts only (items read from the text layer and by OCR). OCR or mixed text is labelled so wherever it appears.
 2. It is never read by Gemini extraction, the correction guard, the classifier's quote check, reader B, the XBRL check or any other check.
 3. Feeding OCR text to any of those later is a change to a reader and needs its own design and evaluation run.
 
@@ -175,23 +179,24 @@ The "unusable text layer" rule lives in the indexer only. `PdfDocument` and ever
 
 From Docling's document structure, deterministic and versioned (`chunker_version`):
 
-- **Within a page.** A chunk never crosses a page, so every citation is one page. Docling's chunker may join across pages; the indexer splits at page breaks.
-- **Sections.** Docling's headings give each chunk its section path ("Notes to the standalone financial statements" › "25 Borrowings").
-- **Size.** About 500 tokens, at most 1,000, measured with the embedding model's own tokenizer; tables kept whole when they fit, split by rows with the header repeated when not.
+- **By element, not by count.** Every heading starts a chunk, every table starts a chunk and stays whole when it fits, small elements under one heading merge (Docling's HybridChunker with `merge_peers`). On financial filings this beat fixed 512-token chunks (FinanceBench: 53.19% against 48.23% answered, with half the chunks).
+- **Within a page.** A chunk never crosses a page, so every citation is one page. HybridChunker may join across pages; the indexer splits at page breaks using each item's page.
+- **Sections and context.** The heading path ("Notes to the standalone financial statements" › "25 Borrowings") is stored with the chunk and put before the text that is embedded (`contextualize()`), not before the text that is shown. A chunk never mixes the consolidated and standalone sections; their headings split it.
+- **Size.** At most 512 tokens of the embedding model's own tokenizer, including the heading path; a large table splits by rows with its header repeated (`repeat_table_header`).
 - **Boilerplate.** Running headers and footers repeated on most pages are dropped from chunks and kept in the page text.
 
 ### 8.4 Embeddings
 
-- An open-source model, run in the indexer with sentence-transformers on the CPU, loaded once. Candidates, all 1024-dimensional and permissively licensed: `voyage-4-nano` (Apache-2.0, 0.3B, 32k context), `Qwen3-Embedding-0.6B` (Apache-2.0), `BGE-M3` (MIT). The retrieval test (§10.3) picks the default; `EMBEDDING_MODEL` names it, read by the indexer, the worker and the API alike.
-- `/v1/embed` on the indexer takes a batch of texts and an input type (document or query) and returns vectors. The worker embeds chunks through it in batches (`EMBED_BATCH`, default 32); the API embeds a search query through it.
-- Model weights are downloaded once when the image is built, not at run time, and pinned by revision.
+- **Default: `Snowflake/snowflake-arctic-embed-l-v2.0`** (Apache-2.0, 1024 dimensions, 8k context, no remote code; `query: ` before a query, nothing before a document). Among open models it has the best published finance retrieval (FinanceBench nDCG@10 75.6, FinQA 56.6). The retrieval test (§10.3) compares it with `Qwen3-Embedding-0.6B` (with a finance instruction) and `voyage-4-nano` at 1024 dimensions (its default 2048 is over pgvector's HNSW limit for `vector`), and with `granite-embedding-english-r2` if CPU time decides. `EMBEDDING_MODEL` names the one in use, read by the worker and the API alike.
+- **Serving**: text-embeddings-inference, `ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9`, as the `embedder` service. The worker posts chunks to `/embed` in batches (`EMBED_BATCH`, default 16, sorted by length); the API posts one query. The prefixes are added by our code, in one function both use. Weights are fetched once into a volume when the service is first set up and pinned by revision; nothing is fetched at query time. voyage-4-nano's custom head is checked against sentence-transformers on fixed strings before it is trusted from TEI.
+- **CPU time** (estimated, measured in phase 3): a 300-page annual report is about 1,500 chunks, 30 to 80 minutes to embed with the default on this machine; a results filing a few minutes. A first backfill of the corpus is days of CPU, so phase 3 measures on a sample first.
 
 ### 8.5 Search
 
 `searchChunks(db, { workspaceId, query, limit, companyId?, documentIds? })` in a shared package, behind `GET /v1/workspaces/:workspaceId/search?q=&limit=&company=` (session required, member of the workspace):
 
 1. Embed the query through the indexer, on `EMBEDDING_MODEL`.
-2. Top 50 by cosine distance among the workspace's current chunks for that model; top 50 by `ts_rank` on `websearch_to_tsquery`.
+2. Top 50 by cosine distance among the workspace's current chunks for that model; top 50 by `ts_rank` on `websearch_to_tsquery('simple', q)`. The `simple` configuration, not `english`: stemming mangles company names, CINs and Ind AS terms. Keyword search matters here: on number-heavy finance questions it beats vectors (NanoRTEB FinQA: BM25 0.733 against dense 0.605). A filter by company or document uses its B-tree and an exact distance sort; pgvector's iterative scan (`hnsw.iterative_scan = relaxed_order`) covers middle cases.
 3. Merge by reciprocal rank (k = 60); return up to `limit` (default 10, at most 50): document, company, page or element, section path, text source, the text and both ranks.
 
 A result carries no figure. No screen in this project.
@@ -208,13 +213,15 @@ Today every job is pushed to the worker the moment it is created, with nothing t
 | --- | --- | --- |
 | `document.verify` | 4 | I/O only. |
 | `document.classify` | 2 | One small Gemini call each. |
-| `document.xbrl` | 2 | CPU, Arelle in memory. |
+| `document.xbrl` | 2 | Milliseconds of CPU per file. |
 | `document.extract` | 2 | Many Gemini calls; the Vertex quota. |
-| `document.index` | 1 | Docling and OCR use every core; inside a job, pages run `INDEX_PAGE_CONCURRENCY` at a time. |
+| `document.index` | 1 | Docling, OCR and embedding use every core and most of the memory (§19). |
 
 - **Waking.** A created job is picked up by the next poll (every second while a loop is idle, `JOB_POLL_MS`) and, to start at once, by `NOTIFY job_created` from `createJob`, which the loops `LISTEN` for. The `Dispatcher` interface stays for tests; `LocalHttpDispatcher` is replaced by the notifier. The Cloud Tasks dispatcher is kept but unused while hosting is undecided.
 - **Fairness.** Within a type, jobs run oldest first. Classification and XBRL reads are short and have their own loops, so a long index job never delays a new upload's "what is it" step.
 - **Uploads.** The API already accepts any number of uploads; several files dropped at once each get their own document and jobs. The one-file rule is the screen's, and it changes with the Documents design (§12).
+- **Recovery.** A sweeper (every 30 s) returns jobs whose lease expired to `queued` with backoff, so a job whose worker died runs again. Heartbeats run on a timer (every 15 s) as well as on stream events, so a quiet stretch of a long read never loses its lease. The extractor and indexer timeouts become per job type (`EXTRACT_TIMEOUT_SECONDS` 1800, `INDEX_TIMEOUT_SECONDS` 7200), replacing the single 900-second `EXTRACTOR_TIMEOUT_SECONDS` that aborts any read over 15 minutes.
+- **Keeping the queue lean.** `NOTIFY` once per enqueue, never per progress write; the listener on its own connection, not a pooled one (a pooler in transaction mode cannot `LISTEN`); no transaction held open across a job; progress writes throttled as today; a partial index on claimable rows (`state = 'queued'`) instead of the full `(state, lease_expires_at)` index, and a fill factor of 80 on `job`, so heartbeats stay cheap.
 - **Many processes.** The limits are per worker process. Running two worker processes doubles them; the indexer is then the shared bottleneck and gets its own replica count.
 
 ## 10. Measuring accuracy
@@ -274,7 +281,7 @@ One migration (the next free number when built; the data layer's phase 1 has 000
 
 | Change | What |
 | --- | --- |
-| `create extension vector` | |
+| `create extension vector` | On the `pgvector/pgvector:pg16` image (pgvector 0.8), with `shm_size` at least `maintenance_work_mem` in compose so parallel index builds do not fail. |
 | `document.format` | `pdf`, `xbrl`. |
 | `job.run_after` | Retry backoff (§9). |
 | `intake_state` | Gains `waiting_for_xbrl`. |
@@ -283,11 +290,13 @@ One migration (the next free number when built; the data layer's phase 1 has 000
 | `xbrl_source` | Per XBRL fact: document, element, context id, `decimals`, footnote ids. |
 | `check_type` | Gains `xbrl_in_pdf`. |
 | `classification_evidence` | Gains nullable `element` and `context` for XBRL answers. |
-| `document_index_revision` | One per index run: job (unique), state (`complete`, `partial`), versions (`index_version`, `chunker_version`, `ocr_engine`, `embedding_model`), page counts, warning codes. A document's current index is its newest revision per embedding model. |
-| `document_page` | Revision, page number (from 1), `text_source` (`text_layer`, `ocr`, `none`), text, `none_reason`. |
-| `document_chunk` | Revision, ordinal, page number or element, char offsets, section path, kind (`prose`, `table`), `text_source` (`text_layer`, `ocr`, `xbrl`), text, token count, generated `tsvector` with a GIN index. |
-| `chunk_embedding` | Chunk, model, `vector(1024)`; primary key (chunk, model); HNSW with cosine ops. |
-| `page_ocr` | OCR cache per workspace, content hash, page, engine and version, so a retry or rebuild never runs OCR on a page twice. |
+| `document_index_revision` | One per index run: job (unique), state (`building`, `complete`, `partial`), versions (`index_version`, `chunker_version`, `ocr_engine`, `embedding_model`), page counts, warning codes. A document's current index is its newest revision per embedding model. |
+| `document_page` | Revision, page number (from 1), text, items from the text layer and by OCR (counts), `none_reason` for a page with no text. |
+| `document_chunk` | Revision, ordinal, page number or element, section path, kind (`prose`, `table`), `text_source` (`text_layer`, `ocr`, `mixed`, `xbrl`), basis and unit where the section states them, text, token count, generated `tsvector` (`simple`) with a GIN index. |
+| `chunk_embedding` | Chunk, model, `vector(1024)`; primary key (chunk, model); HNSW on `(embedding::halfvec(1024)) halfvec_cosine_ops` (half the size and build time of `vector`, same recall in published tests). |
+| `page_read` | A cache of Docling's output per workspace, content hash, page range and reader versions (Docling, OCR engine), so a retry or rebuild never reads or OCRs a page twice. |
+
+**Writing as it goes.** A long index job writes pages and chunks as each page range arrives, and embeddings in batches keyed by chunk and model, so a failure late in an hour-long job loses one batch, not the hour. The revision is `building` until every chunk has its embedding, then `complete` or `partial`; search reads complete and partial revisions only. A retried job resumes the newest `building` revision of the same versions.
 
 Every table carries `workspace_id` and every query filters on it. A duplicate document gets no index or revision of its own; search and facts reach the original's.
 
@@ -313,7 +322,9 @@ Every table carries `workspace_id` and every query filters on it. A duplicate do
 | --- | --- | --- |
 | `UNSUPPORTED_TYPE` | verify | Neither a PDF nor an XBRL instance. |
 | `XBRL_UNREADABLE` | `document.xbrl` | Malformed or over the limits. Not retried. |
-| `XBRL_TAXONOMY_UNKNOWN` | `document.xbrl` | An entry point that is not vendored. Not retried until a taxonomy is added. |
+| `XBRL_FORMAT_UNMAPPED` | `document.xbrl` revision warning | A format with no element map (banking, NBFC, other than Ind AS). Text blocks are indexed; no facts; covers no slot. |
+| `XBRL_ELEMENT_UNMAPPED` | revision warning | Elements of a mapped format not in its map, by name. |
+| `XBRL_ROUNDING_MISMATCH` | revision, `partial` | The coarsest `decimals` disagrees with the declared rounding. |
 | `XBRL_MIXED_BASIS` | classify | One instance with both bases or none; held for the investor. |
 | `XBRL_NIL` | fact | A nil value; unknown. |
 | `INDEXER_NOT_CONFIGURED` | `document.index`, search | No indexer URL. The backfill recovers documents once configured. |
@@ -329,9 +340,9 @@ Each phase is its own implementation plan from this document and lands on `stagi
 | Phase | Builds | Done when |
 | --- | --- | --- |
 | 1 · Runner | The pull-based job runner with per-type limits, `NOTIFY`, the notifier replacing the HTTP dispatcher; the pgvector image. | Twenty files dropped at once process with no more than the configured jobs per type running, and nothing is lost on a worker restart. |
-| 2 · Index | The indexer service (Docling, local OCR, chunker, `/v1/embed`); the index tables; `document.index`; the backfill; the search function and route. | Every stored document in the investor's workspace has a current index; a search returns pages. |
+| 2 · Index | The indexer service (Docling, RapidOCR, the chunker); the embedder service (TEI); the index tables; `document.index` writing as it goes; the backfill; the search function and route. | Every stored document in the investor's workspace has a current index; a search returns pages. |
 | 3 · Measure the index | The OCR spot check, the retrieval set and report; `EMBEDDING_MODEL` and the OCR engine chosen. | Both reports committed under `docs/eval/`. |
-| 4 · XBRL | Accepting XML and the folder import; `/v1/xbrl` with vendored taxonomies; XBRL classification; `document.xbrl`; facts, `span`, `xbrl_source`; the taxonomy checks and `xbrl_in_pdf`; the source rule and the reads that join sources; `waiting_for_xbrl`; skipping Gemini; the figure panel's XBRL source. | The investor's 806 instances import; a corpus company's results PDF dropped with its instance is not read by Gemini. |
+| 4 · XBRL | Accepting XML and the folder import; `/v1/xbrl` with its own parser and the Ind AS element maps; XBRL classification; `document.xbrl`; facts, `span`, `xbrl_source`; the taxonomy checks and `xbrl_in_pdf`; the source rule and the reads that join sources; `waiting_for_xbrl`; skipping Gemini; the figure panel's XBRL source. | The investor's 806 instances import; a corpus company's results PDF dropped with its instance is not read by Gemini. |
 | 5 · Measure the numbers | The source and format strata in `maester-eval`; `compare --xbrl`; the element map scored. Needs phase 0's gold set. | A report with exact match by source and format tag, and Gemini-against-XBRL agreement on every corpus filing that has both. |
 | 6 · Screen | The build of the Documents screen (several files, two tracks, waiting for XBRL) from the chosen direction. | It is built and `DESIGN.md` §5 is amended. |
 
@@ -339,7 +350,7 @@ The `design-directions` round for the Documents screen and the figure panel runs
 
 ## 17. Testing
 
-- **Python, offline.** The XML sniffing; Arelle on small synthetic instances for each vendored taxonomy (period, basis, nil, decimals, a dimensional fact skipped, an unknown entry point, an entity expansion refused); the presentation-to-statement mapping; the calculation checks; `xbrl_in_pdf` on synthetic text-layer PDFs. Docling on fixture PDFs with and without a text layer; the page split of chunks; table splitting with the header repeated; running headers dropped; `/v1/embed` with a tiny model; the wire fixtures in both runtimes.
+- **Python, offline.** The XML sniffing; the parser on small synthetic instances for each format (spans from dates, the comparative absent, basis, both rounding element names, the rounding cross-check, nil, `INF` decimals, a dimensional fact skipped, a DOCTYPE refused, the size, fact and time limits); format detection on element sets; identity from `ScripCode`, `Symbol` and `ISIN`; the element maps (every element in a map exists in a real instance of its format; every sum adds up on three real instances); `xbrl_in_pdf` on synthetic text-layer PDFs. Docling on fixture PDFs with and without a text layer and a mixed page (chunk sources `text_layer`, `ocr`, `mixed`); the page split of chunks; table splitting with the header repeated; running headers dropped; page ranges streamed in order; the wire fixtures in both runtimes.
 - **TypeScript.** The claim query under concurrent loops (two loops never take one job; an expired lease is retaken; the per-type limit holds); `NOTIFY` wake-up; the source rule (XBRL wins a slot, no mixing, later XBRL takes over, partial basis coverage); skipping Gemini; the `pipeline` object; `document.index` writes in one transaction, the OCR cache across attempts; `searchChunks` on seeded rows; workspace isolation on every new route.
 - **Live, manual, never in CI.** The reports in §10.
 
@@ -349,7 +360,8 @@ The scan rule; Docling's settings; HNSW parameters; tokenizer details; the exact
 
 ## 19. Risks
 
-- **The taxonomy files.** MCA's site refused automated requests during research; the investor may need to download the taxonomy packages by hand once. Phase 4 starts by confirming each package and its licence.
-- **CPU time.** Docling and OCR on a laptop CPU in Docker take minutes for a long filing (an estimate, measured in phase 3). The limits keep the machine usable; they do not make it fast.
+- **The element maps are ours.** Without the taxonomy packages (BSE's and NSE's pages refused automated requests; their licence is unconfirmed), statement order, labels and sums are hand-maintained data, reviewed and evaluated like any mapping rule. Once the packages are in hand and their terms allow it, maps generated from the linkbases replace the hand maps, compared in `apps/eval`.
+- **CPU time.** Inside Docker on this Mac there is no GPU: Docling takes an estimated 4 to 15 minutes for a 300-page report (plus about 13 s per scanned page), and embedding 30 to 80 minutes more. A backfill of the corpus is days. The limits keep the machine usable; they do not make it fast. Running the embedder natively on macOS, outside Docker, could use the GPU; that is a later option, measured before it is taken.
+- **Memory.** Docker's VM on this Mac has 7.75 GiB for Postgres (an HNSW build wants 1–2 GB of `maintenance_work_mem` at these sizes), the embedder (about 2.3 GB for the default model), Docling at its peak (unpublished; measured in phase 2), the extractor, the API, the worker and the web. One index job at a time keeps the peak inside it. Docker Desktop's memory limit is the investor's setting (the Mac has 16 GB); raising it to 12 GB is recommended before a backfill.
 - **XBRL availability.** BSE may keep results XBRL attachments only for a limited time (not confirmed). Older results may have only a PDF, and Gemini reads those.
 - **XBRL quality.** Filers may club values or use "Others" elements; MCA does not check tagging. The taxonomy checks, `xbrl_in_pdf` and the evaluation make this visible; nothing corrects it automatically.
