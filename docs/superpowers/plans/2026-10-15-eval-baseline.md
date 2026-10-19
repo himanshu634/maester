@@ -2845,7 +2845,7 @@ Copy the PDFs into `data/eval/corpus/<company-folder>/<name>.pdf` (one folder pe
 Fill `data/eval/manifest.json` with one entry per PDF (`file`, `company` as printed on the filing, `kind`, `period_end` as `YYYY-MM-DD`, `set`). Add `stratum` (`large`, `mid`, `small` or `financials`) to a filing, `out_of_scope` (the reason) to a filing the baseline should leave out, such as a bank, and `printed_pages_per_page: 2` to a PDF of two-page spreads. Check it:
 
 ```bash
-uv run --locked python -c "from maester_eval.manifest import load_manifest, missing_files; from maester_eval.paths import DEFAULT; m = load_manifest(DEFAULT.manifest); print(len(m.filings), 'filings;', 'missing:', missing_files(m, DEFAULT.corpus))"
+uv run --locked python -c "from maester_eval.manifest import load_manifest, missing_files; from maester_eval.paths import DEFAULT; m = load_manifest(DEFAULT.manifest); print(len(m.filings), 'filings;', 'missing:', missing_files(m.filings, DEFAULT.corpus))"
 ```
 
 Expected: the count, and `missing: []`.
