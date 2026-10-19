@@ -20,6 +20,7 @@ from maester_eval.runner import (
 )
 from pdf_financial_qa.workflow import PIPELINE_VERSION
 from pdf_financial_qa.workflow.model import LocateOutput
+from pdf_financial_qa.workflow.pdf import PdfDocument
 from pdf_financial_qa.workflow.prompts import PROMPT_VERSION
 
 FILING = Filing(file="synthetic-industries/ar-2025-26.pdf", company="Synthetic Industries Limited",
@@ -50,11 +51,33 @@ class RunFilingTests(unittest.TestCase):
         self.assertEqual(artefact.error.code, "NO_STATEMENTS_FOUND")
         self.assertFalse(artefact.error.retryable)
         self.assertEqual(artefact.model_calls.total, 1)
+        self.assertEqual(artefact.pages_without_text, [3])  # a filing that fails after opening still lists its scans
 
     def test_an_unreadable_pdf_is_an_error_artefact(self):
         artefact = run_filing(FILING, b"not a pdf", lambda: ScriptedModel(), FAST)
         self.assertEqual(artefact.error.code, "UNREADABLE_PDF")
         self.assertEqual(artefact.pages_without_text, [])
+
+
+class LoadOnceTests(unittest.TestCase):
+    """The text layer of a 300-page report takes seconds to read; a filing is read once, inside the timed span."""
+
+    def setUp(self):
+        patcher = mock.patch.object(PdfDocument, "load", side_effect=PdfDocument.load)
+        self.load = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_read_filing_loads_its_pdf_once(self):
+        run_filing(FILING, PDF, lambda: ScriptedModel(), FAST)
+        self.load.assert_called_once_with(PDF)
+
+    def test_a_failed_filing_loads_its_pdf_once(self):
+        run_filing(FILING, PDF, lambda: ScriptedModel(locate=[LocateOutput(statements=[])]), FAST)
+        self.load.assert_called_once_with(PDF)
+
+    def test_an_unreadable_filing_tries_once(self):
+        run_filing(FILING, b"not a pdf", lambda: ScriptedModel(), FAST)
+        self.load.assert_called_once_with(b"not a pdf")
 
 
 class CountingModelTests(unittest.TestCase):
@@ -71,8 +94,7 @@ class CountingModelTests(unittest.TestCase):
 
 class PagesWithoutTextTests(unittest.TestCase):
     def test_lists_scanned_pages(self):
-        self.assertEqual(pages_without_text(PDF), [3])
-        self.assertEqual(pages_without_text(b"garbage"), [])
+        self.assertEqual(pages_without_text(PdfDocument.load(PDF)), [3])
 
 
 class RunLiveTests(unittest.TestCase):
@@ -102,6 +124,12 @@ class RunLiveTests(unittest.TestCase):
         self.assertEqual(record["filings"], [FILING.id, self.second.id])
         self.assertIn("finished_at", record)
         self.assertEqual(json.loads(artefact_path(run_dir, FILING.id).read_text(encoding="utf-8"))["filing_id"], FILING.id)
+
+    def test_each_filing_is_loaded_once(self):
+        with mock.patch.object(PdfDocument, "load", side_effect=PdfDocument.load) as load:
+            run_live([FILING, self.second], self.paths.corpus, self.paths.new_run("test"), lambda: ScriptedModel(), FAST,
+                     eval_set="dev", log=self.log.append)
+        self.assertEqual(load.call_args_list, [mock.call(PDF), mock.call(b"not a pdf")])
 
     def test_console_lines_carry_ids_codes_and_counts_only(self):
         run_dir = self.paths.new_run("test")

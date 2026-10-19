@@ -55,22 +55,23 @@ class CountingModel:
         return self._inner.correct(pdf, page_count, statement, basis, section, problems)
 
 
-def pages_without_text(pdf: bytes) -> list[int]:
-    """0-based pages with no text layer; empty when the file cannot be opened at all."""
-    try:
-        doc = PdfDocument.load(pdf)
-    except ExtractionError:
-        return []
+def pages_without_text(doc: PdfDocument) -> list[int]:
+    """0-based pages with no text layer, by the test the workflow's text check uses."""
     return [i for i, text in enumerate(doc.page_texts) if not text.strip()]
 
 
 def run_filing(filing: Filing, pdf: bytes, model_factory: ModelFactory, settings: WorkflowSettings) -> Artefact:
+    """Loads the PDF once and hands it to the workflow, so its text layer is read once and the
+    read counts in ``seconds``. A file that cannot be opened has no pages to list."""
     started = datetime.now(timezone.utc)
     clock = time.monotonic()
     model = CountingModel(model_factory())
     result = error = None
+    no_text: list[int] = []
     try:
-        result = run_extraction(pdf, model=model, company_name=filing.company, settings=settings).to_wire()
+        doc = PdfDocument.load(pdf)
+        no_text = pages_without_text(doc)
+        result = run_extraction(doc, model=model, company_name=filing.company, settings=settings).to_wire()
     except ExtractionError as exc:
         error = ArtefactError(code=exc.code, retryable=exc.retryable, message=exc.message)
     return Artefact(
@@ -79,7 +80,7 @@ def run_filing(filing: Filing, pdf: bytes, model_factory: ModelFactory, settings
         printed_pages_per_page=filing.printed_pages_per_page,
         pipeline_version=PIPELINE_VERSION, prompt_version=PROMPT_VERSION, model=model.name,
         started_at=started.isoformat(), seconds=round(time.monotonic() - clock, 1), bytes=len(pdf),
-        model_calls=model.calls, pages_without_text=pages_without_text(pdf), result=result, error=error,
+        model_calls=model.calls, pages_without_text=no_text, result=result, error=error,
     )
 
 
