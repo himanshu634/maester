@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 from maester_eval.manifest import ManifestError, load_manifest, missing_files
-from maester_eval.paths import EvalPaths
+from maester_eval.paths import EvalPaths, RunLabelError, RunNotFoundError
 from maester_eval.text import normalise
 
 ONE = {"file": "synthetic-cements/ar-2025-26.pdf", "company": "Synthetic Cements Limited",
@@ -162,7 +162,7 @@ class RunFolderTests(unittest.TestCase):
         self.assertEqual(run.name, "20261016T093005Z")
 
     def test_a_label_that_would_nest_the_folder_is_refused_and_nothing_is_created(self):
-        with self.assertRaisesRegex(ValueError, "run label 'a/b'"):
+        with self.assertRaisesRegex(RunLabelError, "run label 'a/b'"):
             self.paths.new_run("a/b")
         self.assertFalse(self.paths.runs.exists())
 
@@ -177,7 +177,7 @@ class RunFolderTests(unittest.TestCase):
         self.assertEqual(self.paths.resolve_run("latest"), second)
         self.assertEqual(self.paths.resolve_run(first.name), first)
         self.assertEqual(self.paths.resolve_run(str(first)), first)
-        with self.assertRaises(FileNotFoundError):
+        with self.assertRaises(RunNotFoundError):
             self.paths.resolve_run("20000101T000000Z")
 
     def test_latest_ignores_folders_that_are_not_runs(self):
@@ -187,14 +187,14 @@ class RunFolderTests(unittest.TestCase):
 
     def test_latest_with_only_folders_that_are_not_runs(self):
         (self.paths.runs / "archive").mkdir(parents=True)
-        with self.assertRaises(FileNotFoundError):
+        with self.assertRaises(RunNotFoundError):
             self.paths.resolve_run("latest")
 
     def test_a_name_must_be_a_folder_directly_inside_runs(self):
         run = self.paths.new_run(now=datetime(2026, 10, 16, 9, 0, 0, tzinfo=timezone.utc))
         (run / "inside").mkdir()
         for name in ("", ".", "..", f"{run.name}/inside", f"{run.name}/.."):
-            with self.subTest(name=name), self.assertRaises(FileNotFoundError):
+            with self.subTest(name=name), self.assertRaises(RunNotFoundError):
                 self.paths.resolve_run(name)
 
     def test_a_path_may_point_at_a_run_folder_anywhere(self):
@@ -213,7 +213,7 @@ class RunFolderTests(unittest.TestCase):
     def test_a_bare_name_is_looked_up_under_runs_only(self):
         run = self.paths.new_run(now=datetime(2026, 10, 16, 9, 0, 0, tzinfo=timezone.utc))
         self.stray_folders()
-        with self.assertRaises(FileNotFoundError):
+        with self.assertRaises(RunNotFoundError):
             self.paths.resolve_run("20260101T000000Z-old")
         self.assertEqual(self.paths.resolve_run(run.name), run)
         self.assertEqual(self.paths.resolve_run(str(run)), run)
@@ -223,11 +223,11 @@ class RunFolderTests(unittest.TestCase):
     def test_a_path_must_end_in_a_real_name(self):
         self.stray_folders()
         for path in ("archive/..", "/"):
-            with self.subTest(path=path), self.assertRaises(FileNotFoundError):
+            with self.subTest(path=path), self.assertRaises(RunNotFoundError):
                 self.paths.resolve_run(path)
 
     def test_latest_with_no_runs(self):
-        with self.assertRaises(FileNotFoundError):
+        with self.assertRaises(RunNotFoundError):
             self.paths.resolve_run("latest")
 
 

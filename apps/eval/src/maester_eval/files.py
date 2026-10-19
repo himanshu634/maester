@@ -11,7 +11,13 @@ from typing import TypeVar
 
 from pydantic import BaseModel, ValidationError
 
+from maester_eval.errors import EvalError
+
 Model = TypeVar("Model", bound=BaseModel)
+
+
+class WriteError(EvalError):
+    """A file the harness could not write. It names the file it meant to write, never the temporary one beside it."""
 
 
 def write_text_atomically(path: Path, text: str, encoding: str = "utf-8") -> None:
@@ -19,19 +25,25 @@ def write_text_atomically(path: Path, text: str, encoding: str = "utf-8") -> Non
 
     The new file is `.<name>.<random>.tmp` in the same folder. It never ends in `.json`, so no reader takes it for
     an artefact or a gold file, and a write that fails removes it. The text is written as given, with no newline
-    translation, so a CSV keeps the `\\r\\n` its writer chose. The folder is made if it does not exist."""
-    path.parent.mkdir(parents=True, exist_ok=True)
+    translation, so a CSV keeps the `\\r\\n` its writer chose. The folder is made if it does not exist.
+
+    A write the system refuses (no folder, no permission, a full disk) is a `WriteError`:
+    `cannot write <path>: <reason>`."""
     temporary = path.with_name(f".{path.name}.{secrets.token_hex(4)}.tmp")
-    handle = temporary.open("x", encoding=encoding, newline="")
     try:
-        with handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = temporary.open("x", encoding=encoding, newline="")
+        try:
+            with handle:
+                handle.write(text)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+        except BaseException:
+            temporary.unlink(missing_ok=True)
+            raise
+    except OSError as exc:
+        raise WriteError(f"cannot write {path}: {exc.strerror or exc}") from exc
 
 
 def read_model(path: Path, model: type[Model], error: type[Exception], what: str) -> Model:

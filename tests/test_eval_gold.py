@@ -2,6 +2,7 @@
 
 import csv
 from datetime import datetime, timezone
+import errno
 import json
 import os
 from pathlib import Path
@@ -14,12 +15,12 @@ from eval_fixtures import FILING, WHEN, row, scored_row
 from test_extraction_workflow import FAST, PDF, ScriptedModel
 from typer.testing import CliRunner
 
-from maester_eval import cli
+from maester_eval import cli, files
 from maester_eval.artefacts import artefact_path, write_artefact, write_run
 from maester_eval.concepts import load_taxonomy
 from maester_eval.gold import (
-    ExpectedCheck, FreezeError, GoldFact, GoldFiling, count_unverified, freeze_sheet, gold_path, read_gold, read_sheet,
-    write_gold,
+    ExpectedCheck, FreezeError, GoldFact, GoldFiling, GoldSealedError, count_unverified, freeze_sheet, gold_path,
+    read_gold, read_sheet, write_gold,
 )
 from maester_eval.paths import EvalPaths
 from maester_eval.runner import run_filing
@@ -516,7 +517,7 @@ class GoldFilesTests(unittest.TestCase):
         path = write_gold(gold_dir, gold)
         self.assertEqual(path, gold_path(gold_dir, FILING.id))
         self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["exported_from"]["run"], "20261016T093005Z-baseline")
-        with self.assertRaises(FileExistsError):
+        with self.assertRaises(GoldSealedError):
             write_gold(gold_dir, gold)
         write_gold(gold_dir, gold, force=True)
         loaded = read_gold(gold_dir)
@@ -526,7 +527,7 @@ class GoldFilesTests(unittest.TestCase):
     def test_a_sealed_file_is_left_as_it_was(self):
         path = write_gold(self.gold_dir, gold_of(scored_row()))
         path.write_text("sealed", encoding="utf-8")
-        with self.assertRaisesRegex(FileExistsError, "gold is sealed, pass --force to replace it"):
+        with self.assertRaisesRegex(GoldSealedError, "gold is sealed, pass --force to replace it"):
             write_gold(self.gold_dir, gold_of(scored_row()))
         self.assertEqual(path.read_text(encoding="utf-8"), "sealed")
 
@@ -724,6 +725,27 @@ class FreezeCommandTests(unittest.TestCase):
         self.assert_refused(self.freeze(FILING.id, "--run", self.run_dir.name),
                             f"sheet row {line}: row 3 no longer matches the artefact; re-export or fix `row`")
         self.assertFalse(self.gold.exists())
+
+    def assert_write_refused(self, result):
+        """Refused with `cannot write <the gold file>: <reason>`, never the temporary file or a figure of the filing."""
+        self.assert_refused(result, f"cannot write {self.gold}: ")
+        for text in (".tmp", "Traceback", "Total assets", "2,000"):
+            self.assertNotIn(text, result.output)
+
+    def test_a_gold_file_that_cannot_be_written_is_a_message(self):
+        self.paths.gold.write_text("a file where the folder should be", encoding="utf-8")
+        self.assert_write_refused(self.freeze(FILING.id))
+
+    def test_a_forced_gold_file_that_cannot_be_replaced_is_a_message_and_stays_as_it_was(self):
+        self.assertEqual(self.freeze(FILING.id).exit_code, 0)
+        sealed = self.gold.read_text(encoding="utf-8")
+        refused = PermissionError(errno.EACCES, "Permission denied", "x")
+        with mock.patch.object(files.os, "replace", side_effect=refused):
+            result = self.freeze(FILING.id, "--force")
+        self.assert_write_refused(result)
+        self.assertIn("Permission denied", result.output)
+        self.assertEqual(self.gold.read_text(encoding="utf-8"), sealed)
+        self.assertEqual(list(self.gold.parent.iterdir()), [self.gold])  # the temporary file is gone
 
     def test_gold_is_sealed_until_forced(self):
         self.assertEqual(self.freeze(FILING.id).exit_code, 0)

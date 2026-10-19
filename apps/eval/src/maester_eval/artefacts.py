@@ -11,11 +11,12 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
+from maester_eval.errors import EvalError
 from maester_eval.files import read_model, write_text_atomically
 from maester_eval.manifest import EvalSet, FilingKind, SetChoice
 
 
-class ArtefactReadError(ValueError):
+class ArtefactReadError(EvalError, ValueError):
     """An artefact or a `run.json` that is not UTF-8, not JSON, or not of the form the harness writes."""
 
 

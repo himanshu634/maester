@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 import re
 
+from maester_eval.errors import EvalError
+
 # apps/eval/src/maester_eval/paths.py → the repository root. `parents[4]` holds for a checkout
 # or an editable install; the harness is never installed as a wheel elsewhere.
 ROOT = Path(__file__).resolve().parents[4]
@@ -14,6 +16,14 @@ CONCEPTS_PATH = ROOT / "packages" / "contracts" / "concepts.json"
 _LABEL = re.compile(r"[A-Za-z0-9._-]+")
 # A run folder as `new_run` names it: `20261016T093005Z`, then `-` and the label if there is one.
 _RUN_NAME = re.compile(r"\d{8}T\d{6}Z(-" + _LABEL.pattern + ")?")
+
+
+class RunLabelError(EvalError, ValueError):
+    """A run label with a character other than a letter, a digit, a dot, a dash or an underscore."""
+
+
+class RunNotFoundError(EvalError):
+    """`--run` or `--against` does not lead to a run folder."""
 
 
 def to_utc(moment: datetime | None) -> datetime:
@@ -56,7 +66,7 @@ class EvalPaths:
         digits, dot, dash or underscore, so it cannot nest the folder.
         """
         if label is not None and not _LABEL.fullmatch(label):
-            raise ValueError(f"run label {label!r}: use letters, digits, dot, dash or underscore")
+            raise RunLabelError(f"run label {label!r}: use letters, digits, dot, dash or underscore")
         stamp = to_utc(now).strftime("%Y%m%dT%H%M%SZ")
         path = self.runs / (f"{stamp}-{label}" if label else stamp)
         path.mkdir(parents=True, exist_ok=False)
@@ -66,13 +76,13 @@ class EvalPaths:
         """`latest`, the name of a run folder inside `runs/`, or a path to a run folder.
 
         A bare name is looked up under `runs/` only. A path is absolute or has a folder part
-        (`archive/20261016T093005Z`), and may point anywhere.
+        (`archive/20261016T093005Z`), and may point anywhere. Anything else is a `RunNotFoundError`.
         """
         if name_or_path == "latest":
             found = self.runs.glob("*") if self.runs.is_dir() else ()
             runs = sorted(p for p in found if _RUN_NAME.fullmatch(p.name) and p.is_dir())
             if not runs:
-                raise FileNotFoundError(f"no runs under {self.runs}")
+                raise RunNotFoundError(f"no runs under {self.runs}")
             return runs[-1]
         if name_or_path:
             candidate = self.runs / name_or_path
@@ -85,7 +95,7 @@ class EvalPaths:
             is_path = given.is_absolute() or len(given.parts) > 1
             if is_path and given.name not in ("", "..") and given.is_dir():
                 return given
-        raise FileNotFoundError(f"no run {name_or_path!r} under {self.runs}")
+        raise RunNotFoundError(f"no run {name_or_path!r} under {self.runs}")
 
 
 DEFAULT = EvalPaths(ROOT / "data" / "eval")

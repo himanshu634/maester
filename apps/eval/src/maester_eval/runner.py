@@ -18,13 +18,14 @@ from pdf_financial_qa.workflow.pdf import PdfDocument
 from pdf_financial_qa.workflow.prompts import PROMPT_VERSION
 
 from maester_eval.artefacts import Artefact, ArtefactError, ModelCalls, write_artefact, write_run
+from maester_eval.errors import EvalError
 from maester_eval.manifest import Filing, SetChoice
 
 ModelFactory = Callable[[], ExtractionModel]
 Log = Callable[[str], None]
 
 
-class EvalConfigError(RuntimeError):
+class EvalConfigError(EvalError, RuntimeError):
     pass
 
 

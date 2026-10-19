@@ -99,7 +99,7 @@ Usage: `maester-eval live [--set <set>] [--only <filing id>] [--label <word>]`. 
 11. The harness shows `run <name>: <n> filing(s), set <set>`. It writes `run.json`.
 12. For each filing, in order, it reads the PDF and runs `run_extraction`. It gives the company name of the manifest to the workflow.
 13. It shows `<filing id>: reading…` before the workflow starts. After the workflow stops, it shows `<filing id>: <state> in <n>s, <m> model calls`. The state is `complete` or `partial`, or the error code.
-14. It writes the artefact before it starts the next filing. If the workflow fails, the artefact holds the error code and no result. The run continues.
+14. It writes the artefact before it starts the next filing. If the workflow fails, the artefact holds the error code and no result. The run continues. If the harness cannot write `run.json` or an artefact, it shows `cannot write <path>: <reason>` and stops. The run folder keeps the artefacts that it wrote before.
 15. At the end, the harness adds `finished_at` and `model` to `run.json`. It shows `done: <n> read, <m> failed → <run folder>`.
 
 The harness counts the model calls of each kind, and the artefact stores the counts. `locate` finds the pages of the statements. It makes one call for each part of 30 pages if the PDF has more than 60 pages or more than 15 MiB. `extract` reads one statement of one basis. `correct` reads a section again after a failed check.
@@ -112,7 +112,7 @@ Usage: `maester-eval export [--run <run>] [--only <filing id>] [--force]`. You c
 
 1. The harness finds the run. The default is `latest`. It reads the artefacts of the run, in the order of the filing ids.
 2. If the run has no artefact, the harness stops. If `--only` names a filing that the run does not hold, it stops before it writes a sheet.
-3. For each artefact, it writes `data/eval/sheets/<filing id>.csv`. With `--only`, it writes the sheets of the named filings only.
+3. For each artefact, it writes `data/eval/sheets/<filing id>.csv`. With `--only`, it writes the sheets of the named filings only. If it cannot write a sheet, it shows `cannot write <path>: <reason>` and stops. The sheets that it wrote before stay.
 4. A sheet has one row for each read fact, in the order of the artefact. A filing that failed gets one row with `extraction failed: <code>` in `note`.
 5. If the sheet exists, the harness keeps it. It shows `kept  <path> (exists; --force to overwrite)`. With `--force`, it replaces the sheet.
 6. For each new sheet, it shows `wrote <path>`. At the end, it shows `<n> written, <m> kept`.
@@ -141,7 +141,7 @@ Usage: `maester-eval freeze <filing id> [--run <run>] [--force]`.
     - The period end is `gold_period_end`, or else `period_end`. It is empty or a real date in the form `YYYY-MM-DD`.
 11. If two kept rows have the same concept, basis and period label, the harness stops and names both sheet rows.
 12. If no row has `yes` in `verified`, the harness stops and writes nothing.
-13. It writes `data/eval/gold/<filing id>.json`. If the file exists, it stops. With `--force`, it replaces the file.
+13. It writes `data/eval/gold/<filing id>.json`. If the file exists, it stops. With `--force`, it replaces the file. If it cannot write the file, it shows `cannot write <path>: <reason>` and stops. A gold file that exists stays as it was.
 14. It shows `froze <n> fact(s), <m> expected check(s); <k> row(s) not verified → <path>`.
 
 A sheet row number is the row number in a spreadsheet application. The header is row 1.
@@ -163,7 +163,7 @@ Usage: `maester-eval report [--run <run>] [--set <set>] [--against <run>] [--to 
 6. It lists a filing under "No gold yet" if the run has its artefact but no gold file exists. It does not score the filings in these two lists.
 7. The harness lists each filing of the set that is out of scope, with the reason of the manifest. It never counts such a filing as not run. If the run read one anyway, and it has a gold file, the harness scores it.
 8. With `--against`, it reads and scores the earlier run in the same way. It uses the gold files as they are now. It does this before it writes anything.
-9. It writes `report.md` and `report.json` in the run folder. It replaces the files of an earlier report.
+9. It writes `report.md` and `report.json` in the run folder. It replaces the files of an earlier report. If it cannot write a file, it shows `cannot write <path>: <reason>` and stops.
 10. It shows `<run> (<set>): <n> filing(s), <m> gold fact(s), exact match <rate>, missing <rate>`.
 11. If there are filings not run or with no gold yet, it shows `not run: <n>; no gold yet: <m>`. If there are filings out of scope, it shows `out of scope: <n>`. Then it shows `report → <path>`.
 12. With `--to`, it copies `report.md` to the path and makes the folders of the path. It shows `published → <path>`.
@@ -240,7 +240,8 @@ The harness shows an error in red and stops with exit code 1. A message names a 
 | Another `sheet row <n>: …` message | A kept row breaks a rule of the `freeze` command, or repeats the concept, basis and period of an earlier row. | Exit code 1. The message names the sheet row and the column. No gold file. |
 | `no row is marked verified=yes; nothing to freeze` | No row has `yes` in `verified`. | Exit code 1. No gold file. |
 | `<path> exists; gold is sealed, pass --force to replace it` | `freeze` finds the gold file, and you did not give `--force`. | Exit code 1. The file stays. |
-| `cannot write <path>: <reason>` | The copy of `report --to` fails. | Exit code 1. The report in the run folder exists. |
+| `cannot write <path>: <reason>` | The harness cannot write a file: `run.json` or an artefact (`live`), a sheet (`export`), a gold file (`freeze`), `report.md` or `report.json` (`report`), or the copy of `report --to`. For example, a file is where the folder must be, you do not have permission, or the disk is full. | Exit code 1. The path is the file that the harness tried to write. The files that the command wrote before stay. A file that it could not replace stays as it was. If the copy of `report --to` fails, the report in the run folder exists. |
+| The reason and the path, as the system gives them | The harness cannot read a file, for example the taxonomy or a PDF of the corpus. | Exit code 1. |
 | A file that does not parse | An artefact, `run.json`, a gold file or the taxonomy is not valid JSON. Or an artefact or a gold file has a field that the harness does not know. | The harness does not catch the error. Python shows a traceback. |
 
 ## Data

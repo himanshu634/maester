@@ -12,6 +12,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
+from maester_eval.errors import EvalError
 from maester_eval.text import normalise
 
 FilingKind = Literal["annual_report", "financial_results"]
@@ -20,7 +21,7 @@ Stratum = Literal["large", "mid", "small", "financials"]
 SetChoice = Literal["dev", "heldout", "all"]
 
 
-class ManifestError(ValueError):
+class ManifestError(EvalError, ValueError):
     pass
 
 
