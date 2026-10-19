@@ -82,10 +82,10 @@ class Summary(BaseModel):
     model_calls_median: float | None = None
     model_calls_max: int | None = None
 
-    def rate(self, name: str) -> str:
-        """`name` over its denominator as a percentage, rounded down to one decimal; "—" with nothing to divide by.
+    def tenths(self, name: str) -> int | None:
+        """`name` over its denominator in tenths of a percent, rounded down; None with nothing to divide by.
 
-        Rounded down, so that 100.0% means every one did. Whole numbers only: no float is involved."""
+        Rounded down, so that 1000 means every one did. Whole numbers only: no float is involved."""
         numerator = getattr(self, name)
         if name == "page_match":
             denominator = self.page_checked
@@ -95,10 +95,12 @@ class Summary(BaseModel):
             denominator = self.filings
         else:
             denominator = self.gold_facts
-        if not denominator:
-            return "—"
-        tenths = numerator * 1000 // denominator
-        return f"{tenths // 10}.{tenths % 10}%"
+        return numerator * 1000 // denominator if denominator else None
+
+    def rate(self, name: str) -> str:
+        """`name` over its denominator as a percentage, rounded down to one decimal, such as `66.6%`; "—" with nothing to divide by."""
+        tenths = self.tenths(name)
+        return "—" if tenths is None else f"{tenths // 10}.{tenths % 10}%"
 
 
 def _key(statement: str, basis: str, section: str, label: str, period_label: str) -> tuple:
@@ -125,7 +127,8 @@ def _compare(gold: GoldFact, fact: dict) -> Outcome:
     return "wrong_value"
 
 
-def _candidates(index: dict[tuple, list[dict]], sections: set[tuple], gold: GoldFact) -> list[dict]:
+def _candidates(index: dict[tuple, list[dict]], by_line: dict[tuple, list[dict]], sections: set[tuple],
+                gold: GoldFact) -> list[dict]:
     """The facts a gold fact may be.
 
     When a fact of its statement and basis has its section, the line must be in that section: "Borrowings" is
@@ -136,8 +139,7 @@ def _candidates(index: dict[tuple, list[dict]], sections: set[tuple], gold: Gold
     key = _key(gold.statement, gold.basis, gold.section, gold.label, gold.period_label)
     if key[2] and key[:3] in sections:
         return index.get(key, [])
-    line = key[:2] + key[3:]
-    return [f for other, facts in index.items() if other[:2] + other[3:] == line for f in facts]
+    return by_line.get(key[:2] + key[3:], [])
 
 
 def score_filing(artefact: Artefact, gold: GoldFiling) -> FilingScore:
@@ -145,13 +147,15 @@ def score_filing(artefact: Artefact, gold: GoldFiling) -> FilingScore:
     if result is None:  # the filing could not be read, so every gold fact is missing
         result = {"facts": [], "checks": [], "warnings": [], "coverage": [], "state": None}
     index: dict[tuple, list[dict]] = {}
+    by_line: dict[tuple, list[dict]] = {}  # the same, without the section
     for fact in result["facts"]:
         key = _key(fact["statement"], fact["basis"], fact["section"], fact["reportedLabel"], fact["periodLabel"])
         index.setdefault(key, []).append(fact)
+        by_line.setdefault(key[:2] + key[3:], []).append(fact)
     sections = {key[:3] for key in index}
     scores: list[FactScore] = []
     for g in gold.facts:
-        found = _candidates(index, sections, g)
+        found = _candidates(index, by_line, sections, g)
         base = dict(concept=g.concept, statement=g.statement, basis=g.basis, label=g.label, period_label=g.period_label,
                     gold_printed=g.printed, gold_normalized=g.normalized_value)
         if not found:

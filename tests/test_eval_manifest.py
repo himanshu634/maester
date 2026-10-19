@@ -88,7 +88,7 @@ class ManifestTests(unittest.TestCase):
         manifest = load_manifest(self.write([ONE, OTHER]))
         self.paths.corpus.joinpath("synthetic-cements").mkdir(parents=True)
         self.paths.corpus.joinpath("synthetic-cements/ar-2025-26.pdf").write_bytes(b"%PDF-")
-        self.assertEqual(missing_files(manifest, self.paths.corpus), ["other-metals/ar-2025-26.pdf"])
+        self.assertEqual(missing_files(manifest.filings, self.paths.corpus), ["other-metals/ar-2025-26.pdf"])
 
     def test_truncated_json_is_a_manifest_error(self):
         self.paths.manifest.write_text('{"filings": [', encoding="utf-8")
@@ -120,12 +120,11 @@ class ManifestTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(ManifestError):
                 load_manifest(self.write([bad]))
 
-    def test_select_leaves_out_of_scope_filings_out_unless_asked_or_named(self):
+    def test_select_leaves_out_of_scope_filings_out_unless_named(self):
         manifest = load_manifest(self.write([ONE, BANK, OTHER]))
         one, bank, other = "synthetic-cements/ar-2025-26", "synthetic-bank/ar-2025-26", "other-metals/ar-2025-26"
         self.assertEqual([f.id for f in manifest.select("dev")], [one])
         self.assertEqual([f.id for f in manifest.select("all")], [one, other])
-        self.assertEqual([f.id for f in manifest.select("dev", include_out_of_scope=True)], [one, bank])
         self.assertEqual([f.id for f in manifest.select("dev", only=[bank])], [bank])
         self.assertEqual([f.id for f in manifest.select("all", only=[bank, one])], [one, bank])
 

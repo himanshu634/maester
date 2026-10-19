@@ -16,7 +16,8 @@ from typer.testing import CliRunner
 from maester_eval import cli
 from maester_eval.artefacts import write_artefact, write_run
 from maester_eval.concepts import load_taxonomy
-from maester_eval.gold import freeze_sheet, write_gold
+from maester_eval.files import write_text_atomically
+from maester_eval.gold import freeze_sheet, read_gold, write_gold
 from maester_eval.manifest import Filing
 from maester_eval.paths import EvalPaths
 from maester_eval.report import LABELS, RATES, render_markdown, score_run_dir, write_report
@@ -78,12 +79,12 @@ class ReportCase(unittest.TestCase):
         write_gold(self.paths.gold, freeze_sheet([row()], filing, TAXONOMY, WHEN))
 
     def score(self, ids=None, eval_set="dev", out_of_scope=None):
-        return score_run_dir(self.run_dir, self.paths.gold, ids or [FILING.id], eval_set, out_of_scope)
+        return score_run_dir(self.run_dir, read_gold(self.paths.gold), ids or [FILING.id], eval_set, out_of_scope)
 
 
 class ReportTests(ReportCase):
     def test_markdown_carries_the_summary_strata_filings_and_mismatches(self):
-        score = score_run_dir(self.run_dir, self.paths.gold, [FILING.id], "dev")
+        score = score_run_dir(self.run_dir, read_gold(self.paths.gold), [FILING.id], "dev")
         text = render_markdown(score, generated_at=WHEN)
         self.assertIn("# Evaluation report: 20261016T090000Z-baseline", text)
         self.assertIn("extract-2", text)
@@ -97,7 +98,7 @@ class ReportTests(ReportCase):
         self.assertIn("| Inventories | As at 31 March 2026 | wrong_value | 801 | 800 |", text)
 
     def test_delta_against_an_earlier_run(self):
-        score = score_run_dir(self.run_dir, self.paths.gold, [FILING.id], "dev")
+        score = score_run_dir(self.run_dir, read_gold(self.paths.gold), [FILING.id], "dev")
         earlier = score.model_copy(deep=True)
         earlier.filings[0].facts[1].outcome = "match"  # the earlier run had both right
         text = render_markdown(score, against=earlier, generated_at=WHEN)
@@ -105,7 +106,7 @@ class ReportTests(ReportCase):
         self.assertIn("| Exact match | 50.0% | 100.0% | −50.0 pp |", text)
 
     def test_write_report_produces_markdown_and_json(self):
-        score = score_run_dir(self.run_dir, self.paths.gold, [FILING.id], "dev")
+        score = score_run_dir(self.run_dir, read_gold(self.paths.gold), [FILING.id], "dev")
         md, js = write_report(self.run_dir, score, generated_at=WHEN)
         self.assertEqual((md.name, js.name), ("report.md", "report.json"))
         data = json.loads(js.read_text(encoding="utf-8"))
@@ -117,7 +118,7 @@ class ReportTests(ReportCase):
         extra = Filing(file="other-metals/ar-2025-26.pdf", company="Other Metals Limited",
                        kind="annual_report", period_end="2026-03-31", set="dev")
         write_gold(self.paths.gold, freeze_sheet([row()], extra, load_taxonomy(), WHEN))
-        score = score_run_dir(self.run_dir, self.paths.gold, [FILING.id, extra.id], "dev")
+        score = score_run_dir(self.run_dir, read_gold(self.paths.gold), [FILING.id, extra.id], "dev")
         text = render_markdown(score, generated_at=WHEN)
         self.assertIn("## Not run\n\n- other-metals/ar-2025-26", text)
 
@@ -318,13 +319,12 @@ class WriteReportTests(ReportCase):
     def test_both_files_are_written_as_utf8_whatever_the_machine_default_is(self):
         # A machine whose default encoding is not UTF-8 cannot write the `·` and `—` of any report without it.
         encodings = {}
-        write_text = Path.write_text
 
-        def spy(path, data, encoding=None, **kwargs):
+        def spy(path, text, encoding="utf-8"):
             encodings[path.name] = encoding
-            return write_text(path, data, encoding=encoding, **kwargs)
+            return write_text_atomically(path, text, encoding)
 
-        with mock.patch.object(Path, "write_text", spy):
+        with mock.patch("maester_eval.report.write_text_atomically", spy):
             write_report(self.run_dir, self.score(), generated_at=WHEN)
         self.assertEqual(encodings, {"report.md": "utf-8", "report.json": "utf-8"})
 

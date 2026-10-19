@@ -5,39 +5,30 @@ A rate is a ratio of whole numbers (`Summary.rate`), and so is the change betwee
 tenths of a percent, with no float.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 import json
 from pathlib import Path
 
 from maester_eval.artefacts import read_artefacts, read_run
-from maester_eval.gold import read_gold
-from maester_eval.scoring import OUTCOMES, RunScore, Summary, score_run
+from maester_eval.files import write_text_atomically
+from maester_eval.gold import GoldFiling
+from maester_eval.paths import to_utc
+from maester_eval.scoring import RunScore, Summary, score_run
 
 LABELS = {"match": "Exact match", "wrong_value": "Wrong value", "wrong_scale": "Wrong scale",
           "wrong_status": "Wrong status", "ambiguous": "Ambiguous", "missing": "Missing"}
-RATES = [("match", "Exact match"), ("wrong_value", "Wrong value"), ("wrong_scale", "Wrong scale"),
-         ("wrong_status", "Wrong status"), ("ambiguous", "Ambiguous"), ("missing", "Missing"),
-         ("page_match", "Page match"), ("checks_passed", "Checks passed"), ("checks_failed", "Checks failed")]
+RATES = [*LABELS.items(), ("page_match", "Page match"), ("checks_passed", "Checks passed"), ("checks_failed", "Checks failed")]
 
 
-def score_run_dir(run_dir: Path, gold_dir: Path, manifest_ids: list[str], eval_set: str,
+def score_run_dir(run_dir: Path, gold: dict[str, GoldFiling], manifest_ids: list[str], eval_set: str,
                   out_of_scope: dict[str, str] | None = None) -> RunScore:
-    """Score a run folder against the gold set.
+    """Score a run folder against the gold set (`read_gold`).
 
     `out_of_scope` maps the ids of the filings a baseline leaves out to the reason. They are never listed as not run."""
     record = read_run(run_dir)
-    return score_run(run_dir.name, read_artefacts(run_dir), read_gold(gold_dir), manifest_ids, eval_set,
+    return score_run(run_dir.name, read_artefacts(run_dir), gold, manifest_ids, eval_set,
                      pipeline_version=record.get("pipeline_version"), prompt_version=record.get("prompt_version"),
                      model=record.get("model"), out_of_scope_ids=list(out_of_scope or {}))
-
-
-def _utc(moment: datetime | None) -> datetime:
-    """`moment` in UTC, or now when there is none. A naive time is taken as UTC already, as `EvalPaths.new_run` takes it."""
-    if moment is None:
-        return datetime.now(timezone.utc)
-    if moment.utcoffset() is None:
-        moment = moment.replace(tzinfo=timezone.utc)
-    return moment.astimezone(timezone.utc)
 
 
 def _cell(value: object) -> str:
@@ -64,11 +55,9 @@ def _summary_table(s: Summary) -> list[str]:
         ("Filings", str(s.filings), ""), ("Read", str(s.extracted), s.rate("extracted")), ("Failed", str(s.failed), s.rate("failed")),
         ("Gold facts", str(s.gold_facts), ""),
     ]
-    rows += [(LABELS[name], str(getattr(s, name)), s.rate(name)) for name in OUTCOMES]
+    rows += [(label, f"{s.page_match} of {s.page_checked}" if name == "page_match" else str(getattr(s, name)), s.rate(name))
+             for name, label in RATES]
     rows += [
-        ("Page match", f"{s.page_match} of {s.page_checked}", s.rate("page_match")),
-        ("Checks passed", str(s.checks_passed), s.rate("checks_passed")),
-        ("Checks failed", str(s.checks_failed), s.rate("checks_failed")),
         ("Checks not checked", str(s.checks_not_checked), s.rate("checks_not_checked")),
         ("Seconds per filing, median / max", f"{_num(s.seconds_median)} / {_num(s.seconds_max)}", ""),
         ("Model calls per filing, median / max", f"{_num(s.model_calls_median)} / {_num(s.model_calls_max)}", ""),
@@ -83,14 +72,9 @@ def _strata_table(title: str, strata: dict[str, Summary]) -> list[str]:
     return lines + [""]
 
 
-def _tenths(rate: str) -> int | None:
-    """A rate as `Summary.rate` writes it, such as `66.6%`, in tenths of a percent (666); None for the dash."""
-    return None if rate == "—" else int(rate.rstrip("%").replace(".", ""))
-
-
-def _pp(now: str, before: str) -> str:
-    """The change from one rate to another in percentage points, such as `+33.3 pp`; a dash when either has no denominator."""
-    a, b = _tenths(now), _tenths(before)
+def _pp(now: Summary, before: Summary, name: str) -> str:
+    """The change in a rate from one run to another in percentage points, such as `+33.3 pp`; a dash when either has no denominator."""
+    a, b = now.tenths(name), before.tenths(name)
     if a is None or b is None:
         return "—"
     change = a - b
@@ -100,7 +84,7 @@ def _pp(now: str, before: str) -> str:
 def render_markdown(score: RunScore, against: RunScore | None = None, generated_at: datetime | None = None,
                     out_of_scope_reasons: dict[str, str] | None = None) -> str:
     s = score.summary()
-    when = _utc(generated_at).strftime("%Y-%m-%d %H:%M UTC")
+    when = to_utc(generated_at).strftime("%Y-%m-%d %H:%M UTC")
     lines = [
         f"# Evaluation report: {score.run}", "",
         f"Set `{score.eval_set}` · {when} · pipeline {_code(score.pipeline_version)} · prompt {_code(score.prompt_version)}"
@@ -111,7 +95,7 @@ def render_markdown(score: RunScore, against: RunScore | None = None, generated_
     if against is not None:
         a = against.summary()
         lines += [f"## Against {against.run}", "", "| Rate | This run | Earlier | Change |", "| --- | --- | --- | --- |"]
-        lines += [f"| {label} | {s.rate(name)} | {a.rate(name)} | {_pp(s.rate(name), a.rate(name))} |" for name, label in RATES]
+        lines += [f"| {label} | {s.rate(name)} | {a.rate(name)} | {_pp(s, a, name)} |" for name, label in RATES]
         lines.append("")
     for title, strata in score.strata().items():
         if strata:
@@ -144,13 +128,13 @@ def render_markdown(score: RunScore, against: RunScore | None = None, generated_
 
 def write_report(run_dir: Path, score: RunScore, against: RunScore | None = None, generated_at: datetime | None = None,
                  out_of_scope_reasons: dict[str, str] | None = None) -> tuple[Path, Path]:
-    generated_at = _utc(generated_at)
+    generated_at = to_utc(generated_at)
     md = run_dir / "report.md"
     js = run_dir / "report.json"
-    md.write_text(render_markdown(score, against, generated_at, out_of_scope_reasons), encoding="utf-8")
-    js.write_text(json.dumps({
+    write_text_atomically(md, render_markdown(score, against, generated_at, out_of_scope_reasons))
+    write_text_atomically(js, json.dumps({
         "generated_at": generated_at.isoformat(), "against": against.run if against else None,
         "summary": score.summary().model_dump(), "strata": {k: {v: s.model_dump() for v, s in d.items()} for k, d in score.strata().items()},
         "score": score.model_dump(mode="json"),
-    }, ensure_ascii=False, indent=1), encoding="utf-8")
+    }, ensure_ascii=False, indent=1))
     return md, js

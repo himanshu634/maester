@@ -9,9 +9,9 @@ label or a figure of the filing."""
 import json
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict
 
-from maester_eval.files import write_text_atomically
+from maester_eval.files import read_model, write_text_atomically
 from maester_eval.manifest import EvalSet, FilingKind, SetChoice
 
 
@@ -89,10 +89,7 @@ def write_artefact(run_dir: Path, artefact: Artefact) -> Path:
 
 def read_artefact(path: Path) -> Artefact:
     """One artefact file. One that is not UTF-8, not JSON or not an artefact is an `ArtefactReadError` naming the path."""
-    try:
-        return Artefact.model_validate(json.loads(path.read_text(encoding="utf-8")))
-    except (json.JSONDecodeError, UnicodeDecodeError, ValidationError):
-        raise ArtefactReadError(f"{path} is not a readable artefact") from None
+    return read_model(path, Artefact, ArtefactReadError, "artefact")
 
 
 def read_artefacts(run_dir: Path) -> list[Artefact]:
@@ -111,10 +108,4 @@ def write_run(run_dir: Path, record: dict) -> None:
 def read_run(run_dir: Path) -> dict:
     """`run.json` as it was written. A folder without one is a `FileNotFoundError`. A `run.json` that is not UTF-8,
     not JSON, not an object or holds a key of the wrong type is an `ArtefactReadError` naming the path."""
-    path = run_dir / "run.json"
-    try:
-        record = json.loads(path.read_text(encoding="utf-8"))
-        RunRecord.model_validate(record)
-    except (json.JSONDecodeError, UnicodeDecodeError, ValidationError):
-        raise ArtefactReadError(f"{path} is not a readable run.json") from None
-    return record
+    return read_model(run_dir / "run.json", RunRecord, ArtefactReadError, "run.json").model_dump(exclude_unset=True)

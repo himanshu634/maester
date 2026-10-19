@@ -122,4 +122,7 @@ def gemini_model_factory() -> ModelFactory:
 
 
 def workflow_settings_from_env() -> WorkflowSettings:
-    return WorkflowSettings(deadline_seconds=float(os.environ.get("EXTRACT_DEADLINE_SECONDS", "840")))
+    try:
+        return WorkflowSettings(deadline_seconds=float(os.environ.get("EXTRACT_DEADLINE_SECONDS", "840")))
+    except ValueError as exc:
+        raise EvalConfigError(f"EXTRACT_DEADLINE_SECONDS: {exc}") from None

@@ -16,6 +16,15 @@ _LABEL = re.compile(r"[A-Za-z0-9._-]+")
 _RUN_NAME = re.compile(r"\d{8}T\d{6}Z(-" + _LABEL.pattern + ")?")
 
 
+def to_utc(moment: datetime | None) -> datetime:
+    """`moment` in UTC, or now when there is none. A naive time is taken as UTC already."""
+    if moment is None:
+        return datetime.now(timezone.utc)
+    if moment.utcoffset() is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc)
+
+
 @dataclass(frozen=True)
 class EvalPaths:
     base: Path
@@ -48,10 +57,7 @@ class EvalPaths:
         """
         if label is not None and not _LABEL.fullmatch(label):
             raise ValueError(f"run label {label!r}: use letters, digits, dot, dash or underscore")
-        moment = datetime.now(timezone.utc) if now is None else now
-        if moment.utcoffset() is None:
-            moment = moment.replace(tzinfo=timezone.utc)
-        stamp = moment.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        stamp = to_utc(now).strftime("%Y%m%dT%H%M%SZ")
         path = self.runs / (f"{stamp}-{label}" if label else stamp)
         path.mkdir(parents=True, exist_ok=False)
         return path

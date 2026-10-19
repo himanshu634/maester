@@ -9,7 +9,7 @@ import io
 from pathlib import Path
 import re
 
-from maester_eval.artefacts import Artefact, read_artefacts
+from maester_eval.artefacts import Artefact
 from maester_eval.files import write_text_atomically
 from maester_eval.text import normalise
 
@@ -78,14 +78,12 @@ def write_sheet(path: Path, rows: list[dict[str, str]]) -> None:
     write_text_atomically(path, text.getvalue(), encoding="utf-8-sig")
 
 
-def export_run(run_dir: Path, sheets_dir: Path, only: list[str] | None = None, force: bool = False,
-               *, artefacts: list[Artefact] | None = None) -> tuple[list[Path], list[Path]]:
-    """Writes a sheet per artefact. A sheet that exists is a person's work: skipped unless `force`.
-
-    The artefacts are read from `run_dir`, unless the caller has read them already and passes them as `artefacts`."""
+def export_run(artefacts: list[Artefact], sheets_dir: Path, only: list[str] | None = None,
+               force: bool = False) -> tuple[list[Path], list[Path]]:
+    """Writes a sheet per artefact (`read_artefacts`). A sheet that exists is a person's work: skipped unless `force`."""
     written: list[Path] = []
     skipped: list[Path] = []
-    for artefact in read_artefacts(run_dir) if artefacts is None else artefacts:
+    for artefact in artefacts:
         if only and artefact.filing_id not in only:
             continue
         path = sheet_path(sheets_dir, artefact.filing_id)

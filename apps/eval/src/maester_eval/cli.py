@@ -6,8 +6,7 @@ and figures go only into files under data/eval and the report.
 
 from datetime import datetime, timezone
 from pathlib import Path
-import shutil
-from typing import Annotated, NoReturn, Optional
+from typing import Annotated, NoReturn, Optional, get_args
 
 import typer
 from dotenv import load_dotenv
@@ -15,8 +14,9 @@ from rich.console import Console
 
 from maester_eval.artefacts import ArtefactReadError, artefact_path, read_artefact, read_artefacts, read_run
 from maester_eval.concepts import load_taxonomy
-from maester_eval.gold import FreezeError, GoldError, count_unverified, freeze_sheet, read_sheet, write_gold
-from maester_eval.manifest import ManifestError, SetChoice, load_manifest
+from maester_eval.files import write_text_atomically
+from maester_eval.gold import FreezeError, GoldError, count_unverified, freeze_sheet, read_gold, read_sheet, write_gold
+from maester_eval.manifest import ManifestError, SetChoice, load_manifest, missing_files
 from maester_eval.paths import DEFAULT
 from maester_eval.report import score_run_dir, write_report
 from maester_eval.runner import EvalConfigError, gemini_model_factory, run_live, workflow_settings_from_env
@@ -29,8 +29,6 @@ app = typer.Typer(
 )
 # soft_wrap: a path or an id stays on one line, also where no terminal gives a width (`live` in the background).
 console = Console(soft_wrap=True)
-# The values `--set` takes, each the set it names.
-_SETS: dict[str, SetChoice] = {"dev": "dev", "heldout": "heldout", "all": "all"}
 
 
 @app.callback()
@@ -45,10 +43,9 @@ def _fail(message: str) -> NoReturn:
 
 def _set_choice(value: str) -> SetChoice:
     """`--set` as the set it names. Any other value stops the command."""
-    chosen = _SETS.get(value)
-    if chosen is None:
+    if value not in get_args(SetChoice):
         _fail("--set must be dev, heldout or all")
-    return chosen
+    return value  # type: ignore[return-value]
 
 
 @app.command()
@@ -68,19 +65,16 @@ def live(
         left_out = len(manifest.out_of_scope(chosen))
         if left_out:
             console.print(f"left out as out of scope: {left_out}")
-    absent = [f.file for f in filings if not (DEFAULT.corpus / f.file).is_file()]
+    absent = missing_files(filings, DEFAULT.corpus)
     if absent:
         _fail("missing under data/eval/corpus: " + ", ".join(absent))
     if not filings:
         _fail("nothing to read: the selection is empty")
     try:
         factory = gemini_model_factory()
+        settings = workflow_settings_from_env()  # before the run folder exists: a bad setting must not leave an empty one
     except EvalConfigError as exc:
         _fail(str(exc))
-    try:
-        settings = workflow_settings_from_env()  # before the run folder exists: a bad setting must not leave an empty one
-    except ValueError as exc:
-        _fail(f"EXTRACT_DEADLINE_SECONDS: {exc}")
     try:
         run_dir = DEFAULT.new_run(label)
     except ValueError as exc:
@@ -109,7 +103,7 @@ def export(
     missing = set(only or []) - {artefact.filing_id for artefact in artefacts}
     if missing:
         _fail("not in this run: " + ", ".join(sorted(missing)))
-    written, skipped = export_run(run_dir, DEFAULT.sheets, only, force, artefacts=artefacts)
+    written, skipped = export_run(artefacts, DEFAULT.sheets, only, force)
     for path in written:
         console.print(f"wrote {path.relative_to(DEFAULT.base)}", markup=False)
     for path in skipped:
@@ -176,9 +170,10 @@ def report(
         ids = [f.id for f in manifest.filings]
         out_of_scope = {f.id: f.out_of_scope or "" for f in manifest.out_of_scope(chosen)}
         run_dir = DEFAULT.resolve_run(run)
-        score = score_run_dir(run_dir, DEFAULT.gold, ids, chosen, out_of_scope)
+        gold = read_gold(DEFAULT.gold)
+        score = score_run_dir(run_dir, gold, ids, chosen, out_of_scope)
         # The earlier run is read and scored before anything is written, and against the gold set as it is now.
-        earlier = None if against is None else score_run_dir(DEFAULT.resolve_run(against), DEFAULT.gold, ids, chosen, out_of_scope)
+        earlier = None if against is None else score_run_dir(DEFAULT.resolve_run(against), gold, ids, chosen, out_of_scope)
     except (ManifestError, FileNotFoundError, ArtefactReadError, GoldError) as exc:
         _fail(str(exc))
     try:
@@ -195,8 +190,7 @@ def report(
     console.print(f"report → {md}", markup=False)
     if to is not None:
         try:
-            to.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(md, to)
+            write_text_atomically(to, md.read_text(encoding="utf-8"))
         except OSError as exc:
             _fail(f"cannot write {to}: {exc.strerror or exc}")
         console.print(f"published → {to}", markup=False)

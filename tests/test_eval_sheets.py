@@ -175,7 +175,7 @@ class ExportRunTests(unittest.TestCase):
         write_artefact(self.run_dir, run_filing(FILING, PDF, lambda: ScriptedModel(), FAST))
 
     def test_writes_a_sheet_with_a_bom_and_never_overwrites_without_force(self):
-        written, skipped = export_run(self.run_dir, self.paths.sheets)
+        written, skipped = export_run(read_artefacts(self.run_dir), self.paths.sheets)
         path = sheet_path(self.paths.sheets, FILING.id)
         self.assertEqual((written, skipped), ([path], []))
         self.assertTrue(path.read_bytes().startswith(b"\xef\xbb\xbf"))
@@ -183,38 +183,32 @@ class ExportRunTests(unittest.TestCase):
             rows = list(csv.DictReader(handle))
         self.assertEqual(list(rows[0]), SHEET_COLUMNS)
         path.write_text("edited by a person", encoding="utf-8")
-        self.assertEqual(export_run(self.run_dir, self.paths.sheets), ([], [path]))
+        self.assertEqual(export_run(read_artefacts(self.run_dir), self.paths.sheets), ([], [path]))
         self.assertEqual(path.read_text(encoding="utf-8"), "edited by a person")
-        self.assertEqual(export_run(self.run_dir, self.paths.sheets, force=True), ([path], []))
+        self.assertEqual(export_run(read_artefacts(self.run_dir), self.paths.sheets, force=True), ([path], []))
         self.assertNotEqual(path.read_text(encoding="utf-8"), "edited by a person")
 
     def test_only_limits_the_export(self):
-        self.assertEqual(export_run(self.run_dir, self.paths.sheets, only=["someone/else"]), ([], []))
+        self.assertEqual(export_run(read_artefacts(self.run_dir), self.paths.sheets, only=["someone/else"]), ([], []))
 
     def test_each_sheet_is_written_or_kept_on_its_own(self):
         write_artefact(self.run_dir, run_filing(OTHER, PDF, lambda: ScriptedModel(), FAST))
         kept = sheet_path(self.paths.sheets, FILING.id)
         kept.parent.mkdir(parents=True)
         kept.write_text("edited by a person", encoding="utf-8")
-        written, skipped = export_run(self.run_dir, self.paths.sheets)
+        written, skipped = export_run(read_artefacts(self.run_dir), self.paths.sheets)
         self.assertEqual((written, skipped), ([sheet_path(self.paths.sheets, OTHER.id)], [kept]))
         self.assertEqual(kept.read_text(encoding="utf-8"), "edited by a person")
 
     def test_only_names_the_filings_to_export(self):
         write_artefact(self.run_dir, run_filing(OTHER, PDF, lambda: ScriptedModel(), FAST))
-        written, skipped = export_run(self.run_dir, self.paths.sheets, only=[OTHER.id])
+        written, skipped = export_run(read_artefacts(self.run_dir), self.paths.sheets, only=[OTHER.id])
         self.assertEqual((written, skipped), ([sheet_path(self.paths.sheets, OTHER.id)], []))
         self.assertFalse(sheet_path(self.paths.sheets, FILING.id).exists())
 
-    def test_artefacts_already_read_are_not_read_again(self):
-        artefacts = read_artefacts(self.run_dir)
-        gone = Path(self.temp.name) / "no-such-run"  # nothing to read there: the sheet can only come from `artefacts`
-        written, skipped = export_run(gone, self.paths.sheets, artefacts=artefacts)
-        self.assertEqual((written, skipped), ([sheet_path(self.paths.sheets, FILING.id)], []))
-
     def test_a_failed_filing_gets_a_sheet_with_its_note(self):
         write_artefact(self.run_dir, failed_artefact(OTHER))
-        export_run(self.run_dir, self.paths.sheets, only=[OTHER.id])
+        export_run(read_artefacts(self.run_dir), self.paths.sheets, only=[OTHER.id])
         with sheet_path(self.paths.sheets, OTHER.id).open(encoding="utf-8-sig", newline="") as handle:
             rows = list(csv.DictReader(handle))
         self.assertEqual([row["note"] for row in rows], ["extraction failed: NO_STATEMENTS_FOUND"])
@@ -284,11 +278,10 @@ class ExportCommandTests(unittest.TestCase):
         self.assertFalse(self.paths.sheets.exists())  # not even the id that is in the run
 
     def test_the_artefacts_are_read_once(self):
-        with mock.patch.object(cli, "read_artefacts", wraps=read_artefacts) as in_command, \
-                mock.patch("maester_eval.sheets.read_artefacts", wraps=read_artefacts) as in_sheets:
+        with mock.patch.object(cli, "read_artefacts", wraps=read_artefacts) as in_command:
             result = self.export("--only", FILING.id)
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertEqual(in_command.call_count + in_sheets.call_count, 1)
+        self.assertEqual(in_command.call_count, 1)
 
     def test_a_filing_id_is_printed_as_written(self):
         # Rich would read `[final]` as a style tag and drop it, from the wrote line and from the kept line.

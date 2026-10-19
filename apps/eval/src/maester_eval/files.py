@@ -3,9 +3,15 @@
 `live` can stop at any moment, and a sheet or a gold file is a person's work: a write that stops half-way
 must not leave a torn file where a whole one was."""
 
+import json
 import os
 from pathlib import Path
 import secrets
+from typing import TypeVar
+
+from pydantic import BaseModel, ValidationError
+
+Model = TypeVar("Model", bound=BaseModel)
 
 
 def write_text_atomically(path: Path, text: str, encoding: str = "utf-8") -> None:
@@ -26,3 +32,13 @@ def write_text_atomically(path: Path, text: str, encoding: str = "utf-8") -> Non
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
+
+
+def read_model(path: Path, model: type[Model], error: type[Exception], what: str) -> Model:
+    """`path` read as UTF-8 JSON of the form `model`. A file that is not is an `error` saying "<path> is not a readable
+    <what>" and nothing more: the text of a JSON or validation error repeats what the file holds, which can be a label
+    or a figure of a filing. A file that does not exist is a `FileNotFoundError`."""
+    try:
+        return model.model_validate(json.loads(path.read_text(encoding="utf-8")))
+    except (json.JSONDecodeError, UnicodeDecodeError, ValidationError):
+        raise error(f"{path} is not a readable {what}") from None

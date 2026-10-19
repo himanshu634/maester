@@ -24,6 +24,17 @@ class ManifestError(ValueError):
     pass
 
 
+def is_iso_date(text: str) -> bool:
+    """A calendar date written YYYY-MM-DD."""
+    if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", text):
+        return False
+    try:
+        date.fromisoformat(text)
+    except ValueError:
+        return False
+    return True
+
+
 class Filing(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -55,9 +66,8 @@ class Filing(BaseModel):
     @field_validator("period_end")
     @classmethod
     def _iso_date(cls, value: str) -> str:
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        if not is_iso_date(value):
             raise ValueError("period_end must be a calendar date written YYYY-MM-DD")
-        date.fromisoformat(value)
         return value
 
 
@@ -72,12 +82,10 @@ class Manifest(BaseModel):
     def _in_set(self, eval_set: SetChoice) -> list[Filing]:
         return [f for f in self.filings if eval_set == "all" or f.set == eval_set]
 
-    def select(self, eval_set: SetChoice = "all", only: list[str] | None = None,
-               include_out_of_scope: bool = False) -> list[Filing]:
+    def select(self, eval_set: SetChoice = "all", only: list[str] | None = None) -> list[Filing]:
         """The filings of a set, in manifest order.
 
-        A filing marked out of scope is left out unless `include_out_of_scope` is set or `only` names it:
-        naming a filing is explicit.
+        A filing marked out of scope is left out unless `only` names it: naming a filing is explicit.
         """
         chosen = self._in_set(eval_set)
         if only:
@@ -90,8 +98,6 @@ class Manifest(BaseModel):
             if outside:
                 raise ManifestError("; ".join(f"{f.id} is in set {f.set}, not {eval_set}" for f in outside))
             return [f for f in chosen if f.id in wanted]
-        if include_out_of_scope:
-            return chosen
         skipped = {f.id for f in self.out_of_scope(eval_set)}
         return [f for f in chosen if f.id not in skipped]
 
@@ -124,8 +130,8 @@ def load_manifest(path: Path) -> Manifest:
     return manifest
 
 
-def missing_files(manifest: Manifest, corpus: Path) -> list[str]:
-    return [f.file for f in manifest.filings if not (corpus / f.file).is_file()]
+def missing_files(filings: list[Filing], corpus: Path) -> list[str]:
+    return [f.file for f in filings if not (corpus / f.file).is_file()]
 
 
 def _mixed_sets(filings: list[Filing]) -> list[str]:

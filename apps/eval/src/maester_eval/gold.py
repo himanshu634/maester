@@ -28,24 +28,19 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from maester_eval.artefacts import Artefact
 from maester_eval.concepts import Concept, Taxonomy
-from maester_eval.files import write_text_atomically
-from maester_eval.manifest import EvalSet, Filing, FilingKind
+from maester_eval.files import read_model, write_text_atomically
+from maester_eval.manifest import EvalSet, Filing, FilingKind, is_iso_date
 from maester_eval.sheets import sheet_rows
 from maester_eval.text import normalise
+from pdf_financial_qa.workflow.contracts import ReportingBasis, StatementKind
 from pdf_financial_qa.workflow.values import format_decimal, parse_label_date, parse_reported
-
-StatementKind = Literal["balance_sheet", "income_statement", "cash_flow"]
-ReportingBasis = Literal["consolidated", "standalone", "unknown"]
 
 _DIGITS = re.compile(r"[0-9]+")
 # A scale is a whole number from 1 without a leading zero: an unknown scale is never zero.
 _SCALE = re.compile(r"[1-9][0-9]*")
 # A whole number as written or with the ".0" a spreadsheet adds ("7", "7.0"); not "7.5", "1E+3" or "NaN".
 _DIGITS_OR_FLOAT = re.compile(r"-?[0-9]+(?:\.0+)?")
-_ISO_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 _DAY_FIRST_DATE = re.compile(r"([0-9]{1,2})/([0-9]{1,2})/([0-9]{4})")
-# The columns the pipeline wrote that freeze reads again from the artefact.
-_MACHINE_COLUMNS = ("statement", "basis", "section", "label", "period_label", "period_end", "printed", "scale_factor", "page")
 
 
 class FreezeError(ValueError):
@@ -146,16 +141,6 @@ def _whole(text: str, what: str, line: int) -> int:
     return int(text.partition(".")[0])
 
 
-def _is_iso_date(text: str) -> bool:
-    if not _ISO_DATE.fullmatch(text):
-        return False
-    try:
-        date.fromisoformat(text)
-    except ValueError:
-        return False
-    return True
-
-
 def _unreadable(line: int, column: str, text: str, what: str, row: dict[str, str],
                 artefact: Artefact | None) -> FreezeError:
     """The error for a cell that is not what it should be, most likely because a spreadsheet retyped it.
@@ -181,7 +166,7 @@ def _same_period_label(sheet: str, original: str) -> bool:
 
 def _read_date(text: str) -> date | None:
     """A date as the pipeline writes it (`2026-03-31`) or as a spreadsheet may (`31/03/2026`, day first); else None."""
-    if _is_iso_date(text):
+    if is_iso_date(text):
         return date.fromisoformat(text)
     found = _DAY_FIRST_DATE.fullmatch(text)
     if found is None:
@@ -218,6 +203,8 @@ _AGREEMENTS = {
     "period_label": _same_period_label, "period_end": _same_date,
     "printed": _same_figure, "scale_factor": _same_number, "page": _same_number,
 }
+# The columns the pipeline wrote that freeze reads again from the artefact.
+_MACHINE_COLUMNS = ("label", *_AGREEMENTS)
 
 
 def _as_exported(row: dict[str, str], line: int, exported: dict[str, dict[str, str]] | None) -> dict[str, str]:
@@ -263,7 +250,7 @@ def _scale(row: dict[str, str], concept: Concept, line: int, artefact: Artefact 
 def _period_end(row: dict[str, str], line: int, artefact: Artefact | None) -> str | None:
     column = "gold_period_end" if row.get("gold_period_end") else "period_end"
     text = row.get(column, "")
-    if text and not _is_iso_date(text):
+    if text and not is_iso_date(text):
         raise _unreadable(line, column, text, "a date written YYYY-MM-DD", row, artefact)
     return text or None
 
@@ -366,16 +353,9 @@ def write_gold(gold_dir: Path, gold: GoldFiling, force: bool = False) -> Path:
     return path
 
 
-def _read_gold_file(path: Path) -> GoldFiling:
-    try:
-        return GoldFiling.model_validate(json.loads(path.read_text(encoding="utf-8")))
-    except (json.JSONDecodeError, UnicodeDecodeError, ValidationError):
-        raise GoldError(f"{path} is not a readable gold file") from None
-
-
 def read_gold(gold_dir: Path) -> dict[str, GoldFiling]:
     """Every gold file under `gold_dir`, by filing id. One that cannot be read is a `GoldError` naming the file."""
     if not gold_dir.is_dir():
         return {}
-    loaded = [_read_gold_file(p) for p in sorted(gold_dir.rglob("*.json"))]
+    loaded = [read_model(p, GoldFiling, GoldError, "gold file") for p in sorted(gold_dir.rglob("*.json"))]
     return {g.filing_id: g for g in loaded}
