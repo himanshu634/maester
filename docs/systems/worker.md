@@ -143,9 +143,9 @@ At start, `logUnhandledQueued` writes one log line for each job type with queued
 
 1. On `SIGTERM` or `SIGINT`, the worker stops all claim loops. No new job starts.
 2. The worker waits a maximum of 25 seconds for the jobs to end.
-3. After 28 seconds, the process exits, also if a job still runs.
-4. After the 25 seconds, `releaseLease` gives back each job of this process that still runs. The job gets the state `queued` and a `run_after` of now. It also removes 1 from `attempt`. Thus the stop does not count as one of the `maxAttempts` of the job.
-5. `releaseLease` changes the job only if the job is `running` and has the lease token of this process.
+3. After the 25 seconds, `releaseLease` gives back each job of this process that still runs. The job gets the state `queued` and a `run_after` of now. It also removes 1 from `attempt`. Thus the stop does not count as one of the `maxAttempts` of the job.
+4. `releaseLease` changes the job only if the job is `running` and has the lease token of this process.
+5. After 28 seconds, the process exits, also if a job still runs.
 6. The file `docker-compose.yml` sets `stop_grace_period: 30s` for the worker, so Docker waits for these steps.
 
 ### Cloud Tasks mode: dispatch request and lease
