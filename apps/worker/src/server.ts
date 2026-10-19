@@ -10,7 +10,7 @@ import { createMarketRefresher } from "./market/build.js";
 import { startMarketSchedule } from "./market/schedule.js";
 import { startQueueRunner, type QueueRunner, type QueueRunnerOptions } from "./queue.js";
 import type { WorkerDeps } from "./run.js";
-import { buildQueueOptions, logUnhandledQueued } from "./start.js";
+import { buildQueueOptions, logJobBacklog, logUnhandledQueued } from "./start.js";
 import { createStore } from "./store.js";
 
 const env = loadWorkerEnv();
@@ -51,6 +51,10 @@ if (env.CONNECTIONS_KEY) {
 
 let runner: QueueRunner | null = null;
 if (queueOptions) {
+  // Asked before the runner starts, so the counts are close to the backlog the first claims take. Not awaited: a slow database does not hold up start.
+  logJobBacklog(db, logger).catch((err: unknown) =>
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "could not count queued and running jobs"),
+  );
   runner = startQueueRunner(deps, queueOptions);
   logUnhandledQueued(db, Object.keys(handlers), logger).catch((err: unknown) =>
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "could not count queued jobs with no handler"),

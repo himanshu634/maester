@@ -7,5 +7,5 @@ export {
   type Dispatcher,
   type TasksClientLike,
 } from "./dispatch.js";
-export { createJob, DEFAULT_MAX_ATTEMPTS, JobScopeConflictError, type CreateJobInput } from "./create.js";
+export { createJob, DEFAULT_MAX_ATTEMPTS, JobScopeConflictError, MAX_ATTEMPTS_BY_TYPE, maxAttemptsFor, type CreateJobInput } from "./create.js";
 export { READ_KINDS, readVersion, classificationIdOfReadJob, decideIntake, type DecideOptions } from "./intake.js";

@@ -3,7 +3,7 @@ import pino from "pino";
 import { describe, expect, it } from "vitest";
 import { schema } from "@maester/db";
 import { createWorkerApp } from "../src/app.js";
-import { logUnhandledQueued } from "../src/start.js";
+import { logJobBacklog, logUnhandledQueued } from "../src/start.js";
 import { createWorkerContext, seedJob, seedWorkspace } from "./context.js";
 
 const noop = { "test.noop": async () => ({ done: true }) };
@@ -64,6 +64,36 @@ describe("logUnhandledQueued", () => {
         expect(line.msg).toBe("queued jobs of a type this worker has no handler for");
         const fields = Object.keys(line).filter((k) => !["level", "time", "pid", "hostname", "msg"].includes(k));
         expect(fields.sort()).toEqual(["count", "type"]);
+      }
+    } finally {
+      await c.close();
+    }
+  });
+});
+
+describe("logJobBacklog", () => {
+  it("logs the queued and running count of each type once, with the type and the counts only", async () => {
+    const c = await createWorkerContext(noop);
+    try {
+      const { workspaceId } = await seedWorkspace(c.db);
+      await seedJob(c.db, workspaceId, { type: "document.extract" });
+      await seedJob(c.db, workspaceId, { type: "document.extract" });
+      await seedJob(c.db, workspaceId, { type: "document.extract", state: "running", leaseToken: crypto.randomUUID(), leaseExpiresAt: new Date(Date.now() - 1_000) });
+      await seedJob(c.db, workspaceId, { type: "document.classify", state: "running", leaseToken: crypto.randomUUID(), leaseExpiresAt: new Date(Date.now() + 60_000) });
+      await seedJob(c.db, workspaceId, { type: "document.verify", state: "failed" });
+      await seedJob(c.db, workspaceId, { type: "document.verify", state: "succeeded" });
+      const lines: Record<string, unknown>[] = [];
+      const logger = pino({ level: "info" }, { write: (s: string) => void lines.push(JSON.parse(s)) });
+      const rows = await logJobBacklog(c.db, logger);
+      expect(rows.sort((a, b) => a.type.localeCompare(b.type))).toEqual([
+        { type: "document.classify", queued: 0, running: 1 },
+        { type: "document.extract", queued: 2, running: 1 },
+      ]);
+      expect(lines).toHaveLength(2);
+      for (const line of lines) {
+        expect(line.msg).toBe("jobs waiting or running at start");
+        const fields = Object.keys(line).filter((k) => !["level", "time", "pid", "hostname", "msg"].includes(k));
+        expect(fields.sort()).toEqual(["queued", "running", "type"]);
       }
     } finally {
       await c.close();

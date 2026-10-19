@@ -164,6 +164,8 @@ Each query for a workspace record takes the workspace ID and gives only rows of 
 | --- | --- |
 | `createJob(db, dispatcher, input)` | Inserts a job and dispatches it. If a job with the same idempotency key exists in the workspace, it gives that job and does not dispatch it. |
 | `DEFAULT_MAX_ATTEMPTS` | The value 5. |
+| `MAX_ATTEMPTS_BY_TYPE` | The `maxAttempts` of the job types that call a paid model: `document.classify` 2 and `document.extract` 2. |
+| `maxAttemptsFor(type)` | Gives the `maxAttempts` of a job type: the value in `MAX_ATTEMPTS_BY_TYPE`, or `DEFAULT_MAX_ATTEMPTS` for all other types. |
 | `JobScopeConflictError` | The idempotency key belongs to a job in a different workspace. |
 | `Dispatcher` | The interface with the method `enqueue(job)`. |
 | `QueueNotifier` | Sends the Postgres notification `job_ready` with the job type. The queue runner of the worker wakes and claims the job. |
@@ -223,7 +225,7 @@ The Pydantic classes in `classify.contracts` and `workflow.contracts` are a copy
 
 1. The caller gives `createJob` the workspace ID, the job type, the subject type, the subject ID and an optional version.
 2. `createJob` makes the idempotency key `<type>:<subjectId>:<version>`. The default version is `1`.
-3. `createJob` inserts a job with the state `queued` and `maxAttempts` 5. If a job with the same idempotency key exists, the insert adds no row.
+3. `createJob` inserts a job with the state `queued` and the `maxAttempts` from `maxAttemptsFor`. If a job with the same idempotency key exists, the insert adds no row.
 4. If the insert adds a row, `createJob` gives the new job to the dispatcher and returns the job.
 5. If the insert adds no row, `createJob` returns the job with that idempotency key in the same workspace. It does not dispatch the job.
 6. `QueueNotifier` runs `select pg_notify('job_ready', <type>)`. The job row is already `queued`. If the notification is lost, the poll of the worker finds the job.

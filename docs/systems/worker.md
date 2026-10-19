@@ -10,7 +10,7 @@
 | Job type | The `type` column of a job: `document.verify`, `document.classify` or `document.extract`. |
 | Handler | The function that does the work for one job type. |
 | `attempt` | The `attempt` column of a job. The worker adds 1 to it each time that it starts the job. |
-| `maxAttempts` | The `max_attempts` column of a job. The default value is 5. |
+| `maxAttempts` | The `max_attempts` column of a job. The value is 2 for `document.classify` and `document.extract`, because these jobs call a paid model. The value is 5 for all other types. |
 | Lease | A time limit in which only one worker process can run a job. The `lease_token` and `lease_expires_at` columns hold the lease. |
 | Lease token | A random UUID that `acquireLease` writes to `lease_token`. Only the process with this token can change the job. |
 | Dispatch request | The HTTP request `POST /tasks/:type` with the JSON body `{ "jobId": "<uuid>" }`. It tells the worker to run a job. Only the `cloud-tasks` mode uses it. |

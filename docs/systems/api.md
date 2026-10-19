@@ -224,7 +224,7 @@ A read starts only when all these conditions are true:
 ### Job creation and dispatch
 
 1. The API calls `createJob` from `@maester/jobs`. The idempotency key is `<type>:<subjectId>:<pipelineVersion>`. The default `pipelineVersion` is `1`.
-2. If no job has the key, `createJob` writes a job with the state `queued` and `maxAttempts` 5. Then it gives the job to the dispatcher.
+2. If no job has the key, `createJob` writes a job with the state `queued`. It gives the job the `maxAttempts` of its type from `maxAttemptsFor`. Then it gives the job to the dispatcher.
 3. If a job of the same workspace has the key, `createJob` returns that job and does not dispatch it again.
 4. If a job of a different workspace has the key, the result is `CONFLICT`.
 5. The `extract` and `classify` routes set `pipelineVersion` to `manual-<UUID>`. Thus each call makes a new job.
@@ -239,7 +239,7 @@ The dispatcher has two modes:
 - `failed`.
 - `queued`, with no change for more than 5 minutes.
 
-For a retry, the API sets the state to `queued`, sets `maxAttempts` to `attempt` plus 5, sets `run_after` to now and clears `finishedAt` and `progress`. Then it dispatches the job again. In all other states, the result is `INVALID_STATE`.
+For a retry, the API sets the state to `queued`, sets `maxAttempts` to `attempt` plus `maxAttemptsFor(type)`, sets `run_after` to now and clears `finishedAt` and `progress`. Then it dispatches the job again. In all other states, the result is `INVALID_STATE`.
 
 ### Job events
 
