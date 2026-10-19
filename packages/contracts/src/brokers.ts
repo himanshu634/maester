@@ -1,0 +1,205 @@
+import { z } from "zod";
+import { DecimalString, IsoTimestamp } from "./common.js";
+
+/**
+ * Broker connections (Holdings). A broker is described by one JSON definition the API loads at
+ * start (`packages/brokers/definitions/*.json`, plus `BROKER_DEFINITIONS_DIR` when set): what the
+ * investor is asked for, how they sign in, and the read-only calls Maester makes. Adding a broker
+ * is adding a file; the code only interprets the fixed vocabulary below. Nothing in a definition
+ * is executed, and every call it describes goes to one of its own `hosts` over https.
+ */
+
+export const BrokerId = z.string().regex(/^[a-z][a-z0-9-]{1,31}$/, "a broker id is lower-case letters, digits and -");
+export type BrokerId = z.infer<typeof BrokerId>;
+
+/** `{name}` placeholders. A URL's are URL-encoded; a header's or form field's are used as they are. */
+const Template = z.string().min(1).max(2000);
+/** A dotted path into a JSON response, such as `data.access_token`. */
+const JsonPath = z.string().regex(/^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$/);
+
+/** One thing the investor types in, such as an API key. A secret is shown as a password field. */
+export const BrokerCredentialField = z.object({
+  key: z.string().regex(/^[a-z][A-Za-z0-9]{0,31}$/),
+  label: z.string().min(1).max(60),
+  hint: z.string().max(200).optional(),
+  secret: z.boolean(),
+  minLength: z.number().int().min(1).max(512).default(1),
+  maxLength: z.number().int().min(1).max(4096).default(512),
+});
+export type BrokerCredentialField = z.infer<typeof BrokerCredentialField>;
+
+/** A value worked out from others before a call. `sha256hex` hashes the named values joined with nothing between them. */
+export const BrokerDerivedValue = z.object({ sha256hex: z.array(z.string().min(1)).min(1).max(8) });
+
+const Call = z.object({
+  method: z.enum(["GET", "POST"]),
+  url: Template,
+  headers: z.record(z.string(), Template).default({}),
+  /** Sent as application/x-www-form-urlencoded. */
+  form: z.record(z.string(), Template).optional(),
+  derive: z.record(z.string(), BrokerDerivedValue).default({}),
+});
+
+/**
+ * When a sign-in stops working. `daily`: at a fixed local time each day (Zerodha: 06:00 in
+ * Asia/Kolkata). `hours`: a fixed number of hours after sign-in.
+ */
+export const BrokerSessionExpiry = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("daily"), at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), timeZone: z.string().min(1) }),
+  z.object({ kind: z.literal("hours"), hours: z.number().int().min(1).max(24 * 366) }),
+]);
+export type BrokerSessionExpiry = z.infer<typeof BrokerSessionExpiry>;
+
+/** The fields of one holding in the broker's answer. Each names a path inside one list item. */
+export const BrokerHoldingFields = z.object({
+  isin: JsonPath,
+  symbol: JsonPath,
+  exchange: JsonPath,
+  quantity: JsonPath,
+  t1Quantity: JsonPath.optional(),
+  averagePrice: JsonPath,
+  lastPrice: JsonPath.optional(),
+});
+
+export const BrokerDefinition = z.object({
+  id: BrokerId,
+  name: z.string().min(1).max(40),
+  /** Off: listed as not offered, with `notOfferedReason`, and nothing can be saved for it. */
+  enabled: z.boolean(),
+  notOfferedReason: z.string().max(200).optional(),
+  /** Every host a call may reach. A URL to any other host is refused before it is sent. */
+  hosts: z.array(z.string().regex(/^[a-z0-9.-]+$/)).min(1).max(8),
+  /** What the page says about signing in, how long it lasts and what it costs. */
+  copy: z.object({
+    pickerLine: z.string().min(1).max(160),
+    lasts: z.string().min(1).max(80),
+    cost: z.string().min(1).max(80),
+    formLede: z.string().min(1).max(400),
+    steps: z.array(z.string().min(1).max(300)).min(1).max(8),
+    saveNote: z.string().max(200).optional(),
+    signedOutNote: z.string().min(1).max(200),
+  }),
+  credentials: z.array(BrokerCredentialField).min(1).max(4),
+  /** The credential whose last 4 characters name the saved key. */
+  credentialShown: z.string(),
+  signIn: z.object({
+    kind: z.literal("redirect"),
+    /** The broker's login page. `{state}` is the single-use nonce; `{stateQuery}` is `state=<nonce>`. */
+    loginUrl: Template,
+    /** The query parameters the broker sends back to Maester's return address. */
+    returnParams: z.object({ code: z.string().min(1), state: z.string().min(1), status: z.string().optional(), success: z.string().optional() }),
+    /** Exchanges the code for a session. Its templates may use the credentials and `{code}`. */
+    session: Call.extend({
+      accessToken: JsonPath,
+      accountId: JsonPath.optional(),
+      expiry: BrokerSessionExpiry,
+    }),
+  }),
+  reads: z.object({
+    /** Templates may use the credentials, `{accessToken}` and `{accountId}`. */
+    holdings: Call.extend({ list: JsonPath, fields: BrokerHoldingFields }),
+  }),
+  /** An answer with one of these statuses means the broker signed Maester out. */
+  signedOutStatuses: z.array(z.number().int().min(400).max(599)).default([401, 403]),
+});
+export type BrokerDefinition = z.infer<typeof BrokerDefinition>;
+
+/** What the web is sent about a broker: everything a page shows, none of the calls. */
+export const BrokerSummary = z.object({
+  id: BrokerId,
+  name: z.string(),
+  enabled: z.boolean(),
+  notOfferedReason: z.string().nullable(),
+  copy: BrokerDefinition.shape.copy,
+  credentials: z.array(BrokerCredentialField.omit({ minLength: true, maxLength: true }).extend({ minLength: z.number(), maxLength: z.number() })),
+  /** The address to paste into the broker's app as its redirect URL. */
+  returnUrl: z.string(),
+});
+export type BrokerSummary = z.infer<typeof BrokerSummary>;
+
+export const BrokerList = z.object({ items: z.array(BrokerSummary) });
+export type BrokerList = z.infer<typeof BrokerList>;
+
+/**
+ * One broker account in the workspace.
+ * - `saved`: the key is kept; nobody has signed in yet.
+ * - `signed_in`: the broker's sign-in is still good.
+ * - `signed_out`: the broker signed Maester out (its daily expiry, or it refused the token).
+ * - `failing`: the last read failed for another reason.
+ */
+export const BrokerAccount = z.object({
+  broker: BrokerId,
+  name: z.string(),
+  state: z.enum(["saved", "signed_in", "signed_out", "failing"]),
+  accountId: z.string().nullable(),
+  keyLast4: z.string().nullable(),
+  savedAt: IsoTimestamp,
+  signedInAt: IsoTimestamp.nullable(),
+  signedOutAt: IsoTimestamp.nullable(),
+  lastReadAt: IsoTimestamp.nullable(),
+  lastReadCount: z.number().int().nullable(),
+  errorCode: z.string().nullable(),
+});
+export type BrokerAccount = z.infer<typeof BrokerAccount>;
+
+export const BrokerAccountList = z.object({ items: z.array(BrokerAccount) });
+export type BrokerAccountList = z.infer<typeof BrokerAccountList>;
+
+/** The credentials for one broker, keyed by its definition's credential keys. */
+export const SaveBrokerRequest = z.object({ credentials: z.record(z.string(), z.string().trim().min(1).max(4096)) });
+export type SaveBrokerRequest = z.infer<typeof SaveBrokerRequest>;
+
+export const BrokerSignInStart = z.object({ url: z.url() });
+export type BrokerSignInStart = z.infer<typeof BrokerSignInStart>;
+
+/** Why a figure is unknown. */
+export const HoldingUnknown = z.enum(["NO_CLOSE", "NO_COST"]);
+export type HoldingUnknown = z.infer<typeof HoldingUnknown>;
+
+/** One account's part of a row: the facts read from the broker, with when they were read. */
+export const HoldingPart = z.object({
+  broker: BrokerId,
+  accountId: z.string().nullable(),
+  quantity: DecimalString,
+  averagePrice: DecimalString,
+  readAt: IsoTimestamp,
+  /** Read before the broker signed Maester out, so it may be older than today. */
+  stale: z.boolean(),
+});
+export type HoldingPart = z.infer<typeof HoldingPart>;
+
+/**
+ * One security across the workspace's accounts. Quantity, cost, value and weight are results of
+ * named calculations in @maester/financial-engine (`calculations` says which, with versions).
+ */
+export const HoldingRow = z.object({
+  isin: z.string(),
+  symbol: z.string(),
+  exchange: z.string(),
+  parts: z.array(HoldingPart).min(1),
+  quantity: DecimalString,
+  cost: DecimalString.nullable(),
+  close: z.object({ value: DecimalString, day: z.iso.date(), source: z.string() }).nullable(),
+  value: DecimalString.nullable(),
+  weight: DecimalString.nullable(),
+  unknown: z.array(HoldingUnknown),
+});
+export type HoldingRow = z.infer<typeof HoldingRow>;
+
+export const HoldingsSnapshot = z.object({
+  accounts: z.array(BrokerAccount),
+  rows: z.array(HoldingRow),
+  totals: z.object({
+    knownValue: DecimalString.nullable(),
+    priced: z.number().int(),
+    count: z.number().int(),
+    cost: DecimalString.nullable(),
+    costed: z.number().int(),
+    unrealizedGain: DecimalString.nullable(),
+    gainCovers: z.number().int(),
+  }),
+  /** The latest NSE close day used, when any row is priced. */
+  closeDay: z.iso.date().nullable(),
+  calculations: z.array(z.object({ id: z.string(), version: z.number().int() })),
+});
+export type HoldingsSnapshot = z.infer<typeof HoldingsSnapshot>;
