@@ -8,12 +8,14 @@
 	interface Props {
 		open: boolean;
 		name: string;
+		/** What disconnecting forgets: the key and secret, or (for a Settings connection) only the account here. */
+		detail: string;
 		busy?: boolean;
 		onconfirm: () => void;
 		onclose: () => void;
 	}
 
-	let { open, name, busy = false, onconfirm, onclose }: Props = $props();
+	let { open, name, detail, busy = false, onconfirm, onclose }: Props = $props();
 
 	const id = $props.id();
 	let dialog = $state<HTMLDialogElement>();
@@ -28,7 +30,7 @@
 
 <dialog bind:this={dialog} aria-labelledby="{id}-title" aria-describedby="{id}-detail" {onclose}>
 	<p class="title" id="{id}-title">{copy.dialog.title(name)}</p>
-	<p id="{id}-detail">{copy.dialog.detail}</p>
+	<p id="{id}-detail">{detail}</p>
 	<div class="actions">
 		<button type="button" class="button" disabled={busy} onclick={onconfirm}
 			>{copy.dialog.confirm}</button

@@ -48,7 +48,11 @@ function text(v: unknown, field: string): string {
   return v.trim();
 }
 
-type Call = BrokerDefinition["reads"]["holdings"] | BrokerDefinition["signIn"]["session"];
+type RedirectSignIn = Extract<BrokerDefinition["signIn"], { kind: "redirect" }>;
+type Call = BrokerDefinition["reads"]["holdings"] | RedirectSignIn["session"];
+
+/** The values a holdings read may use: a redirect sign-in's session, or the Settings connection's token and client ID. */
+export type ReadSession = { accessToken: string; accountId: string | null } | { accessToken: string; clientId: string };
 
 /**
  * Makes the calls a broker definition describes. It only reads: a definition has no way to
@@ -62,14 +66,20 @@ export class BrokerClient {
   }
   private readonly timeoutMs: number;
 
+  /** The redirect sign-in; a broker that signs in through Settings has none. */
+  private redirect(): RedirectSignIn {
+    if (this.def.signIn.kind !== "redirect") throw new Error(`${this.def.id} signs in through a Settings connection, not a redirect`);
+    return this.def.signIn;
+  }
+
   /** The broker's login page for this sign-in. */
   loginUrl(creds: Credentials, state: string): string {
-    return fill(this.def.signIn.loginUrl, { ...creds, state, stateQuery: `state=${state}` }, { url: true });
+    return fill(this.redirect().loginUrl, { ...creds, state, stateQuery: `state=${state}` }, { url: true });
   }
 
   /** Reads the broker's return: the code, or why there is none. */
   readReturn(query: Record<string, string | undefined>): { code: string; state: string } | { refused: true; state: string | null } {
-    const p = this.def.signIn.returnParams;
+    const p = this.redirect().returnParams;
     const state = query[p.state] ?? null;
     const code = query[p.code];
     const statusOk = !p.status || query[p.status] === undefined || query[p.status] === (p.success ?? "success");
@@ -79,7 +89,7 @@ export class BrokerClient {
 
   /** Exchanges the code from the broker's return for a session. */
   async signIn(creds: Credentials, code: string, now: Date): Promise<BrokerSession> {
-    const s = this.def.signIn.session;
+    const s = this.redirect().session;
     const body = await this.call(s, { ...creds, code }, "sign-in");
     const accessToken = at(body, s.accessToken);
     if (typeof accessToken !== "string" || accessToken === "") throw new BrokerError("BROKER_ANSWER_UNREADABLE", "the sign-in answer has no access token");
@@ -88,10 +98,13 @@ export class BrokerClient {
   }
 
   /** The holdings in the account, as the broker reports them. */
-  async holdings(creds: Credentials, session: { accessToken: string; accountId: string | null }): Promise<BrokerHoldingLine[]> {
+  async holdings(creds: Credentials, session: ReadSession): Promise<BrokerHoldingLine[]> {
     const h = this.def.reads.holdings;
-    const body = await this.call(h, { ...creds, accessToken: session.accessToken, accountId: session.accountId ?? "" }, "holdings");
-    const list = at(body, h.list);
+    const values = "clientId" in session
+      ? { ...creds, accessToken: session.accessToken, clientId: session.clientId }
+      : { ...creds, accessToken: session.accessToken, accountId: session.accountId ?? "" };
+    const body = await this.call(h, values, "holdings");
+    const list = h.list === undefined ? body : at(body, h.list);
     if (!Array.isArray(list)) throw new BrokerError("BROKER_ANSWER_UNREADABLE", "the holdings answer has no list");
     const f = h.fields;
     return list.map((item) => ({

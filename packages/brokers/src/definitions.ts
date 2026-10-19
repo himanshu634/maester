@@ -15,7 +15,14 @@ export function checkDefinition(def: BrokerDefinition): void {
   };
   const creds = def.credentials.map((c) => c.key);
   if (new Set(creds).size !== creds.length) fail("two credentials share a key");
-  if (!creds.includes(def.credentialShown)) fail(`credentialShown "${def.credentialShown}" is not a credential`);
+  if (def.signIn.kind === "redirect") {
+    if (creds.length === 0) fail("a redirect sign-in needs at least one credential");
+    if (def.credentialShown === undefined || !creds.includes(def.credentialShown)) fail(`credentialShown "${def.credentialShown ?? ""}" is not a credential`);
+  } else {
+    // The token comes from Settings; a definition that also asks for a key would keep a second copy.
+    if (creds.length > 0) fail("a settings-connection sign-in asks for no credentials");
+    if (def.credentialShown !== undefined) fail("a settings-connection sign-in has no credentialShown");
+  }
 
   const call = (where: string, c: { url: string; headers: Record<string, string>; form?: Record<string, string>; derive: Record<string, { sha256hex: string[] }> }, known: string[]) => {
     for (const [name, d] of Object.entries(c.derive)) {
@@ -38,11 +45,16 @@ export function checkDefinition(def: BrokerDefinition): void {
     if (!def.hosts.includes(url.hostname)) fail(`${where}: ${url.hostname} is not one of the definition's hosts`);
   };
 
-  for (const p of placeholders(def.signIn.loginUrl)) if (![...creds, "state", "stateQuery"].includes(p)) fail(`loginUrl: unknown placeholder {${p}}`);
-  checkUrl("loginUrl", def.signIn.loginUrl);
-  if (!placeholders(def.signIn.loginUrl).some((p) => p === "state" || p === "stateQuery")) fail("loginUrl must carry {state} or {stateQuery}");
-  call("session", def.signIn.session, [...creds, "code"]);
-  call("holdings", def.reads.holdings, [...creds, "accessToken", "accountId"]);
+  if (def.signIn.kind === "redirect") {
+    const { loginUrl, session } = def.signIn;
+    for (const p of placeholders(loginUrl)) if (![...creds, "state", "stateQuery"].includes(p)) fail(`loginUrl: unknown placeholder {${p}}`);
+    checkUrl("loginUrl", loginUrl);
+    if (!placeholders(loginUrl).some((p) => p === "state" || p === "stateQuery")) fail("loginUrl must carry {state} or {stateQuery}");
+    call("session", session, [...creds, "code"]);
+    call("holdings", def.reads.holdings, [...creds, "accessToken", "accountId"]);
+  } else {
+    call("holdings", def.reads.holdings, ["accessToken", "clientId"]);
+  }
 }
 
 /** Parses and checks one definition. Throws a DefinitionError naming the file and what is wrong. */

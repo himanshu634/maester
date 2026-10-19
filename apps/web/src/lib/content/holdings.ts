@@ -41,6 +41,7 @@ export const holdingsContent = {
 		read: (when: string, count: number) =>
 			`${when} · ${count === 1 ? '1 holding' : `${count} holdings`}`,
 		tooSoon: 'It read a moment ago. Try again in a few seconds.',
+		openSettings: 'Open Settings',
 		readFailed: (name: string) => `${name} didn’t answer. Nothing read was lost.`
 	},
 
@@ -67,6 +68,21 @@ export const holdingsContent = {
 			`${name} didn’t answer. Try signing in again in a minute.`,
 		BROKER_ANSWER_UNREADABLE: (name: string) => `${name}’s answer wasn’t one Maester could read.`
 	} as Record<string, ((name: string) => string) | undefined>,
+
+	/** A broker that signs in with a connection saved in Settings (Dhan): nothing to type or sign in to here. */
+	settings: {
+		providers: { dhan: 'Dhan' } as Record<string, string | undefined>,
+		uses: (provider: string) => `Uses your ${provider} connection from Settings`,
+		add: (name: string) => `Add ${name}`,
+		adding: (name: string) => `Reading your ${name} holdings…`,
+		notConnected: (provider: string) => `${provider} isn’t connected in Settings yet.`,
+		notConnectedDetail: (provider: string) =>
+			`Save your ${provider} client ID and access token in Settings, then come back and add it here.`,
+		added: (name: string, count: number | null) =>
+			count === null
+				? `${name} added.`
+				: `${name} added. ${count === 1 ? '1 holding' : `${count} holdings`} read.`
+	},
 
 	add: {
 		heading: 'Add a broker',
@@ -126,6 +142,8 @@ export const holdingsContent = {
 	dialog: {
 		title: (name: string) => `Disconnect ${name}?`,
 		detail: 'Maester forgets the key and the secret, and these holdings leave this page.',
+		settingsDetail: (provider: string) =>
+			`Maester stops reading these holdings, and they leave this page. ${provider} stays connected in Settings.`,
 		confirm: 'Disconnect',
 		keep: 'Keep it'
 	},

@@ -54,10 +54,18 @@ export function stateWords(a: BrokerAccount): string {
 	return copy.accounts.state[a.state];
 }
 
+/** The Settings connection's name ("Dhan") when the broker signs in through one, otherwise null. */
+export function settingsProvider(broker: BrokerSummary | undefined): string | null {
+	if (broker?.signIn.kind !== 'settings-connection') return null;
+	return copy.settings.providers[broker.signIn.provider] ?? broker.name;
+}
+
 /** The line under the state: what the broker said, or how long a sign-in lasts. */
 export function stateDetail(a: BrokerAccount, broker: BrokerSummary | undefined): string {
+	const provider = settingsProvider(broker);
 	if (a.errorCode && copy.errors[a.errorCode]) return copy.errors[a.errorCode]!(a.name);
 	if (a.state === 'signed_out') return broker?.copy.signedOutNote ?? '';
+	if (provider) return `${copy.settings.uses(provider)}.`;
 	if (a.state === 'signed_in')
 		return broker ? `${copy.add.lasts}: ${broker.copy.lasts.toLowerCase()}.` : '';
 	return a.keyLast4 ? copy.accounts.key(a.keyLast4) : '';
@@ -69,8 +77,15 @@ export function readWords(a: BrokerAccount, now: Date = new Date()): string {
 	return copy.accounts.read(when.charAt(0).toUpperCase() + when.slice(1), a.lastReadCount ?? 0);
 }
 
-/** What the account's one action is: sign in when it has no good sign-in, otherwise read again. */
-export function accountAction(a: BrokerAccount): 'sign_in' | 'read' {
+/**
+ * What the account's one action is: sign in when it has no good sign-in, otherwise read again.
+ * An account on a Settings connection has no sign-in here: signed out, it points to Settings.
+ */
+export function accountAction(
+	a: BrokerAccount,
+	broker?: BrokerSummary
+): 'sign_in' | 'read' | 'settings' {
+	if (settingsProvider(broker)) return a.state === 'signed_out' ? 'settings' : 'read';
 	return a.state === 'signed_in' ||
 		(a.state === 'failing' && a.signedInAt !== null && a.signedOutAt === null)
 		? 'read'

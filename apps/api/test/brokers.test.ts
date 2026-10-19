@@ -4,25 +4,29 @@ import { sql } from "drizzle-orm";
 import pino from "pino";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { BrokerAccount, BrokerList, HoldingsSnapshot } from "@maester/contracts";
-import { getBrokerConnection, upsertMarketPoints } from "@maester/db";
-import { decryptSecret } from "@maester/market";
+import { getBrokerConnection, saveConnection, upsertMarketPoints } from "@maester/db";
+import { decryptSecret, encryptSecret } from "@maester/market";
 import { createTestContext, type TestContext } from "./context.js";
 
 // Distinctive values, so a leak anywhere is easy to find.
 const API_KEY = "kiteKEYleak123";
 const API_SECRET = "kiteSECRETleak456";
 const TOKEN = "kiteTOKENleak789";
+const DHAN_TOKEN = "dhanTOKENleak321";
+const DHAN_CLIENT = "1100012345";
 const KEY = randomBytes(32);
 
 type Answer = { status: number; body: unknown };
 let session: Answer;
 let holdings: Answer;
+let dhanHoldings: Answer;
 const calls: { url: string; init: RequestInit }[] = [];
 const json = (a: Answer) => new Response(JSON.stringify(a.body), { status: a.status, headers: { "Content-Type": "application/json" } });
 const brokerFetch = (async (url: string | URL, init?: RequestInit) => {
   calls.push({ url: String(url), init: init ?? {} });
   if (String(url) === "https://api.kite.trade/session/token") return json(session);
   if (String(url) === "https://api.kite.trade/portfolio/holdings") return json(holdings);
+  if (String(url) === "https://api.dhan.co/v2/holdings") return json(dhanHoldings);
   throw new Error(`unexpected ${String(url)}`);
 }) as typeof fetch;
 
@@ -38,7 +42,7 @@ beforeAll(async () => {
 });
 afterAll(() => ctx.close());
 beforeEach(async () => {
-  await ctx.db.execute(sql`TRUNCATE TABLE "broker_connection", "broker_login_state", "holding_read", "holding_line", "market_point" CASCADE`);
+  await ctx.db.execute(sql`TRUNCATE TABLE "broker_connection", "broker_login_state", "holding_read", "holding_line", "market_point", "market_connection" CASCADE`);
   session = { status: 200, body: { status: "success", data: { access_token: TOKEN, user_id: "AB1234" } } };
   holdings = {
     status: 200,
@@ -46,6 +50,12 @@ beforeEach(async () => {
       { tradingsymbol: "HDFCBANK", exchange: "NSE", isin: "INE040A01034", quantity: 120, t1_quantity: 0, average_price: 1512.4, last_price: 1745 },
       { tradingsymbol: "TITAN", exchange: "NSE", isin: "INE280A01028", quantity: 10, t1_quantity: 5, average_price: 3350, last_price: 3500 },
     ] },
+  };
+  dhanHoldings = {
+    status: 200,
+    body: [
+      { exchange: "ALL", tradingSymbol: "HDFCBANK", securityId: "1333", isin: "INE040A01034", totalQty: 30, dpQty: 30, t1Qty: 0, availableQty: 30, collateralQty: 0, avgCostPrice: 1498.25 },
+    ],
   };
   calls.length = 0;
   logLines.length = 0;
@@ -60,8 +70,21 @@ async function clean(res: Response): Promise<unknown> {
   return JSON.parse(text) as unknown;
 }
 function logsClean() {
-  for (const line of logLines) for (const s of [API_KEY, API_SECRET, TOKEN]) expect(line).not.toContain(s);
+  for (const line of logLines) for (const s of [API_KEY, API_SECRET, TOKEN, DHAN_TOKEN]) expect(line).not.toContain(s);
 }
+/** Dhan as Settings saves it: a client ID and a token, encrypted under the same key. */
+async function connectDhanInSettings(token = DHAN_TOKEN, expiresAt: Date | null = new Date(Date.now() + 20 * 3_600_000)) {
+  await saveConnection(ctx.db, {
+    provider: "dhan", clientId: DHAN_CLIENT, secretCiphertext: encryptSecret(token, KEY), secretLast4: token.slice(-4),
+    expiresAt, checkedAt: new Date(), savedByUserId: null,
+  });
+}
+/** Moves the reads so far, and the save before them, a minute back, so the next read is not refused as too soon. */
+async function ageReads() {
+  await ctx.db.execute(sql`UPDATE holding_read SET started_at = started_at - interval '1 minute'`);
+  await ctx.db.execute(sql`UPDATE broker_connection SET saved_at = saved_at - interval '1 minute'`);
+}
+const addDhan = () => ctx.app.request(`${base()}/brokers/dhan`, { method: "PUT", headers: headers(), body: JSON.stringify({ credentials: {} }) });
 /** Saves the key, starts a sign-in and comes back from Zerodha with a code. */
 async function signIn(query: Record<string, string> = { request_token: "rt-1", status: "success", action: "login" }) {
   expect((await save()).status).toBe(200);
@@ -71,12 +94,14 @@ async function signIn(query: Record<string, string> = { request_token: "rt-1", s
 }
 
 describe("GET /v1/brokers", () => {
-  it("lists Kite from its JSON definition, with no calls in it", async () => {
+  it("lists Kite and Dhan from their JSON definitions, with no calls in them", async () => {
     const res = await ctx.app.request("/v1/brokers", { headers: { cookie } });
     const body = BrokerList.parse(await res.json());
-    expect(body.items.map((b) => b.id)).toEqual(["kite"]);
-    expect(body.items[0]).toMatchObject({ name: "Zerodha", enabled: true, returnUrl: "http://localhost/v1/brokers/kite/return" });
+    expect(body.items.map((b) => b.id)).toEqual(["kite", "dhan"]);
+    expect(body.items[0]).toMatchObject({ name: "Zerodha", enabled: true, signIn: { kind: "redirect" }, returnUrl: "http://localhost/v1/brokers/kite/return" });
+    expect(body.items[1]).toMatchObject({ name: "Dhan", enabled: true, credentials: [], signIn: { kind: "settings-connection", provider: "dhan" }, returnUrl: null });
     expect(JSON.stringify(body)).not.toContain("api.kite.trade");
+    expect(JSON.stringify(body)).not.toContain("api.dhan.co");
   });
 });
 
@@ -175,5 +200,102 @@ describe("GET /holdings", () => {
     expect(snap.totals).toEqual({ knownValue: "209112.00", priced: 1, count: 2, cost: "231738.00", costed: 2, unrealizedGain: "27624.00", gainCovers: 1 });
     expect(snap.closeDay).toBe("2026-10-16");
     expect(snap.rows[1]?.parts[0]).toMatchObject({ broker: "kite", accountId: "AB1234", quantity: "15", stale: false });
+  });
+});
+
+describe("connecting Dhan through Settings", () => {
+  it("is refused until Dhan is connected in Settings", async () => {
+    const res = await addDhan();
+    expect(res.status).toBe(409);
+    expect(calls).toHaveLength(0);
+    expect(await getBrokerConnection(ctx.db, ws, "dhan")).toBeNull();
+  });
+
+  it("adds the account with no key and no sign-in, and reads at once with the Settings token", async () => {
+    await connectDhanInSettings();
+    const res = await addDhan();
+    expect(res.status).toBe(200);
+    const account = BrokerAccount.parse(await res.json());
+    expect(account).toMatchObject({ broker: "dhan", state: "signed_in", accountId: DHAN_CLIENT, keyLast4: null, lastReadCount: 1, errorCode: null });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe("https://api.dhan.co/v2/holdings");
+    expect(calls[0]!.init.method).toBe("GET");
+    expect(calls[0]!.init.headers).toMatchObject({ "access-token": DHAN_TOKEN, "client-id": DHAN_CLIENT });
+    const row = await getBrokerConnection(ctx.db, ws, "dhan");
+    expect(row?.tokenCiphertext).toBeNull();
+    expect(JSON.parse(decryptSecret(row!.credentialsCiphertext!, KEY))).toEqual({});
+    logsClean();
+  });
+
+  it("has no sign-in to start or return from", async () => {
+    await connectDhanInSettings();
+    await addDhan();
+    expect((await ctx.app.request(`${base()}/brokers/dhan/sign-in`, { method: "POST", headers: headers() })).status).toBe(409);
+    expect((await ctx.app.request(`/v1/brokers/dhan/return?state=x&code=y`, { headers: { cookie } })).status).toBe(404);
+  });
+
+  it("reads with the token Settings holds now, after the worker renews it", async () => {
+    await connectDhanInSettings();
+    await addDhan();
+    await ageReads();
+    await connectDhanInSettings("dhanRENEWEDtoken654");
+    calls.length = 0;
+    expect((await ctx.app.request(`${base()}/brokers/dhan/read`, { method: "POST", headers: headers() })).status).toBe(200);
+    expect(calls[0]!.init.headers).toMatchObject({ "access-token": "dhanRENEWEDtoken654" });
+  });
+
+  it("is signed out when the Settings token has expired, and its holdings are marked stale", async () => {
+    await connectDhanInSettings();
+    await addDhan();
+    await ctx.db.execute(sql`UPDATE market_connection SET expires_at = now() - interval '1 hour'`);
+    const snap = HoldingsSnapshot.parse(await (await ctx.app.request(`${base()}/holdings`, { headers: { cookie } })).json());
+    expect(snap.accounts[0]).toMatchObject({ broker: "dhan", state: "signed_out" });
+    expect(snap.accounts[0]!.signedOutAt).not.toBeNull();
+    expect(snap.rows[0]!.parts[0]).toMatchObject({ broker: "dhan", stale: true });
+  });
+
+  it("is signed out when Dhan refuses the token, and back once Settings has a new one", async () => {
+    await connectDhanInSettings();
+    await addDhan();
+    await ageReads();
+    await ctx.db.execute(sql`UPDATE market_connection SET saved_at = saved_at - interval '2 minutes'`);
+    dhanHoldings = { status: 401, body: { errorType: "Invalid_Authentication", errorCode: "DH-901", errorMessage: `bad ${DHAN_TOKEN}` } };
+    const refused = BrokerAccount.parse(await (await ctx.app.request(`${base()}/brokers/dhan/read`, { method: "POST", headers: headers() })).json());
+    expect(refused).toMatchObject({ state: "signed_out", lastReadCount: 1 });
+    // Settings saves a new token: the refusal was of the old one.
+    await connectDhanInSettings("dhanNEWtoken987");
+    const list = (await (await ctx.app.request(`${base()}/brokers`, { headers: { cookie } })).json()) as { items: BrokerAccount[] };
+    expect(list.items[0]).toMatchObject({ state: "signed_in", errorCode: null });
+    logsClean();
+  });
+
+  it("recovers from a failed read on the next good one", async () => {
+    await connectDhanInSettings();
+    await addDhan();
+    await ageReads();
+    dhanHoldings = { status: 500, body: {} };
+    const failed = BrokerAccount.parse(await (await ctx.app.request(`${base()}/brokers/dhan/read`, { method: "POST", headers: headers() })).json());
+    expect(failed).toMatchObject({ state: "failing", errorCode: "BROKER_UNAVAILABLE" });
+    await ageReads();
+    dhanHoldings = { status: 200, body: [] };
+    const ok = BrokerAccount.parse(await (await ctx.app.request(`${base()}/brokers/dhan/read`, { method: "POST", headers: headers() })).json());
+    expect(ok).toMatchObject({ state: "signed_in", errorCode: null, lastReadCount: 0 });
+  });
+
+  it("puts Dhan's holdings beside Zerodha's, one row per ISIN", async () => {
+    await upsertMarketPoints(ctx.db, [{ series: "eq:HDFCBANK", day: "2026-10-16", value: 1742.6, source: "Dhan · NSE close" }]);
+    await signIn();
+    await connectDhanInSettings();
+    await addDhan();
+    const snap = HoldingsSnapshot.parse(await clean(await ctx.app.request(`${base()}/holdings`, { headers: { cookie } })));
+    expect(snap.accounts.map((a) => [a.broker, a.state])).toEqual([["kite", "signed_in"], ["dhan", "signed_in"]]);
+    const hdfc = snap.rows.find((r) => r.isin === "INE040A01034")!;
+    // Zerodha's NSE listing names the symbol; Dhan prints "ALL" for a demat holding.
+    expect(hdfc).toMatchObject({ symbol: "HDFCBANK", exchange: "NSE" });
+    expect(hdfc.parts.map((p) => [p.broker, p.accountId, p.quantity, p.stale])).toEqual([["kite", "AB1234", "120", false], ["dhan", DHAN_CLIENT, "30", false]]);
+    // 120 + 30 = 150 shares. Cost 120 × 1512.40 + 30 × 1498.25 = 181,488.00 + 44,947.50 = 226,435.50.
+    // Value 150 × 1742.60 = 261,390.00.
+    expect([hdfc.quantity, hdfc.cost, hdfc.value]).toEqual(["150", "226435.50", "261390.00"]);
+    logsClean();
   });
 });

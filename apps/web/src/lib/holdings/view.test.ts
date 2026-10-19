@@ -10,6 +10,7 @@ import {
 	readWords,
 	returnMessage,
 	staleNote,
+	stateDetail,
 	stateWords,
 	whenWords
 } from './view';
@@ -44,8 +45,31 @@ const kite = {
 		signedOutNote: 'Zerodha signs Maester out every morning at 6:00.'
 	},
 	credentials: [],
+	signIn: { kind: 'redirect' },
 	returnUrl: ''
 } satisfies BrokerSummary;
+const dhan = {
+	...kite,
+	id: 'dhan',
+	name: 'Dhan',
+	copy: {
+		...kite.copy,
+		lasts: 'As long as your Dhan connection in Settings',
+		signedOutNote:
+			'Dhan’s token in Settings has expired or was refused. Save a new one in Settings.'
+	},
+	signIn: { kind: 'settings-connection', provider: 'dhan' },
+	returnUrl: null
+} satisfies BrokerSummary;
+const dhanAccount = (over: Partial<BrokerAccount> = {}) =>
+	account({
+		broker: 'dhan',
+		name: 'Dhan',
+		accountId: '1100012345',
+		keyLast4: null,
+		signedInAt: null,
+		...over
+	});
 
 describe('format', () => {
 	it('groups digits the Indian way', () => {
@@ -89,6 +113,22 @@ describe('view', () => {
 		expect(accountAction(account({ state: 'failing', errorCode: 'BROKER_UNAVAILABLE' }))).toBe(
 			'read'
 		);
+	});
+
+	it('never asks a Settings-connection account to sign in here', () => {
+		expect(accountAction(dhanAccount(), dhan)).toBe('read');
+		expect(
+			accountAction(dhanAccount({ state: 'failing', errorCode: 'BROKER_UNAVAILABLE' }), dhan)
+		).toBe('read');
+		expect(accountAction(dhanAccount({ state: 'signed_out' }), dhan)).toBe('settings');
+	});
+
+	it('says a Settings-connection account uses Settings, and points there when signed out', () => {
+		expect(stateDetail(dhanAccount(), dhan)).toBe('Uses your Dhan connection from Settings.');
+		expect(stateDetail(dhanAccount({ state: 'signed_out' }), dhan)).toBe(
+			'Dhan’s token in Settings has expired or was refused. Save a new one in Settings.'
+		);
+		expect(stateDetail(account(), kite)).toBe('A sign-in lasts: until 6:00 the next morning.');
 	});
 
 	it('says what was read and when', () => {
@@ -138,6 +178,39 @@ describe('view', () => {
 		expect(staleNote(snap, NOW)).toBe(
 			'* Read Sun 18 Oct, 15:42, before Zerodha signed Maester out. Quantities change only when you trade; sign in to check.'
 		);
+	});
+
+	it('says where a holding is held, account by account', () => {
+		const row = {
+			isin: 'INE040A01034',
+			symbol: 'HDFCBANK',
+			exchange: 'NSE',
+			quantity: '150',
+			cost: '226435.50',
+			close: null,
+			value: null,
+			weight: null,
+			unknown: [],
+			parts: [
+				{
+					broker: 'kite',
+					accountId: 'AB1234',
+					quantity: '120',
+					averagePrice: '1512.4',
+					readAt: '2026-10-19T03:44:00Z',
+					stale: false
+				},
+				{
+					broker: 'dhan',
+					accountId: '1100012345',
+					quantity: '30',
+					averagePrice: '1498.25',
+					readAt: '2026-10-19T03:44:00Z',
+					stale: false
+				}
+			]
+		} satisfies HoldingsSnapshot['rows'][number];
+		expect(heldAtWords(row, { kite: 'Zerodha', dhan: 'Dhan' })).toBe('Zerodha 120 · Dhan 30');
 	});
 
 	it('reads the return from the broker', () => {

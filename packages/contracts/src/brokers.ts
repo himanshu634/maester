@@ -61,6 +61,36 @@ export const BrokerHoldingFields = z.object({
   lastPrice: JsonPath.optional(),
 });
 
+/** The market connection providers a broker can sign in through (`market_connection.provider`). */
+export const SettingsConnectionProvider = z.enum(["dhan"]);
+export type SettingsConnectionProvider = z.infer<typeof SettingsConnectionProvider>;
+
+/**
+ * How Maester gets a session.
+ * - `redirect`: the investor saves the broker's key, then signs in on the broker's own page,
+ *   which sends a code back that a session call exchanges for a token (Zerodha).
+ * - `settings-connection`: the broker's token is the one saved in Settings for `provider`, which
+ *   the market worker renews (Dhan). There is nothing to save and no sign-in; every read uses
+ *   the token Settings holds at that moment.
+ */
+export const BrokerSignIn = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("redirect"),
+    /** The broker's login page. `{state}` is the single-use nonce; `{stateQuery}` is `state=<nonce>`. */
+    loginUrl: Template,
+    /** The query parameters the broker sends back to Maester's return address. */
+    returnParams: z.object({ code: z.string().min(1), state: z.string().min(1), status: z.string().optional(), success: z.string().optional() }),
+    /** Exchanges the code for a session. Its templates may use the credentials and `{code}`. */
+    session: Call.extend({
+      accessToken: JsonPath,
+      accountId: JsonPath.optional(),
+      expiry: BrokerSessionExpiry,
+    }),
+  }),
+  z.object({ kind: z.literal("settings-connection"), provider: SettingsConnectionProvider }),
+]);
+export type BrokerSignIn = z.infer<typeof BrokerSignIn>;
+
 export const BrokerDefinition = z.object({
   id: BrokerId,
   name: z.string().min(1).max(40),
@@ -79,25 +109,18 @@ export const BrokerDefinition = z.object({
     saveNote: z.string().max(200).optional(),
     signedOutNote: z.string().min(1).max(200),
   }),
-  credentials: z.array(BrokerCredentialField).min(1).max(4),
-  /** The credential whose last 4 characters name the saved key. */
-  credentialShown: z.string(),
-  signIn: z.object({
-    kind: z.literal("redirect"),
-    /** The broker's login page. `{state}` is the single-use nonce; `{stateQuery}` is `state=<nonce>`. */
-    loginUrl: Template,
-    /** The query parameters the broker sends back to Maester's return address. */
-    returnParams: z.object({ code: z.string().min(1), state: z.string().min(1), status: z.string().optional(), success: z.string().optional() }),
-    /** Exchanges the code for a session. Its templates may use the credentials and `{code}`. */
-    session: Call.extend({
-      accessToken: JsonPath,
-      accountId: JsonPath.optional(),
-      expiry: BrokerSessionExpiry,
-    }),
-  }),
+  /** What the investor types in. A broker that signs in through a Settings connection asks for nothing. */
+  credentials: z.array(BrokerCredentialField).max(4),
+  /** The credential whose last 4 characters name the saved key. Absent when there are no credentials. */
+  credentialShown: z.string().optional(),
+  signIn: BrokerSignIn,
   reads: z.object({
-    /** Templates may use the credentials, `{accessToken}` and `{accountId}`. */
-    holdings: Call.extend({ list: JsonPath, fields: BrokerHoldingFields }),
+    /**
+     * Templates may use the credentials, `{accessToken}` and `{accountId}` (redirect), or
+     * `{accessToken}` and `{clientId}` from the Settings connection (settings-connection).
+     * `list` is the JSON path of the array; absent, the answer itself is the array (Dhan).
+     */
+    holdings: Call.extend({ list: JsonPath.optional(), fields: BrokerHoldingFields }),
   }),
   /** An answer with one of these statuses means the broker signed Maester out. */
   signedOutStatuses: z.array(z.number().int().min(400).max(599)).default([401, 403]),
@@ -112,8 +135,13 @@ export const BrokerSummary = z.object({
   notOfferedReason: z.string().nullable(),
   copy: BrokerDefinition.shape.copy,
   credentials: z.array(BrokerCredentialField.omit({ minLength: true, maxLength: true }).extend({ minLength: z.number(), maxLength: z.number() })),
-  /** The address to paste into the broker's app as its redirect URL. */
-  returnUrl: z.string(),
+  /** How the account signs in: the page shows a form and a sign-in for `redirect`, and points at Settings for `settings-connection`. */
+  signIn: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("redirect") }),
+    z.object({ kind: z.literal("settings-connection"), provider: SettingsConnectionProvider }),
+  ]),
+  /** The address to paste into the broker's app as its redirect URL. Null for a broker with no redirect. */
+  returnUrl: z.string().nullable(),
 });
 export type BrokerSummary = z.infer<typeof BrokerSummary>;
 
@@ -123,8 +151,10 @@ export type BrokerList = z.infer<typeof BrokerList>;
 /**
  * One broker account in the workspace.
  * - `saved`: the key is kept; nobody has signed in yet.
- * - `signed_in`: the broker's sign-in is still good.
- * - `signed_out`: the broker signed Maester out (its daily expiry, or it refused the token).
+ * - `signed_in`: the broker's sign-in is still good (for a Settings connection: Settings holds a
+ *   token that has not expired and that the broker has not refused).
+ * - `signed_out`: the broker signed Maester out (its daily expiry, or it refused the token), or
+ *   the Settings connection is missing or expired.
  * - `failing`: the last read failed for another reason.
  */
 export const BrokerAccount = z.object({

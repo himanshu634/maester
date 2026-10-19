@@ -6,16 +6,55 @@ import { describe, expect, it, vi } from "vitest";
 import { BrokerClient, BrokerError, builtInDefinitions, DefinitionError, loadDefinitions, parseDefinition, sessionExpiry } from "../src/index.js";
 
 const kite = builtInDefinitions().get("kite")!;
+const dhan = builtInDefinitions().get("dhan")!;
 const creds = { apiKey: "kitekey123", apiSecret: "kitesecret456" };
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 // A loose copy to break on purpose; the parser is what checks it.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const clone = () => JSON.parse(JSON.stringify(kite)) as Record<string, any>;
+const clone = (from: unknown = kite) => JSON.parse(JSON.stringify(from)) as Record<string, any>;
 
 describe("definitions", () => {
-  it("ships Kite, enabled", () => {
-    expect([...builtInDefinitions().keys()]).toEqual(["kite"]);
+  it("ships Kite and Dhan, enabled", () => {
+    expect([...builtInDefinitions().keys()]).toEqual(["kite", "dhan"]);
     expect(kite.enabled).toBe(true);
+    expect(dhan.enabled).toBe(true);
+    expect(dhan.signIn).toEqual({ kind: "settings-connection", provider: "dhan" });
+  });
+
+  it("refuses a settings-connection definition that also asks for a key", () => {
+    const d = clone(dhan);
+    d.credentials = [{ key: "apiKey", label: "API key", secret: false }];
+    expect(() => parseDefinition(d, "x.json")).toThrow(/asks for no credentials/);
+  });
+
+  it("refuses a settings-connection definition with a credentialShown", () => {
+    const d = clone(dhan);
+    d.credentialShown = "apiKey";
+    expect(() => parseDefinition(d, "x.json")).toThrow(/has no credentialShown/);
+  });
+
+  it("refuses a settings-connection provider Maester has no connection for", () => {
+    const d = clone(dhan);
+    d.signIn.provider = "fred-plus";
+    expect(() => parseDefinition(d, "x.json")).toThrow(/signIn/);
+  });
+
+  it("lets a settings-connection read use only the token and the client ID", () => {
+    const d = clone(dhan);
+    d.reads.holdings.headers["access-token"] = "{accountId}";
+    expect(() => parseDefinition(d, "x.json")).toThrow(/unknown placeholder \{accountId\}/);
+  });
+
+  it("refuses a redirect definition with no credentials", () => {
+    const d = clone();
+    d.credentials = [];
+    expect(() => parseDefinition(d, "x.json")).toThrow(/needs at least one credential/);
+  });
+
+  it("refuses a redirect definition without a credentialShown", () => {
+    const d = clone();
+    delete d.credentialShown;
+    expect(() => parseDefinition(d, "x.json")).toThrow(/credentialShown/);
   });
 
   it("refuses a placeholder the call has no value for", () => {
@@ -122,5 +161,42 @@ describe("BrokerClient for Kite", () => {
     const err = await new BrokerClient(kite, { fetch }).holdings(creds, { accessToken: "tok", accountId: null }).catch((e) => e);
     expect(err.code).toBe("BROKER_UNAVAILABLE");
     expect(err.message).not.toContain("kitekey123");
+  });
+});
+
+describe("BrokerClient for Dhan", () => {
+  const session = { accessToken: "dhan-token", clientId: "1100012345" };
+
+  it("reads holdings from the top-level array with the Settings token and client ID", async () => {
+    const fetch = vi.fn(async () =>
+      json(200, [{ exchange: "ALL", tradingSymbol: "HDFCBANK", securityId: "1333", isin: "INE040A01034", totalQty: 30, dpQty: 30, t1Qty: 0, availableQty: 30, collateralQty: 0, avgCostPrice: 1498.25 }]),
+    );
+    const lines = await new BrokerClient(dhan, { fetch }).holdings({}, session);
+    expect(lines).toEqual([{ isin: "INE040A01034", symbol: "HDFCBANK", exchange: "ALL", quantity: "30", t1Quantity: "0", averagePrice: "1498.25", lastPrice: null }]);
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://api.dhan.co/v2/holdings");
+    expect(init.method).toBe("GET");
+    expect(init.headers).toMatchObject({ "access-token": "dhan-token", "client-id": "1100012345" });
+  });
+
+  it("takes totalQty as the quantity and adds no T+1 on top", async () => {
+    // totalQty is dpQty + t1Qty (25 settled + 5 pending = 30). holding_quantity adds t1Quantity to
+    // quantity, so mapping t1Qty as well would count the 5 twice (35).
+    const fetch = vi.fn(async () => json(200, [{ exchange: "NSE", tradingSymbol: "TCS", isin: "INE467B01029", totalQty: 30, dpQty: 25, t1Qty: 5, avgCostPrice: 3510 }]));
+    const [line] = await new BrokerClient(dhan, { fetch }).holdings({}, session);
+    expect(line).toMatchObject({ quantity: "30", t1Quantity: "0" });
+  });
+
+  it("says Dhan signed Maester out on a 401", async () => {
+    const fetch = vi.fn(async () => json(401, { errorType: "Invalid_Authentication", errorCode: "DH-901", errorMessage: "secret detail" }));
+    const err = await new BrokerClient(dhan, { fetch }).holdings({}, session).catch((e) => e);
+    expect(err.code).toBe("BROKER_SIGNED_OUT");
+    expect(err.message).not.toContain("secret detail");
+  });
+
+  it("has no login page or sign-in", () => {
+    const c = new BrokerClient(dhan);
+    expect(() => c.loginUrl({}, "s")).toThrow(/Settings connection/);
+    expect(() => c.readReturn({})).toThrow(/Settings connection/);
   });
 });

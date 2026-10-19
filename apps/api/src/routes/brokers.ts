@@ -4,11 +4,11 @@ import {
   SaveBrokerRequest, type BrokerAccount, type BrokerDefinition, type BrokerSummary, type HoldingRow, type HoldingsSnapshot,
 } from "@maester/contracts";
 import {
-  createBrokerLoginState, finishHoldingRead, forgetBrokerCredentials, getBrokerConnection, getBrokerConnectionById, latestCloses, latestHoldings, listBrokerConnections,
-  markBrokerError, readStartedSince, saveBrokerCredentials, saveBrokerSession, startHoldingRead, takeBrokerLoginState,
-  type BrokerConnectionRow, type HoldingReadRow, type LatestHoldings,
+  clearBrokerError, createBrokerLoginState, finishHoldingRead, forgetBrokerCredentials, getBrokerConnection, getBrokerConnectionById, getConnection, latestCloses, latestHoldings,
+  listBrokerConnections, markBrokerError, readStartedSince, saveBrokerCredentials, saveBrokerSession, startHoldingRead, takeBrokerLoginState,
+  type BrokerConnectionRow, type HoldingReadRow, type LatestHoldings, type MarketConnectionRow,
 } from "@maester/db";
-import { BrokerClient, BrokerError, builtInDefinitions, loadDefinitions } from "@maester/brokers";
+import { BrokerClient, BrokerError, builtInDefinitions, loadDefinitions, type ReadSession } from "@maester/brokers";
 import { HOLDINGS_CALCULATIONS, holdingQuantity, holdingsSnapshot } from "@maester/financial-engine";
 import { decryptSecret, encryptSecret } from "@maester/market";
 import type { AppDeps, AppEnv } from "../app.js";
@@ -37,25 +37,65 @@ function summary(deps: AppDeps, d: BrokerDefinition): BrokerSummary {
   return {
     id: d.id, name: d.name, enabled: d.enabled, notOfferedReason: d.notOfferedReason ?? null, copy: d.copy,
     credentials: d.credentials.map((c) => ({ key: c.key, label: c.label, ...(c.hint ? { hint: c.hint } : {}), secret: c.secret, minLength: c.minLength, maxLength: c.maxLength })),
-    returnUrl: returnUrl(deps, d.id),
+    signIn: d.signIn.kind === "redirect" ? { kind: "redirect" } : { kind: d.signIn.kind, provider: d.signIn.provider },
+    returnUrl: d.signIn.kind === "redirect" ? returnUrl(deps, d.id) : null,
   };
 }
 
-function accountOf(def: BrokerDefinition, row: BrokerConnectionRow, latest: { lastRead: HoldingReadRow | null; lastOk: HoldingReadRow | null }, now: Date): BrokerAccount {
-  const expired = row.tokenExpiresAt !== null && row.tokenExpiresAt <= now;
+/** The Settings connection each settings-connection broker signs in through, by provider (null: not connected). */
+type SettingsConnections = Map<string, MarketConnectionRow | null>;
+async function settingsConnections(deps: AppDeps, defs: Iterable<BrokerDefinition>): Promise<SettingsConnections> {
+  const out: SettingsConnections = new Map();
+  for (const d of defs) {
+    if (d.signIn.kind === "settings-connection" && !out.has(d.signIn.provider)) out.set(d.signIn.provider, await getConnection(deps.db, d.signIn.provider));
+  }
+  return out;
+}
+
+type Latest = { lastRead: HoldingReadRow | null; lastOk: HoldingReadRow | null };
+
+/**
+ * A settings-connection account stands where its Settings connection stands. It is signed out
+ * when Settings has no token, the token has expired or the market worker found it refused, or
+ * when the broker refused the token Settings holds now (a read that failed signed-out after the
+ * token was saved or renewed; a token saved since is a new one, so that refusal no longer holds).
+ */
+function settingsState(row: BrokerConnectionRow, latest: Latest, conn: MarketConnectionRow | null, now: Date): { state: BrokerAccount["state"]; expiredAt: Date | null } {
+  const expiredAt = conn?.expiresAt && conn.expiresAt <= now ? conn.expiresAt : null;
+  const refused = conn !== null && latest.lastRead?.errorCode === "BROKER_SIGNED_OUT" && latest.lastRead.startedAt >= conn.savedAt;
+  if (!conn || expiredAt || conn.lastErrorCode === "DHAN_TOKEN_EXPIRED" || refused) return { state: "signed_out", expiredAt };
+  // DHAN_NO_DATA_PLAN on the connection is about the Data API; holdings come from the free Trading API.
+  if (row.lastErrorCode && row.lastErrorCode !== "BROKER_SIGNED_OUT") return { state: "failing", expiredAt: null };
+  return { state: "signed_in", expiredAt: null };
+}
+
+function accountOf(def: BrokerDefinition, row: BrokerConnectionRow, latest: Latest, now: Date, conns: SettingsConnections): BrokerAccount {
   let state: BrokerAccount["state"];
-  if (row.lastErrorCode === "BROKER_SIGNED_OUT" || (row.signedInAt && (!row.tokenCiphertext || expired))) state = "signed_out";
-  else if (row.lastErrorCode) state = "failing";
-  else if (row.tokenCiphertext) state = "signed_in";
-  else state = "saved";
+  let expiredAt: Date | null;
+  let accountId = row.accountId;
+  if (def.signIn.kind === "settings-connection") {
+    const conn = conns.get(def.signIn.provider) ?? null;
+    ({ state, expiredAt } = settingsState(row, latest, conn, now));
+    accountId = conn?.clientId ?? null;
+  } else {
+    const expired = row.tokenExpiresAt !== null && row.tokenExpiresAt <= now;
+    if (row.lastErrorCode === "BROKER_SIGNED_OUT" || (row.signedInAt && (!row.tokenCiphertext || expired))) state = "signed_out";
+    else if (row.lastErrorCode) state = "failing";
+    else if (row.tokenCiphertext) state = "signed_in";
+    else state = "saved";
+    expiredAt = state === "signed_out" && expired ? row.tokenExpiresAt : null;
+  }
   return {
-    broker: def.id, name: def.name, state, accountId: row.accountId, keyLast4: row.keyLast4,
+    broker: def.id, name: def.name, state, accountId, keyLast4: row.keyLast4,
     savedAt: row.savedAt.toISOString(),
     signedInAt: row.signedInAt?.toISOString() ?? null,
-    signedOutAt: state === "signed_out" && expired ? row.tokenExpiresAt!.toISOString() : null,
+    signedOutAt: expiredAt?.toISOString() ?? null,
     lastReadAt: latest.lastOk?.finishedAt?.toISOString() ?? null,
     lastReadCount: latest.lastOk?.lineCount ?? null,
-    errorCode: state === "failing" ? row.lastErrorCode : latest.lastRead?.state === "failed" && state !== "signed_out" ? latest.lastRead.errorCode : null,
+    // A sign-out the account has since got past (a new sign-in, a renewed Settings token) is not said again.
+    errorCode: state === "failing"
+      ? row.lastErrorCode
+      : latest.lastRead?.state === "failed" && state !== "signed_out" && latest.lastRead.errorCode !== "BROKER_SIGNED_OUT" ? latest.lastRead.errorCode : null,
   };
 }
 
@@ -66,16 +106,29 @@ function logBrokerError(deps: AppDeps, broker: string, err: unknown, what: strin
   return code;
 }
 
-/** Reads one account's holdings and keeps the read, good or failed. The account's error is set from it. */
+/**
+ * Reads one account's holdings and keeps the read, good or failed. The account's error is set
+ * from it, and a good read clears it. A settings-connection account reads with the token Settings
+ * holds at that moment, since a renewal ends the one before.
+ */
 async function readHoldings(deps: AppDeps, def: BrokerDefinition, row: BrokerConnectionRow, fetchFn: typeof fetch | undefined): Promise<void> {
   const key = needKey(deps);
-  if (!row.credentialsCiphertext || !row.tokenCiphertext) throw new HttpError("INVALID_STATE", "sign in first");
+  if (!row.credentialsCiphertext) throw new HttpError("INVALID_STATE", "add the account first");
   const creds = JSON.parse(decryptSecret(row.credentialsCiphertext, key)) as Record<string, string>;
-  const accessToken = decryptSecret(row.tokenCiphertext, key);
+  let session: ReadSession;
+  if (def.signIn.kind === "settings-connection") {
+    const conn = await getConnection(deps.db, def.signIn.provider);
+    if (!conn?.clientId) throw new HttpError("INVALID_STATE", `connect ${def.name} in Settings first`);
+    session = { accessToken: decryptSecret(conn.secretCiphertext, key), clientId: conn.clientId };
+  } else {
+    if (!row.tokenCiphertext) throw new HttpError("INVALID_STATE", "sign in first");
+    session = { accessToken: decryptSecret(row.tokenCiphertext, key), accountId: row.accountId };
+  }
   const readId = await startHoldingRead(deps.db, row.id);
   try {
-    const lines = await new BrokerClient(def, { fetch: fetchFn }).holdings(creds, { accessToken, accountId: row.accountId });
+    const lines = await new BrokerClient(def, { fetch: fetchFn }).holdings(creds, session);
     await finishHoldingRead(deps.db, readId, { ok: true, lines });
+    if (row.lastErrorCode) await clearBrokerError(deps.db, row.id);
   } catch (err) {
     const code = logBrokerError(deps, def.id, err, "read");
     await finishHoldingRead(deps.db, readId, { ok: false, errorCode: code });
@@ -93,7 +146,7 @@ export function brokerCatalogRoutes(deps: AppDeps) {
   r.get("/:broker/return", async (c) => {
     const back = (q: Record<string, string>) => c.redirect(new URL(`/terminal/holdings?${new URLSearchParams(q)}`, deps.env.BETTER_AUTH_URL).toString(), 302);
     const def = defs.get(c.req.param("broker"));
-    if (!def) throw new HttpError("NOT_FOUND", "broker not found");
+    if (!def || def.signIn.kind !== "redirect") throw new HttpError("NOT_FOUND", "broker not found");
     const client = new BrokerClient(def, { fetch: deps.brokerFetch });
     const ret = client.readReturn(c.req.query());
     const state = ret.state ? await takeBrokerLoginState(deps.db, ret.state, new Date()) : null;
@@ -139,6 +192,16 @@ export function brokerAccountRoutes(deps: AppDeps) {
   r.put("/:broker", validate("json", SaveBrokerRequest), async (c) => {
     const d = def(c.req.param("broker"));
     if (!d.enabled) throw new HttpError("INVALID_STATE", "this broker is not offered");
+    if (d.signIn.kind === "settings-connection") {
+      // Nothing to save: the account uses the Settings connection, so it is added and read at once.
+      const conn = await getConnection(deps.db, d.signIn.provider);
+      if (!conn?.clientId) throw new HttpError("INVALID_STATE", `connect ${d.name} in Settings first`);
+      const row = await saveBrokerCredentials(deps.db, {
+        workspaceId: c.get("workspace").id, broker: d.id, credentialsCiphertext: encryptSecret("{}", needKey(deps)), keyLast4: null, savedByUserId: c.get("user").id,
+      });
+      await readHoldings(deps, d, row, deps.brokerFetch);
+      return c.json(await account(deps, defs, c.get("workspace").id, d.id));
+    }
     const given = c.req.valid("json").credentials;
     const fields = d.credentials.flatMap((f) => {
       const v = given[f.key];
@@ -150,7 +213,7 @@ export function brokerAccountRoutes(deps: AppDeps) {
     const creds = Object.fromEntries(d.credentials.map((f) => [f.key, given[f.key]!]));
     await saveBrokerCredentials(deps.db, {
       workspaceId: c.get("workspace").id, broker: d.id, credentialsCiphertext: encryptSecret(JSON.stringify(creds), needKey(deps)),
-      keyLast4: creds[d.credentialShown]!.slice(-4), savedByUserId: c.get("user").id,
+      keyLast4: creds[d.credentialShown!]!.slice(-4), savedByUserId: c.get("user").id,
     });
     return c.json(await account(deps, defs, c.get("workspace").id, d.id));
   });
@@ -158,6 +221,7 @@ export function brokerAccountRoutes(deps: AppDeps) {
   r.post("/:broker/sign-in", async (c) => {
     const d = def(c.req.param("broker"));
     if (!d.enabled) throw new HttpError("INVALID_STATE", "this broker is not offered");
+    if (d.signIn.kind !== "redirect") throw new HttpError("INVALID_STATE", `${d.name} signs in through Settings`);
     const row = await getBrokerConnection(deps.db, c.get("workspace").id, d.id);
     if (!row?.credentialsCiphertext) throw new HttpError("INVALID_STATE", "save the key first");
     const creds = JSON.parse(decryptSecret(row.credentialsCiphertext, needKey(deps))) as Record<string, string>;
@@ -204,8 +268,9 @@ async function currentReads(deps: AppDeps, rows: BrokerConnectionRow[]): Promise
 async function accounts(deps: AppDeps, defs: Map<string, BrokerDefinition>, workspaceId: string): Promise<BrokerAccount[]> {
   const rows = (await listBrokerConnections(deps.db, workspaceId)).filter((r) => r.credentialsCiphertext && defs.has(r.broker));
   const latest = await currentReads(deps, rows);
+  const conns = await settingsConnections(deps, rows.map((r) => defs.get(r.broker)!));
   const now = new Date();
-  return rows.map((row, i) => accountOf(defs.get(row.broker)!, row, latest[i]!, now));
+  return rows.map((row, i) => accountOf(defs.get(row.broker)!, row, latest[i]!, now, conns));
 }
 async function account(deps: AppDeps, defs: Map<string, BrokerDefinition>, workspaceId: string, broker: string): Promise<BrokerAccount> {
   const found = (await accounts(deps, defs, workspaceId)).find((a) => a.broker === broker);
@@ -223,8 +288,9 @@ export function holdingsRoutes(deps: AppDeps) {
     const workspaceId = c.get("workspace").id;
     const rows = (await listBrokerConnections(deps.db, workspaceId)).filter((row) => row.credentialsCiphertext && defs.has(row.broker));
     const latest = await currentReads(deps, rows);
+    const conns = await settingsConnections(deps, rows.map((r) => defs.get(r.broker)!));
     const now = new Date();
-    const accts = rows.map((row, i) => accountOf(defs.get(row.broker)!, row, latest[i]!, now));
+    const accts = rows.map((row, i) => accountOf(defs.get(row.broker)!, row, latest[i]!, now, conns));
 
     type Group = { isin: string; symbol: string; exchange: string; parts: HoldingRow["parts"] };
     const groups = new Map<string, Group>();
@@ -237,7 +303,7 @@ export function holdingsRoutes(deps: AppDeps) {
         // An NSE listing names the symbol Maester has closes for; prefer it over a BSE one.
         if (l.exchange === "NSE") Object.assign(g, { symbol: l.symbol, exchange: l.exchange });
         g.parts.push({
-          broker: row.broker, accountId: row.accountId, quantity: holdingQuantity([l]).toString(), averagePrice: l.averagePrice,
+          broker: row.broker, accountId: accts[i]!.accountId, quantity: holdingQuantity([l]).toString(), averagePrice: l.averagePrice,
           readAt: read.lastOk.finishedAt!.toISOString(), stale,
         });
         groups.set(l.isin, g);

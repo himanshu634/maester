@@ -70,6 +70,12 @@
 		message = null;
 	}
 
+	/** A broker on a Settings connection was added and read: show it, and say so. */
+	async function added(said: string) {
+		await refresh(said);
+		await closeAdd();
+	}
+
 	async function closeAdd() {
 		adding = false;
 		await tick();
@@ -125,7 +131,7 @@
 		{/if}
 
 		{#if empty}
-			<AddBroker {api} {brokers} first oncancel={closeAdd} />
+			<AddBroker {api} {brokers} first oncancel={closeAdd} onadded={added} />
 		{:else}
 			<section class="block" aria-labelledby="{id}-accounts">
 				<div class="head">
@@ -140,7 +146,7 @@
 			</section>
 
 			{#if adding}
-				<AddBroker {api} brokers={offered} oncancel={closeAdd} />
+				<AddBroker {api} brokers={offered} oncancel={closeAdd} onadded={added} />
 			{/if}
 
 			<HoldingsStrip {snapshot} />

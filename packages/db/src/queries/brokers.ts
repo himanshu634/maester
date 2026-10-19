@@ -23,10 +23,13 @@ export async function listBrokerConnections(db: Db, workspaceId: string): Promis
   return db.select().from(brokerConnection).where(eq(brokerConnection.workspaceId, workspaceId)).orderBy(asc(brokerConnection.savedAt));
 }
 
-/** Saves new credentials. A new key ends any sign-in made with the old one. */
+/**
+ * Saves new credentials. A new key ends any sign-in made with the old one. A broker that signs
+ * in through a Settings connection saves an empty set, with no key to name (`keyLast4` null).
+ */
 export async function saveBrokerCredentials(
   db: Db,
-  v: { workspaceId: string; broker: string; credentialsCiphertext: string; keyLast4: string; savedByUserId: string },
+  v: { workspaceId: string; broker: string; credentialsCiphertext: string; keyLast4: string | null; savedByUserId: string },
 ): Promise<BrokerConnectionRow> {
   const cleared = { tokenCiphertext: null, signedInAt: null, tokenExpiresAt: null, lastErrorCode: null };
   const [row] = await db.insert(brokerConnection)
@@ -57,6 +60,11 @@ export async function saveBrokerSession(
 export async function markBrokerError(db: Db, id: string, code: string): Promise<void> {
   const signedOut = code === "BROKER_SIGNED_OUT";
   await db.update(brokerConnection).set({ lastErrorCode: code, ...(signedOut ? { tokenCiphertext: null } : {}) }).where(eq(brokerConnection.id, id));
+}
+
+/** After a good read: whatever the account said last time no longer holds. */
+export async function clearBrokerError(db: Db, id: string): Promise<void> {
+  await db.update(brokerConnection).set({ lastErrorCode: null }).where(eq(brokerConnection.id, id));
 }
 
 export async function createBrokerLoginState(db: Db, row: BrokerLoginStateRow): Promise<void> {

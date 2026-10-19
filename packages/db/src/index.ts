@@ -30,6 +30,6 @@ export {
 } from "./queries/market.js";
 export type { BrokerConnectionRow, BrokerLoginStateRow, HoldingReadRow, HoldingLineRow, NewHoldingLine } from "./schema/brokers.js";
 export {
-  getBrokerConnection, getBrokerConnectionById, listBrokerConnections, saveBrokerCredentials, forgetBrokerCredentials, saveBrokerSession, markBrokerError,
+  getBrokerConnection, getBrokerConnectionById, listBrokerConnections, saveBrokerCredentials, forgetBrokerCredentials, saveBrokerSession, markBrokerError, clearBrokerError,
   createBrokerLoginState, takeBrokerLoginState, startHoldingRead, finishHoldingRead, latestHoldings, readStartedSince, latestCloses, type LatestHoldings,
 } from "./queries/brokers.js";
