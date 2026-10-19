@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { closeDb, createDb, runMigrations, type JobRow } from "@maester/db";
+import { closeDb, createDb, type JobRow } from "@maester/db";
 import { CloudTasksDispatcher, QueueNotifier, type TasksClientLike } from "../src/index.js";
 
 // Same convention as the db package: a throwaway pgvector Postgres (see docker-compose test notes).
@@ -43,8 +43,8 @@ describe("QueueNotifier", () => {
   const db = createDb(TEST_DATABASE_URL);
   afterAll(() => closeDb(db));
 
+  // pg_notify needs no table, so this test does not migrate: the db package's tests migrate the same database at the same time.
   it("notifies job_ready with the job type as the payload", async () => {
-    await runMigrations(db);
     const listener = await db.$client.connect();
     try {
       const received: string[] = [];
@@ -55,7 +55,8 @@ describe("QueueNotifier", () => {
       await new QueueNotifier(db).enqueue(makeJob());
       await vi.waitFor(() => expect(received).toEqual(["document.extract"]));
     } finally {
-      listener.release();
+      // A client that ran LISTEN is destroyed, not returned to the pool still listening.
+      listener.release(true);
     }
   });
 });
