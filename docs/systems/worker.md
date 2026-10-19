@@ -72,7 +72,7 @@ The worker also refreshes the market data for the market mood page. When `CONNEC
 | Queue runner | `apps/worker/src/queue.ts` | `startQueueRunner` runs the claim loops and the sweep. `parseConcurrency` reads `JOB_CONCURRENCY`. `pgListen` listens for notifications. |
 | Start helpers | `apps/worker/src/start.ts` | `buildQueueOptions` makes the options of the queue runner. `logUnhandledQueued` writes a log line for each job type that has no handler. |
 | Job runner | `apps/worker/src/run.ts` | `executeJob` runs a job that has a lease. It renews the lease on a timer. `runJob` takes the lease for a dispatch request, then calls `executeJob`. |
-| Lease functions | `apps/worker/src/lease.ts` | `acquireLease`, `claimNext`, `sweepExpired`, `backoffSeconds`, `renewLease`, `writeProgress`, `completeJob` and `failAttempt`. |
+| Lease functions | `apps/worker/src/lease.ts` | `acquireLease`, `claimNext`, `sweepExpired`, `backoffSeconds`, `renewLease`, `releaseLease`, `writeProgress`, `completeJob` and `failAttempt`. |
 | Handler registry | `apps/worker/src/jobs/index.ts` | Connects each job type to its handler. |
 | Handler types | `apps/worker/src/jobs/types.ts` | `JobContext`, `JobHandler` and `JobFailure`. |
 | Verify handler | `apps/worker/src/jobs/document-verify.ts` | `documentVerify`. |
@@ -144,8 +144,9 @@ At start, `logUnhandledQueued` writes one log line for each job type with queued
 1. On `SIGTERM` or `SIGINT`, the worker stops all claim loops. No new job starts.
 2. The worker waits a maximum of 25 seconds for the jobs to end.
 3. After 28 seconds, the process exits, also if a job still runs.
-4. A job that still runs keeps its lease until the lease ends. A sweep then gives the job back.
-5. The file `docker-compose.yml` sets `stop_grace_period: 30s` for the worker, so Docker waits for these steps.
+4. After the 25 seconds, `releaseLease` gives back each job of this process that still runs. The job gets the state `queued` and a `run_after` of now. It also removes 1 from `attempt`. Thus the stop does not count as one of the `maxAttempts` of the job.
+5. `releaseLease` changes the job only if the job is `running` and has the lease token of this process.
+6. The file `docker-compose.yml` sets `stop_grace_period: 30s` for the worker, so Docker waits for these steps.
 
 ### Cloud Tasks mode: dispatch request and lease
 

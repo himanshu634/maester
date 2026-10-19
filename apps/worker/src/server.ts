@@ -66,7 +66,7 @@ const server = serve({ fetch: app.fetch, port: env.PORT }, (info) =>
 );
 
 // Docker gives the container 30 s (stop_grace_period) before SIGKILL: 25 s for running jobs, the rest to close.
-// A job still running after the grace keeps its lease until it expires; a sweep then gives it back.
+// A job still running after the grace is given back (queued, its attempt restored), so a restart costs it no attempt.
 let stopping = false;
 const shutdown = async (signal: string) => {
   if (stopping) return;

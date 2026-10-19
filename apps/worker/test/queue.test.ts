@@ -167,14 +167,16 @@ describe("queue runner", () => {
       await Promise.all(Array.from({ length: 3 }, () => seedJob(c.db, workspaceId, { type: "test.slow" })));
       await waitFor(() => started === 1, 5_000);
       const t0 = Date.now();
-      await runner.stop(100); // the job is still held at the gate: stop resolves anyway
+      await runner.stop(100); // the job is still held at the gate: stop resolves anyway, and gives its lease back
       expect(Date.now() - t0).toBeLessThan(1_000);
       expect(runner.running()).toEqual({ "test.slow": 1 });
+      expect(await countState(c.db, "queued", "test.slow")).toBe(3);
       release();
-      await waitFor(async () => (await countState(c.db, "succeeded", "test.slow")) === 1, 5_000);
       await waitFor(() => runner.running()["test.slow"] === 0, 5_000);
+      // The released job's late finish is fenced out by its old token: nothing more ran and nothing succeeded.
       expect(started).toBe(1);
-      expect(await countState(c.db, "queued", "test.slow")).toBe(2);
+      expect(await countState(c.db, "succeeded", "test.slow")).toBe(0);
+      expect(await countState(c.db, "queued", "test.slow")).toBe(3);
     } finally {
       release();
       await runner.stop(1_000);
@@ -201,7 +203,7 @@ describe("queue runner", () => {
     }
   });
 
-  it("stop(500) gives up at about 500 ms on a 2 s job and leaves it to its lease", async () => {
+  it("stop(500) gives up at about 500 ms on a 2 s job and gives it back with its attempt restored", async () => {
     let started = 0, finished = 0;
     const c = await createWorkerContext({ "test.long": async () => { started++; await new Promise((r) => setTimeout(r, 2_000)); finished++; } });
     const runner = startQueueRunner(c, { concurrency: {}, pollMs: 20, sweepMs: 60_000, listen: noListen });
@@ -215,10 +217,16 @@ describe("queue runner", () => {
       expect(took).toBeGreaterThanOrEqual(450);
       expect(took).toBeLessThan(1_000);
       expect(finished).toBe(0);
-      expect(await countState(c.db, "running", "test.long")).toBe(1);
+      const job = async () => (await c.db.execute<{ state: string; attempt: number; lease_token: string | null; lease_expires_at: Date | null; ready: boolean }>(
+        sql`select state, attempt, lease_token, lease_expires_at, run_after <= now() as ready from job where type = 'test.long'`,
+      )).rows[0]!;
+      expect(await job()).toEqual({ state: "queued", attempt: 0, lease_token: null, lease_expires_at: null, ready: true });
+      // The handler still finishes in this process, but its old token no longer completes the job.
+      await waitFor(() => finished === 1, 5_000);
+      await waitFor(() => runner.running()["test.long"] === 0, 5_000);
+      expect(await job()).toMatchObject({ state: "queued", attempt: 0 });
     } finally {
       await waitFor(() => finished === 1, 5_000);
-      await waitFor(async () => (await countState(c.db, "running", "test.long")) === 0, 5_000);
       await c.close();
     }
   });

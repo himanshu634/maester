@@ -1,6 +1,6 @@
 import pg from "pg";
 import type { JobRow } from "@maester/db";
-import { claimNext, sweepExpired } from "./lease.js";
+import { claimNext, releaseLease, sweepExpired } from "./lease.js";
 import type { Logger } from "./logger.js";
 import { executeJob, type WorkerDeps } from "./run.js";
 
@@ -22,7 +22,11 @@ export interface QueueRunnerOptions {
 }
 
 export interface QueueRunner {
-  /** Stop claiming at once, then wait up to graceMs for running jobs. Resolves even if some are still running. */
+  /**
+   * Stop claiming at once, then wait up to graceMs for running jobs. A job still running after that is given
+   * back (`releaseLease`: queued, its attempt restored), so a restart costs it no attempt. Resolves even if
+   * some handlers are still running.
+   */
   stop(graceMs: number): Promise<void>;
   /** Jobs running now, by type. */
   running(): Record<string, number>;
@@ -56,6 +60,8 @@ export function startQueueRunner(deps: WorkerDeps, opts: QueueRunnerOptions): Qu
   const handled = new Set(types);
   const inFlight: Record<string, number> = Object.fromEntries(types.map((t) => [t, 0]));
   const jobs = new Set<Promise<void>>();
+  // The lease of each job running in this process, so stop can give back the ones still running after the grace.
+  const held = new Map<string, string>();
   const wakers = new Map<string, () => void>();
   const pendingWake = new Set<string>();
   const sleepers = new Set<() => void>();
@@ -85,11 +91,13 @@ export function startQueueRunner(deps: WorkerDeps, opts: QueueRunnerOptions): Qu
 
   const start = (job: JobRow) => {
     inFlight[job.type] = (inFlight[job.type] ?? 0) + 1;
+    held.set(job.id, job.leaseToken!);
     const run: Promise<void> = executeJob(deps, job)
       .then(() => undefined)
       .catch((err: unknown) => log.error({ type: job.type, jobId: job.id, err: message(err) }, "job execution threw"))
       .finally(() => {
         inFlight[job.type] = (inFlight[job.type] ?? 1) - 1;
+        held.delete(job.id);
         jobs.delete(run);
         wake(job.type);
       });
@@ -173,7 +181,20 @@ export function startQueueRunner(deps: WorkerDeps, opts: QueueRunnerOptions): Qu
       const grace = new Promise<void>((resolve) => (graceTimer = setTimeout(resolve, graceMs)));
       await Promise.race([shutdown.then(() => Promise.allSettled([...jobs])), grace]);
       clearTimeout(graceTimer);
-      if (jobs.size) log.warn({ running: running() }, "stopped with jobs still running");
+      if (!held.size) return;
+      const left = [...held];
+      const released = await Promise.all(
+        left.map(([jobId, leaseToken]) =>
+          releaseLease(deps.db, jobId, leaseToken).catch((err: unknown) => {
+            log.error({ jobId, err: message(err) }, "could not give back the lease of a running job");
+            return false;
+          }),
+        ),
+      );
+      log.warn(
+        { running: running(), released: left.filter((_, i) => released[i]).map(([jobId]) => jobId), kept: left.filter((_, i) => !released[i]).map(([jobId]) => jobId) },
+        "stopped with jobs still running; gave their leases back",
+      );
     },
   };
 }

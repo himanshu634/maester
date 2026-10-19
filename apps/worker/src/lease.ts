@@ -66,6 +66,27 @@ export async function renewLease(db: Db, jobId: string, leaseToken: string, leas
   return rows.length === 1;
 }
 
+/**
+ * Give a held job back at once, as if this attempt never started: `queued`, ready now, with its attempt
+ * taken back. A worker that stops calls this for the jobs it cannot finish, so a restart costs no attempt
+ * and no wait for the lease to end. Fenced by the token: a job finished or taken by another worker is left alone.
+ */
+export async function releaseLease(db: Db, jobId: string, leaseToken: string): Promise<boolean> {
+  const rows = await db
+    .update(schema.job)
+    .set({
+      state: "queued",
+      attempt: sql`${schema.job.attempt} - 1`,
+      runAfter: sql`now()`,
+      leaseToken: null,
+      leaseExpiresAt: null,
+      updatedAt: sql`now()`,
+    })
+    .where(and(eq(schema.job.id, jobId), eq(schema.job.leaseToken, leaseToken), eq(schema.job.state, "running")))
+    .returning({ id: schema.job.id });
+  return rows.length === 1;
+}
+
 export async function writeProgress(db: Db, jobId: string, leaseToken: string, progress: JobProgressJson): Promise<void> {
   await db
     .update(schema.job)
