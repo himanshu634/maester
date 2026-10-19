@@ -47,7 +47,8 @@ x-api-env: &api-env
 
 services:
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
+    shm_size: 1gb
     environment:
       POSTGRES_USER: maester
       POSTGRES_PASSWORD: maester
