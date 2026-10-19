@@ -12,6 +12,12 @@ export async function getBrokerConnection(db: Db, workspaceId: string, broker: s
   return row ?? null;
 }
 
+/** One account by id, whatever its workspace; callers check who may use it. */
+export async function getBrokerConnectionById(db: Db, id: string): Promise<BrokerConnectionRow | null> {
+  const [row] = await db.select().from(brokerConnection).where(eq(brokerConnection.id, id));
+  return row ?? null;
+}
+
 /** The workspace's broker accounts, oldest first. */
 export async function listBrokerConnections(db: Db, workspaceId: string): Promise<BrokerConnectionRow[]> {
   return db.select().from(brokerConnection).where(eq(brokerConnection.workspaceId, workspaceId)).orderBy(asc(brokerConnection.savedAt));

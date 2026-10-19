@@ -35,12 +35,18 @@ importers:
       '@hono/zod-validator':
         specifier: ^0.9.0
         version: 0.9.1(hono@4.13.7)(zod@4.5.4)
+      '@maester/brokers':
+        specifier: workspace:*
+        version: link:../../packages/brokers
       '@maester/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
       '@maester/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@maester/financial-engine':
+        specifier: workspace:*
+        version: link:../../packages/financial-engine-ts
       '@maester/jobs':
         specifier: workspace:*
         version: link:../../packages/jobs
