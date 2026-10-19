@@ -67,3 +67,15 @@ whose statements add up (Synthetic Cements Limited, three annual reports, one re
 misread total), the statement ledger with a selected figure, the figure panel, the three status
 axes, the toggles, a rendered PDF page and the openable sums.
 Run `node financials.mjs --measure`, measure, then `node financials.mjs financials-heights.json`.
+
+## Broker connections round (2026-10-19)
+
+`holdings.mjs`, `holdings-base.mjs`, `holdings-brokers.mjs`, `holdings-notes.json` and
+`holdings-heights.json` built round 1 of the "Maester Broker Connections" canvas
+(https://claude.ai/artifact/2YSB5bYQ5beYq5aanK7Sm6): Today, A · Accounts, then one table,
+B · Each account, its own ledger, C · The statement first, and the shared connect states. They add
+the shell with Holdings live, a synthetic three-broker portfolio that adds up (worked in paise),
+the accounts ledger, the broker picker and sheet, the connect form with numbered steps, per-account
+ledgers and the statement-versus-broker table. Broker facts live only in `holdings-brokers.mjs`,
+from `docs/research/2026-10-19-broker-apis.md`.
+Run `node holdings.mjs --measure`, measure, then `node holdings.mjs holdings-heights.json`.
