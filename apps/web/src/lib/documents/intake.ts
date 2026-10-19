@@ -1,8 +1,8 @@
 /**
  * What the Documents page says about a document, kept free of Svelte so it can be tested:
  * where it stands (the stage ladder and a plain-words state), whether it is still being worked
- * on, which one the slip opens, what Maester read it as and the page each answer came from,
- * and what is wrong with a file before it is sent.
+ * on, which one the slip opens, and what Maester read it as and the page each answer came from.
+ * What is wrong with a file before it is sent is in `batch.ts`.
  */
 import { documentsContent as copy } from '$lib/content/documents';
 import { ApiError } from './client';
@@ -18,7 +18,7 @@ import type {
 	StatementFound
 } from './types';
 
-/** The API's upload limit (MAX_UPLOAD_BYTES, 50 MiB), stated before a file is chosen. */
+/** The API's upload limit (MAX_UPLOAD_BYTES, 50 MiB) for each file, stated before any is chosen. */
 export const MAX_UPLOAD_BYTES = 52_428_800;
 
 /** How often an open slip asks again while Maester is working on its document. */
@@ -344,39 +344,6 @@ export function kindSaveLabel(kind: ChosenKind | null): string {
 	return kind === 'other' ? copy.kind.saveKept : copy.kind.save;
 }
 
-const MIB = 1024 * 1024;
-
-/** "62 MB", or "50.1 MB" when rounding would hide that it is over the limit. */
-function megabytes(size: number): string {
-	const whole = Math.round(size / MIB);
-	if (whole * MIB > MAX_UPLOAD_BYTES) return `${whole} MB`;
-	return `${(Math.ceil((size / MIB) * 10) / 10).toFixed(1)} MB`;
-}
-
-const FILE_KINDS: [RegExp, keyof typeof copy.precheck.fileKinds][] = [
-	[/\.(docx?|odt|rtf|pages)$/i, 'word'],
-	[/\.(xlsx?|ods|csv|numbers)$/i, 'spreadsheet'],
-	[/\.(pptx?|odp|key)$/i, 'presentation'],
-	[/\.(jpe?g|png|gif|heic|heif|tiff?|webp|bmp)$/i, 'picture']
-];
-
-/**
- * What is wrong with a file before it is sent, in the words the page shows, or null when it can
- * go. A PDF is a .pdf whose type is PDF (or that the browser left untyped).
- */
-export function checkFile(file: { name: string; size: number; type: string }): string | null {
-	const pdfName = /\.pdf$/i.test(file.name);
-	const pdfType = file.type === 'application/pdf' || file.type === '';
-	if (!pdfName || !pdfType) {
-		const known = FILE_KINDS.find(([pattern]) => pattern.test(file.name));
-		return known
-			? copy.precheck.notPdfKnown(copy.precheck.fileKinds[known[1]])
-			: copy.precheck.notPdf;
-	}
-	if (file.size > MAX_UPLOAD_BYTES) return copy.precheck.tooLarge(megabytes(file.size));
-	return null;
-}
-
 /** "14:02" for today, "2 Oct, 14:02" before that, in the reader's time zone. */
 export function addedAt(iso: string, now: Date = new Date(), timeZone?: string): string {
 	const date = new Date(iso);
@@ -428,19 +395,4 @@ export function changeFailure(error: unknown): Failure {
 		default:
 			return { message: said.other, reload: false };
 	}
-}
-
-/** What to say when an upload did not finish, and whether signing in again is the way out. */
-export function uploadFailure(
-	error: unknown,
-	file: { size: number }
-): { message: string; signIn: boolean } {
-	const said = copy.uploadFailed;
-	if (error instanceof ApiError) {
-		if (error.code === 'UPLOAD_TOO_LARGE')
-			return { message: copy.precheck.tooLarge(megabytes(file.size)), signIn: false };
-		if (error.code === 'UNAUTHENTICATED') return { message: said.signedOut, signIn: true };
-		if (error.code === 'NETWORK') return { message: said.offline, signIn: false };
-	}
-	return { message: said.other, signIn: false };
 }
