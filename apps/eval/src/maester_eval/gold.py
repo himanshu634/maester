@@ -11,6 +11,9 @@ refused: the gold file never holds a value other than the one the person saw.
 The messages of a `FreezeError` reach the console. They name a sheet row and a column. They may echo a
 cell that is no text of the filing, such as a date, a scale, a page, a row number or a concept id, and
 never a figure, a label or a period label.
+
+A gold file that cannot be read is a `GoldError`, whose message names the file and nothing in it: the text
+of a JSON or validation error repeats what the file holds, which can be a label or a figure.
 """
 
 import csv
@@ -21,7 +24,7 @@ from pathlib import Path
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from maester_eval.artefacts import Artefact
 from maester_eval.concepts import Concept, Taxonomy
@@ -49,6 +52,17 @@ class FreezeError(ValueError):
     pass
 
 
+class GoldError(ValueError):
+    """A gold file that is not UTF-8, not JSON or not of the form `freeze` writes."""
+
+
+def _is_decimal(text: str) -> bool:
+    try:
+        return Decimal(text).is_finite()
+    except InvalidOperation:
+        return False
+
+
 class GoldFact(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -68,6 +82,20 @@ class GoldFact(BaseModel):
     normalized_value: str | None
     page_index: int
     dimensions: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _figure_fits_its_status(self) -> "GoldFact":
+        """A figure has a value and a normalised value and a dash has neither, as `freeze_sheet` writes them. Each
+        figure is a decimal number, because the scorer compares them as `Decimal`. A hand-edited file that breaks
+        this is refused when it is read, not met as a crash in the middle of a report."""
+        figures = (self.value, self.normalized_value)
+        if self.value_status == "value" and None in figures:
+            raise ValueError("a figure needs value and normalized_value")
+        if self.value_status == "dash" and figures != (None, None):
+            raise ValueError("a dash has no value and no normalized_value")
+        if not all(text is None or _is_decimal(text) for text in (self.value, self.scale, self.normalized_value)):
+            raise ValueError("value, scale and normalized_value must be decimal numbers")
+        return self
 
 
 class ExpectedCheck(BaseModel):
@@ -338,8 +366,16 @@ def write_gold(gold_dir: Path, gold: GoldFiling, force: bool = False) -> Path:
     return path
 
 
+def _read_gold_file(path: Path) -> GoldFiling:
+    try:
+        return GoldFiling.model_validate(json.loads(path.read_text(encoding="utf-8")))
+    except (json.JSONDecodeError, UnicodeDecodeError, ValidationError):
+        raise GoldError(f"{path} is not a readable gold file") from None
+
+
 def read_gold(gold_dir: Path) -> dict[str, GoldFiling]:
+    """Every gold file under `gold_dir`, by filing id. One that cannot be read is a `GoldError` naming the file."""
     if not gold_dir.is_dir():
         return {}
-    loaded = [GoldFiling.model_validate(json.loads(p.read_text(encoding="utf-8"))) for p in sorted(gold_dir.rglob("*.json"))]
+    loaded = [_read_gold_file(p) for p in sorted(gold_dir.rglob("*.json"))]
     return {g.filing_id: g for g in loaded}

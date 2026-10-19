@@ -1,14 +1,22 @@
 """One filing's extraction as the harness keeps it: the extractor's wire result or its
 error, with timings and model call counts. Phase 1's replay mode reads these, so the
-result is `ExtractionResult.to_wire()` unchanged (camelCase field names)."""
+result is `ExtractionResult.to_wire()` unchanged (camelCase field names).
+
+A file the readers cannot read is an `ArtefactReadError` that names the file and nothing
+in it: the text of a JSON or validation error repeats what the file holds, which can be a
+label or a figure of the filing."""
 
 import json
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from maester_eval.files import write_text_atomically
-from maester_eval.manifest import EvalSet, FilingKind
+from maester_eval.manifest import EvalSet, FilingKind, SetChoice
+
+
+class ArtefactReadError(ValueError):
+    """An artefact or a `run.json` that is not UTF-8, not JSON, or not of the form the harness writes."""
 
 
 class ModelCalls(BaseModel):
@@ -22,6 +30,8 @@ class ModelCalls(BaseModel):
 
 
 class ArtefactError(BaseModel):
+    """The error of a filing the workflow could not read, as its artefact keeps it. Not an exception: see `ArtefactReadError`."""
+
     code: str
     retryable: bool
     message: str
@@ -51,6 +61,22 @@ class Artefact(BaseModel):
     error: ArtefactError | None
 
 
+class RunRecord(BaseModel):
+    """The keys of `run.json` the harness reads, to check their types. A run made by an earlier version of the
+    harness may lack one, so each may be absent; a key the harness does not read is kept as it is."""
+
+    model_config = ConfigDict(extra="allow")
+
+    run: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    set: SetChoice | None = None
+    pipeline_version: str | None = None
+    prompt_version: str | None = None
+    model: str | None = None
+    filings: list[str] | None = None
+
+
 def artefact_path(run_dir: Path, filing_id: str) -> Path:
     return run_dir / "artefacts" / f"{filing_id}.json"
 
@@ -61,11 +87,19 @@ def write_artefact(run_dir: Path, artefact: Artefact) -> Path:
     return path
 
 
+def read_artefact(path: Path) -> Artefact:
+    """One artefact file. One that is not UTF-8, not JSON or not an artefact is an `ArtefactReadError` naming the path."""
+    try:
+        return Artefact.model_validate(json.loads(path.read_text(encoding="utf-8")))
+    except (json.JSONDecodeError, UnicodeDecodeError, ValidationError):
+        raise ArtefactReadError(f"{path} is not a readable artefact") from None
+
+
 def read_artefacts(run_dir: Path) -> list[Artefact]:
     folder = run_dir / "artefacts"
     if not folder.is_dir():
         return []
-    found = [Artefact.model_validate(json.loads(p.read_text(encoding="utf-8"))) for p in folder.rglob("*.json")]
+    found = [read_artefact(p) for p in folder.rglob("*.json")]
     # By id, not by path: as text `tata-steel/…` sorts before `tata/…` ("-" is below "/"); as path parts it sorts after.
     return sorted(found, key=lambda artefact: artefact.filing_id)
 
@@ -75,4 +109,12 @@ def write_run(run_dir: Path, record: dict) -> None:
 
 
 def read_run(run_dir: Path) -> dict:
-    return json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+    """`run.json` as it was written. A folder without one is a `FileNotFoundError`. A `run.json` that is not UTF-8,
+    not JSON, not an object or holds a key of the wrong type is an `ArtefactReadError` naming the path."""
+    path = run_dir / "run.json"
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+        RunRecord.model_validate(record)
+    except (json.JSONDecodeError, UnicodeDecodeError, ValidationError):
+        raise ArtefactReadError(f"{path} is not a readable run.json") from None
+    return record

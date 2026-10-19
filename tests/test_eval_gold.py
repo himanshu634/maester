@@ -15,7 +15,7 @@ from test_extraction_workflow import FAST, PDF, ScriptedModel
 from typer.testing import CliRunner
 
 from maester_eval import cli
-from maester_eval.artefacts import write_artefact, write_run
+from maester_eval.artefacts import artefact_path, write_artefact, write_run
 from maester_eval.concepts import load_taxonomy
 from maester_eval.gold import (
     ExpectedCheck, FreezeError, GoldFact, GoldFiling, count_unverified, freeze_sheet, gold_path, read_gold, read_sheet,
@@ -678,8 +678,39 @@ class FreezeCommandTests(unittest.TestCase):
         write_run(elsewhere, self.record)
         write_artefact(elsewhere, run_filing(OTHER, PDF, lambda: ScriptedModel(), FAST))
         # `latest` is a word, not a run: the message names the folder it stood for.
-        self.assert_refused(self.freeze(FILING.id, "--run", "latest"), f"no artefact for {FILING.id} in {elsewhere.name}")
+        self.assert_refused(self.freeze(FILING.id, "--run", "latest"), f"run {elsewhere.name} has no artefact for {FILING.id}")
         self.assertFalse(self.gold.exists())
+
+    def test_only_the_filings_own_artefact_is_read(self):
+        # Another filing's artefact, torn, does not stop this filing's freeze: `freeze --run` reads one file.
+        torn = artefact_path(self.run_dir, OTHER.id)
+        torn.parent.mkdir(parents=True)
+        torn.write_text('{"filing_id": "other-industries/ar-2025-26", "result": {"facts": [{"reportedLabel": "Cash', encoding="utf-8")
+        result = self.freeze(FILING.id, "--run", self.run_dir.name)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(read_gold(self.paths.gold)[FILING.id].exported_from, self.record)
+
+    def test_an_artefact_or_run_json_that_cannot_be_read_is_named_and_nothing_in_it_is_shown(self):
+        line = self.write_checked_sheet()
+        artefact = artefact_path(self.run_dir, FILING.id)
+        record = self.run_dir / "run.json"
+        for path, content, message in (
+            (artefact, artefact.read_text(encoding="utf-8")[:900], f"{artefact} is not a readable artefact"),  # torn
+            (artefact, json.dumps(dict(self.artefact.model_dump(mode="json"), result="Total assets 2,000")),
+             f"{artefact} is not a readable artefact"),
+            (record, '{"run": "', f"{record} is not a readable run.json"),
+            (record, json.dumps(dict(self.record, set="Total assets 2,000")), f"{record} is not a readable run.json"),
+        ):
+            with self.subTest(path=path.name, content=content[:20]):
+                kept = path.read_text(encoding="utf-8")
+                path.write_text(content, encoding="utf-8")
+                result = self.freeze(FILING.id, "--run", self.run_dir.name)
+                self.assert_refused(result, message)
+                for text in ("Total assets", "2,000"):
+                    self.assertNotIn(text, result.output)
+                self.assertFalse(self.gold.exists())
+                path.write_text(kept, encoding="utf-8")
+        self.assertEqual(self.freeze(FILING.id, "--run", self.run_dir.name).exit_code, 0, line)
 
     def test_a_run_folder_with_no_record_and_a_missing_run_are_messages(self):
         bare = self.paths.new_run("bare")

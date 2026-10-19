@@ -13,9 +13,9 @@ import typer
 from dotenv import load_dotenv
 from rich.console import Console
 
-from maester_eval.artefacts import read_artefacts, read_run
+from maester_eval.artefacts import ArtefactReadError, artefact_path, read_artefact, read_artefacts, read_run
 from maester_eval.concepts import load_taxonomy
-from maester_eval.gold import FreezeError, count_unverified, freeze_sheet, read_sheet, write_gold
+from maester_eval.gold import FreezeError, GoldError, count_unverified, freeze_sheet, read_sheet, write_gold
 from maester_eval.manifest import ManifestError, SetChoice, load_manifest
 from maester_eval.paths import DEFAULT
 from maester_eval.report import score_run_dir, write_report
@@ -101,9 +101,9 @@ def export(
     """Write a labelling sheet per filing of a run to data/eval/sheets. Never overwrites without --force."""
     try:
         run_dir = DEFAULT.resolve_run(run)
-    except FileNotFoundError as exc:
+        artefacts = read_artefacts(run_dir)
+    except (FileNotFoundError, ArtefactReadError) as exc:
         _fail(str(exc))
-    artefacts = read_artefacts(run_dir)
     if not artefacts:
         _fail("no artefacts in this run")
     missing = set(only or []) - {artefact.filing_id for artefact in artefacts}
@@ -140,11 +140,16 @@ def freeze(
         try:
             run_dir = DEFAULT.resolve_run(run)
             record = read_run(run_dir)
-        except FileNotFoundError as exc:
+        except (FileNotFoundError, ArtefactReadError) as exc:
             _fail(str(exc))
-        artefact = next((a for a in read_artefacts(run_dir) if a.filing_id == filing_id), None)
-        if artefact is None:
-            _fail(f"no artefact for {filing_id} in {run_dir.name}")
+        # The filing's own artefact only: one that cannot be read, of another filing of the run, does not stop this one.
+        found = artefact_path(run_dir, filing_id)
+        if not found.is_file():
+            _fail(f"run {run_dir.name} has no artefact for {filing_id}")
+        try:
+            artefact = read_artefact(found)
+        except ArtefactReadError as exc:
+            _fail(str(exc))
         exported_from = {k: record.get(k) for k in ("run", "pipeline_version", "prompt_version", "model")}
     try:
         rows = read_sheet(path)
@@ -174,9 +179,12 @@ def report(
         score = score_run_dir(run_dir, DEFAULT.gold, ids, chosen, out_of_scope)
         # The earlier run is read and scored before anything is written, and against the gold set as it is now.
         earlier = None if against is None else score_run_dir(DEFAULT.resolve_run(against), DEFAULT.gold, ids, chosen, out_of_scope)
-    except (ManifestError, FileNotFoundError) as exc:
+    except (ManifestError, FileNotFoundError, ArtefactReadError, GoldError) as exc:
         _fail(str(exc))
-    md, _ = write_report(run_dir, score, earlier, out_of_scope_reasons=out_of_scope)
+    try:
+        md, _ = write_report(run_dir, score, earlier, out_of_scope_reasons=out_of_scope)
+    except OSError as exc:
+        _fail(f"cannot write {exc.filename or run_dir}: {exc.strerror or exc}")
     s = score.summary()
     console.print(f"{run_dir.name} ({chosen}): {s.filings} filing(s), {s.gold_facts} gold fact(s), "
                   f"exact match {s.rate('match')}, missing {s.rate('missing')}", markup=False)
