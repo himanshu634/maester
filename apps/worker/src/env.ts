@@ -14,6 +14,8 @@ const Schema = z.object({
   API_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
   MAX_UPLOAD_BYTES: z.coerce.number().int().default(52428800),
   LEASE_SECONDS: z.coerce.number().int().default(600),
+  // Milliseconds between timer renewals of a running job's lease.
+  JOB_HEARTBEAT_MS: z.coerce.number().int().positive().default(15000),
   // Extraction (apps/extractor). Unset EXTRACTOR_URL disables chaining document.extract after verify.
   EXTRACTOR_URL: z.url().optional(),
   EXTRACTOR_AUTH: z.enum(["secret", "oidc"]).default("secret"),
