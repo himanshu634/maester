@@ -36,9 +36,12 @@ const logger = pino({ level: "trace" }, new Writable({ write(chunk, _enc, done) 
 let ctx: TestContext;
 let cookie: string;
 let ws: string;
+let userId: string;
+let other: { cookie: string; userId: string; workspaceId: string };
 beforeAll(async () => {
   ctx = await createTestContext({ CONNECTIONS_KEY: KEY.toString("base64") }, { brokerFetch, logger });
-  ({ cookie, workspaceId: ws } = await ctx.signUp("brokers@example.com"));
+  ({ cookie, workspaceId: ws, userId } = await ctx.signUp("brokers@example.com"));
+  other = await ctx.signUp("someone-else@example.com");
 });
 afterAll(() => ctx.close());
 beforeEach(async () => {
@@ -73,10 +76,10 @@ function logsClean() {
   for (const line of logLines) for (const s of [API_KEY, API_SECRET, TOKEN, DHAN_TOKEN]) expect(line).not.toContain(s);
 }
 /** Dhan as Settings saves it: a client ID and a token, encrypted under the same key. */
-async function connectDhanInSettings(token = DHAN_TOKEN, expiresAt: Date | null = new Date(Date.now() + 20 * 3_600_000)) {
+async function connectDhanInSettings(token = DHAN_TOKEN, expiresAt: Date | null = new Date(Date.now() + 20 * 3_600_000), savedByUserId: string = userId) {
   await saveConnection(ctx.db, {
     provider: "dhan", clientId: DHAN_CLIENT, secretCiphertext: encryptSecret(token, KEY), secretLast4: token.slice(-4),
-    expiresAt, checkedAt: new Date(), savedByUserId: null,
+    expiresAt, checkedAt: new Date(), savedByUserId,
   });
 }
 /** Moves the reads so far, and the save before them, a minute back, so the next read is not refused as too soon. */
@@ -225,6 +228,27 @@ describe("connecting Dhan through Settings", () => {
     expect(row?.tokenCiphertext).toBeNull();
     expect(JSON.parse(decryptSecret(row!.credentialsCiphertext!, KEY))).toEqual({});
     logsClean();
+  });
+
+  it("reads only the holdings of the person who saved the token in Settings", async () => {
+    await connectDhanInSettings();
+    const res = await ctx.app.request(`/v1/workspaces/${other.workspaceId}/brokers/dhan`, {
+      method: "PUT", headers: { cookie: other.cookie, "content-type": "application/json", origin: "http://localhost" }, body: JSON.stringify({ credentials: {} }),
+    });
+    expect(res.status).toBe(409);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("is signed out, and reads nothing, once someone else's token replaces the owner's in Settings", async () => {
+    await connectDhanInSettings();
+    await addDhan();
+    await ageReads();
+    await connectDhanInSettings("otherPERSONtoken111", undefined, other.userId);
+    calls.length = 0;
+    const list = (await (await ctx.app.request(`${base()}/brokers`, { headers: { cookie } })).json()) as { items: BrokerAccount[] };
+    expect(list.items[0]).toMatchObject({ state: "signed_out", accountId: null });
+    expect((await ctx.app.request(`${base()}/brokers/dhan/read`, { method: "POST", headers: headers() })).status).toBe(409);
+    expect(calls).toHaveLength(0);
   });
 
   it("has no sign-in to start or return from", async () => {

@@ -8,18 +8,20 @@
 <script lang="ts">
 	import { holdingsContent as copy } from '$lib/content/holdings';
 	import { percentText, rupees, shares } from '$lib/holdings/format';
-	import type { HoldingsSnapshot } from '$lib/holdings/types';
+	import type { BrokerSummary, HoldingsSnapshot } from '$lib/holdings/types';
 	import { heldAtWords, olderCloseDay, staleNote } from '$lib/holdings/view';
 
 	interface Props {
 		snapshot: HoldingsSnapshot;
+		/** The brokers' definitions, so a footnote on a Settings-connection broker points to Settings. */
+		brokers: BrokerSummary[];
 	}
 
-	let { snapshot }: Props = $props();
+	let { snapshot, brokers }: Props = $props();
 
 	const id = $props.id();
 	const names = $derived(Object.fromEntries(snapshot.accounts.map((a) => [a.broker, a.name])));
-	const footnote = $derived(staleNote(snapshot));
+	const footnote = $derived(staleNote(snapshot, new Date(), brokers));
 	const cols = copy.table.columns;
 </script>
 

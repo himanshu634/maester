@@ -99,13 +99,23 @@ export function heldAtWords(row: HoldingRow, names: Record<string, string>): str
 		.join(' · ');
 }
 
-/** The footnote for starred parts: the oldest such read, and whose. Null when none is starred. */
-export function staleNote(s: HoldingsSnapshot, now: Date = new Date()): string | null {
+/**
+ * The footnote for starred parts: the oldest such read, and whose. Null when none is starred. A
+ * broker on a Settings connection has no sign-in, so its note points to Settings.
+ */
+export function staleNote(
+	s: HoldingsSnapshot,
+	now: Date = new Date(),
+	brokers: BrokerSummary[] = []
+): string | null {
 	const stale = s.rows.flatMap((r) => r.parts.filter((p) => p.stale));
 	if (!stale.length) return null;
 	const oldest = stale.reduce((a, b) => (a.readAt <= b.readAt ? a : b));
+	const when = whenWords(oldest.readAt, now);
+	const provider = settingsProvider(brokers.find((b) => b.id === oldest.broker));
+	if (provider) return copy.table.staleSettings(when, provider);
 	const name = s.accounts.find((a) => a.broker === oldest.broker)?.name ?? oldest.broker;
-	return copy.table.stale(whenWords(oldest.readAt, now), name);
+	return copy.table.stale(when, name);
 }
 
 export type ReturnMessage = { kind: 'status' | 'alert'; text: string; broker: string };

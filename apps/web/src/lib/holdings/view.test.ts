@@ -213,6 +213,48 @@ describe('view', () => {
 		expect(heldAtWords(row, { kite: 'Zerodha', dhan: 'Dhan' })).toBe('Zerodha 120 · Dhan 30');
 	});
 
+	it('points a stale part on a Settings connection to Settings, not a sign-in', () => {
+		const part = {
+			broker: 'dhan',
+			accountId: '1100012345',
+			quantity: '30',
+			averagePrice: '1498.25',
+			readAt: '2026-10-18T10:12:00Z',
+			stale: true
+		};
+		const snap = {
+			accounts: [dhanAccount({ state: 'signed_out' })],
+			rows: [
+				{
+					isin: 'I',
+					symbol: 'HDFCBANK',
+					exchange: 'NSE',
+					quantity: '30',
+					cost: null,
+					close: null,
+					value: null,
+					weight: null,
+					unknown: [],
+					parts: [part]
+				}
+			],
+			totals: {
+				knownValue: null,
+				priced: 0,
+				count: 1,
+				cost: null,
+				costed: 0,
+				unrealizedGain: null,
+				gainCovers: 0
+			},
+			closeDay: null,
+			calculations: []
+		} satisfies HoldingsSnapshot;
+		expect(staleNote(snap, NOW, [kite, dhan])).toBe(
+			'* Read Sun 18 Oct, 15:42, before the Dhan token in Settings stopped working. Quantities change only when you trade; save a new token in Settings to check.'
+		);
+	});
+
 	it('reads the return from the broker', () => {
 		expect(
 			returnMessage(new URLSearchParams('broker=kite&signedIn=1'), [kite], [account()])

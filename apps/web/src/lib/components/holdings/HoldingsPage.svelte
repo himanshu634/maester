@@ -153,7 +153,7 @@
 
 			<section class="block" aria-labelledby="{id}-table">
 				<h2 id="{id}-table">{copy.table.heading}</h2>
-				<HoldingsLedger {snapshot} />
+				<HoldingsLedger {snapshot} {brokers} />
 			</section>
 		{/if}
 	{/if}

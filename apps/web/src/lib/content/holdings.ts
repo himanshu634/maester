@@ -136,6 +136,8 @@ export const holdingsContent = {
 			'No NSE close in Maester for this share. Maester keeps closes for Nifty 500 shares, from your Dhan data.',
 		stale: (when: string, name: string) =>
 			`* Read ${when}, before ${name} signed Maester out. Quantities change only when you trade; sign in to check.`,
+		staleSettings: (when: string, provider: string) =>
+			`* Read ${when}, before the ${provider} token in Settings stopped working. Quantities change only when you trade; save a new token in Settings to check.`,
 		empty: 'Nothing held in the connected accounts.'
 	},
 

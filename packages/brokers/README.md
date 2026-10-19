@@ -29,6 +29,8 @@ A template may use only the values that exist where it is used: credentials ever
 
 Dhan tokens last 24 hours. The market worker (`apps/worker/src/market/refresh.ts`) renews the token saved in Settings on every pass when it has less than 6 hours left, and a renewal ends the old token. So a Dhan account keeps no token of its own: each read decrypts the one in `market_connection` (under the same `CONNECTIONS_KEY`) and sends it with the client ID. Adding Dhan on Holdings saves an empty credential set and reads at once; it is refused until Settings has a Dhan connection.
 
+Settings connections are global to the install, but holdings are personal. So a Dhan account uses the Settings token only while that token was saved by the person who added the account (`market_connection.saved_by_user_id`, which a renewal keeps). Anyone else is refused when adding Dhan, and if another person's token replaces it in Settings, the account is signed out and reads nothing.
+
 The account's state follows the connection: signed out when Settings has no Dhan token, the token has expired, the worker found it refused (`DHAN_TOKEN_EXPIRED`), or Dhan refused it on a holdings read since it was saved or renewed. A token saved or renewed after that refusal is a new one, so the account is signed in again with no step here. `DHAN_NO_DATA_PLAN` is about the paid Data API and does not affect holdings, which come from the free Trading API. A good read clears the account's last error, for every broker.
 
 Two things in `dhan.json` rest on Dhan's documentation and want the first live run to confirm:

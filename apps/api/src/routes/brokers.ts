@@ -42,6 +42,15 @@ function summary(deps: AppDeps, d: BrokerDefinition): BrokerSummary {
   };
 }
 
+/**
+ * Settings connections are global to the install, but holdings are personal: an account uses the
+ * connection only while it holds the token of the person who added the account. A token saved
+ * by someone else is not theirs, so the account reads nothing with it.
+ */
+function connectionOf(conn: MarketConnectionRow | null | undefined, savedByUserId: string | null): MarketConnectionRow | null {
+  return conn?.clientId && savedByUserId !== null && conn.savedByUserId === savedByUserId ? conn : null;
+}
+
 /** The Settings connection each settings-connection broker signs in through, by provider (null: not connected). */
 type SettingsConnections = Map<string, MarketConnectionRow | null>;
 async function settingsConnections(deps: AppDeps, defs: Iterable<BrokerDefinition>): Promise<SettingsConnections> {
@@ -74,7 +83,7 @@ function accountOf(def: BrokerDefinition, row: BrokerConnectionRow, latest: Late
   let expiredAt: Date | null;
   let accountId = row.accountId;
   if (def.signIn.kind === "settings-connection") {
-    const conn = conns.get(def.signIn.provider) ?? null;
+    const conn = connectionOf(conns.get(def.signIn.provider), row.savedByUserId);
     ({ state, expiredAt } = settingsState(row, latest, conn, now));
     accountId = conn?.clientId ?? null;
   } else {
@@ -117,7 +126,7 @@ async function readHoldings(deps: AppDeps, def: BrokerDefinition, row: BrokerCon
   const creds = JSON.parse(decryptSecret(row.credentialsCiphertext, key)) as Record<string, string>;
   let session: ReadSession;
   if (def.signIn.kind === "settings-connection") {
-    const conn = await getConnection(deps.db, def.signIn.provider);
+    const conn = connectionOf(await getConnection(deps.db, def.signIn.provider), row.savedByUserId);
     if (!conn?.clientId) throw new HttpError("INVALID_STATE", `connect ${def.name} in Settings first`);
     session = { accessToken: decryptSecret(conn.secretCiphertext, key), clientId: conn.clientId };
   } else {
@@ -194,8 +203,8 @@ export function brokerAccountRoutes(deps: AppDeps) {
     if (!d.enabled) throw new HttpError("INVALID_STATE", "this broker is not offered");
     if (d.signIn.kind === "settings-connection") {
       // Nothing to save: the account uses the Settings connection, so it is added and read at once.
-      const conn = await getConnection(deps.db, d.signIn.provider);
-      if (!conn?.clientId) throw new HttpError("INVALID_STATE", `connect ${d.name} in Settings first`);
+      const conn = connectionOf(await getConnection(deps.db, d.signIn.provider), c.get("user").id);
+      if (!conn) throw new HttpError("INVALID_STATE", `connect ${d.name} in Settings first`);
       const row = await saveBrokerCredentials(deps.db, {
         workspaceId: c.get("workspace").id, broker: d.id, credentialsCiphertext: encryptSecret("{}", needKey(deps)), keyLast4: null, savedByUserId: c.get("user").id,
       });
