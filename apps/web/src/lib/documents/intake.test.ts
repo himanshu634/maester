@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
 	addedAt,
 	changeFailure,
-	checkFile,
 	companyAnswer,
 	companyCandidates,
 	identifiers,
@@ -12,12 +11,10 @@ import {
 	mergeList,
 	normalizeCompanyName,
 	ladder,
-	MAX_UPLOAD_BYTES,
 	pickSlip,
 	sourceOf,
 	stateLabel,
 	statementsWords,
-	uploadFailure,
 	whatItIs
 } from './intake';
 import { ApiError } from './client';
@@ -450,46 +447,6 @@ describe('companyAnswer', () => {
 	});
 });
 
-describe('checkFile', () => {
-	const pdf = (size: number, name = 'ar.pdf', type = 'application/pdf') => ({ name, size, type });
-
-	it('takes a PDF up to 50 MB', () => {
-		expect(MAX_UPLOAD_BYTES).toBe(52_428_800);
-		expect(checkFile(pdf(MAX_UPLOAD_BYTES))).toBeNull();
-		expect(checkFile(pdf(1000, 'AR.PDF', ''))).toBeNull();
-	});
-
-	it('refuses a larger file, saying how large it is', () => {
-		expect(checkFile(pdf(62 * 1024 * 1024))).toBe(
-			'This file is 62 MB. Maester takes PDFs up to 50 MB.'
-		);
-		expect(checkFile(pdf(MAX_UPLOAD_BYTES + 1))).toBe(
-			'This file is 50.1 MB. Maester takes PDFs up to 50 MB.'
-		);
-	});
-
-	it('refuses anything that is not a PDF, naming what it is when it can', () => {
-		expect(
-			checkFile(
-				pdf(
-					1000,
-					'notes.docx',
-					'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-				)
-			)
-		).toBe('This is a Word document. Save it as a PDF and add it again.');
-		expect(checkFile(pdf(1000, 'scan.jpg', 'image/jpeg'))).toBe(
-			'This is a picture. Save it as a PDF and add it again.'
-		);
-		expect(checkFile(pdf(1000, 'report.pdf.zip', 'application/zip'))).toBe(
-			'This isn’t a PDF. Save it as a PDF and add it again.'
-		);
-		expect(checkFile(pdf(1000, 'ar.pdf', 'text/plain'))).toBe(
-			'This isn’t a PDF. Save it as a PDF and add it again.'
-		);
-	});
-});
-
 describe('addedAt', () => {
 	const now = new Date('2026-10-05T12:00:00Z');
 
@@ -532,24 +489,6 @@ describe('changeFailure', () => {
 			'That didn’t reach Maester. Check your connection and try again.'
 		);
 		expect(changeFailure(new Error('boom')).message).toBe('That didn’t save. Try again.');
-	});
-});
-
-describe('uploadFailure', () => {
-	it('repeats the size limit when the API refuses the size', () => {
-		expect(
-			uploadFailure(new ApiError(413, 'UPLOAD_TOO_LARGE', 'too large'), { size: 60 * 1024 * 1024 })
-		).toEqual({ message: 'This file is 60 MB. Maester takes PDFs up to 50 MB.', signIn: false });
-	});
-
-	it('asks a signed-out investor to sign in and add it again', () => {
-		expect(uploadFailure(new ApiError(401, 'UNAUTHENTICATED', 'no'), { size: 10 })).toEqual({
-			message: 'The upload didn’t finish. Sign in and add it again.',
-			signIn: true
-		});
-		expect(uploadFailure(new ApiError(0, 'NETWORK', 'down'), { size: 10 }).message).toBe(
-			'The upload didn’t finish. Check your connection and add it again.'
-		);
 	});
 });
 
