@@ -55,7 +55,7 @@ describe("jobs", () => {
     const job = await createJob(ctx.db, ctx.dispatcher, { workspaceId: a.workspaceId, type: JobTypes.DOCUMENT_VERIFY, subjectType: "document", subjectId: crypto.randomUUID() });
     await ctx.db
       .update(schema.job)
-      .set({ state: "failed", attempt: 5, lastErrorCode: "BOOM", finishedAt: new Date(), progress: { stage: "x" } })
+      .set({ state: "failed", attempt: 5, lastErrorCode: "BOOM", finishedAt: new Date(), progress: { stage: "x" }, runAfter: new Date(Date.now() + 60 * 60 * 1000) })
       .where(eq(schema.job.id, job.id));
     const before = ctx.dispatcher.enqueued.length;
     const res = await ctx.app.request(`/v1/workspaces/${a.workspaceId}/jobs/${job.id}/retry`, { method: "POST", headers: { cookie: a.cookie, origin: "http://localhost" } });
@@ -66,6 +66,8 @@ describe("jobs", () => {
     expect(body.finishedAt).toBeNull();
     expect(body.progress).toEqual({});
     expect(ctx.dispatcher.enqueued.length).toBe(before + 1);
+    const [row] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, job.id));
+    expect(row!.runAfter.getTime()).toBeLessThanOrEqual(Date.now() + 1000);
 
     await ctx.db.update(schema.job).set({ state: "running" }).where(eq(schema.job.id, job.id));
     const bad = await ctx.app.request(`/v1/workspaces/${a.workspaceId}/jobs/${job.id}/retry`, { method: "POST", headers: { cookie: a.cookie, origin: "http://localhost" } });

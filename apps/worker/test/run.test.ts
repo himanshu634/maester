@@ -91,23 +91,14 @@ describe("runJob", () => {
 });
 
 describe("worker app", () => {
-  it("rejects a request without the local dispatch secret", async () => {
-    const app = createWorkerApp(ctx);
-    const res = await app.request("/tasks/test.noop", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jobId: crypto.randomUUID() }) });
-    expect(res.status).toBe(401);
-  });
-
-  it("accepts a request with the local dispatch secret and runs the job", async () => {
+  it("refuses pushed jobs in queue mode, since the runner pulls them", async () => {
     const { workspaceId } = await seedWorkspace(ctx.db);
     const id = await seedJob(ctx.db, workspaceId, { type: "test.noop" });
     const app = createWorkerApp(ctx);
-    const res = await app.request("/tasks/test.noop", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-dispatch-secret": "local-dispatch-secret" },
-      body: JSON.stringify({ jobId: id }),
-    });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ jobId: id, outcome: "succeeded" });
+    const res = await app.request("/tasks/test.noop", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jobId: id }) });
+    expect(res.status).toBe(401);
+    const [row] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, id));
+    expect(row!.state).toBe("queued");
   });
 });
 

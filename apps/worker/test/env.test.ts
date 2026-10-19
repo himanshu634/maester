@@ -5,8 +5,7 @@ const base = {
   NODE_ENV: "test",
   DATABASE_URL: "postgres://x",
   GCS_BUCKET: "b",
-  DISPATCH_MODE: "local",
-  DISPATCH_SECRET: "s",
+  DISPATCH_MODE: "queue",
   WORKER_URL: "http://localhost:8788",
 };
 

@@ -1,6 +1,6 @@
 export {
   CloudTasksDispatcher,
-  LocalHttpDispatcher,
+  QueueNotifier,
   RecordingDispatcher,
   type CloudTasksConfig,
   type DispatchLogger,

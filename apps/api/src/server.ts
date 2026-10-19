@@ -13,7 +13,7 @@ const logger = createLogger(env.LOG_LEVEL);
 const db = createDb(env.DATABASE_URL);
 const store = createStore(env);
 const auth = createAuth({ db, env, mailer: createMailer(env, logger), logger });
-const dispatcher = createDispatcher(env, logger);
+const dispatcher = createDispatcher(env, logger, db);
 
 const app = createApp({ env, logger, db, store, auth, dispatcher });
 

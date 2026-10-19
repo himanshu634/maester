@@ -1,9 +1,10 @@
-import { CloudTasksDispatcher, LocalHttpDispatcher, type Dispatcher } from "@maester/jobs";
+import { CloudTasksDispatcher, QueueNotifier, type Dispatcher } from "@maester/jobs";
+import type { Db } from "@maester/db";
 import type { WorkerEnv } from "./env.js";
 import type { Logger } from "./logger.js";
 
 /** Dispatcher for follow-up jobs the worker enqueues itself (document.extract after verify). */
-export function createDispatcher(env: WorkerEnv, logger: Logger): Dispatcher {
+export function createDispatcher(env: WorkerEnv, logger: Logger, db: Db): Dispatcher {
   if (env.DISPATCH_MODE === "cloud-tasks") {
     if (!env.GOOGLE_CLOUD_PROJECT || !env.WORKER_INVOKER_SA) {
       return {
@@ -24,5 +25,5 @@ export function createDispatcher(env: WorkerEnv, logger: Logger): Dispatcher {
       logger,
     );
   }
-  return new LocalHttpDispatcher(env.WORKER_URL, env.DISPATCH_SECRET!, logger);
+  return new QueueNotifier(db);
 }

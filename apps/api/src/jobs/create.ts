@@ -29,6 +29,7 @@ export async function retryJob(db: Db, dispatcher: Dispatcher, workspaceId: stri
       maxAttempts: sql`${schema.job.attempt} + ${DEFAULT_MAX_ATTEMPTS}`,
       finishedAt: null,
       progress: {},
+      runAfter: sql`now()`,
       updatedAt: sql`now()`,
     })
     .where(

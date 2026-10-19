@@ -2,11 +2,6 @@ import { describe, expect, it } from "vitest";
 import { testEnv } from "./env.js";
 
 describe("env", () => {
-  it("throws when DISPATCH_MODE=local and DISPATCH_SECRET is undefined", () => {
-    expect(() => testEnv({ DISPATCH_MODE: "local", DISPATCH_SECRET: undefined })).toThrow();
-    expect(() => testEnv({ DISPATCH_MODE: "local", DISPATCH_SECRET: undefined })).toThrow(/DISPATCH_SECRET/);
-  });
-
   it("throws when DISPATCH_MODE=cloud-tasks and WORKER_INVOKER_SA is undefined", () => {
     expect(() => testEnv({ DISPATCH_MODE: "cloud-tasks" })).toThrow();
     expect(() => testEnv({ DISPATCH_MODE: "cloud-tasks" })).toThrow(/WORKER_INVOKER_SA/);
