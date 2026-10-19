@@ -52,7 +52,8 @@ def _reports_errors(command: Callable[Params, None]) -> Callable[Params, None]:
     """`command`, with an `EvalError` or an `OSError` shown as its text and exit code 1 instead of a traceback.
 
     The text of an `OSError` names its file and the reason. A failed write is a `WriteError`, `cannot write <path>:
-    <reason>`, so what reaches here as an `OSError` is a read, such as a run folder with no `run.json`."""
+    <reason>`, so what reaches here as an `OSError` is a read, such as a run folder with no `run.json`, or the run
+    folder `live` could not make."""
     @functools.wraps(command)
     def wrapper(*args: Params.args, **kwargs: Params.kwargs) -> None:
         try:

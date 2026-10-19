@@ -241,7 +241,7 @@ The harness shows an error in red and stops with exit code 1. A message names a 
 | `no row is marked verified=yes; nothing to freeze` | No row has `yes` in `verified`. | Exit code 1. No gold file. |
 | `<path> exists; gold is sealed, pass --force to replace it` | `freeze` finds the gold file, and you did not give `--force`. | Exit code 1. The file stays. |
 | `cannot write <path>: <reason>` | The harness cannot write a file: `run.json` or an artefact (`live`), a sheet (`export`), a gold file (`freeze`), `report.md` or `report.json` (`report`), or the copy of `report --to`. For example, a file is where the folder must be, you do not have permission, or the disk is full. | Exit code 1. The path is the file that the harness tried to write. The files that the command wrote before stay. A file that it could not replace stays as it was. If the copy of `report --to` fails, the report in the run folder exists. |
-| The reason and the path, as the system gives them | The harness cannot read a file, for example the taxonomy or a PDF of the corpus. | Exit code 1. |
+| The reason and the path, as the system gives them | The harness cannot read a file, for example the taxonomy or a PDF of the corpus. Or `live` cannot make the run folder. | Exit code 1. |
 | A file that does not parse | An artefact, `run.json`, a gold file or the taxonomy is not valid JSON. Or an artefact or a gold file has a field that the harness does not know. | The harness does not catch the error. Python shows a traceback. |
 
 ## Data
