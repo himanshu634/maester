@@ -40,6 +40,9 @@ The indexer stores nothing. It has no access to the database or to object storag
 | Reader | `apps/indexer/src/maester_indexer/reader.py` | Runs Docling on one range. |
 | Sources | `apps/indexer/src/maester_indexer/sources.py` | Finds the text source of each item. |
 | Chunker | `apps/indexer/src/maester_indexer/chunker.py` | Cuts the pages of a read into chunks. |
+| Errors | `apps/indexer/src/maester_indexer/errors.py` | Defines `IndexingError`, which has a code, a message and a `retryable` value. |
+| Entry point | `apps/indexer/src/maester_indexer/__main__.py` | Starts `uvicorn` on `PORT`. The command `maester-indexer` runs it. |
+| Model fetch | `apps/indexer/src/maester_indexer/fetch_models.py` | The command `maester-indexer-fetch-models`. It gets the weights. |
 | Versions | `apps/indexer/src/maester_indexer/versions.py` | Reads the versions of Docling, the OCR engine and the chunker. |
 | Lock file | `apps/indexer/models.lock.json` | Records the commit of each model. |
 | Container | `apps/indexer/Dockerfile` | Builds the image `maester/indexer:local`. |
@@ -90,17 +93,39 @@ Each `/v1` route needs the header `x-indexer-secret`. If `INDEXER_SECRET` has no
 
 ## States and errors
 
-| State or error | Cause | Result |
-| --- | --- | --- |
-| Status 401 | The secret is not correct. | The route does not run. |
-| `INDEXER_MODEL_MISMATCH` | The tokenizer folder is not the model in `models.lock.json`, or there is no lock file. | The indexer does not start. |
-| `UNREADABLE_PDF` | Docling cannot open the PDF. | `error` event. The worker does not retry. |
-| `PAGE_UNREADABLE` | Docling cannot read one page. | The page has no text. The read continues. |
-| `OCR_FAILED` | OCR fails on a scanned page. | The page has no text. The read continues. |
-| `OCR_BUDGET` | `x-ocr-pages-left` is 0. | The page has no text. The read continues. |
-| `NO_TEXT` | The page is blank. | The page has no text. |
+The indexer loads the tokenizer when the first request needs it, not at start. `GET /healthz` therefore sends status 200 also when the tokenizer is wrong or missing. A request then gets a `started` event and after it an `error` event.
 
-The codes `OCR_FAILED`, `OCR_BUDGET`, `PAGE_UNREADABLE` and `NO_TEXT` are values of `none_reason` in a `page` event. They do not stop the stream. Other `error` codes are in the code of `app.py`. Not known: the full list of those codes, because `app.py` did not exist when the author wrote this document.
+### HTTP errors
+
+These errors come before the stream. The body is `{ "detail": { "code": ... } }`.
+
+| Status and code | Cause | Result |
+| --- | --- | --- |
+| 400 `BAD_REQUEST` | A header has no value or a wrong value, or the body of `/v1/chunk` does not agree with the schema. | The route does not run. |
+| 400 `EMPTY_BODY` | The body has no bytes. | The route does not run. |
+| 401 `INDEXER_UNAUTHORIZED` | The secret is not correct. | The route does not run. |
+| 413 `TOO_LARGE_FOR_INDEX` | The body is larger than `INDEX_MAX_BYTES`. | The route does not run. |
+
+### Error events
+
+| Code | Retryable | Cause |
+| --- | --- | --- |
+| `INDEXER_MODEL_MISMATCH` | No | The header `x-embedding-model` is not `EMBEDDING_MODEL` (this is the first event). Or the tokenizer folder is not the model in `models.lock.json`, or there is no lock file. |
+| `INDEXER_NOT_CONFIGURED` | No | `INDEX_TOKENIZER_PATH` has no value, or no tokenizer can be loaded from it. |
+| `UNREADABLE_PDF` | No | Docling cannot open the PDF: it is encrypted, damaged or empty. |
+| `INDEX_FAILED` | Yes | An unexpected error, or Docling ends the read with a bad status. The message has the type of the error only. |
+| `INDEX_FAILED` | No | The first page of the range is after the last page of the file, or a check of the chunker finds that the items or the token counts are not correct. |
+
+### Page reasons
+
+A `page` event has `none_reason`. These values do not stop the stream.
+
+| Value | Cause | Result |
+| --- | --- | --- |
+| `NO_TEXT` | The page is blank. | The page has no text. A revision with only this reason is still `complete`. |
+| `OCR_FAILED` | OCR fails on a scanned page. | The page has no text. |
+| `OCR_BUDGET` | `x-ocr-pages-left` is 0 for a scanned page. | The page has no text. |
+| `PAGE_UNREADABLE` | Docling cannot read the page. | The page has no text. |
 
 ## Data
 
@@ -140,7 +165,7 @@ The option `--docling-only` fetches only the Docling weights. The CI workflow us
 
 ### Log
 
-The indexer writes log lines to standard output. A log line has no text from a document. It has no page text, no chunk text, no heading and no query. An error message has no such text.
+The indexer writes log lines to standard error. A log line has no text from a document. It has no page text, no chunk text, no heading and no query. An error message has no such text.
 
 ## Procedures
 
@@ -210,6 +235,10 @@ CAUTION: Docling needs much memory. The container limit is 2304 MiB. If the cont
 - [apps/indexer/models.lock.json](../../apps/indexer/models.lock.json)
 - [apps/indexer/src/maester_indexer/settings.py](../../apps/indexer/src/maester_indexer/settings.py)
 - [apps/indexer/src/maester_indexer/contracts.py](../../apps/indexer/src/maester_indexer/contracts.py)
+- [apps/indexer/src/maester_indexer/app.py](../../apps/indexer/src/maester_indexer/app.py)
+- [apps/indexer/src/maester_indexer/reader.py](../../apps/indexer/src/maester_indexer/reader.py)
+- [apps/indexer/src/maester_indexer/fetch_models.py](../../apps/indexer/src/maester_indexer/fetch_models.py)
+- [apps/indexer/Dockerfile](../../apps/indexer/Dockerfile)
 - [apps/indexer/src/maester_indexer/chunker.py](../../apps/indexer/src/maester_indexer/chunker.py)
 - [apps/worker/src/indexer.ts](../../apps/worker/src/indexer.ts)
 - [docker-compose.yml](../../docker-compose.yml)

@@ -239,8 +239,8 @@ The handler is in `apps/worker/src/jobs/document-index.ts`. It cuts a stored PDF
 6. The handler starts the revision for this job, or resumes it. The revision records the versions.
 7. The handler reads the ranges in order. A range has `INDEX_PAGE_RANGE` pages (default 20). The first range starts at page 1. Each range starts at a multiple of `INDEX_PAGE_RANGE` from page 1.
 8. If the database has the read of a range, the handler sends it to `POST /v1/chunk`. The read is the cache. The key of the cache has the hash of the PDF, the range, the version of Docling, the OCR engine and the reader options.
-9. If the database has no read of the range, the handler sends the PDF to `POST /v1/index`. The handler keeps the read in the cache, but only if OCR was on for the read.
-10. The handler writes the pages and the chunks of the range in one transaction.
+9. If the database has no read of the range, the handler sends the PDF to `POST /v1/index`. The handler keeps the read in the cache. It does not keep a read made with OCR off. It does not keep a read with a page that has the reason `PAGE_UNREADABLE`. A later try can succeed.
+10. The handler removes the NUL characters (U+0000) from the text, because Postgres refuses them. It then writes the pages and the chunks of the range in one transaction.
 11. After each range, the handler embeds the chunks that have no vector. It sends them to the embedder in batches of `EMBED_BATCH`, longest text first.
 12. After the last range, the handler completes the revision. The revision is `complete`. If a page has the reason `OCR_FAILED`, `OCR_BUDGET` or `PAGE_UNREADABLE`, the revision is `partial`.
 13. The handler calls `heartbeat` for each event, and writes the progress of the job.
@@ -413,13 +413,20 @@ The breadth uses the current member list for all past days. Thus the past breadt
 | `EXTRACTOR_UNAUTHORIZED` | With `EXTRACTOR_AUTH` = `oidc`, the worker cannot get an ID token. | Retry. |
 | `EXTRACTOR_UNAVAILABLE` | The request to the extractor fails before an answer, or the time limit ends first. | Retry. |
 | `EXTRACTOR_HTTP_<status>` | The extractor sends a different error status. | Retry for status 500 or more. Final failure for other status codes. |
-| `INDEXER_NOT_CONFIGURED` | `INDEXER_URL` or `EMBEDDER_URL` has no value, and a `document.index` job runs. | Final failure. The backfill creates the job again after the configuration. |
-| `INDEXER_MODEL_MISMATCH` | The tokenizer of the indexer or the model of the embedder is not `EMBEDDING_MODEL`. | Final failure. |
+| `INDEXER_NOT_CONFIGURED` | `INDEXER_URL` or `EMBEDDER_URL` has no value, and a `document.index` job runs. The indexer can also send this code when it has no tokenizer. | Final failure. The backfill creates the job again after the configuration. |
+| `INDEXER_UNAVAILABLE` | The request to the indexer fails before an answer, or the answer to `/v1/versions` is not JSON. | Retry. |
+| `INDEXER_UNAUTHORIZED` | The indexer sends status 401 or 403. | Final failure. |
+| `INDEXER_HTTP_<status>` | The indexer sends a different error status. | Retry for status 500 or more. Final failure for other status codes. |
+| `INDEX_STREAM_INTERRUPTED` | The stream stops before a `result` event, ends in the middle of a line, or breaks. | Retry. |
+| `INDEX_TIMEOUT` | The call to the indexer or the whole job ran longer than `INDEX_TIMEOUT_SECONDS`, or the call was cancelled. | Retry. |
+| `INVALID_INDEXER_RESULT` | The versions or an event do not agree with the schema, or the pages of a range are not exactly the pages asked for. | Final failure. |
+| `INDEXER_MODEL_MISMATCH` | The tokenizer of the indexer or the model of the embedder is not `EMBEDDING_MODEL`. The indexer can also send this code. | Final failure. |
 | `INDEXER_VERSIONS_CHANGED` | The versions in the events of a range are not the versions of the revision. | Retry. |
-| `INDEX_TIMEOUT` | The job ran longer than `INDEX_TIMEOUT_SECONDS`. | Retry. |
 | `EMBEDDING_FAILED` | The embedder fails, or it sends a wrong number of vectors. | Retry. The revision stays `building`. The next attempt resumes it. |
-| `INVALID_INDEXER_RESULT` | The indexer sends data that does not agree with the schema. | Final failure. |
-| A code from the indexer | The indexer sends an `error` event or an error status. | The worker uses the code and the `retryable` value of the indexer. The message has the code only. |
+| `OBJECT_MISSING` | The object store has no object for a `document.index` job. | Final failure. |
+| `INVALID_STATE` | For a `document.index` job: the document is not `stored`, it is a duplicate, or it is not in the workspace. | Final failure. |
+| `INDEX_REVISION_NOT_FOUND`, `REVISION_DOCUMENT_MISMATCH`, `REVISION_NOT_BUILDING`, `CHUNK_NOT_IN_WORKSPACE` | A database write of the index finds that another job changed the revision. | Retry. The next attempt starts the revision again. |
+| A code from the indexer | The indexer sends an `error` event. Its codes are in the [indexer description](indexer.md). | The worker uses the code and the `retryable` value of the indexer. The stored message has the code only. |
 | `INVALID_CLASSIFIER_RESULT` | The classify answer is not valid for the `ClassifyResponse` schema. | Final failure. |
 | `INVALID_EXTRACTOR_RESULT` | A stream line is not valid for the `ExtractorEvent` schema. | Final failure. |
 | `EXTRACTOR_STREAM_INTERRUPTED` | The stream stops before a `result` event, or the stream breaks. | Retry. |

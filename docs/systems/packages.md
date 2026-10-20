@@ -55,6 +55,7 @@ A seventh TypeScript package, `packages/financial-engine-ts`, is empty. For the 
 | `@maester/jobs` | `packages/jobs` | Creates jobs, sends tasks and calculates the next intake state of a document. |
 | `@maester/storage` | `packages/storage` | Gives the `ObjectStore` interface and three object stores. |
 | `@maester/market` | `packages/market` | Gets daily market data from Dhan and FRED. Encrypts and decrypts the secrets of market connections. |
+| `@maester/document-index` | `packages/document-index` | Names the embedding models, calls the embedder and searches the chunks. |
 | `maester-financial-engine` | `packages/financial-engine` | A Python library with the import name `pdf_financial_qa`. It classifies PDF filings and extracts facts from them. |
 | `@maester/financial-engine` | `packages/financial-engine-ts` | An empty TypeScript package. It exports only `ENGINE_VERSION`, with the value `"0.0.0"`. |
 
@@ -70,6 +71,7 @@ The name of the package in `packages/financial-engine-ts` is `@maester/financial
 | `@maester/jobs` | `apps/api`, `apps/worker` | `apps/api/src/dispatch/index.ts`, `apps/worker/src/dispatch.ts` |
 | `@maester/storage` | `apps/api`, `apps/worker` | `apps/api/src/store.ts`, `apps/worker/src/store.ts` |
 | `@maester/market` | `apps/api`, `apps/worker` | `apps/api/src/routes/connections.ts`, `apps/worker/src/market/build.ts` |
+| `@maester/document-index` | `apps/api`, `apps/worker` | `apps/api/src/routes/search.ts`, `apps/worker/src/jobs/document-index.ts` |
 | `maester-financial-engine` | `apps/extractor`, `apps/cli` | `apps/extractor/src/maester_extractor/app.py`, `apps/cli/src/maester_cli/cli.py` |
 | `@maester/financial-engine` | No app | Only its own `package.json` has this name |
 
@@ -206,6 +208,20 @@ The `api` and `worker` apps make a `DiskObjectStore` or a `GcsObjectStore` from 
 | `DailyPoint`, `Instrument`, `GoldContract`, `ScripRow`, `DhanOptions`, `FredOptions`, `SavedConnection`, `LoadedConnections` | The types of the package. |
 
 The package has no runtime dependencies. It uses `fetch` and `node:crypto` from Node.js. `loadConnections` takes rows, not a database client, so that `@maester/market` does not import `@maester/db`. The caller gives it the result of `listConnections`. The package does not read environment variables. The apps give it the connections key and the Dhan request rate.
+
+### `@maester/document-index`
+
+| Export | Function |
+| --- | --- |
+| `EMBEDDING_MODELS`, `embeddingModel` | The registry of embedding models. Each entry has the dimensions (1024), the query prefix and the document prefix. The model `Snowflake/snowflake-arctic-embed-l-v2.0` has the query prefix `query: ` and no document prefix. An unknown model gives an error. |
+| `embeddingInput` | Adds the prefix to a text. The worker and the API both use it, so the prefix is in one place only. |
+| `INDEX_PIPELINE_VERSION`, `indexPipelineVersion` | The version of the index pipeline, with the model name. |
+| `Embedder`, `TeiEmbedder`, `EmbedderError` | The embedder interface and its client for text-embeddings-inference. The client posts to `/embed` with `normalize` true and `truncate` false. It tries again 3 times for status 429, status 500 or more, or no answer. The wait starts at 1 second and doubles. |
+| `FakeEmbedder` | An embedder for tests. It gives the same unit vector for the same text. `fail` makes the next calls fail. |
+| `searchChunks`, `fuse` | The hybrid search. It joins a vector branch and a keyword branch by reciprocal rank with k = 60. |
+| `contextualize` | The text that the embedder gets: the section path and the text of the chunk. |
+
+The package reads no environment variable. The apps give it the URL and the model.
 
 ### `maester-financial-engine`
 
@@ -659,6 +675,10 @@ CAUTION: Do not change a migration that a database already applied. Add a new mi
 
 - [`packages/config/tsconfig.base.json`](../../packages/config/tsconfig.base.json)
 - [`packages/config/eslint.config.js`](../../packages/config/eslint.config.js)
+- [`packages/document-index/src/index.ts`](../../packages/document-index/src/index.ts)
+- [`packages/document-index/src/models.ts`](../../packages/document-index/src/models.ts)
+- [`packages/document-index/src/embedder.ts`](../../packages/document-index/src/embedder.ts)
+- [`packages/document-index/src/search.ts`](../../packages/document-index/src/search.ts)
 - [`packages/contracts/src/index.ts`](../../packages/contracts/src/index.ts)
 - [`packages/contracts/src/job.ts`](../../packages/contracts/src/job.ts)
 - [`packages/contracts/src/payloads.ts`](../../packages/contracts/src/payloads.ts)

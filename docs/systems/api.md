@@ -637,8 +637,6 @@ CAUTION: Set `DATABASE_URL_TEST_API` only to a test database. The test setup emp
 
 ## Sources
 
-- [apps/api/src/routes/search.ts](../../apps/api/src/routes/search.ts)
-
 - [apps/api/package.json](../../apps/api/package.json)
 - [apps/api/Dockerfile](../../apps/api/Dockerfile)
 - [apps/api/src/server.ts](../../apps/api/src/server.ts)
@@ -655,6 +653,7 @@ CAUTION: Set `DATABASE_URL_TEST_API` only to a test database. The test setup emp
 - [apps/api/src/financials/](../../apps/api/src/financials/)
 - [apps/api/src/middleware/](../../apps/api/src/middleware/)
 - [apps/api/src/routes/](../../apps/api/src/routes/)
+- [apps/api/src/routes/search.ts](../../apps/api/src/routes/search.ts)
 - [apps/api/src/jobs/create.ts](../../apps/api/src/jobs/create.ts)
 - [apps/api/src/dispatch/index.ts](../../apps/api/src/dispatch/index.ts)
 - [apps/api/src/mail/](../../apps/api/src/mail/)

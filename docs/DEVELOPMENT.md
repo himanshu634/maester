@@ -68,6 +68,8 @@ The Postgres image is `pgvector/pgvector:pg16`, started with `shared_buffers=256
 docker compose up -d --force-recreate postgres
 ```
 
+Run the `models` command before the indexer or the embedder starts for the first time. Otherwise Docker creates `/models` owned by root and the fetch cannot write to it. `EMBEDDING_MODEL` reaches only the worker and the API. The embedder command and the indexer's tokenizer path in `docker-compose.yml` name the arctic model, so to use another model, change those two as well, and fetch its weights.
+
 The worker and the API do not wait for the indexer or the embedder. Until they answer, index jobs back off and retry, and `GET /v1/workspaces/:ws/search` answers 503 `SEARCH_UNAVAILABLE`. Index every document that was stored before search existed with `pnpm --filter @maester/worker index:backfill [--workspace <id>] [--document <id>]… [--dry-run]`.
 
 ### Memory budget
@@ -167,7 +169,7 @@ pnpm --dir apps/web dev          # http://localhost:5173
 
 The dev server proxies `/api/auth`, `/v1` and `/dev` to `API_PROXY_TARGET` (default `http://localhost:8787`), so start the API first and always browse at <http://localhost:5173>, never at the API's own port: the session cookie and `BETTER_AUTH_URL` are the web origin's.
 
-Do not run both this and the full compose stack at once: they compete for ports 8787, 8788, 8790 and 5173.
+Do not run both this and the full compose stack at once: they compete for ports 8787, 8788, 8790, 8791, 8792 and 5173.
 
 ### The indexer's tests
 

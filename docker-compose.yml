@@ -212,6 +212,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+      start_period: 120s
 
   # Text Embeddings Inference serving the embedding model on the CPU. The worker
   # embeds chunks with it and the API embeds search queries.
@@ -231,6 +232,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+      start_period: 120s
 
   # The web client, served statically by nginx, which proxies /api/auth, /v1 and
   # /dev to the API. Sign in at http://localhost:5173/login.
