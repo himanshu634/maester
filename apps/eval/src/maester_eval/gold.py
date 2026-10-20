@@ -28,6 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from maester_eval.artefacts import Artefact
 from maester_eval.concepts import Concept, Taxonomy
+from maester_eval.errors import EvalError
 from maester_eval.files import read_model, write_text_atomically
 from maester_eval.manifest import EvalSet, Filing, FilingKind, is_iso_date
 from maester_eval.sheets import sheet_rows
@@ -43,12 +44,16 @@ _DIGITS_OR_FLOAT = re.compile(r"-?[0-9]+(?:\.0+)?")
 _DAY_FIRST_DATE = re.compile(r"([0-9]{1,2})/([0-9]{1,2})/([0-9]{4})")
 
 
-class FreezeError(ValueError):
+class FreezeError(EvalError, ValueError):
     pass
 
 
-class GoldError(ValueError):
+class GoldError(EvalError, ValueError):
     """A gold file that is not UTF-8, not JSON or not of the form `freeze` writes."""
+
+
+class GoldSealedError(EvalError):
+    """A gold file exists, and `freeze` was not told to replace it."""
 
 
 def _is_decimal(text: str) -> bool:
@@ -346,9 +351,10 @@ def gold_path(gold_dir: Path, filing_id: str) -> Path:
 
 
 def write_gold(gold_dir: Path, gold: GoldFiling, force: bool = False) -> Path:
+    """Write `gold` to its file. One that exists is a `GoldSealedError` and stays as it was, unless `force`."""
     path = gold_path(gold_dir, gold.filing_id)
     if path.exists() and not force:
-        raise FileExistsError(f"{path} exists; gold is sealed, pass --force to replace it")
+        raise GoldSealedError(f"{path} exists; gold is sealed, pass --force to replace it")
     write_text_atomically(path, json.dumps(gold.model_dump(mode="json"), ensure_ascii=False, indent=1) + "\n")
     return path
 

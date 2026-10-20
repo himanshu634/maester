@@ -1,6 +1,7 @@
 """The evaluation harness's command line. Offline."""
 
 import ast
+import errno
 import json
 import os
 from pathlib import Path
@@ -15,9 +16,16 @@ from eval_fixtures import FILING
 from test_extraction_workflow import PDF, ScriptedModel
 from typer.testing import CliRunner
 
-from maester_eval import cli
+from maester_eval import cli, files
+from maester_eval.artefacts import ArtefactReadError, artefact_path
 from maester_eval.cli import app
-from maester_eval.paths import EvalPaths
+from maester_eval.errors import EvalError
+from maester_eval.files import WriteError
+from maester_eval.gold import FreezeError, GoldError, GoldSealedError
+from maester_eval.manifest import ManifestError
+from maester_eval.paths import EvalPaths, RunLabelError, RunNotFoundError
+from maester_eval.runner import EvalConfigError
+from maester_eval.sheets import sheet_path
 
 
 class HelpTests(unittest.TestCase):
@@ -61,6 +69,14 @@ class SourceTests(unittest.TestCase):
         self.assertNotIn("import", kinds[kinds.index("code"):], "an import below the first line of code")
 
 
+class ErrorTests(unittest.TestCase):
+    def test_every_error_a_command_shows_as_a_message_is_an_eval_error(self):
+        for error in (ManifestError, ArtefactReadError, GoldError, FreezeError, GoldSealedError, EvalConfigError,
+                      RunLabelError, RunNotFoundError, WriteError):
+            with self.subTest(error=error.__name__):
+                self.assertTrue(issubclass(error, EvalError))
+
+
 class CommandCase(unittest.TestCase):
     """The commands over a temporary data folder, a scripted model and no .env. Offline."""
 
@@ -93,6 +109,14 @@ class CommandCase(unittest.TestCase):
         for message in messages:
             self.assertIn(message, result.output)
 
+    def assert_write_refused(self, result, target):
+        """Refused with `cannot write <target>: <reason>`: the file meant, not the temporary file, and nothing in it."""
+        self.assert_refused(result, f"cannot write {target}: ")
+        self.assertNotIn(".tmp", result.output)
+        self.assertNotIn("Traceback", result.output)
+        for text in ("Total assets", "2,000"):  # a label and a figure of the fixture filing
+            self.assertNotIn(text, result.output)
+
 
 class LiveTests(CommandCase):
     def test_a_bad_deadline_is_a_message_and_leaves_no_run_folder(self):
@@ -116,12 +140,35 @@ class LiveTests(CommandCase):
         self.assertIn(f"done: 1 read, 0 failed → {run_dir}", result.output)
 
 
+    def test_an_artefact_that_cannot_be_written_is_a_message(self):
+        replace = os.replace
+
+        def refuse_the_artefact(source, target):
+            if Path(target).name == "run.json":  # the run's record is written first; the artefact after the workflow
+                return replace(source, target)
+            raise PermissionError(errno.EACCES, "Permission denied", str(source))
+
+        with mock.patch.object(files.os, "replace", side_effect=refuse_the_artefact):
+            result = self.run_command("live")
+        (run_dir,) = self.paths.runs.iterdir()
+        self.assert_write_refused(result, artefact_path(run_dir, FILING.id))
+        self.assertIn("Permission denied", result.output)
+        self.assertTrue((run_dir / "run.json").is_file())
+        self.assertFalse(artefact_path(run_dir, FILING.id).exists())
+
+
 class ExportTests(CommandCase):
     def test_a_run_with_no_artefacts_is_a_message_and_writes_nothing(self):
         self.paths.new_run("empty")
         self.assert_refused(self.run_command("export"), "no artefacts in this run")
         self.assert_refused(self.run_command("export", "--only", "someone/else"), "no artefacts in this run")
         self.assertFalse(self.paths.sheets.exists())
+
+    def test_a_sheet_that_cannot_be_written_is_a_message(self):
+        self.assertEqual(self.run_command("live").exit_code, 0)
+        self.paths.sheets.write_text("a file where the folder should be", encoding="utf-8")
+        result = self.run_command("export")
+        self.assert_write_refused(result, sheet_path(self.paths.sheets, FILING.id))
 
 
 if __name__ == "__main__":

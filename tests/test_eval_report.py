@@ -493,6 +493,14 @@ class ReportCommandTests(ReportCase):
         self.assertFalse((self.run_dir / "report.md").exists())
         self.assertFalse((self.run_dir / "report.json").exists())
 
+    def test_a_report_that_cannot_be_written_is_a_message(self):
+        (self.run_dir / "report.md").mkdir()  # a folder where the report goes
+        result = self.report()
+        self.assert_refused(result, f"cannot write {self.run_dir / 'report.md'}: ")
+        for text in (".tmp", "Traceback", "report →"):
+            self.assertNotIn(text, result.output)
+        self.assertFalse((self.run_dir / "report.json").exists())
+
     def test_a_copy_that_cannot_be_made_is_a_message_after_the_report_is_written(self):
         result = self.report("--to", self.temp.name)  # a folder, not a file
         self.assert_refused(result, "cannot write", self.temp.name)
