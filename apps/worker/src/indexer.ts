@@ -68,8 +68,14 @@ export class HttpIndexerClient implements IndexerClient {
 
   async versions(): Promise<IndexerVersions> {
     const res = await this.request("/v1/versions", { method: "GET" }, AbortSignal.timeout(VERSIONS_TIMEOUT_MS));
+    let body: unknown;
     try {
-      return IndexerVersions.parse(await res.json());
+      body = await res.json();
+    } catch (err) {
+      throw new JobFailure("INDEXER_UNAVAILABLE", `indexer versions could not be read: ${(err as Error).message.slice(0, 200)}`, true);
+    }
+    try {
+      return IndexerVersions.parse(body);
     } catch (err) {
       throw new JobFailure("INVALID_INDEXER_RESULT", `unreadable indexer versions: ${(err as Error).message.slice(0, 500)}`, false);
     }
@@ -108,12 +114,14 @@ export class HttpIndexerClient implements IndexerClient {
     let started: Started | null = null;
     const pages: PageEvent[] = [];
     const chunks: ChunkEvent[] = [];
-    const handle = async (line: string): Promise<IndexResult | null> => {
+    const handle = async (line: string, unterminated = false): Promise<IndexResult | null> => {
       if (!line.trim()) return null;
       let parsed: IndexerEvent;
       try {
         parsed = IndexerEvent.parse(JSON.parse(line));
       } catch (err) {
+        // A last segment with no newline that is not JSON is a cut stream, not a bad line: it is retried.
+        if (unterminated && err instanceof SyntaxError) throw new JobFailure("INDEX_STREAM_INTERRUPTED", "indexer stream ended in the middle of a line", true);
         // The message names the failing field, never the line: a line can carry document text.
         throw new JobFailure("INVALID_INDEXER_RESULT", `unreadable indexer event: ${err instanceof SyntaxError ? "not JSON" : issuePaths(err)}`, false);
       }
@@ -151,7 +159,7 @@ export class HttpIndexerClient implements IndexerClient {
           if (result) return result;
         }
       }
-      const result = await handle(buffer + decoder.decode());
+      const result = await handle(buffer + decoder.decode(), true);
       if (result) return result;
     } catch (err) {
       if (err instanceof JobFailure) throw err;

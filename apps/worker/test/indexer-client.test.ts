@@ -105,6 +105,23 @@ describe("HttpIndexerClient", () => {
     expect(err).toMatchObject({ code: "INDEX_STREAM_INTERRUPTED", retryable: true });
   });
 
+  it("accepts a valid last line with no trailing newline", async () => {
+    respond = stream(range.trimEnd());
+    const result = await client().index(input(), async () => {});
+    expect(result.chunks).toHaveLength(4);
+  });
+
+  it("fails INDEX_STREAM_INTERRUPTED, retryable, when the stream is cut in the middle of a line", async () => {
+    const lines = range.trim().split("\n");
+    respond = stream(lines.slice(0, 3).join("\n") + "\n" + lines[3]!.slice(0, 30));
+    expect(await fails(client().index(input(), async () => {}))).toMatchObject({ code: "INDEX_STREAM_INTERRUPTED", retryable: true });
+  });
+
+  it("fails INDEXER_UNAVAILABLE, retried, when the versions body is not JSON", async () => {
+    respond = (_, res) => { res.writeHead(200); res.end("<html>"); };
+    expect(await fails(client().versions())).toMatchObject({ code: "INDEXER_UNAVAILABLE", retryable: true });
+  });
+
   it("fails with the indexer's own code and retryable flag on an error event", async () => {
     respond = stream(errorStream);
     const err = await fails(client().index(input(), async () => {}));

@@ -9,7 +9,7 @@ import type { JobContext, JobHandler } from "./types.js";
 
 /**
  * Hand a stored document to intake: a second copy of a stored file is marked a
- * duplicate; anything else is classified. Keyed "auto", so a verify retry never
+ * duplicate; anything else is classified, and every stored non-duplicate document also gets a document.index job. Keyed "auto", so a verify retry never
  * enqueues twice, and a classify job runs even without an extractor (it then
  * fails with CLASSIFIER_NOT_CONFIGURED, which the investor sees).
  */
