@@ -1,9 +1,11 @@
 import { serve } from "@hono/node-server";
+import { TeiEmbedder } from "@maester/document-index";
 import { createDb } from "@maester/db";
 import { createWorkerApp } from "./app.js";
 import { createDispatcher } from "./dispatch.js";
 import { dispatchModeWarning, loadWorkerEnv } from "./env.js";
 import { HttpExtractorClient } from "./extractor.js";
+import { HttpIndexerClient } from "./indexer.js";
 import { handlers } from "./jobs/index.js";
 import { createLogger } from "./logger.js";
 import { createMarketRefresher } from "./market/build.js";
@@ -28,7 +30,11 @@ const extractor = env.EXTRACTOR_URL
     )
   : null;
 if (!extractor) logger.info("EXTRACTOR_URL is not set; documents are verified but not extracted");
-const deps: WorkerDeps = { db, store, logger, env, handlers, dispatcher, extractor };
+const indexer = env.INDEXER_URL ? new HttpIndexerClient(env.INDEXER_URL, env.INDEXER_SECRET!, env.EMBEDDING_MODEL) : null;
+if (!indexer) logger.info("INDEXER_URL is not set; documents are not indexed");
+const embedder = env.EMBEDDER_URL ? new TeiEmbedder(env.EMBEDDER_URL, env.EMBEDDING_MODEL) : null;
+if (!embedder) logger.info("EMBEDDER_URL is not set; documents are not indexed");
+const deps: WorkerDeps = { db, store, logger, env, handlers, dispatcher, extractor, indexer, embedder };
 
 // In queue mode the worker pulls its own jobs. A bad JOB_CONCURRENCY stops start-up here, before anything runs.
 let queueOptions: QueueRunnerOptions | null = null;

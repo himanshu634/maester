@@ -102,6 +102,9 @@ importers:
       '@maester/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@maester/document-index':
+        specifier: workspace:*
+        version: link:../../packages/document-index
       '@maester/jobs':
         specifier: workspace:*
         version: link:../../packages/jobs

@@ -77,6 +77,30 @@ describe("worker env: extraction", () => {
   });
 });
 
+describe("worker env: indexing", () => {
+  it("has the index defaults and leaves the indexer and embedder off", () => {
+    const env = loadWorkerEnv(base);
+    expect(env).toMatchObject({
+      INDEX_PAGE_RANGE: 20,
+      INDEX_TIMEOUT_SECONDS: 7200,
+      EMBED_BATCH: 16,
+      OCR_PAGE_BUDGET: 400,
+      EMBEDDING_MODEL: "Snowflake/snowflake-arctic-embed-l-v2.0",
+    });
+    expect(env.INDEXER_URL).toBeUndefined();
+    expect(env.EMBEDDER_URL).toBeUndefined();
+  });
+
+  it("refuses an embedding model it does not know", () => {
+    expect(() => loadWorkerEnv({ ...base, EMBEDDING_MODEL: "nope" })).toThrow(/EMBEDDING_MODEL/);
+  });
+
+  it("requires a secret when INDEXER_URL is set", () => {
+    expect(() => loadWorkerEnv({ ...base, INDEXER_URL: "http://indexer:8791" })).toThrow("INDEXER_SECRET");
+    expect(loadWorkerEnv({ ...base, INDEXER_URL: "http://indexer:8791", INDEXER_SECRET: "s" }).INDEXER_URL).toBe("http://indexer:8791");
+  });
+});
+
 describe("worker env: market", () => {
   const key = Buffer.alloc(32, 7).toString("base64");
   it("defaults the Dhan rate and refresh interval, and leaves the key unset", () => {

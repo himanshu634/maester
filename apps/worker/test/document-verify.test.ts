@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { JobTypes } from "@maester/contracts";
 import { schema } from "@maester/db";
+import { indexPipelineVersion } from "@maester/document-index";
 import { documentVerify } from "../src/jobs/document-verify.js";
 import { runJob } from "../src/run.js";
 import { createWorkerContext, seedJob, seedWorkspace } from "./context.js";
@@ -212,6 +213,10 @@ describe("document.verify hands over to classification", () => {
       }
       const classifyJobs = await chained.db.select().from(schema.job).where(eq(schema.job.type, JobTypes.DOCUMENT_CLASSIFY));
       expect(classifyJobs).toHaveLength(1);
+      const indexJobs = await chained.db.select().from(schema.job).where(eq(schema.job.type, JobTypes.DOCUMENT_INDEX));
+      expect(indexJobs).toHaveLength(1);
+      expect(indexJobs[0]).toMatchObject({ subjectType: "document_index", subjectId: id, workspaceId });
+      expect(indexJobs[0]!.idempotencyKey).toBe(`${JobTypes.DOCUMENT_INDEX}:${id}:${indexPipelineVersion(chained.env.EMBEDDING_MODEL)}`);
       expect(classifyJobs[0]!.idempotencyKey).toBe(`${JobTypes.DOCUMENT_CLASSIFY}:${id}:auto`);
       expect(await chained.db.select().from(schema.job).where(eq(schema.job.type, JobTypes.DOCUMENT_EXTRACT))).toHaveLength(0);
       const [doc] = await chained.db.select().from(schema.document).where(eq(schema.document.id, id));
@@ -241,6 +246,8 @@ describe("document.verify hands over to classification", () => {
       expect(second).toMatchObject({ intakeState: "duplicate", duplicateOfDocumentId: ids[0] });
       const classifyJobs = await chained.db.select().from(schema.job).where(eq(schema.job.type, JobTypes.DOCUMENT_CLASSIFY));
       expect(classifyJobs.map((j) => j.subjectId)).toEqual([ids[0]]);
+      const indexJobs = await chained.db.select().from(schema.job).where(eq(schema.job.type, JobTypes.DOCUMENT_INDEX));
+      expect(indexJobs.map((j) => j.subjectId)).toEqual([ids[0]]);
     } finally {
       await chained.close();
     }

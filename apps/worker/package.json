@@ -16,6 +16,7 @@
     "@google-cloud/tasks": "^7.1.0",
     "@hono/node-server": "^2.1.0",
     "@maester/contracts": "workspace:*",
+    "@maester/document-index": "workspace:*",
     "@maester/db": "workspace:*",
     "@maester/jobs": "workspace:*",
     "@maester/market": "workspace:*",

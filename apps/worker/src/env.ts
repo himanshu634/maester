@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { EMBEDDING_MODELS } from "@maester/document-index";
 
 const Schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -29,6 +30,22 @@ const Schema = z.object({
   // Seconds one extraction request may take, with its whole stream. Thirty minutes: a long annual report takes that.
   EXTRACT_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(1800),
   EXTRACT_MAX_BYTES: z.coerce.number().int().positive().default(52428800),
+  // Indexing (apps/indexer, the embedder). Unset INDEXER_URL or EMBEDDER_URL: document.index fails INDEXER_NOT_CONFIGURED.
+  INDEXER_URL: z.url().optional(),
+  INDEXER_SECRET: z.string().optional(),
+  EMBEDDER_URL: z.url().optional(),
+  EMBEDDING_MODEL: z
+    .string()
+    .default("Snowflake/snowflake-arctic-embed-l-v2.0")
+    .refine((v) => Object.hasOwn(EMBEDDING_MODELS, v), `EMBEDDING_MODEL must be one of: ${Object.keys(EMBEDDING_MODELS).join(", ")}`),
+  // Pages read in one call to the indexer.
+  INDEX_PAGE_RANGE: z.coerce.number().int().positive().default(20),
+  // Seconds the whole document.index job may take.
+  INDEX_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(7200),
+  // Chunks embedded in one call to the embedder.
+  EMBED_BATCH: z.coerce.number().int().positive().default(16),
+  // Pages one document may send to OCR.
+  OCR_PAGE_BUDGET: z.coerce.number().int().min(0).default(400),
   // Needed only to enqueue follow-up jobs through Cloud Tasks.
   GOOGLE_CLOUD_PROJECT: z.string().min(1).optional(),
   GOOGLE_CLOUD_LOCATION: z.string().default("asia-south1"),
@@ -69,5 +86,6 @@ export function loadWorkerEnv(source: NodeJS.ProcessEnv = process.env): WorkerEn
     if (parsed.data.DISPATCH_MODE === "cloud-tasks" && (!parsed.data.GOOGLE_CLOUD_PROJECT || !parsed.data.WORKER_INVOKER_SA))
       throw new Error("GOOGLE_CLOUD_PROJECT and WORKER_INVOKER_SA required to enqueue extraction when DISPATCH_MODE=cloud-tasks");
   }
+  if (parsed.data.INDEXER_URL && !parsed.data.INDEXER_SECRET) throw new Error("INDEXER_SECRET required when INDEXER_URL is set");
   return parsed.data;
 }

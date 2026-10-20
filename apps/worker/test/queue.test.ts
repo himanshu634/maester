@@ -254,8 +254,12 @@ describe("parseConcurrency", () => {
     expect(() => parseConcurrency("document.extract=two", ["document.extract"])).toThrow();
   });
 
+  it("runs document.index one at a time by default", () => {
+    expect(parseConcurrency(undefined, ["document.index"])).toEqual({ "document.index": 1 });
+  });
+
   it("uses the defaults when unset, reads several overrides, and refuses malformed entries", () => {
-    expect(DEFAULT_CONCURRENCY).toEqual({ "document.verify": 4, "document.classify": 2, "document.extract": 2 });
+    expect(DEFAULT_CONCURRENCY).toEqual({ "document.verify": 4, "document.classify": 2, "document.extract": 2, "document.index": 1 });
     expect(parseConcurrency(undefined, ["document.classify", "test.x"])).toEqual({ "document.classify": 2, "test.x": 1 });
     expect(parseConcurrency(" document.extract=3 , document.verify=8 ", ["document.extract", "document.verify"])).toEqual({ "document.extract": 3, "document.verify": 8 });
     expect(() => parseConcurrency("document.extract=1.5", ["document.extract"])).toThrow();

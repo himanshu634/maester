@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import { indexPipelineVersion } from "@maester/document-index";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { JobTypes, type DocumentVerifyResult, type RejectionCode } from "@maester/contracts";
+import { DOCUMENT_INDEX_SUBJECT, JobTypes, type DocumentVerifyResult, type RejectionCode } from "@maester/contracts";
 import { findStoredDuplicate, schema, type JobRow } from "@maester/db";
 import { createJob } from "@maester/jobs";
 import { ObjectNotFoundError } from "@maester/storage";
@@ -34,6 +35,16 @@ async function chainIntake(job: JobRow, ctx: JobContext, sha256: string): Promis
     await ctx.db.update(schema.document).set({ intakeState: "identifying", updatedAt: sql`now()` }).where(untouched);
     intakeState = "identifying";
   }
+  // The index is built for every stored document that is not a duplicate, whether or not the indexer is configured:
+  // without it the job fails INDEXER_NOT_CONFIGURED and the backfill recovers it. Keyed by the pipeline version, so once.
+  const index = await createJob(ctx.db, ctx.dispatcher, {
+    workspaceId: job.workspaceId,
+    type: JobTypes.DOCUMENT_INDEX,
+    subjectType: DOCUMENT_INDEX_SUBJECT,
+    subjectId: job.subjectId,
+    pipelineVersion: indexPipelineVersion(ctx.env.EMBEDDING_MODEL),
+  });
+  ctx.logger.info({ documentId: job.subjectId, indexJobId: index.id }, "indexing enqueued");
   if (intakeState !== "identifying") return;
   const next = await createJob(ctx.db, ctx.dispatcher, {
     workspaceId: job.workspaceId,
