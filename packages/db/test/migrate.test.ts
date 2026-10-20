@@ -37,3 +37,20 @@ it("the vector extension is available on the image", async () => {
   const rows = await db.execute(sql`select 1 from pg_available_extensions where name = 'vector'`);
   expect(rows.rows).toHaveLength(1);
 });
+
+it("the document index: the vector extension, five tables, HNSW on halfvec, GIN full-text, one current revision", async () => {
+  const ext = await db.execute(sql`select extversion from pg_extension where extname = 'vector'`);
+  expect(ext.rows).toHaveLength(1);
+  const tables = await db.execute(sql`select table_name from information_schema.tables where table_schema = 'public'`);
+  const names = tables.rows.map((r) => r.table_name);
+  for (const t of ["document_index_revision", "document_page", "document_chunk", "chunk_embedding", "page_read"]) {
+    expect(names).toContain(t);
+  }
+  const idx = await db.execute(sql`select indexname, indexdef from pg_indexes where schemaname = 'public'`);
+  const def = (n: string) => String(idx.rows.find((r) => r.indexname === n)?.indexdef);
+  expect(def("chunk_embedding_hnsw")).toContain("halfvec_cosine_ops");
+  expect(def("chunk_embedding_hnsw")).toContain("hnsw");
+  expect(def("document_chunk_tsv")).toContain("USING gin");
+  expect(def("document_index_current")).toContain("UNIQUE");
+  expect(def("document_index_current")).toMatch(/WHERE .*(complete|partial)/);
+});

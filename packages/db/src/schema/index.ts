@@ -4,3 +4,4 @@ export * from "./classification.js";
 export * from "./extraction.js";
 export * from "./waitlist.js";
 export * from "./market.js";
+export * from "./document-index.js";

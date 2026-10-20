@@ -28,3 +28,9 @@ export {
   upsertMarketPoints, listMarketSeries, listMarketSeriesByPrefix, listMarketValuesByPrefix, latestMarketDay, startMarketFetch, finishMarketFetch, latestMarketFetch,
   getConnection, listConnections, saveConnection, deleteConnection, markConnectionError, lastMarketReads, type SaveConnection,
 } from "./queries/market.js";
+export type { IndexRevisionRow } from "./schema/document-index.js";
+export {
+  startOrResumeRevision, writeRange, lastStoredPage, chunksWithoutEmbedding, insertEmbeddings, completeRevision,
+  getPageRead, putPageRead, documentsNeedingIndex,
+  type IndexVersions, type PageInput, type ChunkInput, type RangeCounts, type PageReadKey, type RangeReadJson,
+} from "./queries/document-index.js";
