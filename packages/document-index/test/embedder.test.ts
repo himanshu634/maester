@@ -95,6 +95,62 @@ describe("TeiEmbedder", () => {
     expect(n).toBe(2);
   });
 
+  /** A server that reads each request and never answers it. */
+  async function silent(): Promise<{ url: string; requests: () => number }> {
+    let n = 0;
+    server = createServer((req) => {
+      n += 1;
+      req.resume();
+    });
+    await new Promise<void>((ok) => server!.listen(0, "127.0.0.1", ok));
+    return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, requests: () => n };
+  }
+
+  it("with retryOnTimeout false, a request that times out is not sent again", async () => {
+    const s = await silent();
+    const err = await new TeiEmbedder(s.url, M, { timeoutMs: 50, backoffMs: 1, retryOnTimeout: false })
+      .embed(["a"], "document")
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(EmbedderError);
+    expect(err).toMatchObject({ code: "EMBEDDER_UNAVAILABLE", retryable: true });
+    expect(err.message).toBe("The embedder did not answer within 50 ms.");
+    expect(s.requests()).toBe(1);
+    server!.closeAllConnections();
+  });
+
+  it("by default a request that times out is sent again, as many times as retries", async () => {
+    const s = await silent();
+    const err = await new TeiEmbedder(s.url, M, { timeoutMs: 50, backoffMs: 1, retries: 2 }).embed(["a"], "document").catch((e) => e);
+    expect(err).toMatchObject({ code: "EMBEDDER_UNAVAILABLE", retryable: true });
+    expect(s.requests()).toBe(3);
+    server!.closeAllConnections();
+  });
+
+  it("with retryOnTimeout false, a 503 is still retried", async () => {
+    const s = await serve([{ status: 503 }, { status: 200, body: [vec(1024)] }]);
+    const out = await new TeiEmbedder(s.url, M, { backoffMs: 1, retryOnTimeout: false }).embed(["a"], "document");
+    expect(out).toHaveLength(1);
+    expect(s.bodies).toHaveLength(2);
+  });
+
+  it("with retryOnTimeout false, a body that stops arriving past the timeout is not read again", async () => {
+    let n = 0;
+    server = createServer((req, res) => {
+      req.resume();
+      req.on("end", () => {
+        n += 1;
+        res.writeHead(200, { "content-type": "application/json", "content-length": "5000" });
+        res.write("[[0.1,");
+      });
+    });
+    await new Promise<void>((ok) => server!.listen(0, "127.0.0.1", ok));
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const err = await new TeiEmbedder(url, M, { timeoutMs: 100, backoffMs: 1, retryOnTimeout: false }).embed(["a"], "document").catch((e) => e);
+    expect(err).toMatchObject({ code: "EMBEDDER_UNAVAILABLE", retryable: true, message: "The embedder did not answer within 100 ms." });
+    expect(n).toBe(1);
+    server!.closeAllConnections();
+  });
+
   it("throws on a vector of the wrong dimensions", async () => {
     const s = await serve([{ status: 200, body: [vec(768)] }]);
     const err = await new TeiEmbedder(s.url, M, { backoffMs: 1 }).embed(["a"], "document").catch((e) => e);

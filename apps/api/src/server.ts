@@ -18,7 +18,7 @@ const store = createStore(env);
 const auth = createAuth({ db, env, mailer: createMailer(env, logger), logger });
 const dispatcher = createDispatcher(env, logger, db);
 
-const embedder = env.EMBEDDER_URL ? new TeiEmbedder(env.EMBEDDER_URL, env.EMBEDDING_MODEL, { timeoutMs: 10_000, retries: 1 }) : null;
+const embedder = env.EMBEDDER_URL ? new TeiEmbedder(env.EMBEDDER_URL, env.EMBEDDING_MODEL, { timeoutMs: 30_000, retries: 1 }) : null;
 
 const app = createApp({ env, logger, db, store, auth, dispatcher, embedder });
 

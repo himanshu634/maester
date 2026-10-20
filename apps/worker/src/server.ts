@@ -31,7 +31,9 @@ const extractor = env.EXTRACTOR_URL
   : null;
 if (!extractor) logger.info("EXTRACTOR_URL is not set; documents are verified but not extracted");
 const indexer = env.INDEXER_URL ? new HttpIndexerClient(env.INDEXER_URL, env.INDEXER_SECRET!, env.EMBEDDING_MODEL) : null;
-const embedder = env.EMBEDDER_URL ? new TeiEmbedder(env.EMBEDDER_URL, env.EMBEDDING_MODEL) : null;
+const embedder = env.EMBEDDER_URL
+  ? new TeiEmbedder(env.EMBEDDER_URL, env.EMBEDDING_MODEL, { timeoutMs: env.EMBED_TIMEOUT_SECONDS * 1000, retryOnTimeout: false })
+  : null;
 const missingForIndex = [indexer ? null : "INDEXER_URL", embedder ? null : "EMBEDDER_URL"].filter(Boolean);
 if (missingForIndex.length) logger.info({ missing: missingForIndex }, "documents are not indexed: the index settings are not all set");
 const deps: WorkerDeps = { db, store, logger, env, handlers, dispatcher, extractor, indexer, embedder };

@@ -220,7 +220,7 @@ Copy [`.env.example`](../.env.example) to `.env`. The TypeScript services valida
 | `EXTRACTOR_AUTH`, `EXTRACTOR_SECRET` | worker | `secret` (default) needs the secret, which must match the extractor's; `oidc` uses Cloud Run IAM | `secret`, `local-extractor-secret` |
 | `INDEXER_URL`, `INDEXER_SECRET` | worker | To index; the secret is required when the URL is set and must match the indexer's. Unset: `document.index` fails with `INDEXER_NOT_CONFIGURED` | `http://localhost:8791`, `local-indexer-secret` |
 | `EMBEDDER_URL`, `EMBEDDING_MODEL` | worker, api | To embed chunks (worker) and search queries (api); unset in the API: search answers 503 | `http://localhost:8792`, `Snowflake/snowflake-arctic-embed-l-v2.0` |
-| `INDEX_PAGE_RANGE`, `INDEX_TIMEOUT_SECONDS`, `EMBED_BATCH`, `OCR_PAGE_BUDGET` | worker | Defaulted | 20 pages, 7200 s, 16, 400 pages |
+| `INDEX_PAGE_RANGE`, `INDEX_TIMEOUT_SECONDS`, `EMBED_BATCH`, `EMBED_TIMEOUT_SECONDS`, `OCR_PAGE_BUDGET` | worker | Defaulted. `EMBED_BATCH` is at most 32, the embedder's `--max-client-batch-size`; an embed call that times out is not retried in the call, because the embedder keeps working on it, and the job retries later | 20 pages, 7200 s, 16, 300 s, 400 pages |
 | `INDEXER_SECRET`, `INDEX_THREADS`, `INDEX_PAGE_BATCH`, `INDEX_MAX_BYTES`, `DOCLING_ARTIFACTS_PATH`, `INDEX_TOKENIZER_PATH` | indexer | See the [indexer description](systems/indexer.md) | Compose sets them |
 | `EXTRACT_TIMEOUT_SECONDS`, `EXTRACT_MAX_BYTES` | worker | Defaulted | 1800 s, 50 MiB |
 | `GOOGLE_CLOUD_PROJECT`, `WORKER_INVOKER_SA`, `CLOUD_TASKS_QUEUE`, `TASK_DISPATCH_DEADLINE_SECONDS` | worker | To enqueue extraction when the mode is `cloud-tasks` | Unset |

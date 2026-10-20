@@ -42,8 +42,11 @@ const Schema = z.object({
   INDEX_PAGE_RANGE: z.coerce.number().int().positive().default(20),
   // Seconds the whole document.index job may take.
   INDEX_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(7200),
-  // Chunks embedded in one call to the embedder.
-  EMBED_BATCH: z.coerce.number().int().positive().default(16),
+  // Chunks embedded in one call to the embedder: at most the embedder's --max-client-batch-size (32 in docker-compose.yml).
+  EMBED_BATCH: z.coerce.number().int().positive().max(32, "EMBED_BATCH must be at most 32, the embedder's --max-client-batch-size").default(16),
+  // Seconds one call to the embedder may take. A call that times out is not sent again within the job's attempt:
+  // the embedder keeps working on it, so a second call would only queue behind it.
+  EMBED_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(300),
   // Pages one document may send to OCR.
   OCR_PAGE_BUDGET: z.coerce.number().int().min(0).default(400),
   // Needed only to enqueue follow-up jobs through Cloud Tasks.

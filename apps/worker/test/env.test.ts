@@ -84,11 +84,22 @@ describe("worker env: indexing", () => {
       INDEX_PAGE_RANGE: 20,
       INDEX_TIMEOUT_SECONDS: 7200,
       EMBED_BATCH: 16,
+      EMBED_TIMEOUT_SECONDS: 300,
       OCR_PAGE_BUDGET: 400,
       EMBEDDING_MODEL: "Snowflake/snowflake-arctic-embed-l-v2.0",
     });
     expect(env.INDEXER_URL).toBeUndefined();
     expect(env.EMBEDDER_URL).toBeUndefined();
+  });
+
+  it("refuses an EMBED_BATCH over the embedder's --max-client-batch-size of 32", () => {
+    expect(loadWorkerEnv({ ...base, EMBED_BATCH: "32" }).EMBED_BATCH).toBe(32);
+    expect(() => loadWorkerEnv({ ...base, EMBED_BATCH: "33" })).toThrow(/EMBED_BATCH must be at most 32/);
+  });
+
+  it("reads EMBED_TIMEOUT_SECONDS and refuses zero", () => {
+    expect(loadWorkerEnv({ ...base, EMBED_TIMEOUT_SECONDS: "60" }).EMBED_TIMEOUT_SECONDS).toBe(60);
+    expect(() => loadWorkerEnv({ ...base, EMBED_TIMEOUT_SECONDS: "0" })).toThrow(/EMBED_TIMEOUT_SECONDS/);
   });
 
   it("refuses an embedding model it does not know", () => {

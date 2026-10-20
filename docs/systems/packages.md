@@ -216,7 +216,7 @@ The package has no runtime dependencies. It uses `fetch` and `node:crypto` from 
 | `EMBEDDING_MODELS`, `embeddingModel` | The registry of embedding models. Each entry has the dimensions (1024), the query prefix and the document prefix. The model `Snowflake/snowflake-arctic-embed-l-v2.0` has the query prefix `query: ` and no document prefix. An unknown model gives an error. |
 | `embeddingInput` | Adds the prefix to a text. The worker and the API both use it, so the prefix is in one place only. |
 | `INDEX_PIPELINE_VERSION`, `indexPipelineVersion` | The version of the index pipeline, with the model name. |
-| `Embedder`, `TeiEmbedder`, `EmbedderError` | The embedder interface and its client for text-embeddings-inference. The client posts to `/embed` with `normalize` true and `truncate` false. It tries again 3 times for status 429, status 500 or more, or no answer. The wait starts at 1 second and doubles. |
+| `Embedder`, `TeiEmbedder`, `EmbedderError` | The embedder interface and its client for text-embeddings-inference. The client posts to `/embed` with `normalize` true and `truncate` false. It tries again 3 times for status 429, status 500 or more, or no answer. The wait starts at 1 second and doubles. With `retryOnTimeout` false, it does not try again after a request runs past `timeoutMs` (the default is 60 seconds), because the embedder continues to work on that request. |
 | `FakeEmbedder` | An embedder for tests. It gives the same unit vector for the same text. `fail` makes the next calls fail. |
 | `searchChunks`, `fuse` | The hybrid search. It joins a vector branch and a keyword branch by reciprocal rank with k = 60. |
 | `contextualize` | The text that the embedder gets: the section path and the text of the chunk. |

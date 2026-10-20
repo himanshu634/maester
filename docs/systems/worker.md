@@ -574,7 +574,8 @@ The `jobId` column is unique in `document_classification` and in `extraction_rev
 | `EMBEDDING_MODEL` | `Snowflake/snowflake-arctic-embed-l-v2.0` | The embedding model. It must be a model that `@maester/document-index` knows. |
 | `INDEX_PAGE_RANGE` | `20` | The number of pages in one range. |
 | `INDEX_TIMEOUT_SECONDS` | `7200` | The time limit of one `document.index` job. |
-| `EMBED_BATCH` | `16` | The number of chunks in one request to the embedder. |
+| `EMBED_BATCH` | `16` | The number of chunks in one request to the embedder. The maximum is 32, the `--max-client-batch-size` of the embedder. With a larger value, the worker does not start. |
+| `EMBED_TIMEOUT_SECONDS` | `300` | The time limit of one request to the embedder. The worker does not send a request again after this time, because the embedder continues to work on it. The job fails with `EMBEDDING_FAILED`, and a later attempt tries again. The worker sends a request again after a 5xx answer, a 429 answer or a network failure. |
 | `OCR_PAGE_BUDGET` | `400` | The most pages of one document that OCR can read. The value 0 turns OCR off. |
 
 ### Default limits

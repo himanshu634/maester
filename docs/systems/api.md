@@ -532,7 +532,7 @@ The `dev` script reads the root `.env` file. A value that is an empty string cou
 | `MAIL_DRIVER` | `console` | `console` or `resend`. The `console` driver writes the mail to the log. Production refuses it. |
 | `RESEND_API_KEY`, `MAIL_FROM` | None | Necessary for `resend`. |
 | `CONNECTIONS_KEY` | None | 32 bytes in base64. It encrypts each secret. Without a value, the connections routes give `INVALID_STATE`. A value that is not 32 bytes in base64 stops the start. |
-| `EMBEDDER_URL` | None | The base URL of the embedder. Without a value, the search route sends `SEARCH_UNAVAILABLE`. |
+| `EMBEDDER_URL` | None | The base URL of the embedder. Without a value, the search route sends `SEARCH_UNAVAILABLE`. The API stops a request to the embedder after 30 seconds, and sends a failed request again one time. |
 | `EMBEDDING_MODEL` | `Snowflake/snowflake-arctic-embed-l-v2.0` | The embedding model for search queries. It must be the model of the index. |
 | `MIGRATIONS_FOLDER` | None | Only for `migrate.ts`. The Docker image sets `/app/drizzle`. |
 | `DATABASE_URL_TEST_API` | `postgres://maester:maester@localhost:5433/maester_test_api` | Only for the tests. |
