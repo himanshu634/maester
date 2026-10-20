@@ -87,7 +87,7 @@ Docker Desktop's VM has 7.75 GiB by default. The compose file caps four services
 | web | 96m | 1 | nginx |
 | capped total | 5.9 GiB | | Leaves about 1.8 GiB for the three uncapped services and the VM |
 
-These limits are a first budget; the measured run (Task 13 of the phase 2 plan) adjusts them. Before a backfill or an HNSW rebuild, raise Docker Desktop's memory limit to 12 GB (Settings, Resources), then restart Docker. If the indexer is killed for memory, lower `INDEX_PAGE_BATCH` or the worker's `INDEX_PAGE_RANGE`.
+These limits are a first budget; the measured run (Task 13 of the phase 2 plan) adjusts them. Before a backfill or an HNSW rebuild, raise Docker Desktop's memory limit to 12 GB (Settings, Resources), then restart Docker. If the indexer is killed for memory, lower `INDEX_PAGE_BATCH` or the worker's `INDEX_PAGE_RANGE`. The indexer and the embedder have `restart: unless-stopped`, so a kill for memory does not leave them down while index jobs use up their attempts.
 
 Useful lifecycle commands:
 

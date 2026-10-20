@@ -205,6 +205,9 @@ services:
       - models:/models:ro
     mem_limit: 2304m
     cpus: 8
+    # The memory caps are not measured yet: an OOM kill must not leave the indexer down
+    # while a backfill uses up every job's attempts.
+    restart: unless-stopped
     ports:
       - "8791:8791"
     healthcheck:
@@ -225,6 +228,7 @@ services:
       - models:/models:ro
     mem_limit: 2560m
     cpus: 8
+    restart: unless-stopped
     ports:
       - "8792:80"
     healthcheck:
