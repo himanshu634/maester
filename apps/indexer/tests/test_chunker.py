@@ -432,9 +432,17 @@ class LoadTokenizerTests(unittest.TestCase):
                     load_tokenizer(str(folder), self.MODEL)
                 self.assertEqual((raised.exception.code, raised.exception.retryable), ("INDEXER_NOT_CONFIGURED", False))
 
-    def test_refuses_a_folder_with_no_lock(self):
+    def test_a_folder_with_no_lock_is_not_configured(self):
+        # The fetch writes the lock last, so no lock means the models were not (all) fetched.
         with tempfile.TemporaryDirectory() as root:
             folder = self._models(Path(root), None)
+            with self.assertRaises(IndexingError) as raised:
+                load_tokenizer(str(folder), self.MODEL)
+            self.assertEqual((raised.exception.code, raised.exception.retryable), ("INDEXER_NOT_CONFIGURED", False))
+
+    def test_a_lock_for_a_folder_of_another_name_is_a_mismatch(self):
+        with tempfile.TemporaryDirectory() as root:
+            folder = self._models(Path(root), "Example/other-model")
             with self.assertRaises(IndexingError) as raised:
                 load_tokenizer(str(folder), self.MODEL)
             self.assertEqual((raised.exception.code, raised.exception.retryable), ("INDEXER_MODEL_MISMATCH", False))

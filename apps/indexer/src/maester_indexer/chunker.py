@@ -36,12 +36,12 @@ from transformers import AutoTokenizer
 
 from maester_indexer.contracts import ChunkEvent, PageEvent, RangeRead, TextSource, contextualize
 from maester_indexer.errors import IndexingError
+from maester_indexer.lockfile import LOCK_FILE
 
 MAX_EMBED_TOKENS = 512  # the most the embedding model is given: the path, its newline, the text and its special tokens
 PATH_TOKENS = 64  # the most a chunk's section path may take
 CHUNK_TOKENS = 448  # the chunker's budget for the text, so a path of PATH_TOKENS still fits
 
-LOCK_FILE = "models.lock.json"
 HEADER_SHARE = 2  # a table's header rows are repeated only while they take at most 1/HEADER_SHARE of the budget
 _ALL_LAYERS = set(ContentLayer)
 _BASIS = re.compile(r"\b(consolidated|standalone)\b", re.IGNORECASE)
@@ -151,7 +151,8 @@ def load_tokenizer(path: str, expected_model: str) -> HuggingFaceTokenizer:
 
     The folder's model is the `embedding.id` of the nearest models.lock.json in the folder
     or above it (the fetch command puts it at the top of the models volume), and the folder
-    must be named after it (`…/embed/<model id>`). Anything else is refused."""
+    must be named after it (`…/embed/<model id>`). No lock means the models were not fetched
+    (INDEXER_NOT_CONFIGURED); a lock for another model is INDEXER_MODEL_MISMATCH."""
     folder = Path(path)
     model_id = _locked_model(folder)
     if model_id != expected_model:
@@ -167,6 +168,8 @@ def load_tokenizer(path: str, expected_model: str) -> HuggingFaceTokenizer:
 
 
 def _locked_model(folder: Path) -> str | None:
+    """The lock's model when the folder is named after it, else None. No lock at all is
+    INDEXER_NOT_CONFIGURED: the fetch writes the lock last, so the models are not all there."""
     for directory in (folder, *folder.parents):
         lock = directory / LOCK_FILE
         if lock.is_file():
@@ -179,7 +182,11 @@ def _locked_model(folder: Path) -> str | None:
             if isinstance(model_id, str) and folder.parts[-len(model_id.split("/")) :] == tuple(model_id.split("/")):
                 return model_id
             return None
-    return None
+    raise IndexingError(
+        "INDEXER_NOT_CONFIGURED",
+        f"No {LOCK_FILE} in or above INDEX_TOKENIZER_PATH: the models were not fetched.",
+        False,
+    )
 
 
 def _chunk_page(

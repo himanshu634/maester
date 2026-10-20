@@ -110,8 +110,8 @@ These errors come before the stream. The body is `{ "detail": { "code": ... } }`
 
 | Code | Retryable | Cause |
 | --- | --- | --- |
-| `INDEXER_MODEL_MISMATCH` | No | The header `x-embedding-model` is not `EMBEDDING_MODEL` (this is the first event). Or the tokenizer folder is not the model in `models.lock.json`, or there is no lock file. |
-| `INDEXER_NOT_CONFIGURED` | No | `INDEX_TOKENIZER_PATH` has no value, or no tokenizer can be loaded from it. |
+| `INDEXER_MODEL_MISMATCH` | No | The header `x-embedding-model` is not `EMBEDDING_MODEL` (this is the first event). Or the tokenizer folder is not the model in `models.lock.json`. |
+| `INDEXER_NOT_CONFIGURED` | No | `INDEX_TOKENIZER_PATH` has no value, or no tokenizer can be loaded from it. Or there is no `models.lock.json` in the tokenizer folder or above it: the models were not fetched, because the fetch command writes the lock last. Or the lock cannot be read. |
 | `UNREADABLE_PDF` | No | Docling cannot open the PDF: it is encrypted, damaged or empty. |
 | `INDEX_FAILED` | Yes | An unexpected error, or Docling ends the read with a bad status. The message has the type of the error only. |
 | `INDEX_FAILED` | No | The first page of the range is after the last page of the file, or a check of the chunker finds that the items or the token counts are not correct. |
