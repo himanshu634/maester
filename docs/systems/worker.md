@@ -240,10 +240,11 @@ The handler is in `apps/worker/src/jobs/document-index.ts`. It cuts a stored PDF
 7. The handler reads the ranges in order. A range has `INDEX_PAGE_RANGE` pages (default 20). The first range starts at page 1. Each range starts at a multiple of `INDEX_PAGE_RANGE` from page 1.
 8. If the database has the read of a range, the handler sends it to `POST /v1/chunk`. The read is the cache. The key of the cache has the hash of the PDF, the range, the version of Docling, the OCR engine and the reader options.
 9. If the database has no read of the range, the handler sends the PDF to `POST /v1/index`. The handler keeps the read in the cache. It does not keep a read made with OCR off. It does not keep a read with a page that has the reason `PAGE_UNREADABLE`. A later try can succeed.
-10. The handler removes the NUL characters (U+0000) from the text, because Postgres refuses them. It then writes the pages and the chunks of the range in one transaction.
-11. After each range, the handler embeds the chunks that have no vector. It sends them to the embedder in batches of `EMBED_BATCH`, longest text first.
-12. After the last range, the handler completes the revision. The revision is `complete`. If a page has the reason `OCR_FAILED`, `OCR_BUDGET` or `PAGE_UNREADABLE`, the revision is `partial`.
-13. The handler calls `heartbeat` for each event, and writes the progress of the job.
+10. The handler compares the page count in the `started` event of the indexer with the page count that it used for the range. The handler gets this value from the revision, or from the newest cached read of the PDF. If the two values are different and the revision has no stored pages, the handler keeps the page count of the indexer in the revision. If the range is then different, the handler reads the range again. It does not keep the first read. If the two values are different and the revision has stored pages, the handler throws `INVALID_INDEXER_RESULT`.
+11. The handler removes the NUL characters (U+0000) from the text, because Postgres refuses them. It then writes the pages and the chunks of the range in one transaction.
+12. After each range, the handler embeds the chunks that have no vector. It sends them to the embedder in batches of `EMBED_BATCH`, longest text first.
+13. After the last range, the handler completes the revision. The revision is `complete`. If a page has the reason `OCR_FAILED`, `OCR_BUDGET` or `PAGE_UNREADABLE`, the revision is `partial`.
+14. The handler calls `heartbeat` for each event, and writes the progress of the job.
 
 #### Resume
 
@@ -419,7 +420,7 @@ The breadth uses the current member list for all past days. Thus the past breadt
 | `INDEXER_HTTP_<status>` | The indexer sends a different error status. | Retry for status 500 or more. Final failure for other status codes. |
 | `INDEX_STREAM_INTERRUPTED` | The stream stops before a `result` event, ends in the middle of a line, or breaks. | Retry. |
 | `INDEX_TIMEOUT` | The call to the indexer or the whole job ran longer than `INDEX_TIMEOUT_SECONDS`, or the call was cancelled. | Retry. |
-| `INVALID_INDEXER_RESULT` | The versions or an event do not agree with the schema, or the pages of a range are not exactly the pages asked for. | Final failure. |
+| `INVALID_INDEXER_RESULT` | The versions or an event do not agree with the schema, or the pages of a range are not exactly the pages asked for. Or the page count of the indexer changes after the revision has stored pages, or changes two times. | Final failure. |
 | `INDEXER_MODEL_MISMATCH` | The tokenizer of the indexer or the model of the embedder is not `EMBEDDING_MODEL`. The indexer can also send this code. | Final failure. |
 | `INDEXER_VERSIONS_CHANGED` | The versions in the events of a range are not the versions of the revision. | Retry. |
 | `EMBEDDING_FAILED` | The embedder fails, or it sends a wrong number of vectors. | Retry. The revision stays `building`. The next attempt resumes it. |

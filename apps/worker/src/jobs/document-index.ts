@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { RangeRead, contextualize, type IndexerEvent, type IndexerVersions } from "@maester/contracts";
 import {
   chunksWithoutEmbedding, completeRevision, getPageRead, insertEmbeddings, lastStoredPage, putPageRead, schema, startOrResumeRevision,
@@ -82,12 +82,13 @@ function checkPages(result: IndexResult, first: number, last: number, where: str
   }
 }
 
-/** The page count of this file from any cached read of it in the workspace; null when none is cached. */
+/** The page count of this file from the newest cached read of it in the workspace; null when none is cached. */
 async function cachedPageCount(db: Db, workspaceId: string, contentSha256: string): Promise<number | null> {
   const [row] = await db
     .select({ pageCount: sql<number | null>`(${schema.pageRead.read} ->> 'pageCount')::int` })
     .from(schema.pageRead)
     .where(and(eq(schema.pageRead.workspaceId, workspaceId), eq(schema.pageRead.contentSha256, contentSha256)))
+    .orderBy(desc(schema.pageRead.createdAt), desc(schema.pageRead.id))
     .limit(1);
   return row?.pageCount ?? null;
 }
@@ -213,9 +214,12 @@ async function index(job: { id: string; workspaceId: string; subjectId: string }
   const next = last ? last.pageNumber + 1 : 1;
   let path = last?.sectionPathAfter ?? [];
   // Cache keys are clamped to the page count, so the page count is wanted before the first range: from the
-  // revision once a range is stored, else from any cached read of this file. With neither, nothing of the file
-  // is cached, and the first range is read without a cache lookup.
+  // revision once a range is stored, else from the newest cached read of this file. With neither, nothing of the
+  // file is cached, and the first range is read without a cache lookup.
+  // That count is an assumption until the indexer reports its own (`started.pageCount`), checked after each range.
   let pageCount = revision.pageCount ?? (await cachedPageCount(ctx.db, ws, sha256));
+  let pagesStored = last !== null;
+  let recounted = false;
   let pagesRead = revision.pagesRead;
   let pagesOcr = revision.pagesOcr;
   const onEvent = async (_event: IndexerEvent): Promise<void> => {
@@ -229,8 +233,8 @@ async function index(job: { id: string; workspaceId: string; subjectId: string }
   const pending = (first: number): boolean => pageCount === null || (next <= pageCount && first <= pageCount);
   for (let first = Math.floor((next - 1) / range) * range + 1; pending(first); first += range) {
     const rangeStartedAt = Date.now();
-    const lastPage = pageCount === null ? first + range - 1 : Math.min(first + range - 1, pageCount);
-    const where = `on pages ${first}-${lastPage}`;
+    let lastPage = pageCount === null ? first + range - 1 : Math.min(first + range - 1, pageCount);
+    let where = `on pages ${first}-${lastPage}`;
     const keyFor = (last: number): PageReadKey => ({
       contentSha256: sha256, firstPage: first, lastPage: last,
       doclingVersion: versions.doclingVersion, ocrEngine: versions.ocrEngine, readerOptions: versions.readerOptions,
@@ -255,6 +259,30 @@ async function index(job: { id: string; workspaceId: string; subjectId: string }
     }
     if (!sameVersions(result.started.versions, versions)) {
       throw new JobFailure("INDEXER_VERSIONS_CHANGED", `the indexer's versions changed ${where}`, true);
+    }
+    if (pageCount !== null && result.started.pageCount !== pageCount) {
+      // The assumed count came from the revision or from a cached read under another key. Before any page is
+      // stored, the indexer's count is trusted, once. After, the stored ranges were cut to the old count, so the
+      // revision cannot be finished from this file; a second recount means the counts do not settle.
+      if (pagesStored || recounted) {
+        throw new JobFailure("INVALID_INDEXER_RESULT", `the indexer counted ${result.started.pageCount} pages, not ${pageCount}, ${where}`, false);
+      }
+      recounted = true;
+      pageCount = result.started.pageCount;
+      try {
+        await writeRange(ctx.db, ws, revision.id, doc.id, [], [], { pageCount, pagesRead, pagesOcr, warnings: [] });
+      } catch (err) {
+        throw writeFailure(err, `storing the page count ${where}`);
+      }
+      const rangeLast = Math.min(first + range - 1, pageCount);
+      // An answer cut short by a count that was too low is not this range's read, and is neither cached nor stored:
+      // the range is asked for again with its real bounds.
+      if (result.started.firstPage !== first || result.started.lastPage !== rangeLast) {
+        first -= range;
+        continue;
+      }
+      lastPage = rangeLast;
+      where = `on pages ${first}-${lastPage}`;
     }
     pageCount ??= cached?.pageCount ?? result.read?.pageCount ?? result.started.pageCount;
     const clampedLast = Math.min(lastPage, pageCount);
@@ -292,6 +320,7 @@ async function index(job: { id: string; workspaceId: string; subjectId: string }
     } catch (err) {
       throw writeFailure(err, `storing pages ${first}-${lastPage}`);
     }
+    if (pageRows.length > 0) pagesStored = true;
     if (result.pages.length > 0) path = cleanPath(result.pages[result.pages.length - 1]!.sectionPathAfter);
     await ctx.heartbeat();
     await ctx.progress({ stage: "reading", percent: percent(clampedLast) });

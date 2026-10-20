@@ -668,6 +668,70 @@ describe("document.index", () => {
     expect(await pageReadsOf(doc.workspaceId)).toEqual([]);
   });
 
+  /** A cached read of the document under other reader versions: only its page count is ever used. */
+  async function seedOtherRead(doc: { workspaceId: string; id: string }, pageCount: number, doclingVersion: string, createdAt: Date) {
+    const [row] = await ctx.db.select({ sha: schema.document.contentSha256 }).from(schema.document).where(eq(schema.document.id, doc.id));
+    await ctx.db.insert(schema.pageRead).values({
+      id: crypto.randomUUID(), workspaceId: doc.workspaceId, contentSha256: row!.sha!, firstPage: 1, lastPage: Math.min(20, pageCount),
+      doclingVersion, ocrEngine: VERSIONS.ocrEngine, readerOptions: VERSIONS.readerOptions, read: { pageCount }, createdAt,
+    });
+  }
+  const currentReads = async (workspaceId: string) =>
+    (await pageReadsOf(workspaceId)).filter((r) => r.doclingVersion === VERSIONS.doclingVersion).map((r) => [r.firstPage, r.lastPage]);
+
+  it("a page count too low from the newest other cached read is corrected by the indexer, and the cut range is read again", async () => {
+    const doc = await seedDocument();
+    // The newest row wins, whatever order the rows went in.
+    await seedOtherRead(doc, 15, "docling=old-2", new Date("2026-10-02T00:00:00Z"));
+    await seedOtherRead(doc, 60, "docling=old-1", new Date("2026-10-01T00:00:00Z"));
+    const indexer = new FakeIndexer({ pageCount: 45 });
+
+    const job = await run(await seedIndexJob(doc), { indexer, embedder: new CountingEmbedder() });
+
+    expect(job.state).toBe("succeeded");
+    expect(ranges(indexer.indexCalls)).toEqual([[1, 15], [1, 20], [21, 40], [41, 45]]);
+    const [revision] = await revisionsOf(doc.id);
+    expect(revision).toMatchObject({ state: "complete", pageCount: 45, pagesRead: 45 });
+    expect((await pagesOf(revision!.id)).map((p) => p.pageNumber)).toEqual(Array.from({ length: 45 }, (_, i) => i + 1));
+    expect(await chunksOf(revision!.id)).toHaveLength(90);
+    // The read cut at page 15 is not cached.
+    expect(await currentReads(doc.workspaceId)).toEqual([[1, 20], [21, 40], [41, 45]]);
+  });
+
+  it("a page count too high from another cached read is corrected without reading the range again", async () => {
+    const doc = await seedDocument();
+    await seedOtherRead(doc, 60, "docling=old", new Date("2026-10-01T00:00:00Z"));
+    const indexer = new FakeIndexer({ pageCount: 45 });
+
+    const job = await run(await seedIndexJob(doc), { indexer, embedder: new CountingEmbedder() });
+
+    expect(job.state).toBe("succeeded");
+    expect(ranges(indexer.indexCalls)).toEqual([[1, 20], [21, 40], [41, 45]]);
+    expect((await revisionsOf(doc.id))[0]).toMatchObject({ state: "complete", pageCount: 45, pagesRead: 45 });
+    expect(await currentReads(doc.workspaceId)).toEqual([[1, 20], [21, 40], [41, 45]]);
+  });
+
+  it("a page count that changes once pages are stored fails INVALID_INDEXER_RESULT and is not retried", async () => {
+    const doc = await seedDocument();
+    const jobId = await seedIndexJob(doc);
+    const indexer = new FakeIndexer({ pageCount: 45 });
+    indexer.failOn(21, 1);
+    expect((await run(jobId, { indexer, embedder: new CountingEmbedder() })).state).toBe("queued");
+    const [building] = await revisionsOf(doc.id);
+    expect(building).toMatchObject({ state: "building", pageCount: 45, pagesRead: 20 });
+
+    const other = new FakeIndexer({ pageCount: 50 });
+    const job = await run(jobId, { indexer: other, embedder: new CountingEmbedder() });
+
+    expect(job).toMatchObject({ state: "failed", attempt: 2, lastErrorCode: "INVALID_INDEXER_RESULT" });
+    expect(job.lastErrorMessage).toBe("the indexer counted 50 pages, not 45, on pages 21-40");
+    expect(ranges(other.indexCalls)).toEqual([[21, 40]]);
+    const [after] = await revisionsOf(doc.id);
+    expect(after).toMatchObject({ id: building!.id, state: "building", pageCount: 45, pagesRead: 20 });
+    expect(await pagesOf(after!.id)).toHaveLength(20);
+    expect(await currentReads(doc.workspaceId)).toEqual([[1, 20]]);
+  });
+
   it("the job's deadline covers embedding: past it, the next batch is not sent and the job fails INDEX_TIMEOUT", async () => {
     const doc = await seedDocument();
     const embedder = new CountingEmbedder();
