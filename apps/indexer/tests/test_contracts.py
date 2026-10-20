@@ -49,6 +49,10 @@ class StreamFixtureTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(ValidationError):
                 INDEXER_EVENT.validate_python(bad)
 
+    def test_takes_page_unreadable_for_a_page_docling_could_not_read(self):
+        page = next(r for r in lines("stream-range.ndjson") if r["type"] == "page")
+        self.assertEqual(INDEXER_EVENT.validate_python({**page, "text": "", "noneReason": "PAGE_UNREADABLE"}).none_reason, "PAGE_UNREADABLE")
+
 
 class ChunkRequestTests(unittest.TestCase):
     def test_fixture_round_trips(self):

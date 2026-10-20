@@ -1,10 +1,13 @@
 """Reading one page range of a PDF with Docling and RapidOCR.
 
-The converters are built once per process. OCR is on or off for a whole range (the
-worker's OCR budget), so there is one converter for each; each loads its own models
-the first time it reads.
+OCR is on or off for a whole range (the worker's OCR budget). Docling builds one pipeline,
+with its own copy of the layout and TableFormer models, for each set of options, so only
+one converter is kept: when a range needs the other OCR setting, the resident converter
+and its models are dropped before the other is built.
 """
 
+import gc
+import logging
 import threading
 from io import BytesIO
 
@@ -35,9 +38,15 @@ PAGE_TEXT_LAYERS = {ContentLayer.BODY, ContentLayer.FURNITURE}
 # Docling reads the bytes under this name, so the read does not depend on the upload's name.
 STREAM_NAME = "document.pdf"
 
+_log = logging.getLogger(__name__)
+
 
 class ReadCancelled(Exception):
     """The caller set `cancel` (the worker went away); nothing was returned."""
+
+
+def _index_failed(exception_type: str) -> IndexingError:
+    return IndexingError("INDEX_FAILED", f"Reading the range failed: {exception_type}.", True)
 
 
 def _unreadable() -> IndexingError:
@@ -50,7 +59,7 @@ class Reader:
         # The legacy pipelines read the batch size from Docling's settings object; the
         # threaded StandardPdfPipeline that reads PDFs takes it per stage (_options).
         docling_settings.perf.page_batch_size = settings.page_batch
-        self._converters = {ocr_on: self._converter(ocr_on) for ocr_on in (True, False)}
+        self._resident: tuple[bool, DocumentConverter] | None = None  # (ocr_on, converter)
         self._lock = threading.Lock()  # one read at a time
         self.versions = IndexerVersions(
             docling_version=DOCLING_VERSION,
@@ -60,7 +69,19 @@ class Reader:
             tokenizer=settings.embedding_model,
         )
 
-    def _converter(self, ocr_on: bool) -> DocumentConverter:
+    def _converter_for(self, ocr_on: bool) -> DocumentConverter:
+        """The resident converter if it has this OCR setting; otherwise drop it, with its
+        loaded pipelines, and build the other. Called under the lock."""
+        if self._resident is not None and self._resident[0] == ocr_on:
+            return self._resident[1]
+        if self._resident is not None:
+            self._resident[1].initialized_pipelines.clear()
+            self._resident = None
+            gc.collect()  # let the dropped models go before the next set loads
+        self._resident = (ocr_on, self._make_converter(ocr_on))
+        return self._resident[1]
+
+    def _make_converter(self, ocr_on: bool) -> DocumentConverter:
         settings = self._settings
         options = PdfPipelineOptions(
             do_ocr=ocr_on,
@@ -110,29 +131,37 @@ class Reader:
         result = self._convert(pdf, first, last, ocr_on)
         if cancel.is_set():
             raise ReadCancelled()
+        failure: str | None = None
         try:
             return self._range_read(result, first, last, page_count, ocr_on)
         except Exception as error:
-            raise IndexingError("INDEX_FAILED", f"Reading the range failed: {type(error).__name__}.", True) from None
+            failure = type(error).__name__
+        raise _index_failed(failure)
 
     def _convert(self, pdf: bytes, first: int, last: int, ocr_on: bool) -> ConversionResult:
         stream = DocumentStream(name=STREAM_NAME, stream=BytesIO(pdf))
+        # The errors are raised outside the handlers, so they carry no cause or context.
+        unreadable, failure = False, None
         try:
             with self._lock:
-                result = self._converters[ocr_on].convert(stream, raises_on_error=False, page_range=(first, last))
+                result = self._converter_for(ocr_on).convert(stream, raises_on_error=False, page_range=(first, last))
         except StopIteration:  # Docling did not take the bytes for a PDF
-            raise _unreadable() from None
+            unreadable = True
         except Exception as error:
-            raise IndexingError("INDEX_FAILED", f"Reading the range failed: {type(error).__name__}.", True) from None
+            failure = type(error).__name__
+        if unreadable:
+            raise _unreadable()
+        if failure is not None:
+            raise _index_failed(failure)
         if not result.input.valid:
             raise _unreadable()
-        if result.status != ConversionStatus.SUCCESS:
-            # Includes PARTIAL_SUCCESS: a page Docling could not read is not a page with no text.
+        if result.status not in (ConversionStatus.SUCCESS, ConversionStatus.PARTIAL_SUCCESS):
             raise IndexingError("INDEX_FAILED", f"Docling ended the read with status {result.status.value}.", True)
         return result
 
     def _range_read(self, result: ConversionResult, first: int, last: int, page_count: int, ocr_on: bool) -> RangeRead:
         document = result.document
+        failed = _failed_pages(result, first, last)
         heights = {page_no: page.size.height for page_no, page in document.pages.items()}
         cells = {
             page.page_no: [
@@ -163,15 +192,16 @@ class Reader:
             if source is None:  # no cell under it: the item has no text
                 continue
             item_sources[item.self_ref] = source
-            page_nos = sorted({prov.page_no for prov in item.prov if prov.page_no in texts})
-            for page_no in page_nos:
+            page_nos = sorted({prov.page_no for prov in item.prov if prov.page_no in texts and prov.page_no not in failed})
+            # An item counts on a page only where its part there has text.
+            for page_no, text in _page_parts(item, page_nos):
+                if not text:
+                    continue
+                texts[page_no].append(text)
                 if source in ("text_layer", "mixed"):
                     counts[page_no]["text_layer"] += 1
                 if source in ("ocr", "mixed"):
                     counts[page_no]["ocr"] += 1
-            for page_no, text in _page_parts(item, page_nos):
-                if text:
-                    texts[page_no].append(text)
 
         pages = []
         for page_no in range(first, last + 1):
@@ -182,7 +212,9 @@ class Reader:
                     text=text,
                     items_text_layer=counts[page_no]["text_layer"],
                     items_ocr=counts[page_no]["ocr"],
-                    none_reason=_none_reason(text, has_content.get(page_no, False), ocr_on),
+                    none_reason="PAGE_UNREADABLE"
+                    if page_no in failed
+                    else _none_reason(text, has_content.get(page_no, False), ocr_on),
                 )
             )
         return RangeRead(
@@ -195,6 +227,19 @@ class Reader:
             item_sources=item_sources,
             pages=pages,
         )
+
+
+def _failed_pages(result: ConversionResult, first: int, last: int) -> set[int]:
+    """Pages Docling could not read: missing from its pages, or named by one of its errors.
+    A lost page is never recorded as a page with no text. Logs page numbers and categories only."""
+    read = {page.page_no for page in result.pages}
+    categories: dict[int, str] = {n: "missing" for n in range(first, last + 1) if n not in read}
+    for error in result.errors:
+        if error.page_no is not None and first <= error.page_no <= last:
+            categories[error.page_no] = error.category.value
+    for page_no, category in sorted(categories.items()):
+        _log.warning("page %d could not be read (%s)", page_no, category)
+    return set(categories)
 
 
 def _page_parts(item: TextItem | TableItem, page_nos: list[int]) -> list[tuple[int, str]]:

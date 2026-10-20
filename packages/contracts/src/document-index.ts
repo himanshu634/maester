@@ -4,7 +4,7 @@ export const TextSource = z.enum(["text_layer", "ocr", "mixed", "xbrl"]);
 export type TextSource = z.infer<typeof TextSource>;
 export const ChunkKind = z.enum(["prose", "table"]);
 export type ChunkKind = z.infer<typeof ChunkKind>;
-export const PageNoneReason = z.enum(["NO_TEXT", "OCR_FAILED", "OCR_BUDGET"]);
+export const PageNoneReason = z.enum(["NO_TEXT", "OCR_FAILED", "OCR_BUDGET", "PAGE_UNREADABLE"]);
 export type PageNoneReason = z.infer<typeof PageNoneReason>;
 
 /** 1-based page number. */

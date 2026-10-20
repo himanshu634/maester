@@ -11,7 +11,7 @@ from pydantic.alias_generators import to_camel
 
 TextSource = Literal["text_layer", "ocr", "mixed", "xbrl"]
 ChunkKind = Literal["prose", "table"]
-PageNoneReason = Literal["NO_TEXT", "OCR_FAILED", "OCR_BUDGET"]
+PageNoneReason = Literal["NO_TEXT", "OCR_FAILED", "OCR_BUDGET", "PAGE_UNREADABLE"]  # PAGE_UNREADABLE: Docling could not read the page
 PageNumber = Annotated[int, Field(ge=1)]  # 1-based
 Count = Annotated[int, Field(ge=0)]
 

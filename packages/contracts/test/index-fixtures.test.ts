@@ -38,6 +38,11 @@ describe("indexer stream fixtures", () => {
     expect(IndexerEvent.safeParse({ ...chunk, seq: -1 }).success).toBe(false);
   });
 
+  it("takes PAGE_UNREADABLE for a page Docling could not read", () => {
+    const page = lines("stream-range.ndjson").find((l) => l.type === "page")!;
+    expect(IndexerEvent.safeParse({ ...page, text: "", noneReason: "PAGE_UNREADABLE" }).success).toBe(true);
+  });
+
   it("refuses an unknown field instead of dropping it", () => {
     const page = lines("stream-range.ndjson").find((l) => l.type === "page")!;
     const result = lines("stream-range.ndjson").find((l) => l.type === "result")! as { read: Record<string, unknown> };
