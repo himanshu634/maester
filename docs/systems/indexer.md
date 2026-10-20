@@ -123,9 +123,11 @@ A `page` event has `none_reason`. These values do not stop the stream.
 | Value | Cause | Result |
 | --- | --- | --- |
 | `NO_TEXT` | The page is blank. | The page has no text. A revision with only this reason is still `complete`. |
-| `OCR_FAILED` | OCR fails on a scanned page. | The page has no text. |
-| `OCR_BUDGET` | `x-ocr-pages-left` is 0 for a scanned page. | The page has no text. |
+| `OCR_FAILED` | OCR fails on a scanned page, or the page has only pictures and no text. | The page has no text. |
+| `OCR_BUDGET` | `x-ocr-pages-left` is 0 for a scanned page, or for a page that has only pictures. | The page has no text. |
 | `PAGE_UNREADABLE` | Docling cannot read the page. | The page has no text. |
+
+The indexer cannot tell a page with only pictures from a scanned page that OCR cannot read. Thus, a page with only pictures gets `OCR_FAILED` or `OCR_BUDGET`, not `NO_TEXT`, and the revision is `partial`. Many annual reports have such pages.
 
 ## Data
 
@@ -158,7 +160,7 @@ The indexer reads these environment variables.
 The service `models` fetches the weights once, into the volume `models`. The command is `maester-indexer-fetch-models --out /models`. It writes these folders:
 
 - `/models/docling` holds the layout, TableFormer and RapidOCR weights.
-- `/models/embed/Snowflake/snowflake-arctic-embed-l-v2.0` holds the embedding model. Both the indexer and the embedder read it.
+- `/models/embed/Snowflake/snowflake-arctic-embed-l-v2.0` holds the embedding model. Both the indexer and the embedder read it. The command gets only the configuration files, the tokenizer files and the safetensors weights. It does not get the ONNX files.
 - `/models/models.lock.json` holds the lock file.
 
 The option `--docling-only` fetches only the Docling weights. The CI workflow uses it. The services `indexer` and `embedder` mount the volume as read-only and set `HF_HUB_OFFLINE` to `1`.
