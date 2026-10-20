@@ -18,6 +18,7 @@ docker compose up --build
 | Indexer | `apps/indexer` | Python | Running: stateless page reader and chunker the worker calls ([README](../apps/indexer/README.md), [description](systems/indexer.md)) |
 | Web client | `apps/web` | SvelteKit, static | Running: public pages at `/`, sign-in and recovery pages (`/login`, `/signup`, `/verify-email`, `/forgot-password`, `/reset-password`), `/terminal`; investor journeys planned ([README](../apps/web/README.md)) |
 | CLI | `apps/cli` | Python, Typer | Running: `maester ingest`, `list-docs`, `ask` |
+| Evaluation harness | `apps/eval` | Python, Typer | Running: `maester-eval live`, `export`, `freeze`, `report` ([README](../apps/eval/README.md)) |
 | Document engine | `packages/financial-engine` | Python | Running: the LangGraph extraction workflow ([spec](EXTRACTION.md)), plus the CLI's extraction, checks, cache and Q&A |
 | API contracts | `packages/contracts` | TypeScript, Zod | Running: shared request and response shapes ([README](../packages/contracts/README.md)) |
 | Database | `packages/db` | TypeScript, Drizzle | Running: schema, queries, migrations |
@@ -356,7 +357,32 @@ The prototype was a single package. The engine kept its `pdf_financial_qa` impor
 
 `data/cache/*.json` and `.env` keep their paths and contents; no data migration was performed.
 
-## 13. Known limitations
+## 13. The evaluation harness
+
+`maester-eval` measures the extraction workflow on real filings; nothing about how figures are read changes without a run (`CLAUDE.md`, "Financial figures"). `live` calls Gemini on Vertex AI, so it needs `GOOGLE_CLOUD_PROJECT` in `.env` and Application Default Credentials, as in section 9, and can incur charges. Public filings go under `data/eval/corpus/<company-folder>/<name>.pdf` (git-ignored) and are listed in `data/eval/manifest.json`:
+
+```json
+{
+  "filings": [
+    { "file": "synthetic-cements/ar-2025-26.pdf", "company": "Synthetic Cements Limited",
+      "kind": "annual_report", "period_end": "2026-03-31", "set": "dev" }
+  ]
+}
+```
+
+`kind` is `annual_report` or `financial_results`; `period_end` is written `YYYY-MM-DD`; `set` is `dev` or `heldout`, and a company (and its corpus folder) is in one set only. A filing may also carry `stratum` (`large`, `mid`, `small` or `financials`), `out_of_scope` (why a baseline leaves it out: `live` skips it unless named with `--only`, and `report` lists it under "Out of scope" instead of counting it as not run) and `printed_pages_per_page` (`2` when each PDF page is a spread of two printed pages). Then:
+
+```bash
+uv run --locked maester-eval live --set dev --label baseline   # costs model calls; --only <id> for one filing
+uv run --locked maester-eval export --run latest               # sheets to data/eval/sheets/, never overwritten without --force
+# correct the sheets against the PDFs: concept, gold_text, gold_scale, gold_page, verified=yes
+uv run --locked maester-eval freeze synthetic-cements/ar-2025-26 --run latest
+uv run --locked maester-eval report --run latest --set dev --to docs/eval/2026-10-16-baseline.md
+```
+
+Keep every sheet column as text and every date as `YYYY-MM-DD` in your spreadsheet application. `freeze --run` reads the machine columns (`statement`, `basis`, `section`, `label`, `period_label`, `period_end`, `printed`, `scale_factor`, `page`) back from the run's artefact, so a cell you edit there must still agree with it; put a correction in the matching `gold_` column (`gold_text`, `gold_scale`, `gold_page`, `gold_period_end`) instead. The model comes from the same variables as the extractor (`GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION`, `GEMINI_MODEL`). The console shows ids, codes and counts; figures are only in the files. The full description is [System: evaluation harness](systems/eval.md).
+
+## 14. Known limitations
 
 The document engine and CLI carry the prototype's limits, and the hosted services are an early base. Both are recorded here rather than implied by the code.
 

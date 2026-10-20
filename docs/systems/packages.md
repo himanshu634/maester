@@ -4,7 +4,7 @@
 
 | Term | Meaning |
 | --- | --- |
-| App | A directory under `apps/` that runs as a program: [`api`](api.md), [`worker`](worker.md), [`extractor`](extractor.md), [`web`](web.md) or [`cli`](cli.md). |
+| App | A directory under `apps/` that runs as a program: [`api`](api.md), [`worker`](worker.md), [`extractor`](extractor.md), [`web`](web.md), [`cli`](cli.md) or [`eval`](eval.md). |
 | Package | A directory under `packages/` with code for apps to import. It has a `package.json` (TypeScript) or a `pyproject.toml` (Python). |
 | Validator | A Zod object that `@maester/contracts` exports. It parses JSON and refuses JSON with a wrong shape. |
 | Database schema | The Drizzle table definitions in `packages/db/src/schema`. |
@@ -41,7 +41,7 @@
 
 ## Function
 
-The shared packages hold the code that more than one app uses. Six TypeScript packages give the API contracts, the database, job dispatch, file storage, market data and the lint settings. One Python package, the financial engine, classifies PDF filings and extracts their financial statements. The `api` and `worker` apps use the TypeScript packages. The `extractor` and `cli` apps use the Python package.
+The shared packages hold the code that more than one app uses. Six TypeScript packages give the API contracts, the database, job dispatch, file storage, market data and the lint settings. One Python package, the financial engine, classifies PDF filings and extracts their financial statements. The `api` and `worker` apps use the TypeScript packages. The `extractor`, `cli` and `eval` apps use the Python package.
 
 A seventh TypeScript package, `packages/financial-engine-ts`, is empty. For the full system, see [Maester](maester.md).
 
@@ -72,7 +72,7 @@ The name of the package in `packages/financial-engine-ts` is `@maester/financial
 | `@maester/storage` | `apps/api`, `apps/worker` | `apps/api/src/store.ts`, `apps/worker/src/store.ts` |
 | `@maester/market` | `apps/api`, `apps/worker` | `apps/api/src/routes/connections.ts`, `apps/worker/src/market/build.ts` |
 | `@maester/document-index` | `apps/api`, `apps/worker` | `apps/api/src/routes/search.ts`, `apps/worker/src/jobs/document-index.ts` |
-| `maester-financial-engine` | `apps/extractor`, `apps/cli` | `apps/extractor/src/maester_extractor/app.py`, `apps/cli/src/maester_cli/cli.py` |
+| `maester-financial-engine` | `apps/extractor`, `apps/cli`, `apps/eval` | `apps/extractor/src/maester_extractor/app.py`, `apps/cli/src/maester_cli/cli.py`, `apps/eval/src/maester_eval/runner.py` |
 | `@maester/financial-engine` | No app | Only its own `package.json` has this name |
 
 The `web` app does not import `@maester/contracts`. Four files keep a copy of a subset of the validators as TypeScript types:
@@ -228,9 +228,10 @@ The package reads no environment variable. The apps give it the URL and the mode
 | Module | Main exports | Used by |
 | --- | --- | --- |
 | `pdf_financial_qa.classify` | `run_classification`, `ClassifySettings`, `ClassificationModel`, `ClassificationResult`, `RULES_VERSION` | `apps/extractor` |
-| `pdf_financial_qa.workflow` | `run_extraction`, `WorkflowSettings`, `ExtractionModel`, `ExtractionResult`, `ExtractionError`, `PIPELINE_VERSION` | `apps/extractor` |
+| `pdf_financial_qa.workflow` | `run_extraction`, `WorkflowSettings`, `ExtractionModel`, `ExtractionResult`, `ExtractionError`, `PIPELINE_VERSION` | `apps/extractor`, `apps/eval` |
 | `classify.contracts`, `workflow.contracts` | `CLASSIFY_RESPONSE`, `EXTRACTOR_EVENT` and the Pydantic classes of the wire format | `apps/extractor` |
-| `classify.model`, `workflow.model` | `GeminiClassificationModel`, `GeminiExtractionModel` | `apps/extractor` |
+| `classify.model`, `workflow.model` | `GeminiClassificationModel`, `GeminiExtractionModel` | `apps/extractor`, `apps/eval` (`GeminiExtractionModel` only) |
+| `workflow.pdf`, `workflow.values` | `PdfDocument`, `parse_reported`, `parse_label_date`, `format_decimal` | `apps/eval` |
 | `config`, `extraction`, `qa`, `storage` | `Settings`, `extract`, `ask`, `hash_pdf`, `load`, `save`, `list_cached` | `apps/cli` |
 
 The Pydantic classes in `classify.contracts` and `workflow.contracts` are a copy of the TypeScript validators in `@maester/contracts`. The same fixtures test the two copies. The package needs Python 3.11 or later.
@@ -571,7 +572,7 @@ The Python tests are in the root `tests/` folder, not in the package. They use a
    uv run --locked python -m unittest discover -s tests -v
    ```
 
-This command also runs the tests of `apps/extractor` and `apps/cli`. The engine tests are `test_classification_*.py` and `test_extraction_*.py`.
+This command also runs the tests of `apps/extractor`, `apps/cli` and `apps/eval`. The engine tests are `test_classification_*.py` and `test_extraction_*.py`.
 
 ### To lint and type-check `@maester/config` and `@maester/financial-engine`
 
@@ -775,6 +776,7 @@ CAUTION: Do not change a migration that a database already applied. Add a new mi
 - [`apps/worker/src/jobs/document-verify.ts`](../../apps/worker/src/jobs/document-verify.ts)
 - [`apps/extractor/src/maester_extractor/app.py`](../../apps/extractor/src/maester_extractor/app.py)
 - [`apps/cli/src/maester_cli/cli.py`](../../apps/cli/src/maester_cli/cli.py)
+- [`apps/eval/src/maester_eval/runner.py`](../../apps/eval/src/maester_eval/runner.py)
 - [`tests/test_classification_rules.py`](../../tests/test_classification_rules.py)
 - [`tests/test_classification_runner.py`](../../tests/test_classification_runner.py)
 - [`tests/test_classification_contracts.py`](../../tests/test_classification_contracts.py)

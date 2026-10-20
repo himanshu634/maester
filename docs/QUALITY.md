@@ -8,6 +8,8 @@ The repository currently includes offline regression checks for the package migr
 
 Build a permissioned corpus with digital and scanned reports, parenthesized negatives, multiple units, fiscal-year changes, consolidated/standalone variants, restatements, rotated pages, multi-page tables and note references. Include missing values and superficially plausible but incorrect arithmetic. Separate development examples from a held-out evaluation set.
 
+The corpus, its manifest, the labelling sheets and the gold set live under `data/eval/`, and `apps/eval` (`maester-eval`) scores a run against them; the reports are committed under `docs/eval/`. The design is [financial data layer](superpowers/specs/2026-10-15-financial-data-layer-design.md), §9.
+
 Initial proposed size: 30 documents with at least 500 manually labeled material facts and 150 research questions. Stratify results by format, company type and reporting basis. Publish denominators, error definitions and confidence intervals where meaningful; do not report a single “AI accuracy” number.
 
 Label concept, raw value, normalized value, sign, period, units, basis, dimensions and source page. Answer labels identify supported claims, required calculations and acceptable abstention. Have a second reviewer adjudicate disagreements for material values before adding them to the gold set. Training/prompt examples must not also count as held-out successes.

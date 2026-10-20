@@ -2842,10 +2842,10 @@ Copy the PDFs into `data/eval/corpus/<company-folder>/<name>.pdf` (one folder pe
 
 - [ ] **Step 2: Write the manifest**
 
-Fill `data/eval/manifest.json` with one entry per PDF (`file`, `company` as printed on the filing, `kind`, `period_end`, `set`). Check it:
+Fill `data/eval/manifest.json` with one entry per PDF (`file`, `company` as printed on the filing, `kind`, `period_end` as `YYYY-MM-DD`, `set`). Add `stratum` (`large`, `mid`, `small` or `financials`) to a filing, `out_of_scope` (the reason) to a filing the baseline should leave out, such as a bank, and `printed_pages_per_page: 2` to a PDF of two-page spreads. Check it:
 
 ```bash
-uv run --locked python -c "from maester_eval.manifest import load_manifest, missing_files; from maester_eval.paths import DEFAULT; m = load_manifest(DEFAULT.manifest); print(len(m.filings), 'filings;', 'missing:', missing_files(m, DEFAULT.corpus))"
+uv run --locked python -c "from maester_eval.manifest import load_manifest, missing_files; from maester_eval.paths import DEFAULT; m = load_manifest(DEFAULT.manifest); print(len(m.filings), 'filings;', 'missing:', missing_files(m.filings, DEFAULT.corpus))"
 ```
 
 Expected: the count, and `missing: []`.
@@ -2863,23 +2863,27 @@ Expected: an artefact and a sheet; the console shows `<id>: complete in …s, N 
 
 ```bash
 uv run --locked maester-eval live --set dev --label baseline
-uv run --locked maester-eval export --run latest
+uv run --locked maester-eval export --run latest --force
 ```
 
-This costs about ten model calls per annual report and takes minutes per filing; run it in the background and read the console afterwards.
+`--force` matters when the smoke filing of Step 3 is in `dev`: without it its sheet from the smoke run is kept, and the baseline sheet must come from the baseline run. Nothing is labelled yet, so nothing is lost; never repeat the command with `--force` after Step 5 starts.
+
+This costs about ten model calls for a report under 60 pages, more for a long one (one `locate` call per 30 pages, plus corrections), and takes minutes per filing; run it in the background and read the console afterwards.
 
 - [ ] **Step 5: You: label the sheets**
+
+Keep every column as text in your spreadsheet application (import as text, or use Numbers/LibreOffice with no auto-conversion); dates stay `YYYY-MM-DD`.
 
 For each sheet under `data/eval/sheets/`, open the PDF beside it. For the rows marked `material` first, and any other line you care about (aim for 15–25 facts per annual report: the totals, revenue, profit before and after tax, EPS, cash, borrowings, net cash from operating activities, and the same for standalone where it exists):
 
 1. Put the concept id in `concept` (the ids are in `packages/contracts/concepts.json`).
 2. Compare `printed` with the page. If it is wrong, type the figure exactly as the page prints it in `gold_text`.
 3. Check the unit note of the statement. If `scale_factor` is wrong or blank, put `10000000` (crore), `100000` (lakh), `1000` (thousand) or `1` (actuals) in `gold_scale`.
-4. Check `page` (counted from 1). If it is wrong, put the right page in `gold_page`.
-5. If `period_end` is blank or wrong, put the ISO date in `gold_period_end`.
+4. Check `page` (counted from 1). If it is wrong, put the right page in `gold_page`. For a filing whose PDF pages are spreads of two printed pages (`printed_pages_per_page` 2 in the manifest), the `printed_pages` column shows the printed pages on that PDF page, such as `3–4`; `page` and `gold_page` stay PDF page numbers.
+5. `period_end` is the line's one date (the as-at date on a balance-sheet line). A blank one means an undated column: the workflow could not read a date from the column header. If it is blank or wrong, put the ISO date in `gold_period_end`.
 6. For a subtotal you checked by hand, put `yes` or `no` in `adds_up`.
 7. Put `yes` in `verified`.
-8. A line the pipeline missed: add a row at the end with `statement`, `basis`, `section`, `label`, `period_label`, `gold_text`, `gold_scale`, `gold_page`, `concept`, `verified`.
+8. A line the pipeline missed, or one whose `statement`, `basis`, `section`, `label` or `period_label` is wrong (these five have no `gold_` column, so leave that row unverified): add a row at the end with `statement`, `basis`, `section`, `label`, `period_label`, `gold_text`, `gold_scale`, `gold_page`, `concept`, `verified`.
 
 Material values (totals, PAT, revenue, cash, borrowings, EPS) get a second look on another day before freezing, as `QUALITY.md` §2 asks.
 
@@ -2892,6 +2896,8 @@ uv run --locked maester-eval report --run latest --set dev --to docs/eval/$(date
 
 Expected: a gold file per dev filing; the report on the console as `exact match N%`, and the Markdown under `docs/eval/`. Read the Mismatches appendix once: a mismatch that is a labelling slip goes back to the sheet (`freeze --force` after the fix); a real misread stays, that is the baseline.
 
+A row refused as "no longer matches the artefact" means a machine column was edited (`statement`, `basis`, `section`, `label`, `period_label`, `period_end`, `printed`, `scale_factor` or `page`). Put the cell back as it was and move the correction to its `gold_` column (`gold_text`, `gold_scale`, `gold_page` or `gold_period_end`); the first five have none, so restore them, and if the value was wrong leave the row unverified and add the corrected row by hand (Step 5, point 8). If you ran `live` again after the export, give the export's run folder name in place of `latest`.
+
 - [ ] **Step 7: The held-out set, then seal it**
 
 ```bash
@@ -2901,6 +2907,8 @@ uv run --locked maester-eval export --run latest
 for id in $(uv run --locked python -c "from maester_eval.manifest import load_manifest; from maester_eval.paths import DEFAULT; print(' '.join(f.id for f in load_manifest(DEFAULT.manifest).select('heldout')))"); do uv run --locked maester-eval freeze "$id" --run latest || break; done
 uv run --locked maester-eval report --run latest --set heldout --to docs/eval/$(date -u +%F)-baseline-heldout.md
 ```
+
+A row refused as "no longer matches the artefact" here means a machine column was edited: move the correction to its `gold_` column, as in Step 6.
 
 From here on, `heldout` is run only to decide whether a change lands, never while tuning.
 

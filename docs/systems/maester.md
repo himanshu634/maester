@@ -51,12 +51,13 @@ Maester also shows a market mood. It calculates the market mood from daily marke
 | [Indexer](indexer.md) | `apps/indexer` | Python HTTP service. It answers `POST /v1/index` and `POST /v1/chunk` for the worker. It reads the pages of a PDF with Docling and cuts them into chunks. It does not write data. |
 | [Web client](web.md) | `apps/web` | Static SvelteKit site. In a container, nginx serves it and sends `/api/auth/`, `/v1/` and `/dev/` to the API. |
 | [CLI](cli.md) | `apps/cli` | Python command `maester` with `ingest`, `ask` and `list-docs`. It keeps a JSON cache in `data/cache`. It does not use the API or the database. |
+| [Evaluation harness](eval.md) | `apps/eval` | Python command `maester-eval` with `live`, `export`, `freeze` and `report`. It runs the extraction workflow over the public filings in `data/eval/corpus` and scores a run against the gold files in `data/eval/gold`. It does not use the API or the database. |
 | [Contracts](packages.md) | `packages/contracts` | Zod shapes for requests, responses and the wire format of the extractor. |
 | [Database package](packages.md) | `packages/db` | Drizzle schema, queries and migrations for Postgres. |
 | [Jobs package](packages.md) | `packages/jobs` | Job creation, the dispatchers and the intake decision. The API and the worker use it. |
 | [Storage package](packages.md) | `packages/storage` | The `ObjectStore` interface and its drivers. |
 | [Market package](packages.md) | `packages/market` | The clients for Dhan and FRED, and the encryption of the secrets of market connections. The API and the worker use it. |
-| [Financial engine](packages.md) | `packages/financial-engine` | Python engine with the namespace `pdf_financial_qa`. The extractor and the CLI use it. |
+| [Financial engine](packages.md) | `packages/financial-engine` | Python engine with the namespace `pdf_financial_qa`. The extractor, the CLI and the evaluation harness use it. |
 | [TypeScript engine](packages.md) | `packages/financial-engine-ts` | A placeholder. It exports only `ENGINE_VERSION`. |
 | [Shared configuration](packages.md) | `packages/config` | The base TypeScript and ESLint configuration. |
 | Infrastructure | `infra` | Bash scripts that prepare a Google Cloud project and deploy the API, the worker and the web client to Cloud Run. |
@@ -65,7 +66,7 @@ The repository has three package managers:
 
 - The pnpm workspace at the root holds `apps/api`, `apps/worker` and `packages/*`. Turborepo runs its scripts.
 - `apps/web` is a separate pnpm project with its own lockfile. A root `pnpm install` does not install it.
-- The uv workspace holds `apps/cli`, `apps/extractor` and `packages/financial-engine`.
+- The uv workspace holds `apps/cli`, `apps/eval`, `apps/extractor` and `packages/financial-engine`.
 - `apps/indexer` is a separate uv project with its own `uv.lock`, because Docling needs torch.
 
 ## Operation
@@ -238,7 +239,7 @@ Maester has no separate queue in the local stack. The `job` table holds the stat
 | Google OAuth | API | Sign-in with Google. It is off when `GOOGLE_CLIENT_ID` has no value. |
 | Resend | API | Confirmation and reset mail when `MAIL_DRIVER` is `resend`. |
 | Hugging Face | `models` service | The weights, one time. Nothing is fetched at run time. |
-| Gemini on Vertex AI | Extractor, CLI | Classification, extraction and the answers of the CLI. |
+| Gemini on Vertex AI | Extractor, CLI, evaluation harness | Classification, extraction and the answers of the CLI. The `live` command of the evaluation harness runs extraction. |
 | Cloud Storage | API, worker | PDFs when `STORAGE_DRIVER` is `gcs`. |
 | Cloud Tasks | API, worker | Dispatch when `DISPATCH_MODE` is `cloud-tasks`. In `queue` mode, Postgres does this work. |
 | Cloud Run, Cloud SQL, Secret Manager, Artifact Registry | `infra` scripts | Deployment of the API, the worker and the web client. |
@@ -490,7 +491,7 @@ CAUTION: `pnpm stack:reset` deletes the `pgdata` and `blobs` volumes. Use `pnpm 
 - [`packages/market/src/secrets.ts`](../../packages/market/src/secrets.ts), [`packages/market/src/connections.ts`](../../packages/market/src/connections.ts), [`packages/db/src/schema/market.ts`](../../packages/db/src/schema/market.ts), [`packages/db/src/queries/market.ts`](../../packages/db/src/queries/market.ts)
 - [`apps/web/src/lib/market-mood/client.ts`](../../apps/web/src/lib/market-mood/client.ts), [`apps/web/src/lib/market-mood/view.ts`](../../apps/web/src/lib/market-mood/view.ts), [`apps/web/src/lib/components/market-mood/MarketMoodPage.svelte`](../../apps/web/src/lib/components/market-mood/MarketMoodPage.svelte), [`apps/web/src/lib/settings/client.ts`](../../apps/web/src/lib/settings/client.ts), [`apps/web/src/lib/content/settings.ts`](../../apps/web/src/lib/content/settings.ts)
 - [`apps/web/src/lib/documents/client.ts`](../../apps/web/src/lib/documents/client.ts), [`apps/web/src/lib/documents/intake.ts`](../../apps/web/src/lib/documents/intake.ts), [`apps/web/src/lib/components/documents/DocumentsPage.svelte`](../../apps/web/src/lib/components/documents/DocumentsPage.svelte), [`apps/web/src/lib/terminal/pages.ts`](../../apps/web/src/lib/terminal/pages.ts)
-- [`apps/cli/src/maester_cli/cli.py`](../../apps/cli/src/maester_cli/cli.py), [`packages/financial-engine/src/pdf_financial_qa/config.py`](../../packages/financial-engine/src/pdf_financial_qa/config.py)
+- [`apps/cli/src/maester_cli/cli.py`](../../apps/cli/src/maester_cli/cli.py), [`packages/financial-engine/src/pdf_financial_qa/config.py`](../../packages/financial-engine/src/pdf_financial_qa/config.py), [`apps/eval/src/maester_eval/cli.py`](../../apps/eval/src/maester_eval/cli.py)
 - [`packages/jobs/src/create.ts`](../../packages/jobs/src/create.ts), [`packages/jobs/src/dispatch.ts`](../../packages/jobs/src/dispatch.ts), [`packages/jobs/src/intake.ts`](../../packages/jobs/src/intake.ts)
 - [`packages/db/src/schema`](../../packages/db/src/schema), [`packages/db/src/queries/waitlist.ts`](../../packages/db/src/queries/waitlist.ts), [`packages/db/package.json`](../../packages/db/package.json), [`packages/db/src/migrate-cli.ts`](../../packages/db/src/migrate-cli.ts)
 - [`packages/storage/src/index.ts`](../../packages/storage/src/index.ts), [`packages/storage/src/gcs.ts`](../../packages/storage/src/gcs.ts), [`packages/storage/src/disk.ts`](../../packages/storage/src/disk.ts), [`packages/financial-engine-ts/src/index.ts`](../../packages/financial-engine-ts/src/index.ts)

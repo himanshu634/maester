@@ -279,12 +279,12 @@ CAUTION: Use `--force` only when you want to replace the result. The `ingest --f
 ## Limits
 
 - The CLI sends a PDF in one request, and only up to 15 MiB. It cannot divide a PDF into batches of pages (`extraction.py:40-48`).
-- The code does not measure if the full text is complete. A long PDF can be too large for the output limit of the model (`docs/DEVELOPMENT.md` section 13).
+- The code does not measure if the full text is complete. A long PDF can be too large for the output limit of the model (`docs/DEVELOPMENT.md` section 14).
 - The checks find line items through the words in their labels. A component with no value for a period counts as zero (`validation.py:1-9`, `validation.py:38-41`).
 - A clean check is not proof that the extraction is correct (`validation.py:1-9`).
-- The answers of `ask` come from the model, with no fixed calculation and no check of citations (`qa.py`, `docs/DEVELOPMENT.md` section 13).
+- The answers of `ask` come from the model, with no fixed calculation and no check of citations (`qa.py`, `docs/DEVELOPMENT.md` section 14).
 - The `ask` command uses one result for each question. It cannot use two or more results together (`cli.py:71-83`).
-- The hash has only 16 characters. The cache has no version field, no tenant boundary and no control of concurrent writes (`storage.py`, `docs/DEVELOPMENT.md` section 13).
+- The hash has only 16 characters. The cache has no version field, no tenant boundary and no control of concurrent writes (`storage.py`, `docs/DEVELOPMENT.md` section 14).
 - The CLI has no command to delete a result from the cache (`cli.py`).
 
 ## Sources
@@ -305,5 +305,5 @@ CAUTION: Use `--force` only when you want to replace the result. The `ingest --f
 - [.env.example](../../.env.example)
 - [.gitignore](../../.gitignore)
 - [.github/workflows/check.yml](../../.github/workflows/check.yml)
-- [docs/DEVELOPMENT.md](../DEVELOPMENT.md), sections 9, 12 and 13
+- [docs/DEVELOPMENT.md](../DEVELOPMENT.md), sections 9, 12 and 14
 - [CONTRIBUTING.md](../../CONTRIBUTING.md)
