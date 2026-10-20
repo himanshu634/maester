@@ -41,10 +41,55 @@ function indexerFailure(err: unknown, what: string): unknown {
   return err;
 }
 
-/** A database error that may carry page text in its parameters (drizzle quotes them), kept to its SQLSTATE. */
+/** The codes the index queries in @maester/db throw; they carry no text. */
+const QUERY_CODES = new Set(["INDEX_REVISION_NOT_FOUND", "REVISION_DOCUMENT_MISMATCH", "REVISION_NOT_BUILDING", "CHUNK_NOT_IN_WORKSPACE"]);
+
+/**
+ * A write that failed. A query's own code is kept (retried: a revision deleted by another job's
+ * completion is started again). Any other error may quote the page text or the vectors in its
+ * parameters (drizzle's message lists them), so it is kept to its SQLSTATE.
+ */
 function writeFailure(err: unknown, what: string): Error {
-  const state = (err as { cause?: { code?: unknown } }).cause?.code;
-  return new Error(`${what} failed${typeof state === "string" ? ` (SQLSTATE ${state})` : ""}`, { cause: err });
+  if (err instanceof Error && QUERY_CODES.has(err.message) && err.cause === undefined) {
+    return new JobFailure(err.message, `${err.message} ${what}`, true);
+  }
+  const e = err as { code?: unknown; cause?: { code?: unknown } };
+  const state = typeof e.cause?.code === "string" ? e.cause.code : typeof e.code === "string" ? e.code : null;
+  return new Error(`${what} failed${state ? ` (SQLSTATE ${state})` : ""}`, { cause: err });
+}
+
+/** Postgres refuses U+0000 in text and in jsonb; a PDF with a broken ToUnicode map can still produce it. */
+const clean = (text: string): string => text.replaceAll("\u0000", "");
+const cleanPath = (path: string[]): string[] => path.map(clean);
+
+/** Every string of a JSON value, keys included, without U+0000. */
+function cleanJson(value: unknown): unknown {
+  if (typeof value === "string") return clean(value);
+  if (Array.isArray(value)) return value.map(cleanJson);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [clean(k), cleanJson(v)]));
+  }
+  return value;
+}
+
+/** Page numbers must be exactly first..last; anything else is not a read of the range asked for. */
+function checkPages(result: IndexResult, first: number, last: number, where: string): void {
+  const numbers = result.pages.map((p) => p.pageNumber);
+  const exact = numbers.length === last - first + 1 && numbers.every((n, i) => n === first + i);
+  const chunksInside = result.chunks.every((c) => c.pageNumber >= first && c.pageNumber <= last);
+  if (!exact || !chunksInside) {
+    throw new JobFailure("INVALID_INDEXER_RESULT", `the indexer did not answer with exactly pages ${first}-${last} ${where}`, false);
+  }
+}
+
+/** The page count of this file from any cached read of it in the workspace; null when none is cached. */
+async function cachedPageCount(db: Db, workspaceId: string, contentSha256: string): Promise<number | null> {
+  const [row] = await db
+    .select({ pageCount: sql<number | null>`(${schema.pageRead.read} ->> 'pageCount')::int` })
+    .from(schema.pageRead)
+    .where(and(eq(schema.pageRead.workspaceId, workspaceId), eq(schema.pageRead.contentSha256, contentSha256)))
+    .limit(1);
+  return row?.pageCount ?? null;
 }
 
 async function summary(db: Db, revision: IndexRevisionRow): Promise<DocumentIndexResult> {
@@ -67,7 +112,7 @@ async function summary(db: Db, revision: IndexRevisionRow): Promise<DocumentInde
 }
 
 /** Embeds the revision's chunks that have no vector for the model yet, longest first within each round. */
-async function embedPending(ctx: JobContext, embedder: Embedder, revision: IndexRevisionRow): Promise<number> {
+async function embedPending(ctx: JobContext, embedder: Embedder, revision: IndexRevisionRow, checkTime: () => void): Promise<number> {
   const batch = ctx.env.EMBED_BATCH;
   let embedded = 0;
   for (;;) {
@@ -77,6 +122,7 @@ async function embedPending(ctx: JobContext, embedder: Embedder, revision: Index
       .map((c) => ({ id: c.id, text: contextualize(c.sectionPath, c.text) }))
       .sort((a, b) => b.text.length - a.text.length);
     for (let i = 0; i < inputs.length; i += batch) {
+      checkTime();
       const part = inputs.slice(i, i + batch);
       let vectors: number[][];
       try {
@@ -88,7 +134,11 @@ async function embedPending(ctx: JobContext, embedder: Embedder, revision: Index
       if (vectors.length !== part.length) {
         throw new JobFailure("EMBEDDING_FAILED", `the embedder answered ${vectors.length} vectors for ${part.length} chunks`, true);
       }
-      await insertEmbeddings(ctx.db, revision.workspaceId, revision.embeddingModel, part.map((c, j) => ({ chunkId: c.id, embedding: vectors[j]! })));
+      try {
+        await insertEmbeddings(ctx.db, revision.workspaceId, revision.embeddingModel, part.map((c, j) => ({ chunkId: c.id, embedding: vectors[j]! })));
+      } catch (err) {
+        throw writeFailure(err, "storing embeddings");
+      }
       embedded += part.length;
       await ctx.heartbeat();
     }
@@ -100,11 +150,13 @@ async function index(job: { id: string; workspaceId: string; subjectId: string }
   if (!indexer || !embedder) throw new JobFailure("INDEXER_NOT_CONFIGURED", "INDEXER_URL or EMBEDDER_URL is not set on the worker", false);
   const startedAt = Date.now();
   const deadline = startedAt + ctx.env.INDEX_TIMEOUT_SECONDS * 1000;
-  const signal = (): AbortSignal => {
+  const timeLeft = (): number => {
     const left = deadline - Date.now();
     if (left <= 0) throw new JobFailure("INDEX_TIMEOUT", `the index job ran past ${ctx.env.INDEX_TIMEOUT_SECONDS} seconds`, true);
-    return AbortSignal.timeout(left);
+    return left;
   };
+  const signal = (): AbortSignal => AbortSignal.timeout(timeLeft());
+  const checkTime = (): void => void timeLeft();
   const model = ctx.env.EMBEDDING_MODEL;
   const ws = job.workspaceId;
 
@@ -160,13 +212,17 @@ async function index(job: { id: string; workspaceId: string; subjectId: string }
   const last = await lastStoredPage(ctx.db, ws, revision.id);
   const next = last ? last.pageNumber + 1 : 1;
   let path = last?.sectionPathAfter ?? [];
-  let pageCount = revision.pageCount;
+  // Cache keys are clamped to the page count, so the page count is wanted before the first range: from the
+  // revision once a range is stored, else from any cached read of this file. With neither, nothing of the file
+  // is cached, and the first range is read without a cache lookup.
+  let pageCount = revision.pageCount ?? (await cachedPageCount(ctx.db, ws, sha256));
   let pagesRead = revision.pagesRead;
   let pagesOcr = revision.pagesOcr;
   const onEvent = async (_event: IndexerEvent): Promise<void> => {
     await ctx.heartbeat();
   };
-  await ctx.progress({ stage: "reading", percent: pageCount ? Math.floor(((next - 1) / pageCount) * 90) : 0 });
+  const percent = (pagesDone: number): number => (pageCount && pageCount > 0 ? Math.floor((Math.min(pagesDone, pageCount) / pageCount) * 90) : 0);
+  await ctx.progress({ stage: "reading", percent: percent(next - 1) });
 
   // Ranges sit at fixed multiples of INDEX_PAGE_RANGE from page 1, so a retry or a rebuild asks for the same cache keys.
   // When every page is stored (a retry after an embedder failure), no range is read.
@@ -175,11 +231,11 @@ async function index(job: { id: string; workspaceId: string; subjectId: string }
     const rangeStartedAt = Date.now();
     const lastPage = pageCount === null ? first + range - 1 : Math.min(first + range - 1, pageCount);
     const where = `on pages ${first}-${lastPage}`;
-    const key: PageReadKey = {
-      contentSha256: sha256, firstPage: first, lastPage,
+    const keyFor = (last: number): PageReadKey => ({
+      contentSha256: sha256, firstPage: first, lastPage: last,
       doclingVersion: versions.doclingVersion, ocrEngine: versions.ocrEngine, readerOptions: versions.readerOptions,
-    };
-    const stored = await getPageRead(ctx.db, ws, key);
+    });
+    const stored = pageCount === null ? null : await getPageRead(ctx.db, ws, keyFor(lastPage));
     const parsed = stored ? RangeRead.safeParse(stored) : null;
     const cached = parsed?.success ? parsed.data : null;
 
@@ -200,30 +256,33 @@ async function index(job: { id: string; workspaceId: string; subjectId: string }
     if (!sameVersions(result.started.versions, versions)) {
       throw new JobFailure("INDEXER_VERSIONS_CHANGED", `the indexer's versions changed ${where}`, true);
     }
-    // A read made with OCR off for the budget is not cached: a later build with budget left reads it with OCR.
-    if (!cached && result.read?.ocrOn) {
+    pageCount ??= cached?.pageCount ?? result.read?.pageCount ?? result.started.pageCount;
+    const clampedLast = Math.min(lastPage, pageCount);
+    checkPages(result, first, clampedLast, where);
+    // Not cached: a read made with OCR off for the budget (a later build with budget left reads it with OCR), and
+    // a read with a page Docling failed on (the failure may pass; it must not be frozen into the cache).
+    if (!cached && result.read?.ocrOn && !result.read.pages.some((p) => p.noneReason === "PAGE_UNREADABLE")) {
       try {
-        await putPageRead(ctx.db, ws, key, result.read as unknown as Record<string, unknown>);
+        await putPageRead(ctx.db, ws, keyFor(clampedLast), cleanJson(result.read) as Record<string, unknown>);
       } catch (err) {
         throw writeFailure(err, `caching the read ${where}`);
       }
     }
-    pageCount ??= cached?.pageCount ?? result.read?.pageCount ?? result.started.pageCount;
 
     const pages = result.pages.filter((p) => p.pageNumber >= next);
     const chunks = result.chunks.filter((c) => c.pageNumber >= next);
     const pageRows: PageInput[] = pages.map((p) => ({
       pageNumber: p.pageNumber,
-      text: p.text,
+      text: clean(p.text),
       itemsTextLayer: p.itemsTextLayer,
       itemsOcr: p.itemsOcr,
       // The column is text; PageInput's union predates PAGE_UNREADABLE.
       noneReason: p.noneReason as PageInput["noneReason"],
-      sectionPathAfter: p.sectionPathAfter,
+      sectionPathAfter: cleanPath(p.sectionPathAfter),
     }));
     const chunkRows: ChunkInput[] = chunks.map((c) => ({
-      pageNumber: c.pageNumber, seq: c.seq, sectionPath: c.sectionPath, kind: c.kind, textSource: c.textSource,
-      basis: c.basis, text: c.text, tokenCount: c.tokenCount,
+      pageNumber: c.pageNumber, seq: c.seq, sectionPath: cleanPath(c.sectionPath), kind: c.kind, textSource: c.textSource,
+      basis: c.basis, text: clean(c.text), tokenCount: c.tokenCount,
     }));
     const ocrPages = pages.filter((p) => p.itemsOcr > 0 || p.noneReason === "OCR_FAILED").length;
     pagesRead += pages.length;
@@ -234,10 +293,10 @@ async function index(job: { id: string; workspaceId: string; subjectId: string }
     } catch (err) {
       throw writeFailure(err, `storing pages ${first}-${lastPage}`);
     }
-    if (result.pages.length > 0) path = result.pages[result.pages.length - 1]!.sectionPathAfter;
+    if (result.pages.length > 0) path = cleanPath(result.pages[result.pages.length - 1]!.sectionPathAfter);
     await ctx.heartbeat();
-    await ctx.progress({ stage: "reading", percent: Math.floor((Math.min(lastPage, pageCount) / pageCount) * 90) });
-    const embedded = await embedPending(ctx, embedder, revision);
+    await ctx.progress({ stage: "reading", percent: percent(clampedLast) });
+    const embedded = await embedPending(ctx, embedder, revision, checkTime);
     log.info(
       {
         firstPage: first, lastPage, cached: cached !== null, pages: pages.length, chunks: chunks.length, ocrPages, embedded,
@@ -248,7 +307,7 @@ async function index(job: { id: string; workspaceId: string; subjectId: string }
   }
 
   // A retry after an embedder failure finds every page stored and only vectors missing.
-  await embedPending(ctx, embedder, revision);
+  await embedPending(ctx, embedder, revision, checkTime);
   const completed = await completeRevision(ctx.db, ws, revision.id);
   await ctx.progress({ stage: "indexed", percent: 100 });
   const result = await summary(ctx.db, completed);

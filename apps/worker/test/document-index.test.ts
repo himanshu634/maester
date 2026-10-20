@@ -1,11 +1,49 @@
 import { Writable } from "node:stream";
 import { eq, sql } from "drizzle-orm";
 import pino from "pino";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   DOCUMENT_INDEX_SUBJECT, JobTypes, type ChunkRequest, type IndexerEvent, type IndexerVersions, type RangePage, type RangeRead,
 } from "@maester/contracts";
 import { schema, type JobRow } from "@maester/db";
+import type * as DbModule from "@maester/db";
+
+/** Make the next writes to the index fail as Postgres would: page text, a cached read or a vector it refuses. */
+const poison = vi.hoisted(() => ({ writeRange: 0, writeRangeCode: null as string | null, putPageRead: 0, insertEmbeddings: 0 }));
+vi.mock("@maester/db", async (importOriginal) => {
+  const db = await importOriginal<typeof DbModule>();
+  return {
+    ...db,
+    writeRange: async (...args: Parameters<typeof db.writeRange>) => {
+      if (poison.writeRangeCode) {
+        const code = poison.writeRangeCode;
+        poison.writeRangeCode = null;
+        throw new Error(code);
+      }
+      if (poison.writeRange > 0) {
+        poison.writeRange -= 1;
+        // A NUL past the worker's cleaning: Postgres refuses it in text (22021), and drizzle's message lists the params.
+        args[4] = args[4].map((page, i) => (i === 0 ? { ...page, text: `${page.text}\u0000` } : page));
+      }
+      return db.writeRange(...args);
+    },
+    putPageRead: async (...args: Parameters<typeof db.putPageRead>) => {
+      if (poison.putPageRead > 0) {
+        poison.putPageRead -= 1;
+        const read = args[3] as { pages: { text: string }[] };
+        args[3] = { ...read, pages: read.pages.map((page, i) => (i === 0 ? { ...page, text: `${page.text}\u0000` } : page)) };
+      }
+      return db.putPageRead(...args);
+    },
+    insertEmbeddings: async (...args: Parameters<typeof db.insertEmbeddings>) => {
+      if (poison.insertEmbeddings > 0) {
+        poison.insertEmbeddings -= 1;
+        args[3] = args[3].map((row) => ({ ...row, embedding: row.embedding.slice(1) }));
+      }
+      return db.insertEmbeddings(...args);
+    },
+  };
+});
 import { FakeEmbedder, indexPipelineVersion, type Embedder } from "@maester/document-index";
 import type { IndexerClient, IndexInput, IndexResult } from "../src/indexer.js";
 import { documentIndex } from "../src/jobs/document-index.js";
@@ -32,6 +70,10 @@ type FakeDoc = {
   scanned?: boolean;
   /** Pages read with no text, and why. */
   empty?: Record<number, RangePage["noneReason"]>;
+  /** A page whose text and heading carry U+0000, as a broken ToUnicode map gives. */
+  nulOn?: number;
+  /** A page the fake leaves out of its answer. */
+  skip?: number;
 };
 type Failure = { code: string; retryable: boolean; message: string; times: number };
 
@@ -72,8 +114,10 @@ class FakeIndexer implements IndexerClient {
     const pages: RangePage[] = [];
     const headings: Record<string, string> = {};
     for (let p = input.firstPage; p <= last; p++) {
-      const text = `${sentence(p, 1)}\n${sentence(p, 2)}`;
-      if (this.doc.headings?.[p]) headings[String(p)] = this.doc.headings[p]!;
+      if (p === this.doc.skip) continue;
+      const nul = p === this.doc.nulOn ? "\u0000" : "";
+      const text = `${sentence(p, 1)}${nul}\n${sentence(p, 2)}`;
+      if (this.doc.headings?.[p]) headings[String(p)] = this.doc.headings[p]! + nul;
       if (this.doc.empty?.[p]) pages.push({ pageNumber: p, text: "", itemsTextLayer: 0, itemsOcr: 0, noneReason: this.doc.empty[p]! });
       else if (!this.doc.scanned) pages.push({ pageNumber: p, text, itemsTextLayer: 2, itemsOcr: 0, noneReason: null });
       else if (ocrOn) pages.push({ pageNumber: p, text, itemsTextLayer: 0, itemsOcr: 2, noneReason: null });
@@ -134,9 +178,12 @@ class CountingEmbedder implements Embedder {
   readonly inner = new FakeEmbedder(MODEL);
   calls: string[][] = [];
   failCall: number | null = null;
+  /** Runs at each call, with the call's number from 1. */
+  onCall: ((n: number) => void) | null = null;
 
   async embed(texts: string[], kind: "query" | "document"): Promise<number[][]> {
     this.calls.push(texts);
+    this.onCall?.(this.calls.length);
     if (this.calls.length === this.failCall) this.inner.fail(1);
     return this.inner.embed(texts, kind);
   }
@@ -212,6 +259,17 @@ async function embeddedCount(revisionId: string): Promise<number> {
 
 async function pageReadsOf(workspaceId: string) {
   return ctx.db.select().from(schema.pageRead).where(eq(schema.pageRead.workspaceId, workspaceId)).orderBy(schema.pageRead.firstPage);
+}
+
+function captureLogs() {
+  const lines: string[] = [];
+  const sink = new Writable({
+    write(chunk: Buffer, _enc, done) {
+      lines.push(chunk.toString());
+      done();
+    },
+  });
+  return { logger: pino({ level: "debug" }, sink), output: () => lines.join("") };
 }
 
 const ranges = (calls: { first: number; last: number }[]) => calls.map((c) => [c.first, c.last]);
@@ -389,6 +447,8 @@ describe("document.index", () => {
     const pages = await pagesOf(revision!.id);
     expect(pages.filter((p) => p.noneReason !== null).map((p) => [p.pageNumber, p.noneReason])).toEqual([[4, "NO_TEXT"], [22, "PAGE_UNREADABLE"]]);
     expect(job.result).toMatchObject({ state: "partial", pages: 25, chunks: 46 });
+    // The read of pages 21–25 holds the failed page, so it is not cached: a later build reads it again.
+    expect((await pageReadsOf(doc.workspaceId)).map((r) => [r.firstPage, r.lastPage])).toEqual([[1, 20]]);
 
     const blank = await seedDocument();
     await run(await seedIndexJob(blank), { indexer: new FakeIndexer({ pageCount: 5, empty: { 2: "NO_TEXT" } }), embedder: new CountingEmbedder() });
@@ -514,15 +574,121 @@ describe("document.index", () => {
     expect(job).toMatchObject({ state: "failed", attempt: 1, lastErrorCode: "OBJECT_MISSING" });
   });
 
+  it("a page refused by Postgres fails with its SQLSTATE and no page text in the job or the logs, and the retry stores it", async () => {
+    const { logger, output } = captureLogs();
+    const doc = await seedDocument();
+    const jobId = await seedIndexJob(doc);
+    const indexer = new FakeIndexer({ pageCount: 25 });
+    const embedder = new CountingEmbedder();
+    poison.writeRange = 1;
+
+    const first = await run(jobId, { indexer, embedder, logger });
+    expect(first).toMatchObject({ state: "queued", lastErrorCode: "HANDLER_ERROR" });
+    expect(first.lastErrorMessage).toBe("storing pages 1-20 failed (SQLSTATE 22021)");
+    expect(output()).toContain("SQLSTATE 22021");
+    expect(output()).not.toMatch(/synthetic mill/i);
+
+    expect((await run(jobId, { indexer, embedder, logger })).state).toBe("succeeded");
+    expect(output()).not.toMatch(/synthetic mill/i);
+    const [revision] = await revisionsOf(doc.id);
+    expect(await pagesOf(revision!.id)).toHaveLength(25);
+  });
+
+  it("a read Postgres refuses to cache fails with its SQLSTATE only", async () => {
+    const doc = await seedDocument();
+    poison.putPageRead = 1;
+    const job = await run(await seedIndexJob(doc), { indexer: new FakeIndexer({ pageCount: 5 }), embedder: new CountingEmbedder() });
+    expect(job).toMatchObject({ state: "queued", lastErrorCode: "HANDLER_ERROR", lastErrorMessage: "caching the read on pages 1-20 failed (SQLSTATE 22P05)" });
+  });
+
+  it("vectors Postgres refuses fail with the SQLSTATE only, never the vectors", async () => {
+    const { logger, output } = captureLogs();
+    const doc = await seedDocument();
+    poison.insertEmbeddings = 1;
+    const job = await run(await seedIndexJob(doc), { indexer: new FakeIndexer({ pageCount: 5 }), embedder: new CountingEmbedder(), logger });
+    expect(job.lastErrorCode).toBe("HANDLER_ERROR");
+    expect(job.lastErrorMessage).toMatch(/^storing embeddings failed \(SQLSTATE \w+\)$/);
+    expect(output()).not.toMatch(/\[-?0\.\d+/);
+  });
+
+  it("a query's own code is kept when a write is refused", async () => {
+    const doc = await seedDocument();
+    poison.writeRangeCode = "REVISION_NOT_BUILDING";
+    const job = await run(await seedIndexJob(doc), { indexer: new FakeIndexer({ pageCount: 5 }), embedder: new CountingEmbedder() });
+    expect(job).toMatchObject({ state: "queued", lastErrorCode: "REVISION_NOT_BUILDING", lastErrorMessage: "REVISION_NOT_BUILDING storing pages 1-20" });
+  });
+
+  it("U+0000 is taken out of page text, chunk text, section paths and the cached read", async () => {
+    const doc = await seedDocument();
+    const indexer = new FakeIndexer({ pageCount: 5, headings: { 3: "Notes to accounts" }, nulOn: 3 });
+    const job = await run(await seedIndexJob(doc), { indexer, embedder: new CountingEmbedder() });
+    expect(job.state).toBe("succeeded");
+    const [revision] = await revisionsOf(doc.id);
+    const page3 = (await pagesOf(revision!.id))[2]!;
+    expect(page3.text).toBe(`${sentence(3, 1)}\n${sentence(3, 2)}`);
+    expect(page3.sectionPathAfter).toEqual(["Notes to accounts"]);
+    const chunks = (await chunksOf(revision!.id)).filter((c) => c.pageNumber === 3);
+    expect(chunks.map((c) => c.text).sort()).toEqual([sentence(3, 1), sentence(3, 2)].sort());
+    expect(chunks.every((c) => c.sectionPath[0] === "Notes to accounts")).toBe(true);
+    const [read] = await pageReadsOf(doc.workspaceId);
+    expect(JSON.stringify(read!.read)).not.toContain("\\u0000");
+    expect((read!.read as { document: { headings: Record<string, string> } }).document.headings["3"]).toBe("Notes to accounts");
+  });
+
+  it("the first range of a short document is cached under its real bounds, found again by a resume and by a rebuild", async () => {
+    const doc = await seedDocument();
+    const jobId = await seedIndexJob(doc);
+    const indexer = new FakeIndexer({ pageCount: 5 });
+    const embedder = new CountingEmbedder();
+    poison.writeRange = 1;
+    expect((await run(jobId, { indexer, embedder })).state).toBe("queued");
+    expect(ranges(indexer.indexCalls)).toEqual([[1, 20]]);
+    expect((await pageReadsOf(doc.workspaceId)).map((r) => [r.firstPage, r.lastPage])).toEqual([[1, 5]]);
+
+    // The resume: the revision has no page count yet, so it is taken from the cached read.
+    indexer.resetCalls();
+    expect((await run(jobId, { indexer, embedder })).state).toBe("succeeded");
+    expect(indexer.indexCalls).toEqual([]);
+    expect(ranges(indexer.chunkCalls)).toEqual([[1, 5]]);
+
+    indexer.resetCalls();
+    expect((await run(await seedIndexJob(doc, "2:rebuild"), { indexer, embedder })).state).toBe("succeeded");
+    expect(indexer.indexCalls).toEqual([]);
+    expect(ranges(indexer.chunkCalls)).toEqual([[1, 5]]);
+    expect(await pageReadsOf(doc.workspaceId)).toHaveLength(1);
+  });
+
+  it("an answer that is not exactly the pages asked for fails INVALID_INDEXER_RESULT and is not retried", async () => {
+    const doc = await seedDocument();
+    const indexer = new FakeIndexer({ pageCount: 5, skip: 3 });
+    const job = await run(await seedIndexJob(doc), { indexer, embedder: new CountingEmbedder() });
+    expect(job).toMatchObject({ state: "failed", attempt: 1, lastErrorCode: "INVALID_INDEXER_RESULT" });
+    const [revision] = await revisionsOf(doc.id);
+    expect(await pagesOf(revision!.id)).toEqual([]);
+    expect(await pageReadsOf(doc.workspaceId)).toEqual([]);
+  });
+
+  it("the job's deadline covers embedding: past it, the next batch is not sent and the job fails INDEX_TIMEOUT", async () => {
+    const doc = await seedDocument();
+    const embedder = new CountingEmbedder();
+    // The first embedder call takes the whole INDEX_TIMEOUT_SECONDS.
+    embedder.onCall = (n) => {
+      if (n === 1) vi.setSystemTime(Date.now() + (ctx.env.INDEX_TIMEOUT_SECONDS + 1) * 1000);
+    };
+    try {
+      const job = await run(await seedIndexJob(doc), { indexer: new FakeIndexer({ pageCount: 3 }), embedder, env: { EMBED_BATCH: 2 } });
+      expect(job).toMatchObject({ state: "queued", lastErrorCode: "INDEX_TIMEOUT" });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(embedder.calls).toHaveLength(1);
+    const [revision] = await revisionsOf(doc.id);
+    expect(revision!.state).toBe("building");
+    expect(await embeddedCount(revision!.id)).toBe(2);
+  });
+
   it("no page or chunk text reaches the logs", async () => {
-    const lines: string[] = [];
-    const sink = new Writable({
-      write(chunk: Buffer, _enc, done) {
-        lines.push(chunk.toString());
-        done();
-      },
-    });
-    const logger = pino({ level: "debug" }, sink);
+    const { logger, output: logged } = captureLogs();
     const doc = await seedDocument();
     const jobId = await seedIndexJob(doc);
     const indexer = new FakeIndexer({ pageCount: 45, headings: { 1: "Synthetic heading of the mill" } });
@@ -535,7 +701,7 @@ describe("document.index", () => {
     expect(first.lastErrorMessage).not.toContain("synthetic mill");
     expect((await run(jobId, { indexer, embedder, logger })).state).toBe("succeeded");
 
-    const output = lines.join("");
+    const output = logged();
     expect(output).toContain("index range stored");
     expect(output).toContain(doc.id);
     expect(output).not.toMatch(/synthetic mill/i);
