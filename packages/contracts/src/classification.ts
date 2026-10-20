@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { IsoTimestamp, Uuid } from "./common.js";
 import { CountryCode } from "./company.js";
-import { ExtractionWarning, IsoDate, ReportingBasis, StatementKind } from "./extraction.js";
+import { type FactSpan, ExtractionWarning, IsoDate, ReportingBasis, StatementKind } from "./extraction.js";
 import { Job } from "./job.js";
 
 export const ClassificationKind = z.enum(["annual_report", "financial_results", "other", "not_sure"]);
@@ -13,16 +13,23 @@ export const OtherType = z.enum([
 export type OtherType = z.infer<typeof OtherType>;
 export const ResultsSpan = z.enum(["quarter", "half_year", "nine_months", "full_year"]);
 export type ResultsSpan = z.infer<typeof ResultsSpan>;
+/** A fact's span as a classification's results span: `year` is `full_year`, and `other` has none. */
+export function toResultsSpan(span: FactSpan): ResultsSpan | null {
+  return span === "year" ? "full_year" : span === "other" ? null : span;
+}
 export const EvidenceField = z.enum(["kind", "other_type", "company", "identifier", "period", "results_span", "statements"]);
 export type EvidenceField = z.infer<typeof EvidenceField>;
 export const IntakeState = z.enum([
   "identifying", "duplicate", "needs_company", "needs_kind", "kept", "reading", "read", "identify_failed", "read_failed",
+  "waiting_for_xbrl",
 ]);
 export type IntakeState = z.infer<typeof IntakeState>;
 /** A company's corporate identity number as printed on Indian filings. */
 export const Cin = z.string().regex(/^[LU]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6}$/, "a 21-character CIN");
 export const BseCode = z.string().regex(/^\d{6}$/, "a six-digit BSE code");
 export const NseSymbol = z.string().regex(/^[A-Z][A-Z0-9&-]{0,19}$/, "an NSE symbol");
+/** An ISIN: two letters, nine letters or digits and a check digit. */
+export const Isin = z.string().regex(/^[A-Z]{2}[A-Z0-9]{9}\d$/, "a 12-character ISIN");
 
 // ---- Extractor wire format (POST /v1/classify). Mirrors pdf_financial_qa.classify.contracts. ----
 export const ClassifierEvidence = z.object({

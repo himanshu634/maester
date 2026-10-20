@@ -8,7 +8,15 @@ export const ReportingBasis = z.enum(["consolidated", "standalone", "unknown"]);
 export type ReportingBasis = z.infer<typeof ReportingBasis>;
 export const ValueStatus = z.enum(["value", "dash", "unparsed"]);
 export const ExtractionState = z.enum(["complete", "partial"]);
-export const CheckType = z.enum(["subtotal", "balance_identity"]);
+/** The checks the extractor sends to the worker; its Pydantic twin has these two values. */
+export const ExtractedCheckType = z.enum(["subtotal", "balance_identity"]);
+export type ExtractedCheckType = z.infer<typeof ExtractedCheckType>;
+/** The checks the API shows: the extractor's two, and a fact of an XBRL instance looked for in a PDF. */
+export const CheckType = z.enum(["subtotal", "balance_identity", "xbrl_in_pdf"]);
+export type CheckType = z.infer<typeof CheckType>;
+/** The span of a fact's period, in the data layer's words; the classification's `ResultsSpan` says `full_year` for `year`. */
+export const FactSpan = z.enum(["quarter", "half_year", "nine_months", "year", "other"]);
+export type FactSpan = z.infer<typeof FactSpan>;
 export const CheckStatus = z.enum(["passed", "failed", "not_checked"]);
 export const IsoDate = z.iso.date();
 
@@ -46,7 +54,6 @@ const factFields = {
 };
 
 const checkFields = {
-  checkType: CheckType,
   statement: StatementKind,
   basis: ReportingBasis,
   section: z.string().nullable(),
@@ -67,7 +74,7 @@ export const ExtractedFact = z.object({
 });
 export type ExtractedFact = z.infer<typeof ExtractedFact>;
 
-export const ExtractedCheck = z.object(checkFields);
+export const ExtractedCheck = z.object({ checkType: ExtractedCheckType, ...checkFields });
 export type ExtractedCheck = z.infer<typeof ExtractedCheck>;
 
 export const ExtractionResult = z.object({
@@ -112,7 +119,7 @@ export const ExtractionRevision = z.object({
 });
 export type ExtractionRevision = z.infer<typeof ExtractionRevision>;
 
-export const ExtractionCheck = z.object({ id: Uuid, ...checkFields });
+export const ExtractionCheck = z.object({ id: Uuid, checkType: CheckType, ...checkFields });
 export type ExtractionCheck = z.infer<typeof ExtractionCheck>;
 
 export const DocumentExtraction = z.object({ revision: ExtractionRevision, checks: z.array(ExtractionCheck) });

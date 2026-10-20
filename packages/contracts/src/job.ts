@@ -6,9 +6,13 @@ export const JobTypes = {
   DOCUMENT_CLASSIFY: "document.classify",
   DOCUMENT_EXTRACT: "document.extract",
   DOCUMENT_INDEX: "document.index",
+  DOCUMENT_XBRL: "document.xbrl",
+  DOCUMENT_XBRL_CHECK: "document.xbrl_check",
 } as const;
 /** The job subject type for `document.index`; the subject id is the document id. */
 export const DOCUMENT_INDEX_SUBJECT = "document_index";
+/** The job subject type for `document.xbrl_check`; the subject id is the XBRL document id. */
+export const XBRL_CHECK_SUBJECT = "xbrl_pdf_check";
 export type JobType = (typeof JobTypes)[keyof typeof JobTypes];
 
 export const JobState = z.enum(["queued", "running", "succeeded", "failed", "cancelled"]);

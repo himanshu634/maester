@@ -203,7 +203,7 @@ export const documentsContent = {
 		detail: 'The file is kept as it arrived. Add it again, and if it stops again, tell us.'
 	},
 	rejected: {
-		NOT_A_PDF: {
+		UNSUPPORTED_TYPE: {
 			title: 'This file isn’t a PDF.',
 			detail: 'Save it as a PDF and add it again.'
 		},
@@ -265,7 +265,7 @@ export const documentsContent = {
 		checking: 'Checking the file',
 		checkFailed: 'Couldn’t check the file',
 		rejected: {
-			NOT_A_PDF: 'Not a PDF',
+			UNSUPPORTED_TYPE: 'Not a PDF',
 			TOO_LARGE: 'Too large',
 			OBJECT_MISSING: 'Upload didn’t arrive'
 		},

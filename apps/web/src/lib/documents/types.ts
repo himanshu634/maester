@@ -14,7 +14,7 @@
  */
 
 export type DocumentState = 'pending_upload' | 'uploaded' | 'verifying' | 'stored' | 'rejected';
-export type RejectionCode = 'NOT_A_PDF' | 'TOO_LARGE' | 'OBJECT_MISSING';
+export type RejectionCode = 'UNSUPPORTED_TYPE' | 'TOO_LARGE' | 'OBJECT_MISSING';
 
 export type IntakeState =
 	| 'identifying'

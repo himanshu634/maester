@@ -133,7 +133,7 @@ describe('ladder', () => {
 		]);
 		expect(words(doc({ intakeState: 'read_failed' }))).toEqual(['done', 'done', 'stopped', 'next']);
 		expect(
-			words(doc({ state: 'rejected', rejectionCode: 'NOT_A_PDF', intakeState: null }))
+			words(doc({ state: 'rejected', rejectionCode: 'UNSUPPORTED_TYPE', intakeState: null }))
 		).toEqual(['stopped', 'next', 'next', 'next']);
 		expect(words(doc({ state: 'pending_upload', intakeState: null }))).toEqual([
 			'stopped',

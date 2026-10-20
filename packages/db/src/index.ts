@@ -9,6 +9,7 @@ export type {
   SourceReferenceRow,
   ExtractionCheckRow,
 } from "./schema/extraction.js";
+export type { XbrlSourceRow } from "./schema/xbrl.js";
 export type { ClassificationRow, EvidenceRow, StatementsFoundJson, ClassificationWarningJson } from "./schema/classification.js";
 export type { WaitlistEntryRow } from "./schema/waitlist.js";
 export { runMigrations, DEFAULT_MIGRATIONS_FOLDER } from "./migrate.js";

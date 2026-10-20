@@ -235,6 +235,7 @@ Response (`201 Created`):
     "originalName": "fy24-annual-report.pdf",
     "declaredSize": 245678,
     "declaredMime": "application/pdf",
+    "format": "pdf",
     "state": "pending_upload",
     "contentSha256": null,
     "sizeBytes": null,
@@ -269,6 +270,7 @@ No request body. Response:
     "originalName": "fy24-annual-report.pdf",
     "declaredSize": 245678,
     "declaredMime": "application/pdf",
+    "format": "pdf",
     "state": "uploaded",
     "contentSha256": null,
     "sizeBytes": null,
@@ -331,6 +333,7 @@ A document once verification has finished, with its terminal job attached:
   "originalName": "fy24-annual-report.pdf",
   "declaredSize": 245678,
   "declaredMime": "application/pdf",
+  "format": "pdf",
   "state": "stored",
   "contentSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "sizeBytes": 245678,
@@ -361,7 +364,9 @@ A document once verification has finished, with its terminal job attached:
 }
 ```
 
-A rejected document instead carries `"state": "rejected"`, a non-null `rejectionCode` (`NOT_A_PDF`, `TOO_LARGE` or `OBJECT_MISSING`), `contentSha256: null`, `sizeBytes: null` and `storedAt: null`.
+A rejected document instead carries `"state": "rejected"`, a non-null `rejectionCode` (`UNSUPPORTED_TYPE`, `TOO_LARGE` or `OBJECT_MISSING`), `contentSha256: null`, `sizeBytes: null` and `storedAt: null`.
+
+`format` is `pdf` or `xbrl` (an XBRL instance). Every stored document is `pdf` until XBRL instances are accepted; a file that is not a PDF is rejected as `UNSUPPORTED_TYPE`.
 
 ### `GET /v1/workspaces/{ws}/documents/{id}/download`
 
@@ -415,6 +420,8 @@ When a document is verified and extraction is enabled, the worker runs a `docume
   ]
 }
 ```
+
+`checkType` is `subtotal` or `balance_identity` for a revision's own arithmetic checks. `xbrl_in_pdf` is a third value, reserved for the check that looks for a fact of an XBRL instance in a PDF; no route sends it yet.
 
 `GET …/facts?revisionId=` returns one revision's facts (the current revision by default). Each fact keeps the value exactly as printed (`reportedText`), its parsed decimal (`reportedValue`, `null` for a dash or unparseable text, see `valueStatus`), the unit and scale, and `normalizedValue` in actual currency units when the unit is recognised. `periodEnd` (income and cash flow) or `asOfDate` (balance sheet) is set only when the period label names an unambiguous date. `source.pageIndex` is the 0-based page of the original PDF; `source.textLayerMatch` says whether the value was found in that page's text (`null` for a scanned page). All decimals are strings.
 
@@ -491,7 +498,7 @@ Both return a `Job`:
 }
 ```
 
-`lastErrorCode` on a job is one of the worker's own error codes — `HANDLER_ERROR` (the handler threw), `UNKNOWN_JOB_TYPE` (no handler registered for `job.type`) or an extraction code listed above — not to be confused with a document's `rejectionCode` (`NOT_A_PDF`, `TOO_LARGE`, `OBJECT_MISSING`), which describes why a *document* was rejected, not why a job failed; a rejected document's verify job still `succeeds`, with `result.outcome === "rejected"`.
+`lastErrorCode` on a job is one of the worker's own error codes — `HANDLER_ERROR` (the handler threw), `UNKNOWN_JOB_TYPE` (no handler registered for `job.type`) or an extraction code listed above — not to be confused with a document's `rejectionCode` (`UNSUPPORTED_TYPE`, `TOO_LARGE`, `OBJECT_MISSING`), which describes why a *document* was rejected, not why a job failed; a rejected document's verify job still `succeeds`, with `result.outcome === "rejected"`.
 
 `retry` only succeeds when the job is `failed` or a `queued` job stuck without a dispatched task; any other state returns `409 INVALID_STATE`. On success it raises `maxAttempts` by 5 (relative to the job's current `attempt`) and resets `finishedAt` and `progress` back to their initial values (`null` and `{}`).
 
@@ -553,6 +560,7 @@ GET /v1/workspaces/3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f/documents?limit=25
       "originalName": "fy24-annual-report.pdf",
       "declaredSize": 245678,
       "declaredMime": "application/pdf",
+      "format": "pdf",
       "state": "stored",
       "contentSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "sizeBytes": 245678,

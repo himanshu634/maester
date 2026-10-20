@@ -48,6 +48,7 @@ export function toDocument(row: DocumentRow, latestJob: JobRow | null, classific
     originalName: row.originalName,
     declaredSize: row.declaredSize,
     declaredMime: row.declaredMime,
+    format: row.format,
     state: row.state,
     contentSha256: row.contentSha256,
     sizeBytes: row.sizeBytes,

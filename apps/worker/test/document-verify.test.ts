@@ -46,15 +46,15 @@ describe("document.verify", () => {
     expect(job.result).toEqual({ outcome: "stored", sha256: doc.contentSha256, sizeBytes: bytes.length });
   });
 
-  it("rejects a non-PDF as NOT_A_PDF and the job still succeeds", async () => {
+  it("rejects a non-PDF as UNSUPPORTED_TYPE and the job still succeeds", async () => {
     const { workspaceId, userId } = await seedWorkspace(ctx.db);
     const { id, storageKey } = await seedDocument(workspaceId, userId);
     await ctx.store.put(storageKey, new TextEncoder().encode("hello world"), "text/plain");
     const { job, doc } = await verify(workspaceId, id);
     expect(job.state).toBe("succeeded");
     expect(doc.state).toBe("rejected");
-    expect(doc.rejectionCode).toBe("NOT_A_PDF");
-    expect(job.result).toEqual({ outcome: "rejected", code: "NOT_A_PDF" });
+    expect(doc.rejectionCode).toBe("UNSUPPORTED_TYPE");
+    expect(job.result).toEqual({ outcome: "rejected", code: "UNSUPPORTED_TYPE" });
   });
 
   it("rejects a missing object as OBJECT_MISSING", async () => {
@@ -135,7 +135,7 @@ describe("document.verify idempotent short-circuit", () => {
       storageKey,
       state: "rejected",
       createdByUserId: userId,
-      rejectionCode: "NOT_A_PDF",
+      rejectionCode: "UNSUPPORTED_TYPE",
     });
     const spy = vi.spyOn(ctx.store, "readStream");
 
@@ -143,9 +143,9 @@ describe("document.verify idempotent short-circuit", () => {
 
     expect(res.status).toBe(200);
     expect(job.state).toBe("succeeded");
-    expect(job.result).toEqual({ outcome: "rejected", code: "NOT_A_PDF" });
+    expect(job.result).toEqual({ outcome: "rejected", code: "UNSUPPORTED_TYPE" });
     expect(doc.state).toBe("rejected");
-    expect(doc.rejectionCode).toBe("NOT_A_PDF");
+    expect(doc.rejectionCode).toBe("UNSUPPORTED_TYPE");
     expect(spy).not.toHaveBeenCalled();
   });
 });

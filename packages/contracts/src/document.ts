@@ -6,7 +6,12 @@ import { Job } from "./job.js";
 export const DocumentState = z.enum(["pending_upload", "uploaded", "verifying", "stored", "rejected"]);
 export type DocumentState = z.infer<typeof DocumentState>;
 
-export const RejectionCode = z.enum(["NOT_A_PDF", "TOO_LARGE", "OBJECT_MISSING"]);
+/** What a stored file is: a PDF, or an XBRL instance (XML). */
+export const DocumentFormat = z.enum(["pdf", "xbrl"]);
+export type DocumentFormat = z.infer<typeof DocumentFormat>;
+
+/** `UNSUPPORTED_TYPE`: the file is neither a PDF nor an XBRL instance Maester can read. */
+export const RejectionCode = z.enum(["UNSUPPORTED_TYPE", "TOO_LARGE", "OBJECT_MISSING"]);
 export type RejectionCode = z.infer<typeof RejectionCode>;
 
 export const Document = z.object({
@@ -16,6 +21,7 @@ export const Document = z.object({
   originalName: z.string(),
   declaredSize: z.number().int(),
   declaredMime: z.string(),
+  format: DocumentFormat,
   state: DocumentState,
   contentSha256: z.string().length(64).nullable(),
   sizeBytes: z.number().int().nullable(),

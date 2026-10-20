@@ -1,13 +1,16 @@
 import { sql } from "drizzle-orm";
 import { boolean, date, index, integer, jsonb, numeric, pgEnum, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
-import { documentClassification } from "./classification.js";
+import { documentClassification, reportingBasis } from "./classification.js";
 import { company, document, job, ts, workspace } from "./platform.js";
 
 export const extractionState = pgEnum("extraction_state", ["complete", "partial"]);
 export const statementKind = pgEnum("statement_kind", ["balance_sheet", "income_statement", "cash_flow"]);
-export const reportingBasis = pgEnum("reporting_basis", ["consolidated", "standalone", "unknown"]);
 export const valueStatus = pgEnum("value_status", ["value", "dash", "unparsed"]);
-export const checkType = pgEnum("check_type", ["subtotal", "balance_identity"]);
+export const checkType = pgEnum("check_type", ["subtotal", "balance_identity", "xbrl_in_pdf"]);
+/** The data layer's span names; the classification's `results_span` keeps `full_year` for `year`. */
+export const factSpan = pgEnum("fact_span", ["quarter", "half_year", "nine_months", "year", "other"]);
+/** What a revision was read from: a PDF through the model, or an XBRL instance through the parser. */
+export const extractionSource = pgEnum("extraction_source", ["pdf", "xbrl"]);
 export const checkStatus = pgEnum("check_status", ["passed", "failed", "not_checked"]);
 
 export type CoverageJson = {
@@ -25,6 +28,7 @@ export const extractionRevision = pgTable(
     jobId: uuid("job_id").notNull().unique().references(() => job.id),
     /** The classification this revision was read under; null for revisions made before intake. */
     classificationId: uuid("classification_id").references(() => documentClassification.id),
+    source: extractionSource("source").notNull().default("pdf"),
     state: extractionState("state").notNull(),
     pipelineVersion: text("pipeline_version").notNull(),
     model: text("model").notNull(),
@@ -55,6 +59,8 @@ export const financialFact = pgTable(
     componentLabels: text("component_labels").array().notNull().default(sql`'{}'::text[]`),
     periodLabel: text("period_label").notNull(),
     periodEnd: date("period_end"),
+    periodStart: date("period_start"),
+    span: factSpan("span"),
     asOfDate: date("as_of_date"),
     reportedText: text("reported_text").notNull(),
     reportedValue: numeric("reported_value"),
@@ -99,8 +105,25 @@ export const extractionCheck = pgTable(
     expected: numeric("expected"),
     actual: numeric("actual"),
     detail: text("detail").notNull(),
+    // The columns below are written for `xbrl_in_pdf` rows only; a revision's own arithmetic checks leave them null.
+    /** The XBRL fact looked for in the PDF. */
+    factId: uuid("fact_id").references(() => financialFact.id),
+    pdfDocumentId: uuid("pdf_document_id").references(() => document.id),
+    pdfClassificationId: uuid("pdf_classification_id").references(() => documentClassification.id),
+    /** The 0-based page of the PDF where the value was found. */
+    pageIndex: integer("page_index"),
+    /** Why the value was not checked, when `status` is `not_checked`. */
+    reason: text("reason"),
+    checkVersion: integer("check_version"),
   },
-  (t) => [index("extraction_check_revision").on(t.revisionId)],
+  (t) => [
+    index("extraction_check_revision").on(t.revisionId),
+    // One row per XBRL fact, PDF classification and check version; a new version writes a new set beside the old.
+    uniqueIndex("extraction_check_xbrl_pdf")
+      .on(t.factId, t.pdfClassificationId, t.checkVersion)
+      .where(sql`${t.pdfClassificationId} is not null`),
+    index("extraction_check_pdf_document").on(t.workspaceId, t.pdfDocumentId),
+  ],
 );
 
 export type ExtractionRevisionRow = typeof extractionRevision.$inferSelect;

@@ -57,6 +57,13 @@
       "when": 1792484082444,
       "tag": "0007_document_index",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792522678139,
+      "tag": "0008_xbrl",
+      "breakpoints": true
     }
   ]
 }

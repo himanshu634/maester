@@ -106,7 +106,7 @@ export const documentVerify: JobHandler = async (job, ctx) => {
     if (head.length < PDF_MAGIC.length) head = Buffer.concat([head, buf]).subarray(0, PDF_MAGIC.length);
     hash.update(buf);
   }
-  if (!head.equals(PDF_MAGIC)) return reject("NOT_A_PDF");
+  if (!head.equals(PDF_MAGIC)) return reject("UNSUPPORTED_TYPE");
 
   const sha256 = hash.digest("hex");
   await ctx.db

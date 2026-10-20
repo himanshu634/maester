@@ -23,7 +23,7 @@ function fact(doc: Doc, label: string, periodEnd: string, printed: string, o: Op
       id, workspaceId: WS, revisionId: doc.revisionId, companyId: null, statement, basis: o.basis ?? "consolidated",
       section: o.section ?? "Income", lineOrder: o.order ?? 0, reportedLabel: label, isSubtotal: o.subtotal ?? false,
       componentLabels: o.parts ?? [], periodLabel: `Year ended ${periodEnd}`,
-      periodEnd: dated && !balance ? periodEnd : null, asOfDate: dated && balance ? periodEnd : null,
+      periodEnd: dated && !balance ? periodEnd : null, periodStart: null, span: null, asOfDate: dated && balance ? periodEnd : null,
       reportedText: printed, reportedValue: reported, valueStatus: status, unitLabel: "₹ in crore", scaleFactor: scale,
       currency: o.currency ?? "INR",
       normalizedValue: reported === null || scale === null ? null : moveDecimal(reported, scale.length - 1),
@@ -40,6 +40,7 @@ function check(
   return {
     id: crypto.randomUUID(), workspaceId: WS, revisionId: doc.revisionId, checkType: o.type ?? "subtotal", statement: o.statement ?? "income_statement",
     basis: "consolidated", section: o.section === undefined ? "Income" : o.section, periodLabel: `Year ended ${periodEnd}`, subjectLabel: subject, status, expected, actual, detail: "",
+    factId: null, pdfDocumentId: null, pdfClassificationId: null, pageIndex: null, reason: null, checkVersion: null,
   };
 }
 
