@@ -37,6 +37,15 @@ describe("indexer stream fixtures", () => {
     expect(IndexerEvent.safeParse({ ...page, pageNumber: 0 }).success).toBe(false);
     expect(IndexerEvent.safeParse({ ...chunk, seq: -1 }).success).toBe(false);
   });
+
+  it("refuses an unknown field instead of dropping it", () => {
+    const page = lines("stream-range.ndjson").find((l) => l.type === "page")!;
+    const result = lines("stream-range.ndjson").find((l) => l.type === "result")! as { read: Record<string, unknown> };
+    expect(IndexerEvent.safeParse({ ...page, unexpected: true }).success).toBe(false);
+    expect(IndexerEvent.safeParse({ ...result, read: { ...result.read, unexpected: true } }).success).toBe(false);
+    const request = JSON.parse(text("chunk-request.json")) as Record<string, unknown>;
+    expect(ChunkRequest.safeParse({ ...request, unexpected: true }).success).toBe(false);
+  });
 });
 
 describe("ChunkRequest", () => {

@@ -10,7 +10,7 @@ export type PageNoneReason = z.infer<typeof PageNoneReason>;
 /** 1-based page number. */
 const PageNumber = z.number().int().min(1);
 
-export const IndexerVersions = z.object({
+export const IndexerVersions = z.strictObject({
   doclingVersion: z.string(),
   ocrEngine: z.string(),
   readerOptions: z.string(),
@@ -29,11 +29,11 @@ const pageFields = {
 };
 
 /** One page of a cached range read. */
-export const RangePage = z.object(pageFields);
+export const RangePage = z.strictObject(pageFields);
 export type RangePage = z.infer<typeof RangePage>;
 
 /** The cached result of reading a page range: Docling's document plus where each item's text came from. */
-export const RangeRead = z.object({
+export const RangeRead = z.strictObject({
   firstPage: PageNumber,
   lastPage: PageNumber,
   /** The whole PDF's page count. */
@@ -48,7 +48,7 @@ export const RangeRead = z.object({
 });
 export type RangeRead = z.infer<typeof RangeRead>;
 
-export const ChunkRequest = z.object({
+export const ChunkRequest = z.strictObject({
   read: RangeRead,
   sectionPathBefore: z.array(z.string()),
   embeddingModel: z.string(),
@@ -57,19 +57,19 @@ export type ChunkRequest = z.infer<typeof ChunkRequest>;
 
 /** One line of the indexer's NDJSON response stream. */
 export const IndexerEvent = z.discriminatedUnion("type", [
-  z.object({
+  z.strictObject({
     type: z.literal("started"),
     versions: IndexerVersions,
     pageCount: PageNumber,
     firstPage: PageNumber,
     lastPage: PageNumber,
   }),
-  z.object({
+  z.strictObject({
     type: z.literal("page"),
     ...pageFields,
     sectionPathAfter: z.array(z.string()),
   }),
-  z.object({
+  z.strictObject({
     type: z.literal("chunk"),
     pageNumber: PageNumber,
     seq: z.number().int().min(0),
@@ -80,15 +80,15 @@ export const IndexerEvent = z.discriminatedUnion("type", [
     text: z.string(),
     tokenCount: z.number().int().min(0),
   }),
-  z.object({ type: z.literal("progress"), stage: z.string(), percent: z.number().min(0).max(100) }),
-  z.object({ type: z.literal("heartbeat") }),
-  z.object({
+  z.strictObject({ type: z.literal("progress"), stage: z.string(), percent: z.number().min(0).max(100) }),
+  z.strictObject({ type: z.literal("heartbeat") }),
+  z.strictObject({
     type: z.literal("result"),
     /** Null from `/v1/chunk`, which reads nothing. */
     read: RangeRead.nullable(),
     ocrPages: z.number().int().min(0),
   }),
-  z.object({ type: z.literal("error"), code: z.string(), retryable: z.boolean(), message: z.string() }),
+  z.strictObject({ type: z.literal("error"), code: z.string(), retryable: z.boolean(), message: z.string() }),
 ]);
 export type IndexerEvent = z.infer<typeof IndexerEvent>;
 
