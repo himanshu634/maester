@@ -46,7 +46,7 @@ Maester also shows a market mood. It calculates the market mood from daily marke
 | Part | Location | Function |
 | --- | --- | --- |
 | [API](api.md) | `apps/api` | TypeScript HTTP service (Hono). It serves sign-in at `/api/auth/*` through Better Auth and the routes for workspaces, companies, documents and jobs at `/v1`. It writes documents and jobs and dispatches jobs. It also serves the market mood at `/v1/market-mood`, the market connections at `/v1/settings/connections` and the statements and prices of a company for Research. |
-| [Worker](worker.md) | `apps/worker` | TypeScript HTTP service (Hono). It receives a dispatch at `POST /tasks/:type`, takes a lease and runs `document.verify`, `document.classify` or `document.extract`. If `CONNECTIONS_KEY` has a value, it also runs the market refresh on a timer. |
+| [Worker](worker.md) | `apps/worker` | TypeScript HTTP service (Hono). In the `queue` mode, it claims each job from the database. In the `cloud-tasks` mode, it receives a dispatch at `POST /tasks/:type`. It takes a lease and runs `document.verify`, `document.classify` or `document.extract`. If `CONNECTIONS_KEY` has a value, it also runs the market refresh on a timer. |
 | [Extractor](extractor.md) | `apps/extractor` | Python HTTP service (FastAPI). It answers `POST /v1/classify` and `POST /v1/extract` for the worker and calls Gemini on Vertex AI. It does not write data. |
 | [Web client](web.md) | `apps/web` | Static SvelteKit site. In a container, nginx serves it and sends `/api/auth/`, `/v1/` and `/dev/` to the API. |
 | [CLI](cli.md) | `apps/cli` | Python command `maester` with `ingest`, `ask` and `list-docs`. It keeps a JSON cache in `data/cache`. It does not use the API or the database. |
@@ -87,8 +87,8 @@ The repository has three package managers:
 4. The browser sends the PDF with `PUT` to the signed URL (`apps/web/src/lib/documents/client.ts:175-179`). With the `gcs` driver, the URL goes to Cloud Storage. With the `disk` driver, the URL goes to `/dev/blobs/*` on the API (`apps/api/src/routes/dev.ts:117-125`).
 5. The web client sends `POST .../documents/:id/finalize` (`apps/web/src/lib/documents/client.ts:180`). The API makes sure that the PDF is in the object store. Then it sets the state to `uploaded` and creates a `document.verify` job (`apps/api/src/routes/documents.ts:84-111`).
 6. `createJob` writes a job with the state `queued` and a unique key, then dispatches it (`packages/jobs/src/create.ts:28-56`). A second call with the same key returns the first job and does not dispatch again.
-7. In the `local` mode, the dispatcher sends `POST {WORKER_URL}/tasks/:type` with the `x-dispatch-secret` header (`packages/jobs/src/dispatch.ts:28-37`). In the `cloud-tasks` mode, it creates a task with an OIDC token (`packages/jobs/src/dispatch.ts:66-82`).
-8. The worker checks the secret or the token (`apps/worker/src/auth.ts:13-30`). Then `runJob` takes the lease and calls the handler for the job type (`apps/worker/src/run.ts:26-71`, `apps/worker/src/lease.ts:4-24`).
+7. In the `queue` mode, the dispatcher runs `pg_notify('job_ready', <type>)` (`packages/jobs/src/dispatch.ts`). In the `cloud-tasks` mode, it creates a task with an OIDC token.
+8. In the `queue` mode, a claim loop of the worker claims the job and takes the lease (`apps/worker/src/queue.ts`, `apps/worker/src/lease.ts`). In the `cloud-tasks` mode, the worker checks the token, and `runJob` takes the lease. Then `executeJob` calls the handler for the job type (`apps/worker/src/run.ts`).
 9. `document.verify` reads the PDF from the object store. It calculates the SHA-256 hash and the size, and it looks for the `%PDF-` header (`apps/worker/src/jobs/document-verify.ts:50-109`). A good PDF gets the state `stored`. A bad PDF gets the state `rejected`.
 10. The worker compares the hash of a stored document with the other stored documents in the workspace. A copy gets the intake state `duplicate`. Any other document gets `identifying` and a `document.classify` job (`apps/worker/src/jobs/document-verify.ts:15-46`).
 11. `document.classify` sends the PDF to `POST /v1/classify` on the extractor (`apps/worker/src/jobs/document-classify.ts:96-134`, `apps/worker/src/extractor.ts:71-81`). The extractor returns one JSON object with the kind, the company as printed, the period and the evidence (`apps/extractor/src/maester_extractor/app.py:188-205`).
@@ -162,7 +162,7 @@ The repository has three package managers:
 | Intake `read_failed` | The last run of `document.extract` failed. | The investor can send `POST .../extract`. |
 | Job `queued`, `running`, `succeeded`, `failed` | The worker changes the state under its lease. | The API returns the latest job of a document as `latestJob`. |
 | Job `cancelled` | Not known. No code in `apps` or `packages` sets this state. | Not known. |
-| Error that the worker can try again | The handler failed, the error is not a permanent `JobFailure`, and the job has runs left. The default maximum is 5 runs. | The job goes back to `queued` and the worker answers 500. Cloud Tasks sends the task again. In the `local` mode, nothing sends it again. |
+| Error that the worker can try again | The handler failed, the error is not a permanent `JobFailure`, and the job has runs left. The default maximum is 5 runs. | The job goes back to `queued`. In the `queue` mode, the worker claims the job again after the backoff. In the `cloud-tasks` mode, the worker answers 500 and Cloud Tasks sends the task again. |
 | Permanent error, or the last run | The handler failed with a permanent `JobFailure`, or the job has no runs left. | The job goes to `failed`. The handler can set `identify_failed` or `read_failed`. |
 | `lease_held` (409 from the worker) | Another run holds a lease that did not expire. | The worker does not run the job. |
 | `CLASSIFIER_NOT_CONFIGURED` | The worker has no `EXTRACTOR_URL`. | The classify job fails without a second run. The intake state goes to `identify_failed`. |
@@ -192,10 +192,10 @@ The repository has three package managers:
 
 | Container | Image source | Port on the host | Connects to |
 | --- | --- | --- | --- |
-| `postgres` | `postgres:16` | 5433 | None |
+| `postgres` | `pgvector/pgvector:pg16` | 5433 | None |
 | `migrate` | `apps/api/Dockerfile` | None | `postgres`. It applies the migrations and stops. |
-| `api` | `apps/api/Dockerfile` | 8787 | `postgres`, `worker` (dispatch), the `blobs` volume |
-| `worker` | `apps/worker/Dockerfile` | 8788 | `postgres`, `extractor`, the `blobs` volume, itself (dispatch) |
+| `api` | `apps/api/Dockerfile` | 8787 | `postgres`, the `blobs` volume |
+| `worker` | `apps/worker/Dockerfile` | 8788 | `postgres`, `extractor`, the `blobs` volume |
 | `extractor` | `apps/extractor/Dockerfile` | 8790 | Vertex AI. It reads Google credentials from a folder that it mounts read-only. |
 | `web` | `apps/web/Dockerfile` | 5173 (container port 8080) | `api` (nginx sends `/api/auth/`, `/v1/` and `/dev/` to it) |
 
@@ -223,7 +223,7 @@ The API and the worker keep each PDF at the key `workspaces/{workspace}/document
 
 ### Job dispatch
 
-Maester has no separate queue in the local stack. The `job` table holds the state of each job. The `local` mode dispatches a job with one HTTP request and does not send it again. The `cloud-tasks` mode uses the Cloud Tasks queue `maester-jobs`. `infra/bootstrap.sh` sets that queue to unlimited tries for a maximum of 24 hours. Thus the `max_attempts` column of the job also limits the runs.
+Maester has no separate queue in the local stack. The `job` table holds the state of each job. The `queue` mode notifies the worker through Postgres, and the worker claims each job from the `job` table. The `cloud-tasks` mode uses the Cloud Tasks queue `maester-jobs`. `infra/bootstrap.sh` sets that queue to unlimited tries for a maximum of 24 hours. Thus the `max_attempts` column of the job also limits the runs.
 
 ### External services
 
@@ -233,7 +233,7 @@ Maester has no separate queue in the local stack. The `job` table holds the stat
 | Resend | API | Confirmation and reset mail when `MAIL_DRIVER` is `resend`. |
 | Gemini on Vertex AI | Extractor, CLI | Classification, extraction and the answers of the CLI. |
 | Cloud Storage | API, worker | PDFs when `STORAGE_DRIVER` is `gcs`. |
-| Cloud Tasks | API, worker | Dispatch when `DISPATCH_MODE` is `cloud-tasks`. |
+| Cloud Tasks | API, worker | Dispatch when `DISPATCH_MODE` is `cloud-tasks`. In `queue` mode, Postgres does this work. |
 | Cloud Run, Cloud SQL, Secret Manager, Artifact Registry | `infra` scripts | Deployment of the API, the worker and the web client. |
 | Dhan Data API | API, worker | The check of a saved access token. The daily market data of India: Nifty 50, India VIX, MCX gold, the option chain and the Nifty 500 closes. |
 | FRED | API, worker | The check of a saved API key. US VIX and the rupee per US dollar. |
@@ -441,7 +441,7 @@ CAUTION: This procedure deletes the database and all PDFs in the local stack. Yo
 
 ## Warnings and cautions
 
-WARNING: Do not use the secrets from `docker-compose.yml` or `.env.example` on a shared host. All readers of this repository know them. `BETTER_AUTH_SECRET` protects the sessions, and `DISPATCH_SECRET` protects the worker and the local upload URLs.
+WARNING: Do not use the secrets from `docker-compose.yml` or `.env.example` on a shared host. All readers of this repository know them. `BETTER_AUTH_SECRET` protects the sessions and the local upload URLs.
 
 WARNING: Control who can read the logs of the API and of nginx. Confirmation links and reset links are in the query strings of requests. A confirmation link that nobody used signs in the person who opens it.
 
@@ -454,7 +454,7 @@ CAUTION: `pnpm stack:reset` deletes the `pgdata` and `blobs` volumes. Use `pnpm 
 ## Limits
 
 - The web client does not show revisions. It shows facts and their checks only on the Research company page, from read annual reports. The API routes `GET .../extraction` and `GET .../facts` and the page `/dev/upload` return the revisions.
-- In the `local` mode, nothing dispatches a job again after an error that the worker can try again. The job stays `queued`. `POST .../jobs/:id/retry` accepts a `queued` job only after 5 minutes.
+- `POST .../jobs/:id/retry` accepts a `queued` job only after 5 minutes.
 - `infra/deploy.sh` does not deploy the extractor. The deployed worker has no `EXTRACTOR_URL`.
 - The deployed worker also has no `GOOGLE_CLOUD_PROJECT` and no `WORKER_INVOKER_SA` (`infra/deploy.sh:60`). Thus its dispatcher cannot send a `document.classify` job (`apps/worker/src/dispatch.ts:8-13`).
 - Each user has one personal workspace. The Documents page uses only the first workspace.

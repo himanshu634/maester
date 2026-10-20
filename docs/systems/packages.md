@@ -11,8 +11,8 @@
 | Migration | One SQL file in `packages/db/drizzle`. It changes the database to the next version of the database schema. |
 | Workspace | One row in the `workspace` table. Most tables have a `workspace_id` column that points to one workspace. |
 | Job | One row in the `job` table. A job is one unit of background work on one subject, for example one document. |
-| Task | The HTTP request that a dispatcher sends to the worker for one job. The body is `{ "jobId": "<id>" }`. |
-| Dispatcher | An object with the method `enqueue(job)`. It sends a task for the job. |
+| Task | A Cloud Tasks HTTP request to the worker for one job. The body is `{ "jobId": "<id>" }`. |
+| Dispatcher | An object with the method `enqueue(job)`. It tells the worker about the job. |
 | Idempotency key | The `idempotency_key` text of a job. The database keeps one job for each idempotency key. |
 | Object store | An object that keeps file bytes under an object key. It implements the `ObjectStore` interface. |
 | Object key | The path of one file in an object store. |
@@ -162,11 +162,13 @@ Each query for a workspace record takes the workspace ID and gives only rows of 
 
 | Export | Function |
 | --- | --- |
-| `createJob(db, dispatcher, input)` | Inserts a job and sends its task. If a job with the same idempotency key exists in the workspace, it gives that job and sends no task. |
+| `createJob(db, dispatcher, input)` | Inserts a job and dispatches it. If a job with the same idempotency key exists in the workspace, it gives that job and does not dispatch it. |
 | `DEFAULT_MAX_ATTEMPTS` | The value 5. |
+| `MAX_ATTEMPTS_BY_TYPE` | The `maxAttempts` of the job types that call a paid model: `document.classify` 2 and `document.extract` 2. |
+| `maxAttemptsFor(type)` | Gives the `maxAttempts` of a job type: the value in `MAX_ATTEMPTS_BY_TYPE`, or `DEFAULT_MAX_ATTEMPTS` for all other types. |
 | `JobScopeConflictError` | The idempotency key belongs to a job in a different workspace. |
 | `Dispatcher` | The interface with the method `enqueue(job)`. |
-| `LocalHttpDispatcher` | Sends the task to the worker over plain HTTP, with a shared secret. For local development. |
+| `QueueNotifier` | Sends the Postgres notification `job_ready` with the job type. The queue runner of the worker wakes and claims the job. |
 | `CloudTasksDispatcher` | Sends the task to the worker through Google Cloud Tasks, with an OIDC token. |
 | `RecordingDispatcher` | Keeps each job it gets in an array and sends nothing. For tests. |
 | `decideIntake(db, dispatcher, classification, opts)` | Writes the next intake state and company of a document from a classification. |
@@ -223,10 +225,10 @@ The Pydantic classes in `classify.contracts` and `workflow.contracts` are a copy
 
 1. The caller gives `createJob` the workspace ID, the job type, the subject type, the subject ID and an optional version.
 2. `createJob` makes the idempotency key `<type>:<subjectId>:<version>`. The default version is `1`.
-3. `createJob` inserts a job with the state `queued` and `maxAttempts` 5. If a job with the same idempotency key exists, the insert adds no row.
+3. `createJob` inserts a job with the state `queued` and the `maxAttempts` from `maxAttemptsFor`. If a job with the same idempotency key exists, the insert adds no row.
 4. If the insert adds a row, `createJob` gives the new job to the dispatcher and returns the job.
-5. If the insert adds no row, `createJob` returns the job with that idempotency key in the same workspace. It sends no task.
-6. `LocalHttpDispatcher` sends `POST <workerUrl>/tasks/<type>` with the header `x-dispatch-secret`. It does not wait for the response.
+5. If the insert adds no row, `createJob` returns the job with that idempotency key in the same workspace. It does not dispatch the job.
+6. `QueueNotifier` runs `select pg_notify('job_ready', <type>)`. The job row is already `queued`. If the notification is lost, the poll of the worker finds the job.
 7. `CloudTasksDispatcher` gives the task to Google Cloud Tasks, with the name `<jobId>-<attempt>`. Cloud Tasks sends the same `POST` with an OIDC token for the invoker service account.
 
 ### Intake decision
@@ -377,8 +379,8 @@ The error codes `DH-902` and `806` tell that the Dhan data plan is not active. T
 | State or error | Cause | Result |
 | --- | --- | --- |
 | `JobScopeConflictError` | The idempotency key belongs to a job in a different workspace. | `createJob` throws the error. |
-| The job exists | `createJob` gets an idempotency key that a job in the same workspace has. | `createJob` returns that job and sends no task. |
-| `local dispatch failed` | The `POST` from `LocalHttpDispatcher` fails. | The dispatcher writes the error to the log. `enqueue` does not throw. |
+| The job exists | `createJob` gets an idempotency key that a job in the same workspace has. | `createJob` returns that job and does not dispatch it. |
+| `pg_notify` fails | The database refuses the notification. | `enqueue` throws the error. |
 | `task already exists` | Cloud Tasks gives gRPC code 6 for the task name `<jobId>-<attempt>`. | `CloudTasksDispatcher` writes a log line and returns. |
 | Other Cloud Tasks error | `createTask` fails for a different cause. | `enqueue` throws the error. |
 | `decideIntake` returns `null` | The document is not there, the classification is not current, or `onlyFrom` does not contain the intake state. | The document does not change. |

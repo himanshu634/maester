@@ -18,3 +18,22 @@ it("is idempotent", async () => {
   const { runMigrations } = await import("../src/migrate.js");
   await expect(runMigrations(db)).resolves.toBeUndefined();
 });
+
+it("the job table has run_after, the claim indexes and fillfactor 80", async () => {
+  const cols = await db.execute(sql`select column_name, is_nullable, column_default from information_schema.columns where table_name = 'job' and column_name = 'run_after'`);
+  expect(cols.rows[0]).toMatchObject({ is_nullable: "NO" });
+  expect(String(cols.rows[0]!.column_default)).toContain("now()");
+  const idx = await db.execute(sql`select indexname, indexdef from pg_indexes where tablename = 'job'`);
+  const names = idx.rows.map((r) => r.indexname);
+  expect(names).toContain("job_claimable");
+  expect(names).toContain("job_running_lease");
+  expect(names).not.toContain("job_state_lease");
+  expect(idx.rows.find((r) => r.indexname === "job_claimable")!.indexdef).toContain("WHERE (state = 'queued'");
+  const opts = await db.execute(sql`select reloptions from pg_class where relname = 'job'`);
+  expect(opts.rows[0]!.reloptions).toContain("fillfactor=80");
+});
+
+it("the vector extension is available on the image", async () => {
+  const rows = await db.execute(sql`select 1 from pg_available_extensions where name = 'vector'`);
+  expect(rows.rows).toHaveLength(1);
+});

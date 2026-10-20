@@ -51,9 +51,15 @@ That single command builds four images, starts Postgres, applies database migrat
 | Web | <http://localhost:5173> | The public pages and sign-in, built statically and served by nginx, which proxies `/api/auth`, `/v1` and `/dev` to the API |
 | API | <http://localhost:8787> | Hono service, Better Auth, documents and jobs. Browsers reach it through the web origin; use this address for direct health checks (`/healthz`) |
 | Dev upload page | <http://localhost:5173/dev/upload> | The working upload flow, end to end in a browser, through the web origin |
-| Worker | <http://localhost:8788> | Job execution; the API dispatches to it over HTTP |
+| Worker | <http://localhost:8788> | Job execution; it pulls jobs from Postgres |
 | Extractor | <http://localhost:8790> | Python extraction service; the worker streams PDFs to it |
-| Postgres | `localhost:5433` | User `maester`, password `maester`, database `maester` |
+| Postgres | `localhost:5433` | User `maester`, password `maester`, database `maester`. The image is `pgvector/pgvector:pg16`, with `shm_size: 1gb` |
+
+The Postgres image changed to `pgvector/pgvector:pg16`. The major version is the same, so the data volume stays valid. A stack that you started before this change keeps the old container. Recreate it once:
+
+```bash
+docker compose up -d --force-recreate postgres
+```
 
 Useful lifecycle commands:
 
@@ -126,7 +132,7 @@ PORT=8788 pnpm dev:worker
 uv run --locked maester-extractor     # :8790; optional, only for extraction
 ```
 
-All three read the root `.env`. With the shipped defaults the API and worker store uploads under `data/blobs`, dispatch jobs over plain HTTP and need no cloud credentials, and the worker sends classify and extract jobs to the extractor at `EXTRACTOR_URL`. Comment out `EXTRACTOR_URL` and uploads are verified but not identified: `document.classify` fails with `CLASSIFIER_NOT_CONFIGURED`. The web client is separate and uses pnpm from its own directory:
+All three read the root `.env`. With the shipped defaults the API and worker store uploads under `data/blobs` and need no cloud credentials, the worker pulls its jobs from Postgres (`DISPATCH_MODE=queue`) and sends classify and extract jobs to the extractor at `EXTRACTOR_URL`. Comment out `EXTRACTOR_URL` and uploads are verified but not identified: `document.classify` fails with `CLASSIFIER_NOT_CONFIGURED`. The web client is separate and uses pnpm from its own directory:
 
 ```bash
 pnpm --dir apps/web install --frozen-lockfile
@@ -140,6 +146,8 @@ Do not run both this and the full compose stack at once: they compete for ports 
 ## 6. Configuration
 
 Copy [`.env.example`](../.env.example) to `.env`. The TypeScript services validate their environment at boot and refuse to start on anything invalid, so a typo is a clear error rather than a runtime surprise. The compose file sets its own values inline; from `.env` it reads only `GOOGLE_CLOUD_PROJECT`, `GCLOUD_CONFIG_DIR`, `VERTEX_LOCATION`, `GEMINI_MODEL` and `GEMINI_CLASSIFY_MODEL`, for the extractor, and `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, for Google sign-in.
+
+**Upgrading an older `.env`.** `cp -n` keeps the `.env` you already have, so it may still set `DISPATCH_MODE=local` and `DISPATCH_SECRET`. The API and the worker read `local` as `queue` and log "DISPATCH_MODE=local is now queue; update .env" at start; change it to `queue` when convenient. `DISPATCH_SECRET` is ignored and can be deleted. Recreate the Postgres container once for the pgvector image (`docker compose up -d --force-recreate postgres`, see section 3).
 
 | Variable | Used by | Required | Local default |
 | --- | --- | --- | --- |
@@ -156,14 +164,15 @@ Copy [`.env.example`](../.env.example) to `.env`. The TypeScript services valida
 | `STORAGE_DRIVER` | api, worker | Defaults to `gcs` | `disk` |
 | `STORAGE_DIR` | api, worker | When the driver is `disk` | `../../data/blobs` |
 | `GCS_BUCKET` | api, worker | When the driver is `gcs` | Unset |
-| `DISPATCH_MODE` | api, worker | Defaults to `local` | `local` |
-| `DISPATCH_SECRET` | api, worker | When the mode is `local`; must match on both | `local-dispatch-secret` |
+| `DISPATCH_MODE` | api, worker | Defaults to `queue`; `cloud-tasks` is the other value | `queue` |
+| `JOB_CONCURRENCY` | worker | Optional; `type=n` pairs separated by commas, over the defaults `document.verify=4`, `document.classify=2`, `document.extract=2` and 1 for any other type | Unset |
+| `JOB_POLL_MS`, `JOB_SWEEP_MS`, `JOB_HEARTBEAT_MS` | worker | Defaulted; the heartbeat must be at most half of `LEASE_SECONDS` | 1000 ms, 30000 ms, 15000 ms |
 | `WORKER_URL` | api, worker | Always | `http://localhost:8788` |
 | `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `CLOUD_TASKS_QUEUE`, `WORKER_INVOKER_SA` | api | When the mode is `cloud-tasks` | Unset |
 | `API_SERVICE_ACCOUNT_EMAIL` | worker | When the mode is `cloud-tasks` | Unset |
 | `EXTRACTOR_URL` | worker | To classify and extract; unset: `document.classify` fails with `CLASSIFIER_NOT_CONFIGURED` | `http://localhost:8790` |
 | `EXTRACTOR_AUTH`, `EXTRACTOR_SECRET` | worker | `secret` (default) needs the secret, which must match the extractor's; `oidc` uses Cloud Run IAM | `secret`, `local-extractor-secret` |
-| `EXTRACTOR_TIMEOUT_SECONDS`, `EXTRACT_MAX_BYTES` | worker | Defaulted | 900 s, 50 MiB |
+| `EXTRACT_TIMEOUT_SECONDS`, `EXTRACT_MAX_BYTES` | worker | Defaulted | 1800 s, 50 MiB |
 | `GOOGLE_CLOUD_PROJECT`, `WORKER_INVOKER_SA`, `CLOUD_TASKS_QUEUE`, `TASK_DISPATCH_DEADLINE_SECONDS` | worker | To enqueue extraction when the mode is `cloud-tasks` | Unset |
 | `EXTRACTOR_SECRET`, `GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION`, `GEMINI_MODEL`, `GEMINI_CLASSIFY_MODEL` | extractor | The project and Application Default Credentials for any extraction | See the [extractor README](../apps/extractor/README.md) |
 | `MAX_UPLOAD_BYTES`, `UPLOAD_URL_TTL_SECONDS`, `DOWNLOAD_URL_TTL_SECONDS`, `LEASE_SECONDS` | api, worker | Defaulted | 50 MiB, 900 s, 300 s, 600 s |
@@ -178,7 +187,7 @@ Two settings decide whether a service talks to Google Cloud or to something loca
 
 **`STORAGE_DRIVER=disk`** keeps uploaded bytes on the filesystem under `STORAGE_DIR` instead of in a Cloud Storage bucket. The API signs upload and download URLs that point back at its own `/dev/blobs/…` routes, carrying an expiry and an HMAC signature; an unsigned, tampered or expired URL is refused. The worker reads the bytes straight off the same directory, which is why compose mounts one shared volume into both containers. Environment validation refuses this driver when `NODE_ENV=production`, and the blob routes exist only outside production. With `STORAGE_DRIVER=gcs` the same interface signs real Cloud Storage V4 URLs and the browser uploads directly to the bucket.
 
-**`DISPATCH_MODE=local`** makes the API `POST` to the worker's `/tasks/:type` endpoint with a shared secret header, in place of enqueueing a Cloud Tasks task authenticated with an OIDC token. Retries are not automatic in this mode: a failed job stays failed until you call the retry endpoint. Everything else — leasing, progress, state transitions — behaves the same, because it lives in the database rather than in the queue.
+**`DISPATCH_MODE=queue`** (the default) makes the worker pull its jobs from Postgres, in place of Cloud Tasks pushing them to `/tasks/:type`; in this mode that route does not exist. The API and the worker send `pg_notify('job_ready', <type>)` after they commit a job. The worker runs one claim loop for each job type. It wakes on `LISTEN job_ready` and also polls every `JOB_POLL_MS`, so a lost notification costs at most one poll. A claim is one `FOR UPDATE SKIP LOCKED` statement, so two workers never take the same job. A worker runs at most 4 `document.verify`, 2 `document.classify`, 2 `document.extract` and 1 of any other type at once; `JOB_CONCURRENCY=document.extract=3,document.verify=8` changes that, and a value that is not `type=n`, a type with no handler or a limit below 1 stops the worker at start-up. A failed job waits before it runs again (`run_after`: 30 s, doubling to 900 s, plus up to 20% jitter) until `maxAttempts`: 2 for `document.classify` and `document.extract`, which call a paid model, and 5 for every other type. At start the worker logs how many jobs of each type are queued or running, because its first claims take all of them. A timer renews the lease of a running job every `JOB_HEARTBEAT_MS`. A sweep every `JOB_SWEEP_MS` gives back a job whose lease ended, with the code `LEASE_EXPIRED`, or fails it when its attempts are spent. On `SIGTERM` the worker stops claiming and waits up to 25 s for running jobs, then gives back any job still running (queued, ready now, its attempt restored), so a restart costs it no attempt; compose gives it 30 s. A document extraction can take up to `EXTRACT_TIMEOUT_SECONDS` (30 minutes). Everything else — leasing, progress, state transitions — behaves the same as with Cloud Tasks, because it lives in the database rather than in the queue.
 
 **Extraction.** When `document.verify` stores a document it enqueues `document.classify`, which sends the PDF to the extractor to work out what it is (this needs the worker's `EXTRACTOR_URL`; without it the job fails with `CLASSIFIER_NOT_CONFIGURED` and the document is `identify_failed`). For an annual report or financial results with a known company it then enqueues `document.extract`. That job streams the PDF to the extractor, which answers with NDJSON progress, heartbeats and finally a result; the worker writes the result as a new `extraction_revision` with its facts, page references and checks, in one transaction. The extractor runs a LangGraph workflow: locate the statements, extract each from its own pages, check the arithmetic, and re-read only failing sections. The design is in [document extraction](EXTRACTION.md). To let the compose stack call Gemini, run `gcloud auth application-default login`, then set in `.env`:
 
@@ -267,7 +276,7 @@ Uninstall any older `pdf-financial-qa` distribution first; it owned the same con
 | API logs `EACCES … /var/lib/maester/blobs` | The blob volume predates the image that owns that directory. `pnpm stack:reset` and rebuild. |
 | A signed upload or download returns 403 | The URL expired (15 minutes for uploads, 5 for downloads) or was altered. The API both signs and verifies these URLs, so the worker is not involved. Create a new upload. |
 | `invalid environment: …` at boot | A required variable is missing for the driver or dispatch mode you selected. The message names the variable; section 6 says when each one is required. |
-| A job stays `queued` | The worker is down, unreachable at `WORKER_URL`, or rejecting the dispatch because `DISPATCH_SECRET` differs between the two services. Local dispatch is fire-and-forget, so the failure only shows in the worker log: `docker compose logs worker`. |
+| A job stays `queued` | The worker is down, or it has no handler for the job type (it logs "queued jobs of a type this worker has no handler for" at start-up), or the limit for that type is reached, or `run_after` is still in the future after a failure. Check `docker compose logs worker`. |
 | A document is rejected with `OBJECT_MISSING` | The API and the worker are pointed at different `STORAGE_DIR` paths, so the worker cannot find what the API wrote. Outside Docker the default resolves against each service's own directory; use `../../data/blobs` as `.env.example` does. |
 | Code changes do nothing | Containers do not hot-reload. Rebuild the service, or run it as a local process. |
 | Extract jobs fail with `EXTRACTOR_NOT_CONFIGURED` | The extractor has no `GOOGLE_CLOUD_PROJECT` or cannot find Application Default Credentials. See section 7; the job does not retry. |
@@ -319,7 +328,7 @@ The document engine and CLI carry the prototype's limits, and the hosted service
 - Extraction is not deployed: the Cloud Run steps are listed in [document extraction](EXTRACTION.md) section 7.
 - Identity is Google or email and password, behind a waitlist: approval is a script, with no admin screen, and nothing is emailed on approval. Every user gets one personal workspace; there is no invitation or role management. [SIGN_IN.md](SIGN_IN.md) section 3.8 lists the known limits, including pre-registration through the email link.
 - The web client is a set of static pages. Sign-in and recovery call the API through the web origin; under a real session `/terminal/documents` adds filings and shows what Maester read them as, `/terminal/research` shows a company's statements year by year, and `/terminal/market-mood` and `/terminal/settings` work, all through the API, while the terminal's other first-release pages (`/terminal` and four more: holdings, watchlist, analyst and activity) are coming-soon pages, and the overview is a synthetic demo that does not read the API.
-- Local dispatch does not retry a failed job automatically.
+- In `queue` mode, a failed job is retried with backoff until `maxAttempts` (2 for classify and extract, 5 for the rest). The retry endpoint resets the wait (`run_after`) and adds that many attempts again.
 - There is no ledger, market data, portfolio accounting, evidence-backed Analyst or autonomous loop. Extraction accuracy is not measured.
 
 Feature IDs F04–F09 address the evidence gaps and F17–F24 the accounting foundation; see the [feature roadmap](FEATURE_ROADMAP.md) and [delivery plan](DELIVERY_PLAN.md).

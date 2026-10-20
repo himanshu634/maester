@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { schema, type Db } from "@maester/db";
+import { schema, type Db, type JobRow } from "@maester/db";
 import type { Dispatcher } from "@maester/jobs";
 import type { ObjectStore } from "@maester/storage";
 import type { WorkerEnv } from "./env.js";
@@ -23,22 +23,11 @@ export const HEARTBEAT_THROTTLE_MS = 5_000;
 
 export type RunResult = { status: 200 | 409 | 500; body: { jobId: string; outcome: string } };
 
-export async function runJob(deps: WorkerDeps, type: string, jobId: string): Promise<RunResult> {
-  const log = deps.logger.child({ jobId, type });
-  const [existing] = await deps.db.select().from(schema.job).where(eq(schema.job.id, jobId)).limit(1);
-  if (!existing) {
-    log.warn("job not found; acking");
-    return { status: 200, body: { jobId, outcome: "missing" } };
-  }
-  if (existing.state === "succeeded" || existing.state === "failed" || existing.state === "cancelled") {
-    return { status: 200, body: { jobId, outcome: existing.state } };
-  }
+export type JobOutcome = "succeeded" | "failed" | "retry" | "lease_lost";
 
-  const job = await acquireLease(deps.db, jobId, deps.env.LEASE_SECONDS);
-  if (!job) {
-    log.info("lease held elsewhere");
-    return { status: 409, body: { jobId, outcome: "lease_held" } };
-  }
+/** Run an already-leased job. A timer renews the lease so a quiet handler keeps it. */
+export async function executeJob(deps: WorkerDeps, job: JobRow, opts: { heartbeatMs?: number } = {}): Promise<{ outcome: JobOutcome }> {
+  const log = deps.logger.child({ jobId: job.id, type: job.type });
   const leaseToken = job.leaseToken!;
   const startedAt = Date.now();
 
@@ -46,8 +35,28 @@ export async function runJob(deps: WorkerDeps, type: string, jobId: string): Pro
   if (!handler) {
     await failAttempt(deps.db, job, leaseToken, { code: "UNKNOWN_JOB_TYPE", message: `no handler for ${job.type}` }, true);
     log.error("unknown job type");
-    return { status: 200, body: { jobId, outcome: "failed" } };
+    return { outcome: "failed" };
   }
+
+  let leaseLost = false;
+  let renewing = false;
+  const timer = setInterval(() => {
+    if (renewing || leaseLost) return;
+    renewing = true;
+    renewLease(deps.db, job.id, leaseToken, deps.env.LEASE_SECONDS)
+      .then((ok) => {
+        if (!ok) {
+          leaseLost = true;
+          clearInterval(timer);
+          log.warn("lease lost");
+        }
+      })
+      .catch((err: unknown) => log.error({ err: err instanceof Error ? err.message : String(err) }, "lease renewal failed"))
+      .finally(() => {
+        renewing = false;
+      });
+  }, opts.heartbeatMs ?? deps.env.JOB_HEARTBEAT_MS);
+  timer.unref();
 
   try {
     log.info({ attempt: job.attempt }, "job started");
@@ -66,14 +75,18 @@ export async function runJob(deps: WorkerDeps, type: string, jobId: string): Pro
         await renewLease(deps.db, job.id, leaseToken, deps.env.LEASE_SECONDS);
       },
     });
-    const ok = await completeJob(deps.db, job.id, leaseToken, result ?? null);
+    const ok = !leaseLost && (await completeJob(deps.db, job.id, leaseToken, result ?? null));
     log.info({ durationMs: Date.now() - startedAt, ok }, "job succeeded");
-    return { status: 200, body: { jobId, outcome: ok ? "succeeded" : "lease_lost" } };
+    return { outcome: ok ? "succeeded" : "lease_lost" };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const code = err instanceof JobFailure ? err.code : "HANDLER_ERROR";
     const permanent = err instanceof JobFailure && !err.retryable;
     const final = permanent || job.attempt >= job.maxAttempts;
+    if (leaseLost) {
+      log.error({ durationMs: Date.now() - startedAt, attempt: job.attempt, code, err: message }, "job attempt failed after losing its lease");
+      return { outcome: "lease_lost" };
+    }
     await failAttempt(deps.db, job, leaseToken, { code, message }, final);
     if (final && handler.onFinalFailure) {
       try {
@@ -83,6 +96,28 @@ export async function runJob(deps: WorkerDeps, type: string, jobId: string): Pro
       }
     }
     log.error({ durationMs: Date.now() - startedAt, attempt: job.attempt, final, code, err: message }, "job attempt failed");
-    return final ? { status: 200, body: { jobId, outcome: "failed" } } : { status: 500, body: { jobId, outcome: "retry" } };
+    return { outcome: final ? "failed" : "retry" };
+  } finally {
+    clearInterval(timer);
   }
+}
+
+export async function runJob(deps: WorkerDeps, type: string, jobId: string): Promise<RunResult> {
+  const log = deps.logger.child({ jobId, type });
+  const [existing] = await deps.db.select().from(schema.job).where(eq(schema.job.id, jobId)).limit(1);
+  if (!existing) {
+    log.warn("job not found; acking");
+    return { status: 200, body: { jobId, outcome: "missing" } };
+  }
+  if (existing.state === "succeeded" || existing.state === "failed" || existing.state === "cancelled") {
+    return { status: 200, body: { jobId, outcome: existing.state } };
+  }
+
+  const job = await acquireLease(deps.db, jobId, deps.env.LEASE_SECONDS);
+  if (!job) {
+    log.info("lease held elsewhere");
+    return { status: 409, body: { jobId, outcome: "lease_held" } };
+  }
+  const { outcome } = await executeJob(deps, job);
+  return { status: outcome === "retry" ? 500 : 200, body: { jobId, outcome } };
 }

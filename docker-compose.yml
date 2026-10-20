@@ -4,8 +4,9 @@
 #
 # Everything below runs with local development defaults and no Google Cloud
 # account: uploads are kept on a shared Docker volume by STORAGE_DRIVER=disk,
-# and jobs are dispatched over plain HTTP instead of Cloud Tasks. Nothing here
-# is a deployment template — see infra/README.md for how Maester is deployed.
+# and the worker pulls its jobs from Postgres (DISPATCH_MODE=queue) instead of
+# Cloud Tasks pushing them. Nothing here is a deployment template — see
+# infra/README.md for how Maester is deployed.
 #
 # Fact extraction (the extractor service) calls Gemini on Vertex AI, which does
 # need Google Cloud. Without GOOGLE_CLOUD_PROJECT and Application Default
@@ -36,8 +37,8 @@ x-api-env: &api-env
   STORAGE_DIR: /var/lib/maester/blobs
   # Confirmation and reset links are written to the api log instead of being sent.
   MAIL_DRIVER: console
-  DISPATCH_MODE: local
-  DISPATCH_SECRET: local-dispatch-secret
+  # The worker pulls jobs from Postgres; the API wakes it with NOTIFY job_ready.
+  DISPATCH_MODE: queue
   WORKER_URL: http://worker:8788
   # Market mood. CONNECTIONS_KEY (generate with: openssl rand -base64 32) encrypts the Dhan and
   # FRED keys saved in Settings; unset, those routes refuse and the worker does not refresh.
@@ -47,7 +48,8 @@ x-api-env: &api-env
 
 services:
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
+    shm_size: 1gb
     environment:
       POSTGRES_USER: maester
       POSTGRES_PASSWORD: maester
@@ -106,6 +108,8 @@ services:
       PORT: 8788
       EXTRACTOR_URL: http://extractor:8790
       EXTRACTOR_SECRET: local-extractor-secret
+    # On stop the worker waits up to 25 s for running jobs; Docker's default 10 s would kill it mid-wait.
+    stop_grace_period: 30s
     ports:
       - "8788:8788"
     volumes:

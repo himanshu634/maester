@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { schema } from "@maester/db";
-import { createWorkerApp } from "../src/app.js";
-import { JobFailure } from "../src/jobs/types.js";
-import { runJob } from "../src/run.js";
+import { JobFailure, type JobHandler } from "../src/jobs/types.js";
+import { claimNext } from "../src/lease.js";
+import { executeJob, runJob } from "../src/run.js";
 import { createWorkerContext, seedJob, seedWorkspace } from "./context.js";
 
 let ctx: Awaited<ReturnType<typeof createWorkerContext>>;
@@ -89,23 +89,36 @@ describe("runJob", () => {
   });
 });
 
-describe("worker app", () => {
-  it("rejects a request without the local dispatch secret", async () => {
-    const app = createWorkerApp(ctx);
-    const res = await app.request("/tasks/test.noop", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jobId: crypto.randomUUID() }) });
-    expect(res.status).toBe(401);
+describe("executeJob", () => {
+  it("renews the lease on a timer while a quiet handler runs", async () => {
+    let seen: Date | null = null;
+    const handler: JobHandler = async (job, ctx) => {
+      await new Promise((r) => setTimeout(r, 250)); // no heartbeat() call from the handler
+      const [row] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, job.id));
+      seen = row!.leaseExpiresAt;
+      return { ok: true };
+    };
+    const c = await createWorkerContext({ "test.quiet": handler }); // LEASE_SECONDS 600
+    const { workspaceId } = await seedWorkspace(c.db);
+    await seedJob(c.db, workspaceId, { type: "test.quiet" });
+    const job = (await claimNext(c.db, "test.quiet", 1))!; // claimed with a 1-second lease
+    const out = await executeJob(c, job, { heartbeatMs: 50 });
+    expect(out.outcome).toBe("succeeded");
+    expect(seen!.getTime()).toBeGreaterThan(job.leaseExpiresAt!.getTime() + 60_000); // renewed to LEASE_SECONDS
+    await c.close();
   });
 
-  it("accepts a request with the local dispatch secret and runs the job", async () => {
-    const { workspaceId } = await seedWorkspace(ctx.db);
-    const id = await seedJob(ctx.db, workspaceId, { type: "test.noop" });
-    const app = createWorkerApp(ctx);
-    const res = await app.request("/tasks/test.noop", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-dispatch-secret": "local-dispatch-secret" },
-      body: JSON.stringify({ jobId: id }),
+  it("reports lease_lost when another worker took the job", async () => {
+    const c = await createWorkerContext({
+      "test.slow": async (job, ctx) => {
+        await ctx.db.update(schema.job).set({ leaseToken: crypto.randomUUID() }).where(eq(schema.job.id, job.id));
+        await new Promise((r) => setTimeout(r, 120));
+      },
     });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ jobId: id, outcome: "succeeded" });
+    const { workspaceId } = await seedWorkspace(c.db);
+    await seedJob(c.db, workspaceId, { type: "test.slow" });
+    const job = (await claimNext(c.db, "test.slow", 600))!;
+    expect((await executeJob(c, job, { heartbeatMs: 30 })).outcome).toBe("lease_lost");
+    await c.close();
   });
 });
