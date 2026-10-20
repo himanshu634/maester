@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file=../../.env src/server.ts",
+    "index:backfill": "tsx --env-file=../../.env src/index-backfill-cli.ts",
     "market:refresh": "tsx --env-file=../../.env src/market-refresh-cli.ts",
     "build": "tsup",
     "start": "node dist/server.js",
