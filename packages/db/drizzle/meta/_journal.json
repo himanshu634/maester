@@ -43,6 +43,13 @@
       "when": 1791286297771,
       "tag": "0005_market_connection",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792408473414,
+      "tag": "0006_job_queue",
+      "breakpoints": true
     }
   ]
 }

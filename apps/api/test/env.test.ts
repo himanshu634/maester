@@ -1,12 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { dispatchModeWarning } from "../src/env.js";
 import { testEnv } from "./env.js";
 
 describe("env", () => {
-  it("throws when DISPATCH_MODE=local and DISPATCH_SECRET is undefined", () => {
-    expect(() => testEnv({ DISPATCH_MODE: "local", DISPATCH_SECRET: undefined })).toThrow();
-    expect(() => testEnv({ DISPATCH_MODE: "local", DISPATCH_SECRET: undefined })).toThrow(/DISPATCH_SECRET/);
-  });
-
   it("throws when DISPATCH_MODE=cloud-tasks and WORKER_INVOKER_SA is undefined", () => {
     expect(() => testEnv({ DISPATCH_MODE: "cloud-tasks" })).toThrow();
     expect(() => testEnv({ DISPATCH_MODE: "cloud-tasks" })).toThrow(/WORKER_INVOKER_SA/);
@@ -51,6 +47,23 @@ describe("env", () => {
 
   it("needs a key and a sender for Resend", () => {
     expect(() => testEnv({ MAIL_DRIVER: "resend", RESEND_API_KEY: undefined })).toThrow(/RESEND_API_KEY/);
+  });
+});
+
+describe("env: DISPATCH_MODE", () => {
+  it("defaults to queue", () => {
+    expect(testEnv({ DISPATCH_MODE: undefined }).DISPATCH_MODE).toBe("queue");
+  });
+
+  it("reads the old DISPATCH_MODE=local as queue, and warns once at start", () => {
+    expect(testEnv({ DISPATCH_MODE: "local" }).DISPATCH_MODE).toBe("queue");
+    expect(dispatchModeWarning({ DISPATCH_MODE: "local" })).toBe("DISPATCH_MODE=local is now queue; update .env");
+    expect(dispatchModeWarning({ DISPATCH_MODE: "queue" })).toBeNull();
+    expect(dispatchModeWarning({})).toBeNull();
+  });
+
+  it("still refuses an unknown DISPATCH_MODE", () => {
+    expect(() => testEnv({ DISPATCH_MODE: "http" })).toThrow(/DISPATCH_MODE/);
   });
 });
 

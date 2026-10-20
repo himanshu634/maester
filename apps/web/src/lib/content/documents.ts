@@ -9,11 +9,57 @@ export const documentsContent = {
 	heading: 'Documents',
 	lede: 'Add a filing and Maester works out what it is, then reads it. Wrong guess? Change it and it’s read again.',
 	drop: {
-		title: 'Drop a PDF here',
+		title: 'Drop PDFs here',
 		or: 'or',
-		choose: 'Choose a file',
-		note: 'Annual reports, quarterly results or any other company document. PDF, up to 50 MB.',
-		uploading: (name: string) => `Uploading ${name}…`
+		chooseFiles: 'Choose files',
+		chooseFolder: 'Choose a folder',
+		/** The limit, said before anything is chosen. PDF only until Maester reads XBRL. */
+		note: 'Annual reports, quarterly results or any other company document. PDF only for now, up to 50 MB a file. A whole folder works too.',
+		/** Before sending: each file's type and size, and its first bytes. */
+		checking: (count: number) => (count === 1 ? 'Checking the file…' : `Checking ${count} files…`),
+		sendingOne: (name: string) => `Sending ${name}…`,
+		sending: (at: number, total: number, folder: string | null) =>
+			`Sending ${at} of ${total} files${folder ? ` from ${folder}` : ''}…`,
+		sendingOneAloud: (name: string) => `Sending ${name}.`,
+		sendingAloud: (total: number) => `Sending ${total} files.`,
+		sent: (count: number, folder: string | null) =>
+			`${count === 1 ? '1 file' : `${count} files`} sent${folder ? ` from ${folder}` : ''}.`,
+		notAddedAloud: (count: number) => (count === 1 ? '1 wasn’t added.' : `${count} weren’t added.`),
+		/** One Notice per batch, never one per file. */
+		refusedTitle: (count: number, total: number) =>
+			total === 1
+				? 'The file wasn’t added.'
+				: count === total
+					? `None of the ${total} files were added.`
+					: `${count} of the ${total} files ${count === 1 ? 'wasn’t' : 'weren’t'} added.`,
+		refusedListLabel: 'Files not added, and why',
+		stopped: {
+			'signed-out': (count: number) =>
+				`You’re signed out, so the other ${count === 1 ? 'file wasn’t' : `${count} files weren’t`} sent. Sign in and add ${count === 1 ? 'it' : 'them'} again.`,
+			offline: (count: number) =>
+				`The connection dropped, so the other ${count === 1 ? 'file wasn’t' : `${count} files weren’t`} sent. Check your connection and add ${count === 1 ? 'it' : 'them'} again.`
+		},
+		chooseAgain: 'Choose files to add',
+		signIn: 'Sign in'
+	},
+	/** Why a file wasn't added: after its name in the batch Notice, browser and API alike. */
+	refusals: {
+		xbrl: 'An XBRL file. Maester takes PDFs only for now.',
+		notPdf: 'Not a PDF.',
+		notPdfKnown: (what: string) => `${what}, not a PDF.`,
+		notPdfInside: 'Named .pdf, but not a PDF inside.',
+		empty: 'The file is empty.',
+		tooLarge: (size: string) => `${size}, over the 50 MB limit.`,
+		unreadable: 'Your device wouldn’t let Maester read it.',
+		signedOut: 'Not sent: you’re signed out.',
+		offline: 'Not sent: the connection dropped.',
+		unfinished: 'The upload didn’t finish. Add it again.',
+		kinds: {
+			word: 'A Word document',
+			spreadsheet: 'A spreadsheet',
+			presentation: 'A presentation',
+			picture: 'A picture'
+		}
 	},
 	loading: 'Loading your documents.',
 	loadFailed: {
@@ -27,7 +73,7 @@ export const documentsContent = {
 	},
 	leaving: 'Leaving this page doesn’t stop anything. The slip is here when you come back.',
 	leavingWhileSending:
-		'Your file is still being sent. Moving to another page doesn’t stop it, but closing or reloading this tab does.',
+		'Files are still being sent. Moving to another page doesn’t stop them, but closing or reloading this tab does.',
 
 	slip: {
 		/** "Uploaded" step and the rest, in order. */
@@ -234,25 +280,6 @@ export const documentsContent = {
 		read_failed: 'Couldn’t read the statements'
 	},
 
-	/** Problems found before a file is sent (the "states every upload owes"). */
-	precheck: {
-		tooLarge: (size: string) => `This file is ${size}. Maester takes PDFs up to 50 MB.`,
-		notPdfKnown: (what: string) => `This is ${what}. Save it as a PDF and add it again.`,
-		notPdf: 'This isn’t a PDF. Save it as a PDF and add it again.',
-		chooseAnother: 'Choose another file',
-		fileKinds: {
-			word: 'a Word document',
-			spreadsheet: 'a spreadsheet',
-			presentation: 'a presentation',
-			picture: 'a picture'
-		}
-	},
-	uploadFailed: {
-		signedOut: 'The upload didn’t finish. Sign in and add it again.',
-		offline: 'The upload didn’t finish. Check your connection and add it again.',
-		other: 'The upload didn’t finish. Add it again.',
-		signIn: 'Sign in'
-	},
 	changeFailed: {
 		changed: 'These answers changed since you opened them. Here is the latest.',
 		moved: 'This document has moved on since you opened it. Here is the latest.',

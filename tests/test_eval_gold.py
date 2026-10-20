@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from eval_fixtures import FILING, WHEN, row, scored_row
+from eval_fixtures import FILING, WHEN, plain, row, scored_row
 from test_extraction_workflow import FAST, PDF, ScriptedModel
 from typer.testing import CliRunner
 
@@ -794,7 +794,7 @@ class FreezeCommandTests(unittest.TestCase):
         for text in ("--run", "--force", "verified",
                      "Read the machine columns back from the run's artefact (a spreadsheet may have retyped them); "
                      "a cell you edited must still agree with it, or the row is refused."):
-            self.assertIn(text, result.output)
+            self.assertIn(text, plain(result.output))
 
 
 if __name__ == "__main__":

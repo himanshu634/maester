@@ -38,7 +38,7 @@ describe("dev blob routes", () => {
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "maester-dev-blobs-"));
     const env = testEnv({ STORAGE_DRIVER: "disk", STORAGE_DIR: root, BETTER_AUTH_URL: "http://localhost:8787" });
-    store = new DiskObjectStore(root, { baseUrl: env.BETTER_AUTH_URL, secret: env.DISPATCH_SECRET!, pathPrefix: "/dev/blobs" });
+    store = new DiskObjectStore(root, { baseUrl: env.BETTER_AUTH_URL, secret: env.BETTER_AUTH_SECRET, pathPrefix: "/dev/blobs" });
     app = createApp(deps(env, store));
   });
 

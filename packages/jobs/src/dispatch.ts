@@ -1,5 +1,6 @@
 import { CloudTasksClient } from "@google-cloud/tasks";
-import type { JobRow } from "@maester/db";
+import type { Db, JobRow } from "@maester/db";
+import { sql } from "drizzle-orm";
 
 /** The subset of a pino logger the dispatchers use. */
 export interface DispatchLogger {
@@ -18,22 +19,17 @@ export class RecordingDispatcher implements Dispatcher {
   }
 }
 
-export class LocalHttpDispatcher implements Dispatcher {
-  constructor(
-    private readonly workerUrl: string,
-    private readonly secret: string,
-    private readonly logger: DispatchLogger,
-  ) {}
+/**
+ * Wakes the worker's queue runner. The job row is already committed with state
+ * 'queued'; this only sends `NOTIFY job_ready, '<type>'`. Callers enqueue after
+ * their transaction commits. A notify sent too early or lost costs one poll
+ * interval, because the runner's poll finds the job anyway.
+ */
+export class QueueNotifier implements Dispatcher {
+  constructor(private readonly db: Db) {}
 
   async enqueue(job: JobRow): Promise<void> {
-    const url = `${this.workerUrl}/tasks/${encodeURIComponent(job.type)}`;
-    void fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-dispatch-secret": this.secret },
-      body: JSON.stringify({ jobId: job.id }),
-    })
-      .then((res) => this.logger.info({ jobId: job.id, status: res.status }, "local dispatch completed"))
-      .catch((err: Error) => this.logger.error({ jobId: job.id, err: err.message }, "local dispatch failed"));
+    await this.db.execute(sql`select pg_notify('job_ready', ${job.type})`);
   }
 }
 
