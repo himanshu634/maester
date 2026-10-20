@@ -5,6 +5,9 @@ import {
   chunksWithoutEmbedding, completeRevision, insertEmbeddings, schema, startOrResumeRevision, writeRange,
 } from "@maester/db";
 import { EmbedderError, FakeEmbedder } from "@maester/document-index";
+import { createApp } from "../src/app.js";
+import { createAuth } from "../src/auth.js";
+import { silentLogger } from "../src/logger.js";
 import { createTestContext, type TestContext } from "./context.js";
 
 const embedder = new FakeEmbedder();
@@ -81,16 +84,23 @@ describe("GET /v1/workspaces/:ws/search", () => {
   });
 
   it("answers 503 SEARCH_UNAVAILABLE when no embedder is configured", async () => {
-    const bare = await createTestContext({}, { embedder: null });
-    try {
-      const a = await bare.signUp("s6@example.com");
-      const res = await bare.app.request(`/v1/workspaces/${a.workspaceId}/search?q=x`, { headers: { cookie: a.cookie } });
-      expect(res.status).toBe(503);
-      expect(await code(res)).toBe("SEARCH_UNAVAILABLE");
-    } finally {
-      // createTestContext truncates the shared tables; the main context's users are gone, so its tests run before this file's last test.
-      await bare.close();
-    }
+    const a = await ctx.signUp("s6@example.com");
+    const bare = createApp({ env: ctx.env, logger: silentLogger, db: ctx.db, auth: createAuth({ db: ctx.db, env: ctx.env, mailer: ctx.mailer, logger: silentLogger }), store: ctx.store, dispatcher: ctx.dispatcher, embedder: null });
+    const res = await bare.request(`/v1/workspaces/${a.workspaceId}/search?q=x`, { headers: { cookie: a.cookie } });
+    expect(res.status).toBe(503);
+    expect(await code(res)).toBe("SEARCH_UNAVAILABLE");
+  });
+
+  it("answers 500 INTERNAL on a failed statement and logs neither the query nor its parameters", async () => {
+    const a = await ctx.signUp("s8@example.com");
+    const wrong = { model: embedder.model, embed: async () => [[0.1, 0.2, 0.3]] };
+    const app = createApp({ env: ctx.env, logger, db: ctx.db, auth: createAuth({ db: ctx.db, env: ctx.env, mailer: ctx.mailer, logger: silentLogger }), store: ctx.store, dispatcher: ctx.dispatcher, embedder: wrong });
+    logged.length = 0;
+    const res = await app.request(`/v1/workspaces/${a.workspaceId}/search?q=confidential+phrase`, { headers: { cookie: a.cookie } });
+    expect(res.status).toBe(500);
+    expect(await code(res)).toBe("INTERNAL");
+    expect(logged.length).toBeGreaterThan(0);
+    expect(logged.join("\n")).not.toContain("confidential");
   });
 
   it("returns hits with page, section path, text source and both ranks, and no figure field", async () => {

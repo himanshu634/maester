@@ -1,3 +1,4 @@
+import { DrizzleQueryError } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Db, MembershipRow, WorkspaceRow } from "@maester/db";
@@ -105,6 +106,12 @@ export function createApp(deps: AppDeps, options: AppOptions = {}) {
     const traceId = c.get("traceId") ?? "unknown";
     if (err instanceof HttpError) {
       return c.json(errorBody(err.code, err.message, traceId, err.fields), err.status as 400);
+    }
+    // A failed query's message and stack carry its bound parameters (a search query, a key): log the name and code only.
+    if (err instanceof DrizzleQueryError) {
+      const code = (err.cause as { code?: string } | undefined)?.code;
+      deps.logger.error({ traceId, err: { name: err.name, code } }, "database query failed");
+      return c.json(errorBody("INTERNAL", "internal error", traceId), 500);
     }
     deps.logger.error({ traceId, err: { name: err.name, message: err.message, stack: err.stack } }, "unhandled error");
     return c.json(errorBody("INTERNAL", "internal error", traceId), 500);

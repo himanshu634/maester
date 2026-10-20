@@ -205,6 +205,36 @@ describe("searchChunks", () => {
   });
 });
 
+describe("a short HNSW answer", () => {
+  it("is completed by the exact scan", async () => {
+    const { ws, userId } = await seedWorkspace("a");
+    await seedDocument(ws, userId, { chunks: Array.from({ length: 60 }, (_, i) => ({ text: `entry ${i} of the register` })) });
+    // An iterative scan that stops at hnsw.max_scan_tuples answers short. Simulate that: the third statement of the
+    // transaction (after the two settings) is the HNSW one, and it returns three rows only.
+    const shortHnsw = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop !== "transaction") return Reflect.get(target, prop, receiver);
+        return (fn: (tx: Db) => Promise<unknown>) =>
+          target.transaction((tx) => {
+            let n = 0;
+            const wrapped = new Proxy(tx, {
+              get(t, p, r) {
+                if (p !== "execute") return Reflect.get(t, p, r);
+                return async (q: Parameters<Db["execute"]>[0]) => {
+                  const res = await t.execute(q);
+                  return ++n === 3 ? { ...res, rows: res.rows.slice(0, 3) } : res;
+                };
+              },
+            });
+            return fn(wrapped as Db);
+          });
+      },
+    }) as Db;
+    const hits = await searchChunks(shortHnsw, embedder, { workspaceId: ws, query: "zzz unmatched", limit: 50 });
+    expect(hits).toHaveLength(50);
+  });
+});
+
 describe("the vector branch's plan", () => {
   async function plan(over: { companyId?: string }) {
     const { ws, userId } = await seedWorkspace("p");

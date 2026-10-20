@@ -1,7 +1,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import type { SearchHit } from "@maester/contracts";
 import type { Db } from "@maester/db";
-import type { Embedder } from "./embedder.js";
+import { EmbedderError, type Embedder } from "./embedder.js";
 
 const BRANCH_LIMIT = 50;
 const DEFAULT_LIMIT = 10;
@@ -66,6 +66,8 @@ export interface BranchInput extends Pick<SearchInput, "workspaceId" | "companyI
   vector: number[];
 }
 
+const isFiltered = (i: Pick<SearchInput, "companyId" | "documentIds">) => i.companyId !== undefined || i.documentIds !== undefined;
+
 const toVector = (v: number[]) => `[${v.join(",")}]`;
 
 /** The chunks a search may return: this workspace, a complete or partial revision built for this model, and the filters. */
@@ -94,15 +96,14 @@ function scope(input: Pick<BranchInput, "workspaceId" | "model" | "companyId" | 
  * order). Filtered by company or documents, it orders by the full-precision vector, which the HNSW expression index
  * does not serve, so the B-tree on (workspace_id, document_id) filters first and the scan is exact.
  */
-export function vectorBranchSql(input: BranchInput): SQL {
+export function vectorBranchSql(input: BranchInput, exact = false): SQL {
   const q = toVector(input.vector);
-  const filtered = input.companyId !== undefined || input.documentIds !== undefined;
   const where = scope(input, sql`c`, sql`r`);
   const base = sql`from chunk_embedding e
     join document_chunk c on c.id = e.chunk_id
     join document_index_revision r on r.id = c.revision_id
     where e.model = ${input.model} and e.workspace_id = ${input.workspaceId} and ${where}`;
-  if (filtered) {
+  if (exact || isFiltered(input)) {
     return sql`select c.id as id ${base}
       order by e.embedding <=> ${q}::vector, c.id limit ${BRANCH_LIMIT}`;
   }
@@ -136,22 +137,23 @@ export function keywordBranchSql(input: Omit<BranchInput, "vector"> & { query: s
 const idsOf = (rows: Record<string, unknown>[]): string[] => rows.map((r) => String(r.id));
 
 export async function searchChunks(db: Db, embedder: Embedder, input: SearchInput): Promise<SearchHit[]> {
-  const limit = Math.min(MAX_LIMIT, Math.max(1, Math.trunc(input.limit ?? DEFAULT_LIMIT)));
+  const limit = Math.min(MAX_LIMIT, Math.max(1, Math.trunc(Number.isFinite(input.limit) ? input.limit! : DEFAULT_LIMIT)));
   const [vector] = await embedder.embed([input.query], "query");
-  if (!vector) throw new Error("The embedder returned no vector.");
+  if (!vector) throw new EmbedderError("EMBEDDING_FAILED", false, "The embedder returned no vector.");
   const branch: BranchInput = {
     workspaceId: input.workspaceId, model: embedder.model, vector,
     ...(input.companyId !== undefined ? { companyId: input.companyId } : {}),
     ...(input.documentIds !== undefined ? { documentIds: input.documentIds } : {}),
   };
 
-  const filtered = input.companyId !== undefined || input.documentIds !== undefined;
   const vectorIds = await db.transaction(async (tx) => {
-    if (!filtered) {
-      await tx.execute(sql`set local hnsw.ef_search = 100`);
-      await tx.execute(sql`set local hnsw.iterative_scan = relaxed_order`);
-    }
-    return idsOf((await tx.execute(vectorBranchSql(branch))).rows);
+    if (isFiltered(input)) return idsOf((await tx.execute(vectorBranchSql(branch))).rows);
+    await tx.execute(sql`set local hnsw.ef_search = 100`);
+    await tx.execute(sql`set local hnsw.iterative_scan = relaxed_order`);
+    const ids = idsOf((await tx.execute(vectorBranchSql(branch))).rows);
+    // An iterative scan stops at hnsw.max_scan_tuples, so a model or workspace with few vectors among many can get a
+    // short answer. A short answer is checked exactly (the workspace's own chunks are few in that case).
+    return ids.length < BRANCH_LIMIT ? idsOf((await tx.execute(vectorBranchSql(branch, true))).rows) : ids;
   });
   const keywordIds = idsOf((await db.execute(keywordBranchSql({ ...branch, query: input.query }))).rows);
 
