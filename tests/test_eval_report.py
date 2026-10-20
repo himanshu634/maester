@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from eval_fixtures import FILING, WHEN, scored_row as row
+from eval_fixtures import FILING, WHEN, plain, scored_row as row
 from test_extraction_workflow import FAST, PDF, ScriptedModel
 from typer.testing import CliRunner
 
@@ -517,7 +517,7 @@ class ReportCommandTests(ReportCase):
         result = self.report("--help")
         self.assertEqual(result.exit_code, 0, result.output)
         for text in ("--run", "--set", "--against", "--to", "latest"):
-            self.assertIn(text, result.output)
+            self.assertIn(text, plain(result.output))
 
 
 if __name__ == "__main__":

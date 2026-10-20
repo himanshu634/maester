@@ -21,6 +21,14 @@ describe("jobs", () => {
     expect(ctx.dispatcher.enqueued.filter((j) => j.id === a.id)).toHaveLength(1);
   });
 
+  it("createJob gives the jobs that call a paid model 2 attempts and the rest 5", async () => {
+    const { workspaceId } = await ctx.signUp("j1d@example.com");
+    const make = (type: string) => createJob(ctx.db, ctx.dispatcher, { workspaceId, type, subjectType: "document", subjectId: crypto.randomUUID() });
+    expect((await make(JobTypes.DOCUMENT_CLASSIFY)).maxAttempts).toBe(2);
+    expect((await make(JobTypes.DOCUMENT_EXTRACT)).maxAttempts).toBe(2);
+    expect((await make(JobTypes.DOCUMENT_VERIFY)).maxAttempts).toBe(5);
+  });
+
   it("createJob rejects an idempotency-key collision from another workspace", async () => {
     const a = await ctx.signUp("j1b@example.com");
     const b = await ctx.signUp("j1c@example.com");
@@ -55,7 +63,7 @@ describe("jobs", () => {
     const job = await createJob(ctx.db, ctx.dispatcher, { workspaceId: a.workspaceId, type: JobTypes.DOCUMENT_VERIFY, subjectType: "document", subjectId: crypto.randomUUID() });
     await ctx.db
       .update(schema.job)
-      .set({ state: "failed", attempt: 5, lastErrorCode: "BOOM", finishedAt: new Date(), progress: { stage: "x" } })
+      .set({ state: "failed", attempt: 5, lastErrorCode: "BOOM", finishedAt: new Date(), progress: { stage: "x" }, runAfter: new Date(Date.now() + 60 * 60 * 1000) })
       .where(eq(schema.job.id, job.id));
     const before = ctx.dispatcher.enqueued.length;
     const res = await ctx.app.request(`/v1/workspaces/${a.workspaceId}/jobs/${job.id}/retry`, { method: "POST", headers: { cookie: a.cookie, origin: "http://localhost" } });
@@ -66,11 +74,22 @@ describe("jobs", () => {
     expect(body.finishedAt).toBeNull();
     expect(body.progress).toEqual({});
     expect(ctx.dispatcher.enqueued.length).toBe(before + 1);
+    const [row] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, job.id));
+    expect(row!.runAfter.getTime()).toBeLessThanOrEqual(Date.now() + 1000);
 
     await ctx.db.update(schema.job).set({ state: "running" }).where(eq(schema.job.id, job.id));
     const bad = await ctx.app.request(`/v1/workspaces/${a.workspaceId}/jobs/${job.id}/retry`, { method: "POST", headers: { cookie: a.cookie, origin: "http://localhost" } });
     expect(bad.status).toBe(409);
     expect(((await bad.json()) as { error: { code: string } }).error.code).toBe("INVALID_STATE");
+  });
+
+  it("retry of a failed extract job gives it 2 more attempts, not 5", async () => {
+    const a = await ctx.signUp("j7@example.com");
+    const job = await createJob(ctx.db, ctx.dispatcher, { workspaceId: a.workspaceId, type: JobTypes.DOCUMENT_EXTRACT, subjectType: "document", subjectId: crypto.randomUUID() });
+    await ctx.db.update(schema.job).set({ state: "failed", attempt: 2, finishedAt: new Date() }).where(eq(schema.job.id, job.id));
+    const res = await ctx.app.request(`/v1/workspaces/${a.workspaceId}/jobs/${job.id}/retry`, { method: "POST", headers: { cookie: a.cookie, origin: "http://localhost" } });
+    expect(res.status).toBe(200);
+    expect(Job.parse(await res.json()).maxAttempts).toBe(4);
   });
 
   it("malformed :id returns 404, not 500", async () => {

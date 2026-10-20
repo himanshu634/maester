@@ -106,11 +106,13 @@ export const job = pgTable(
     createdAt: ts("created_at").notNull().defaultNow(),
     startedAt: ts("started_at"),
     finishedAt: ts("finished_at"),
+    runAfter: ts("run_after").notNull().defaultNow(),
     updatedAt: ts("updated_at").notNull().defaultNow(),
   },
   (t) => [
     index("job_workspace_subject").on(t.workspaceId, t.subjectType, t.subjectId),
-    index("job_state_lease").on(t.state, t.leaseExpiresAt),
+    index("job_claimable").on(t.type, t.runAfter).where(sql`${t.state} = 'queued'`),
+    index("job_running_lease").on(t.leaseExpiresAt).where(sql`${t.state} = 'running'`),
   ],
 );
 

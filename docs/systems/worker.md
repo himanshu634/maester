@@ -10,12 +10,19 @@
 | Job type | The `type` column of a job: `document.verify`, `document.classify` or `document.extract`. |
 | Handler | The function that does the work for one job type. |
 | `attempt` | The `attempt` column of a job. The worker adds 1 to it each time that it starts the job. |
-| `maxAttempts` | The `max_attempts` column of a job. The default value is 5. |
+| `maxAttempts` | The `max_attempts` column of a job. The value is 2 for `document.classify` and `document.extract`, because these jobs call a paid model. The value is 5 for all other types. |
 | Lease | A time limit in which only one worker process can run a job. The `lease_token` and `lease_expires_at` columns hold the lease. |
 | Lease token | A random UUID that `acquireLease` writes to `lease_token`. Only the process with this token can change the job. |
-| Dispatch request | The HTTP request `POST /tasks/:type` with the JSON body `{ "jobId": "<uuid>" }`. It tells the worker to run a job. |
-| Dispatch mode | The value of `DISPATCH_MODE`: `local` or `cloud-tasks`. |
-| Dispatcher | The object that sends a dispatch request for a new job: `LocalHttpDispatcher` or `CloudTasksDispatcher`. |
+| Dispatch request | The HTTP request `POST /tasks/:type` with the JSON body `{ "jobId": "<uuid>" }`. It tells the worker to run a job. Only the `cloud-tasks` mode uses it. |
+| Dispatch mode | The value of `DISPATCH_MODE`: `queue` or `cloud-tasks`. The default is `queue`. |
+| Dispatcher | The object that tells the worker about a new job: `QueueNotifier` or `CloudTasksDispatcher`. |
+| Notification | A `job_ready` message from Postgres. Its text is a job type. `QueueNotifier` sends it with `pg_notify`. |
+| Queue runner | The part of the worker that pulls jobs in `queue` mode. It has one claim loop for each job type. |
+| Claim loop | The loop of the queue runner for one job type. It claims a job and starts it. |
+| Claim | One SQL statement that selects the oldest ready job of one type and takes its lease. `claimNext` runs it. |
+| Limit | The largest number of jobs of one job type that one worker runs at the same time. |
+| Sweep | One call of `sweepExpired`. It gives back each job whose lease ended. |
+| Backoff | The wait before a failed job runs again. The `run_after` column holds it. |
 | Idempotency key | The `idempotency_key` column of a job, in the form `<type>:<subjectId>:<pipelineVersion>`. Each key is unique. |
 | Extractor | The `apps/extractor` service. It reads a PDF and sends back answers and facts. See [extractor](extractor.md). |
 | Extractor client | `HttpExtractorClient`, the part of the worker that sends a PDF to the extractor. |
@@ -29,7 +36,7 @@
 | Intake state | The `intake_state` column of a `document` row. It tells what the worker did with a `stored` document. It is empty before the document is `stored`. |
 | `JobFailure` | An error with a stable code and a `retryable` flag. A handler throws it. |
 | Final failure | The worker sets the job to `failed` and does not try the job again. |
-| Retry | The worker sets the job to `queued` again after a failure that is not final. Then a new dispatch request can run the job. |
+| Retry | The worker sets the job to `queued` again after a failure that is not final. The job runs again after the time in `run_after`. |
 | Market refresher | `MarketRefresher`, the part of the worker that copies daily market data from Dhan and FRED into the database. It is not a job. |
 | Pass | One call of `MarketRefresher.refresh`. A pass reads each connected source one time. |
 | Run row | One row in the `market_fetch` table. The worker writes one run row for each pass. |
@@ -49,7 +56,9 @@
 
 ## Function
 
-The worker runs the background jobs for document intake. It receives a dispatch request, takes the lease on the job and runs the handler for the job type. The three handlers verify an uploaded PDF, classify the PDF and read its financial statements. The worker writes all results to the Postgres database. The API creates the first job, and the worker creates the next jobs. For the full system, see the [Maester overview](maester.md).
+The worker runs the background jobs for document intake. In `queue` mode, the worker claims each job from the database, takes the lease and runs the handler for the job type. In `cloud-tasks` mode, it receives a dispatch request instead.
+
+The three handlers verify an uploaded PDF, classify it and read its financial statements. The worker writes all results to the Postgres database. The API creates the first job. The worker creates the next jobs. For the full system, see the [Maester overview](maester.md).
 
 The worker also refreshes the market data for the market mood page. When `CONNECTIONS_KEY` has a value, the market refresher starts a pass 30 minutes after the end of the previous pass. The pass reads daily values from FRED and Dhan with the keys that the investor saved in Settings. It writes the values and the breadth to the database.
 
@@ -57,18 +66,20 @@ The worker also refreshes the market data for the market mood page. When `CONNEC
 
 | Part | Location | Function |
 | --- | --- | --- |
-| Server entry | `apps/worker/src/server.ts` | Reads the environment. Makes the database client, the object store, the dispatcher and the extractor client. Starts the HTTP server. If `CONNECTIONS_KEY` has a value, starts the market schedule. |
-| HTTP app | `apps/worker/src/app.ts` | Has the routes `GET /healthz` and `POST /tasks/:type`. Checks the request and the body, then calls `runJob`. |
-| Request check | `apps/worker/src/auth.ts` | `verifyDispatchRequest` checks the shared secret or the OIDC token. |
-| Job runner | `apps/worker/src/run.ts` | `runJob` takes the lease, runs the handler and records the result or the error. |
-| Lease functions | `apps/worker/src/lease.ts` | `acquireLease`, `renewLease`, `writeProgress`, `completeJob` and `failAttempt`. |
+| Server entry | `apps/worker/src/server.ts` | Reads the environment. Makes the database client, the object store, the dispatcher and the extractor client. In `queue` mode, starts the queue runner. Starts the HTTP server. If `CONNECTIONS_KEY` has a value, starts the market schedule. On `SIGTERM`, stops the worker. |
+| HTTP app | `apps/worker/src/app.ts` | Has the route `GET /healthz`. In `cloud-tasks` mode only, it also has `POST /tasks/:type`. This route checks the request and the body, then calls `runJob`. |
+| Request check | `apps/worker/src/auth.ts` | `verifyDispatchRequest` checks the OIDC token. In `queue` mode, it refuses each request. |
+| Queue runner | `apps/worker/src/queue.ts` | `startQueueRunner` runs the claim loops and the sweep. `parseConcurrency` reads `JOB_CONCURRENCY`. `pgListen` listens for notifications. |
+| Start helpers | `apps/worker/src/start.ts` | `buildQueueOptions` makes the options of the queue runner. `logUnhandledQueued` writes a log line for each job type that has no handler. |
+| Job runner | `apps/worker/src/run.ts` | `executeJob` runs a job that has a lease. It renews the lease on a timer. `runJob` takes the lease for a dispatch request, then calls `executeJob`. |
+| Lease functions | `apps/worker/src/lease.ts` | `acquireLease`, `claimNext`, `sweepExpired`, `backoffSeconds`, `renewLease`, `releaseLease`, `writeProgress`, `completeJob` and `failAttempt`. |
 | Handler registry | `apps/worker/src/jobs/index.ts` | Connects each job type to its handler. |
 | Handler types | `apps/worker/src/jobs/types.ts` | `JobContext`, `JobHandler` and `JobFailure`. |
 | Verify handler | `apps/worker/src/jobs/document-verify.ts` | `documentVerify`. |
 | Classify handler | `apps/worker/src/jobs/document-classify.ts` | `documentClassify` and `writeClassification`. |
 | Extract handler | `apps/worker/src/jobs/document-extract.ts` | `documentExtract`, `writeRevision` and `readAll`. |
 | Extractor client | `apps/worker/src/extractor.ts` | `HttpExtractorClient` sends the PDF to the extractor and reads the answer. |
-| Dispatcher factory | `apps/worker/src/dispatch.ts` | `createDispatcher` makes the dispatcher for the dispatch mode. |
+| Dispatcher factory | `apps/worker/src/dispatch.ts` | `createDispatcher` makes `QueueNotifier` or `CloudTasksDispatcher` for the dispatch mode. |
 | Store factory | `apps/worker/src/store.ts` | `createStore` makes a `DiskObjectStore` or a `GcsObjectStore`. |
 | Configuration | `apps/worker/src/env.ts` | `loadWorkerEnv` reads and checks the environment variables. |
 | Logger | `apps/worker/src/logger.ts` | `createLogger` makes a pino logger. It hides the `cookie` and `authorization` request headers in the log. |
@@ -86,29 +97,68 @@ The worker uses five shared packages. For more information, see [shared packages
 
 - `@maester/contracts`: the job type names, the result types and the extractor answer schemas.
 - `@maester/db`: the database client, the table schema and the queries `matchCompanies`, `findStoredDuplicate` and `getCurrentClassification`. For the market refresher: `startMarketFetch`, `finishMarketFetch`, `upsertMarketPoints`, `latestMarketDay`, `saveConnection` and `markConnectionError`.
-- `@maester/jobs`: `createJob`, `decideIntake`, `classificationIdOfReadJob` and the two dispatchers.
+- `@maester/jobs`: `createJob`, `decideIntake`, `classificationIdOfReadJob` and the dispatchers `QueueNotifier` and `CloudTasksDispatcher`.
 - `@maester/market`: `HttpDhanSource`, `HttpFredSource`, `MarketSourceError`, `loadConnections`, `encryptSecret` and the Dhan instrument IDs.
 - `@maester/storage`: the object store classes and `ObjectNotFoundError`.
 
 ## Operation
 
-### Dispatch request and lease
+### Queue mode: claim and run
 
-1. A dispatcher in the API or in the worker sends a dispatch request to `POST /tasks/:type`.
-2. `verifyDispatchRequest` checks the request. In `local` mode, the `x-dispatch-secret` header must be equal to `DISPATCH_SECRET`.
-3. In `cloud-tasks` mode, the `authorization` header must hold a Google OIDC token. The token audience must be `WORKER_URL`, and the token `email` must be `API_SERVICE_ACCOUNT_EMAIL`.
-4. If the check fails, the worker sends status 401. If the body has no valid UUID in `jobId`, the worker sends status 400.
-5. `runJob` reads the job. If no job has this ID, the worker sends status 200 with the outcome `missing`.
-6. If the job state is `succeeded`, `failed` or `cancelled`, the worker sends status 200 and does not run the job.
-7. `acquireLease` sets the job to `running`, adds 1 to `attempt` and writes a new lease token. The lease ends after `LEASE_SECONDS`.
-8. `acquireLease` changes only a `queued` job, or a `running` job with an expired lease. If another process holds the lease, the worker sends status 409 with the outcome `lease_held`.
-9. `runJob` finds the handler from the `type` column of the job. The `:type` value in the path goes only into the log.
-10. If the handler registry has no handler for the job type, the job gets a final failure with the code `UNKNOWN_JOB_TYPE`.
-11. The handler runs. It can write progress to the `progress` column. It can renew the lease with `heartbeat`.
-12. `heartbeat` renews the lease a maximum of one time in each 5 seconds (`HEARTBEAT_THROTTLE_MS`).
-13. If the handler returns a value, `completeJob` sets the job to `succeeded` and writes the value to the `result` column. The worker sends status 200.
-14. If a different process took the lease while the handler ran, `completeJob` changes nothing. The outcome is then `lease_lost`.
-15. If the handler throws an error, the worker records the error. See [Retries](#retries).
+1. A dispatcher in the API or in the worker runs `pg_notify('job_ready', <job type>)`. `QueueNotifier` is this dispatcher. The job row is already `queued`.
+2. At start, the worker reads `JOB_CONCURRENCY`. It makes one claim loop for each job type in the handler registry.
+3. The worker listens for notifications on one database connection for all claim loops. `pgListen` opens this connection. Each claim loop also polls the database every `JOB_POLL_MS`.
+4. A claim loop claims a job only if the jobs of its type that run now are fewer than the limit.
+5. `claimNext` selects the oldest `queued` job of the type with `run_after` not later than now. It orders the jobs by `run_after`, then by `created_at`.
+6. The same statement sets the job to `running`, adds 1 to `attempt` and writes a new lease token. The lease ends after `LEASE_SECONDS`.
+7. The statement uses `FOR UPDATE SKIP LOCKED`. Thus two workers never claim the same job. A worker does not wait for a row that another worker holds.
+8. The claim loop starts `executeJob` for the job and does not wait for it. It then claims the next job.
+9. If the claim finds no job, the claim loop sleeps. It wakes at the next poll, at a notification for its type or at the end of a job of its type.
+10. The worker ignores a notification for a type that it has no handler for. A lost notification costs at most one poll interval.
+11. If the database connection for notifications breaks, the worker connects again. The wait starts at 1 second and doubles to a maximum of 30 seconds. The polls continue.
+12. If a claim fails, the claim loop writes the error to the log and waits for one poll interval.
+13. `executeJob` finds the handler from the `type` column of the job.
+14. If the handler registry has no handler for the job type, the job gets a final failure with the code `UNKNOWN_JOB_TYPE`.
+15. A timer calls `renewLease` every `JOB_HEARTBEAT_MS`, also while the handler is quiet.
+16. If `renewLease` finds that the lease token changed, the timer stops. The outcome is then `lease_lost`.
+17. The handler runs. It can write progress to the `progress` column. It can also renew the lease with `heartbeat`.
+18. `heartbeat` renews the lease a maximum of one time in each 5 seconds (`HEARTBEAT_THROTTLE_MS`).
+19. If the handler returns a value, `completeJob` sets the job to `succeeded` and writes the value to the `result` column.
+20. If a different process took the lease while the handler ran, `completeJob` changes nothing. The outcome is then `lease_lost`.
+21. If the handler throws an error, the worker records the error. See [Retries](#retries).
+
+At start, `logUnhandledQueued` writes one log line for each job type with queued jobs and no handler in this worker. No claim loop takes these jobs.
+
+### Sweep
+
+1. Every `JOB_SWEEP_MS`, the queue runner calls `sweepExpired`.
+2. `sweepExpired` finds each `running` job with `lease_expires_at` in the past. A worker that stopped or stalled leaves such a job.
+3. If `attempt` is less than `maxAttempts`, the sweep sets the job to `queued` with `last_error_code` = `LEASE_EXPIRED`.
+4. The sweep also sets a new `run_after`. The backoff rules apply.
+5. If `attempt` is equal to or more than `maxAttempts`, the sweep sets the job to `failed` with `last_error_code` = `LEASE_EXPIRED` and `finished_at`.
+6. After a final failure, the sweep calls the `onFinalFailure` function of the handler, if the handler has one.
+7. Each statement of the sweep checks `lease_expires_at` again. Thus a job that a timer renewed in the meantime does not change.
+
+### Stop of the worker
+
+1. On `SIGTERM` or `SIGINT`, the worker stops all claim loops. No new job starts.
+2. The worker waits a maximum of 25 seconds for the jobs to end.
+3. After the 25 seconds, `releaseLease` gives back each job of this process that still runs. The job gets the state `queued` and a `run_after` of now. It also removes 1 from `attempt`. Thus the stop does not count as one of the `maxAttempts` of the job.
+4. `releaseLease` changes the job only if the job is `running` and has the lease token of this process.
+5. After 28 seconds, the process exits, also if a job still runs.
+6. The file `docker-compose.yml` sets `stop_grace_period: 30s` for the worker, so Docker waits for these steps.
+
+### Cloud Tasks mode: dispatch request and lease
+
+1. A dispatcher in the API or in the worker creates a Cloud Tasks task. Cloud Tasks sends a dispatch request to `POST /tasks/:type`.
+2. `verifyDispatchRequest` checks the request. The `authorization` header must hold a Google OIDC token. The token audience must be `WORKER_URL`, and the token `email` must be `API_SERVICE_ACCOUNT_EMAIL`.
+3. If the check fails, the worker sends status 401. If the body has no valid UUID in `jobId`, the worker sends status 400.
+4. `runJob` reads the job. If no job has this ID, the worker sends status 200 with the outcome `missing`.
+5. If the job state is `succeeded`, `failed` or `cancelled`, the worker sends status 200 and does not run the job.
+6. `acquireLease` sets the job to `running`, adds 1 to `attempt` and writes a new lease token. The lease ends after `LEASE_SECONDS`.
+7. `acquireLease` changes only a `queued` job, or a `running` job with an expired lease. If another process holds the lease, the worker sends status 409 with the outcome `lease_held`.
+8. `runJob` calls `executeJob`. The `:type` value in the path goes only into the log. The steps from 13 to 21 of the queue mode then apply.
+9. The worker sends status 200 for each outcome, except `retry`. For `retry`, it sends status 500.
 
 ### `document.verify`
 
@@ -148,7 +198,7 @@ A rejected document does not make the job fail. The job is `succeeded`, and its 
 | Read kind, no company | `needs_company` | No job. The investor must give the company. |
 | Read kind, with a company | `reading` | `document.extract`, with the key `document.extract:<documentId>:classification-<classificationId>` |
 
-`decideIntake` changes the document only if this classification is the current classification. It writes the new state and the `document.extract` job in one transaction. The dispatcher sends the dispatch request for the new job after the commit.
+`decideIntake` changes the document only if this classification is the current classification. It writes the new state and the `document.extract` job in one transaction. The dispatcher tells the worker about the new job after the commit.
 
 ### Company match
 
@@ -183,9 +233,11 @@ A rejected document does not make the job fail. The job is `succeeded`, and its 
 2. The failure is final if the `JobFailure` has `retryable` = false. The failure is also final if `attempt` is equal to or more than `maxAttempts`.
 3. For a final failure, `failAttempt` sets the job to `failed`. It writes `last_error_code`, `last_error_message` and `finished_at`. The message keeps the first 2000 characters.
 4. After a final failure, the worker calls the `onFinalFailure` function of the handler, if the handler has one. The worker sends status 200 with the outcome `failed`.
-5. For a failure that is not final, `failAttempt` sets the job to `queued` and removes the lease. The worker sends status 500 with the outcome `retry`.
-6. In `cloud-tasks` mode, Cloud Tasks sends the dispatch request again after status 500. The script `infra/bootstrap.sh` sets the retry schedule of the queue.
-7. In `local` mode, `LocalHttpDispatcher` sends the request one time. It writes the status to the log and does nothing more. No part of the worker sends the request again.
+5. For a failure that is not final, `failAttempt` sets the job to `queued`, removes the lease and sets `run_after`.
+6. The backoff is the smaller of 900 and 30 × 2^(`attempt` − 1) seconds, plus a random extra of up to 20%. `backoffSeconds` calculates it. The longest wait is 900 seconds plus 20%, thus 1080 seconds.
+7. In `queue` mode, a claim loop takes the job when `run_after` is past. No notification is necessary, because the poll finds the job.
+8. In `cloud-tasks` mode, the worker sends status 500 with the outcome `retry`. Cloud Tasks sends the dispatch request again. The script `infra/bootstrap.sh` sets the retry schedule of the queue.
+9. A retry through the API (`POST .../jobs/:id/retry`) sets `run_after` to now. The job then runs at once.
 
 The `onFinalFailure` functions are:
 
@@ -290,8 +342,8 @@ The breadth uses the current member list for all past days. Thus the past breadt
 
 | State or error | Cause | Result |
 | --- | --- | --- |
-| `queued` | `createJob` made the job, or a failure was not final. | The job waits for a dispatch request. |
-| `running` | `acquireLease` took the lease. | The handler runs. If the lease expires, a new dispatch request can take the job again. |
+| `queued` | `createJob` made the job, a failure was not final, or a sweep gave the job back. | The job waits for `run_after` and for a free place under the limit. |
+| `running` | `claimNext` or `acquireLease` took the lease. | The handler runs. If the lease expires, a sweep gives the job back. |
 | `succeeded` | The handler returned a value. | The worker does not run the job again. |
 | `failed` | A final failure. | The worker does not run the job again. |
 | `cancelled` | Not known. No code in `apps/worker` sets this state. | The worker sends status 200 and does not run the job. |
@@ -302,7 +354,8 @@ The breadth uses the current member list for all past days. Thus the past breadt
 | --- | --- | --- |
 | Status 200 | The job is `succeeded`, `failed`, `cancelled` or not in the database. | The caller does not send the request again. |
 | Status 400 | The body has no valid UUID in `jobId`. | The worker does not run the job. |
-| Status 401 | The secret or the OIDC token is not correct. | The worker does not run the job. |
+| Status 401 | In `cloud-tasks` mode, the OIDC token is not correct. | The worker does not run the job. |
+| Status 404 | A request to `/tasks/:type` in `queue` mode. The worker does not mount this route in `queue` mode. | The worker does not run the job. |
 | Status 409 | A different process holds the lease. | The worker does not run the job. |
 | Status 500, outcome `retry` | A failure that is not final. | The job is `queued` again. |
 | Status 500, error `internal` | An error that `runJob` does not catch. Examples: a database error before the handler starts, or an error in `failAttempt`. | The worker writes the error to the log. |
@@ -312,6 +365,7 @@ The breadth uses the current member list for all past days. Thus the past breadt
 | State or error | Cause | Result |
 | --- | --- | --- |
 | `UNKNOWN_JOB_TYPE` | No handler for the job type. | Final failure. |
+| `LEASE_EXPIRED` | A sweep found a `running` job with an expired lease. | Retry with backoff until `maxAttempts`. After that, final failure. |
 | `HANDLER_ERROR` | An error that is not a `JobFailure`. Examples: a storage error, or no `document` row in `document.verify`. | Retry until `maxAttempts`. |
 | `CLASSIFIER_NOT_CONFIGURED` | `EXTRACTOR_URL` has no value, and a `document.classify` job runs. | Final failure. The intake state becomes `identify_failed`. |
 | `EXTRACTOR_NOT_CONFIGURED` | `EXTRACTOR_URL` has no value, and a `document.extract` job runs. The extractor can also send this code. | Final failure from the worker. For the extractor code, the `retryable` flag of the extractor applies. |
@@ -422,7 +476,7 @@ The `jobId` column is unique in `document_classification` and in `extraction_rev
 | Object store | Read | The worker reads the object at `storage_key`. It never writes to the object store. |
 | Extractor | Write and read | `POST /v1/classify` and `POST /v1/extract`, with the PDF as the body and `content-type: application/pdf`. |
 | Cloud Tasks | Write | In `cloud-tasks` mode, the worker creates one task for each new job. The task name ends with `<jobId>-<attempt>`. |
-| Worker | Write | In `local` mode, the worker sends the dispatch request for a new job to its own `WORKER_URL`. |
+| Postgres notifications | Write and read | In `queue` mode, `QueueNotifier` sends `job_ready` with the job type. The queue runner listens for it. |
 | Log | Write | JSON lines from pino, with a `severity` field. |
 | Dhan Data API | Read | `POST /charts/historical`, `POST /optionchain/expirylist`, `POST /optionchain` and `POST /RenewToken` at `https://api.dhan.co/v2`. The token and the client ID go in the headers. |
 | Dhan scrip master | Read | The CSV file at `https://images.dhan.co/api-data/api-scrip-master.csv`. `HttpDhanSource` keeps only the rows of NSE stocks and of `GOLD` contracts on MCX. |
@@ -442,16 +496,19 @@ The `jobId` column is unique in `document_classification` and in `extraction_rev
 | `STORAGE_DRIVER` | `gcs` | `gcs` or `disk`. The worker refuses `disk` when `NODE_ENV` is `production`. |
 | `STORAGE_DIR` | `data/blobs` | The directory for the `disk` driver. |
 | `GCS_BUCKET` | No default | The bucket. Necessary when `STORAGE_DRIVER` is `gcs`. |
-| `DISPATCH_MODE` | `local` | `local` or `cloud-tasks`. |
-| `DISPATCH_SECRET` | No default | The shared secret. Necessary in `local` mode. It must be the same in the API and in the worker. |
-| `WORKER_URL` | No default. Necessary. | The URL of this worker. It is the OIDC audience and the target for new jobs. |
+| `DISPATCH_MODE` | `queue` | `queue` or `cloud-tasks`. |
+| `WORKER_URL` | No default. Necessary. | The URL of this worker. In `cloud-tasks` mode, it is the OIDC audience and the target for new jobs. |
 | `API_SERVICE_ACCOUNT_EMAIL` | No default | The `email` that the OIDC token must have. Necessary in `cloud-tasks` mode. |
 | `MAX_UPLOAD_BYTES` | `52428800` (50 MiB) | The largest object that `document.verify` accepts. |
 | `LEASE_SECONDS` | `600` | The length of a lease. |
+| `JOB_HEARTBEAT_MS` | `15000` | The time between two renewals of the lease of a running job. The worker does not start if this value is more than half of `LEASE_SECONDS`. |
+| `JOB_CONCURRENCY` | No default | The limits, in the form `type=n,type=n`. They replace the default limits. The next table gives the defaults. |
+| `JOB_POLL_MS` | `1000` | The time between two claims of an idle claim loop, if no notification comes. |
+| `JOB_SWEEP_MS` | `30000` | The time between two sweeps. |
 | `EXTRACTOR_URL` | No default | The base URL of the extractor. If it has no value, the worker has no extractor client. |
 | `EXTRACTOR_AUTH` | `secret` | `secret` sends the `x-extractor-secret` header. `oidc` sends a Google ID token with the extractor URL as audience. |
 | `EXTRACTOR_SECRET` | No default | Necessary when `EXTRACTOR_URL` has a value and `EXTRACTOR_AUTH` is `secret`. |
-| `EXTRACTOR_TIMEOUT_SECONDS` | `900` | The time limit for one request to the extractor, with the full stream. |
+| `EXTRACT_TIMEOUT_SECONDS` | `1800` | The time limit for one request to the extractor, with the full stream. |
 | `EXTRACT_MAX_BYTES` | `52428800` (50 MiB) | The largest document that the worker sends to the extractor. |
 | `GOOGLE_CLOUD_PROJECT` | No default | The Cloud Tasks project. Necessary in `cloud-tasks` mode when `EXTRACTOR_URL` has a value. |
 | `GOOGLE_CLOUD_LOCATION` | `asia-south1` | The Cloud Tasks location. |
@@ -461,6 +518,22 @@ The `jobId` column is unique in `document_classification` and in `extraction_rev
 | `CONNECTIONS_KEY` | No default | The connections key: 32 bytes in base64. It must be the same in the API and in the worker. If it has no value, the market refresher does not run. |
 | `DHAN_REQUESTS_PER_SECOND` | `4` | The maximum number of Dhan calls in each second. The maximum value is 5. |
 | `MARKET_REFRESH_MINUTES` | `30` | The time from the end of a pass to the start of the next pass. |
+
+### Default limits
+
+`JOB_CONCURRENCY` replaces these values for the job types that it names. A job type with no entry here has the limit 1.
+
+| Job type | Default limit |
+| --- | --- |
+| `document.verify` | 4 |
+| `document.classify` | 2 |
+| `document.extract` | 2 |
+
+The worker does not start in these conditions:
+
+- An entry of `JOB_CONCURRENCY` is not in the form `type=n`.
+- An entry names a job type that has no handler.
+- A limit is not a whole number of 1 or more.
 
 ## Procedures
 
@@ -574,7 +647,7 @@ Note: The command exits with code 0 for `ok` or `skipped`. It exits with code 1 
 
 ## Warnings and cautions
 
-WARNING: Keep `DISPATCH_SECRET` and `EXTRACTOR_SECRET` private. In `local` mode, a person with `DISPATCH_SECRET` can make the worker run any job. A person with `EXTRACTOR_SECRET` can send requests to the extractor.
+WARNING: Keep `EXTRACTOR_SECRET` private. A person with `EXTRACTOR_SECRET` can send requests to the extractor.
 
 WARNING: Keep `CONNECTIONS_KEY` private. A person with this key and access to the database can decrypt the Dhan token and the FRED key of the investor.
 
@@ -584,12 +657,12 @@ CAUTION: Do not change `CONNECTIONS_KEY` after the investor saves a connection. 
 
 ## Limits
 
-- The worker has no retry schedule of its own. In `local` mode, no part of the system sends a failed dispatch request again. The API has a retry route for jobs.
 - `document.verify` has no `onFinalFailure` function. After a final failure, the document can stay `verifying`.
 - In `cloud-tasks` mode, `loadWorkerEnv` checks `GOOGLE_CLOUD_PROJECT` and `WORKER_INVOKER_SA` only when `EXTRACTOR_URL` has a value. Without them, the `document.classify` job stays `queued`.
 - The worker command in `infra/deploy.sh` sets none of `EXTRACTOR_URL`, `GOOGLE_CLOUD_PROJECT` and `WORKER_INVOKER_SA`. With that configuration, the limit above applies.
 - The classify and extract handlers read the full PDF into memory. `EXTRACT_MAX_BYTES` limits the size.
-- The worker does not stop a handler when the lease ends. A second process can then start the same job.
+- The worker does not stop a handler when the lease ends. After a sweep, a second process can start the same job.
+- The limits are for one worker process. Two workers run twice the number of jobs.
 - Not known: the port of a deployed worker. The Dockerfile has `EXPOSE 8080`, but the default `PORT` is `8788`.
 - Not known: which part of the system sets a job to `cancelled`.
 - The worker does not read data from the NSE website, because the NSE terms forbid automated collection. A person downloads the member list by hand.
@@ -608,6 +681,9 @@ CAUTION: Do not change `CONNECTIONS_KEY` after the investor saves a connection. 
 - [apps/worker/src/auth.ts](../../apps/worker/src/auth.ts)
 - [apps/worker/src/run.ts](../../apps/worker/src/run.ts)
 - [apps/worker/src/lease.ts](../../apps/worker/src/lease.ts)
+- [apps/worker/src/queue.ts](../../apps/worker/src/queue.ts)
+- [apps/worker/src/start.ts](../../apps/worker/src/start.ts)
+- [packages/db/drizzle/0006_job_queue.sql](../../packages/db/drizzle/0006_job_queue.sql)
 - [apps/worker/src/dispatch.ts](../../apps/worker/src/dispatch.ts)
 - [apps/worker/src/store.ts](../../apps/worker/src/store.ts)
 - [apps/worker/src/extractor.ts](../../apps/worker/src/extractor.ts)

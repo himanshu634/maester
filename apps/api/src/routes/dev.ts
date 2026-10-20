@@ -104,7 +104,7 @@ export function devRoutes(deps: AppDeps) {
   // Local blob endpoints standing in for signed Cloud Storage URLs. Mounted
   // only when STORAGE_DRIVER=disk, which env validation refuses in production.
   if (deps.env.STORAGE_DRIVER === "disk") {
-    const secret = deps.env.DISPATCH_SECRET ?? deps.env.BETTER_AUTH_SECRET;
+    const secret = deps.env.BETTER_AUTH_SECRET;
     const store = deps.store as DiskObjectStore;
 
     const authorize = (c: { req: { path: string; query: (k: string) => string | undefined } }, method: "PUT" | "GET") => {

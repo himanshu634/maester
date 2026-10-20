@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+from eval_fixtures import plain
 from test_extraction_workflow import FAST, PDF, ScriptedModel
 from typer.testing import CliRunner
 
@@ -321,7 +322,7 @@ class ExportCommandTests(unittest.TestCase):
         result = self.export("--help")
         self.assertEqual(result.exit_code, 0, result.output)
         for text in ("--run", "--only", "--force", "latest"):
-            self.assertIn(text, result.output)
+            self.assertIn(text, plain(result.output))
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 """Fixtures the evaluation harness tests share: one filing and the sheet rows that freeze, scoring and the report read."""
 
 from datetime import datetime, timezone
+import re
 
 from maester_eval.manifest import Filing
 from maester_eval.sheets import SHEET_COLUMNS
@@ -8,6 +9,13 @@ from maester_eval.sheets import SHEET_COLUMNS
 FILING = Filing(file="synthetic-industries/ar-2025-26.pdf", company="Synthetic Industries Limited",
                 kind="annual_report", period_end="2026-03-31", set="dev")
 WHEN = datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def plain(text):
+    """The text without terminal styles. Typer colours help under GitHub Actions, which splits "--run" into "-" and "-run"."""
+    return _ANSI.sub("", text)
 
 
 def row(**values):

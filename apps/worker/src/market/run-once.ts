@@ -1,5 +1,5 @@
 import { createDb, latestMarketFetch, type Db } from "@maester/db";
-import { loadWorkerEnv, type WorkerEnv } from "../env.js";
+import { dispatchModeWarning, loadWorkerEnv, type WorkerEnv } from "../env.js";
 import { createLogger, type Logger } from "../logger.js";
 import { createMarketRefresher } from "./build.js";
 
@@ -21,6 +21,8 @@ export async function runMarketRefreshOnce(
     out.error((err as Error).message);
     return 1;
   }
+  const dispatchWarning = dispatchModeWarning(source);
+  if (dispatchWarning) out.error(dispatchWarning);
   if (!env.CONNECTIONS_KEY) {
     out.error("CONNECTIONS_KEY is not set");
     return 1;

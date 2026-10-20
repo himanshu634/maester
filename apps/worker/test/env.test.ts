@@ -1,14 +1,64 @@
 import { describe, expect, it } from "vitest";
-import { loadWorkerEnv } from "../src/env.js";
+import { dispatchModeWarning, loadWorkerEnv } from "../src/env.js";
+import { handlers } from "../src/jobs/index.js";
+import { silentLogger } from "../src/logger.js";
+import { buildQueueOptions } from "../src/start.js";
 
 const base = {
   NODE_ENV: "test",
   DATABASE_URL: "postgres://x",
   GCS_BUCKET: "b",
-  DISPATCH_MODE: "local",
-  DISPATCH_SECRET: "s",
+  DISPATCH_MODE: "queue",
   WORKER_URL: "http://localhost:8788",
 };
+
+describe("worker env: the queue", () => {
+  it("defaults to the in-process queue with a 30-minute extract timeout", () => {
+    const env = loadWorkerEnv({ ...base, DISPATCH_MODE: undefined });
+    expect(env.DISPATCH_MODE).toBe("queue");
+    expect(env.EXTRACT_TIMEOUT_SECONDS).toBe(1800);
+    expect(env.JOB_POLL_MS).toBe(1000);
+    expect(env.JOB_SWEEP_MS).toBe(30000);
+    expect(env.JOB_HEARTBEAT_MS).toBe(15000);
+    expect(env).not.toHaveProperty("EXTRACTOR_TIMEOUT_SECONDS");
+  });
+
+  it("reads the old DISPATCH_MODE=local as queue, and warns once at start", () => {
+    expect(loadWorkerEnv({ ...base, DISPATCH_MODE: "local" }).DISPATCH_MODE).toBe("queue");
+    expect(dispatchModeWarning({ ...base, DISPATCH_MODE: "local" })).toBe("DISPATCH_MODE=local is now queue; update .env");
+    expect(dispatchModeWarning(base)).toBeNull();
+    expect(dispatchModeWarning({ ...base, DISPATCH_MODE: undefined })).toBeNull();
+  });
+
+  it("still refuses an unknown DISPATCH_MODE", () => {
+    expect(() => loadWorkerEnv({ ...base, DISPATCH_MODE: "http" })).toThrow(/DISPATCH_MODE/);
+  });
+
+  it("refuses a heartbeat that does not renew well inside the lease", () => {
+    expect(() => loadWorkerEnv({ ...base, LEASE_SECONDS: "10" })).toThrow(/JOB_HEARTBEAT_MS/);
+    expect(() => loadWorkerEnv({ ...base, LEASE_SECONDS: "10", JOB_HEARTBEAT_MS: "5001" })).toThrow(/JOB_HEARTBEAT_MS/);
+    expect(loadWorkerEnv({ ...base, LEASE_SECONDS: "10", JOB_HEARTBEAT_MS: "5000" }).JOB_HEARTBEAT_MS).toBe(5000);
+  });
+
+  it("reads EXTRACT_TIMEOUT_SECONDS", () => {
+    expect(loadWorkerEnv({ ...base, EXTRACT_TIMEOUT_SECONDS: "60" }).EXTRACT_TIMEOUT_SECONDS).toBe(60);
+  });
+
+  it("fails at start on a bad JOB_CONCURRENCY", () => {
+    const env = loadWorkerEnv({ ...base, JOB_CONCURRENCY: "bad" });
+    expect(() => buildQueueOptions(env, handlers, silentLogger)).toThrow(/JOB_CONCURRENCY/);
+    const zero = loadWorkerEnv({ ...base, JOB_CONCURRENCY: "document.verify=0" });
+    expect(() => buildQueueOptions(zero, handlers, silentLogger)).toThrow(/document\.verify/);
+  });
+
+  it("builds the runner's options from the environment", () => {
+    const env = loadWorkerEnv({ ...base, JOB_CONCURRENCY: "document.extract=3", JOB_POLL_MS: "250", JOB_SWEEP_MS: "5000" });
+    const opts = buildQueueOptions(env, handlers, silentLogger);
+    expect(opts.concurrency).toEqual({ "document.verify": 4, "document.classify": 2, "document.extract": 3 });
+    expect(opts).toMatchObject({ pollMs: 250, sweepMs: 5000 });
+    expect(typeof opts.listen).toBe("function");
+  });
+});
 
 describe("worker env: extraction", () => {
   it("leaves extraction off without EXTRACTOR_URL", () => {

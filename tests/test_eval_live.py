@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+from eval_fixtures import plain
 from test_extraction_workflow import FAST, PDF, ScriptedModel
 from typer.testing import CliRunner
 
@@ -252,7 +253,7 @@ class LiveCommandTests(unittest.TestCase):
         result = CliRunner().invoke(cli.app, ["live", "--help"], env={"COLUMNS": "200"})
         self.assertEqual(result.exit_code, 0, result.output)
         for text in ("--set", "--only", "--label", "letters, digits, dot, dash or underscore"):
-            self.assertIn(text, result.output)
+            self.assertIn(text, plain(result.output))
 
 
 class EnvConfigTests(unittest.TestCase):

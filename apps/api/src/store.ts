@@ -13,7 +13,7 @@ export function createStore(env: Env): ObjectStore {
   if (env.STORAGE_DRIVER === "disk") {
     return new DiskObjectStore(env.STORAGE_DIR, {
       baseUrl: env.BETTER_AUTH_URL,
-      secret: env.DISPATCH_SECRET ?? env.BETTER_AUTH_SECRET,
+      secret: env.BETTER_AUTH_SECRET,
       pathPrefix: BLOB_PATH_PREFIX,
     });
   }

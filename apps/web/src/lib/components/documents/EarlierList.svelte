@@ -12,12 +12,12 @@
 		docs: DocumentRecord[];
 		/** The API has more than the first page. */
 		more: boolean;
-		/** The document whose bytes this page is sending. */
-		uploadingId?: string | null;
+		/** The documents whose bytes this page is sending. */
+		uploadingIds?: readonly string[];
 		onopen: (id: string) => void;
 	}
 
-	let { docs, more, uploadingId = null, onopen }: Props = $props();
+	let { docs, more, uploadingIds = [], onopen }: Props = $props();
 
 	const id = $props.id();
 </script>
@@ -34,7 +34,7 @@
 						{doc.originalName}
 					</button>
 					<span class="kind">{whatItIs(doc.classification)}</span>
-					<span class="state">{stateLabel(doc, { uploading: doc.id === uploadingId })}</span>
+					<span class="state">{stateLabel(doc, { uploading: uploadingIds.includes(doc.id) })}</span>
 				</li>
 			{/each}
 		</ul>

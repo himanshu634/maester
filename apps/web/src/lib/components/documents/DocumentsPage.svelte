@@ -11,16 +11,24 @@
 	import { documentsContent as copy } from '$lib/content/documents';
 	import { documentsApi, readMe, type DocumentsApi, type Fetcher } from '$lib/documents/client';
 	import {
+		endAloud,
+		folderOf,
+		screen,
+		sendAll,
+		sendingLine,
+		startAloud,
+		type Outcome,
+		type Picked
+	} from '$lib/documents/batch';
+	import {
 		changeFailure,
-		checkFile,
 		isLive,
 		pickSlip,
 		anyLive,
 		LIST_POLL_MS,
 		mergeList,
 		POLL_MS,
-		stateLabel,
-		uploadFailure
+		stateLabel
 	} from '$lib/documents/intake';
 	import type { Company, DocumentClassification, DocumentRecord } from '$lib/documents/types';
 	import SectionIssue from '$lib/components/errors/SectionIssue.svelte';
@@ -40,9 +48,14 @@
 	/** The document the slip shows. Pinned, so a slip never jumps away when its work finishes. */
 	let opened = $state<string | null>(null);
 	let answers = $state.raw<DocumentClassification | null>(null);
-	let uploadingId = $state<string | null>(null);
-	let uploadingName = $state<string | null>(null);
-	let problem = $state<{ message: string; signIn?: boolean } | null>(null);
+	/** The documents whose bytes this page is sending. */
+	let uploadingIds = $state.raw<string[]>([]);
+	/** The drop strip's line while a batch is checked and sent. */
+	let busy = $state<string | null>(null);
+	/** Files are being sent: closing the tab would stop them. */
+	let sending = $state(false);
+	/** How the last batch went. */
+	let outcome = $state.raw<Outcome | null>(null);
 	let message = $state<string | null>(null);
 	let announcement = $state('');
 	let hidden = $state(false);
@@ -76,14 +89,15 @@
 	 * Something in Earlier is being worked on. A boolean, so the list poll below re-arms only when
 	 * it flips, not each time the slip's poll replaces `docs`.
 	 */
-	let watchingEarlier = $derived(anyLive(docs, [slip?.id ?? null, uploadingId]));
+	let watchingEarlier = $derived(anyLive(docs, [slip?.id ?? null, ...uploadingIds]));
 	let slipAnswers = $derived(
 		answers && slip && answers.classification.documentId === slip.id ? answers : null
 	);
 
 	/** Say once, politely, that the slip's document has moved on. */
 	function announceIfMoved(before: DocumentRecord | undefined, next: DocumentRecord) {
-		if (slip?.id !== next.id) return;
+		// A batch says its start and end once; the slip's changes would be said per file.
+		if (busy || slip?.id !== next.id) return;
 		const was = before ? stateLabel(before) : null;
 		const now = stateLabel(next);
 		if (was !== now) announcement = copy.announce(next.originalName, now);
@@ -236,7 +250,7 @@
 	// While Maester works on the slip's document, ask again; never while the tab is hidden.
 	$effect(() => {
 		const current = slip;
-		if (!current || !api || hidden || current.id === uploadingId || !isLive(current)) return;
+		if (!current || !api || hidden || uploadingIds.includes(current.id) || !isLive(current)) return;
 		const wait = POLL_MS * Math.min(1 + pollFailures, 5);
 		const timer = window.setTimeout(() => refresh(current.id), wait);
 		return () => window.clearTimeout(timer);
@@ -264,36 +278,84 @@
 		};
 	});
 
-	async function addFile(file: File) {
-		problem = null;
-		const wrong = checkFile(file);
-		if (wrong) {
-			problem = { message: wrong };
-			return;
-		}
-		if (!api || uploadingName) return;
-		uploadingName = file.name;
+	/** Say something once, politely; cleared first so the same words twice are said twice. */
+	function say(words: string) {
+		announcement = '';
+		tick().then(() => (announcement = words));
+	}
+
+	/**
+	 * Add a batch: check every file in the browser, send the rest a few at a time, one document
+	 * per file, then say once how it went. The start and the end are announced, never each file.
+	 * A lone file opens its slip and takes focus as soon as the API has it; a batch holds the slip
+	 * on its first file without moving focus, and opens the first file sent once it ends.
+	 */
+	async function addFiles(picked: Picked[]) {
+		const client = api;
+		if (!client || busy || picked.length === 0) return;
+		outcome = null;
 		message = null;
-		try {
-			const done = await api.upload(file, {
-				onCreated: (doc) => {
-					uploadingId = doc.id;
-					opened = doc.id;
-					replace(doc);
-					// The new slip is where the file now stands.
-					tick().then(() => slipHeading?.focus());
-				}
-			});
-			uploadingId = null;
-			replace(done.document);
-			announcement = copy.announce(done.document.originalName, stateLabel(done.document));
-		} catch (error) {
-			const failure = uploadFailure(error, file);
-			problem = { message: failure.message, signIn: failure.signIn };
-		} finally {
-			uploadingId = null;
-			uploadingName = null;
+		const folder = folderOf(picked);
+		busy = copy.drop.checking(picked.length);
+		const { accepted, refused } = await screen(picked, folder);
+		const lone = accepted.length === 1;
+		/** Each sent file's document, so the batch can open the first one chosen. */
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping for one batch, never drawn
+		const sentAs = new Map<Picked, string>();
+		let result: Pick<Outcome, 'sent' | 'refused' | 'unsent' | 'stopped'> = {
+			sent: 0,
+			refused: [],
+			unsent: 0,
+			stopped: null
+		};
+		if (accepted.length > 0) {
+			busy = sendingLine(0, accepted, folder);
+			say(startAloud(accepted, folder));
+			let pinned = false;
+			sending = true;
+			result = await sendAll(
+				accepted,
+				folder,
+				async (item) => {
+					let created: string | null = null;
+					try {
+						const done = await client.upload(item.file, {
+							onCreated: (doc) => {
+								created = doc.id;
+								uploadingIds = [...uploadingIds, doc.id];
+								replace(doc);
+								if (lone) {
+									opened = doc.id;
+									// The new slip is where the file now stands.
+									tick().then(() => slipHeading?.focus());
+								} else if (!pinned) {
+									// Held on one file, so the slip does not follow each new one.
+									pinned = true;
+									opened = doc.id;
+								}
+							}
+						});
+						replace(done.document);
+						sentAs.set(item, done.document.id);
+					} finally {
+						if (created) uploadingIds = uploadingIds.filter((doc) => doc !== created);
+					}
+				},
+				(settled) => (busy = sendingLine(settled, accepted, folder))
+			);
+			sending = false;
 		}
+		const ended: Outcome = {
+			total: picked.length,
+			folder,
+			...result,
+			refused: [...refused, ...result.refused]
+		};
+		const firstSent = accepted.map((item) => sentAs.get(item)).find((doc) => doc !== undefined);
+		if (!lone && firstSent) opened = firstSent;
+		busy = null;
+		outcome = ended;
+		say(endAloud(ended));
 	}
 
 	async function openDoc(docId: string) {
@@ -368,9 +430,9 @@
 		}
 	}
 
-	/** Sending the bytes is the one step leaving the page would stop. */
+	/** Sending the bytes is the one step closing the tab would stop. */
 	function beforeunload(event: BeforeUnloadEvent) {
-		if (uploadingName) event.preventDefault();
+		if (sending) event.preventDefault();
 	}
 </script>
 
@@ -384,10 +446,10 @@
 	</div>
 
 	<DropStrip
-		onfile={addFile}
-		uploading={uploadingName}
+		onfiles={addFiles}
+		{busy}
+		{outcome}
 		waitingNote={load === 'ready' ? undefined : `${id}-waiting`}
-		{problem}
 	/>
 
 	{#if load === 'loading'}
@@ -434,7 +496,7 @@
 							doc={slip}
 							answers={slipAnswers}
 							{companies}
-							uploading={slip.id === uploadingId}
+							uploading={uploadingIds.includes(slip.id)}
 							{message}
 							answersFailed={answersFailed === slip.id}
 							onreload={() => reloadSlip(slip.id)}
@@ -446,11 +508,11 @@
 						/>
 					{/key}
 					<p class="leaving muted">
-						{uploadingName ? copy.leavingWhileSending : copy.leaving}
+						{sending ? copy.leavingWhileSending : copy.leaving}
 					</p>
 				</div>
 			{/if}
-			<EarlierList docs={earlier} {more} {uploadingId} onopen={openDoc} />
+			<EarlierList docs={earlier} {more} {uploadingIds} onopen={openDoc} />
 		</div>
 	{/if}
 
