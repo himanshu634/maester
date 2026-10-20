@@ -1,0 +1,1423 @@
+# Ingestion phase 4: XBRL — Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** An XBRL instance the investor uploads (one file, a dropped folder or a folder imported from the command line) becomes facts with their source, element, span, basis, unit and precision; a results PDF whose statements XBRL already covers is not read by Gemini; the reads, the Research stitch and a new per-document `pipeline` object and `GET …/filings` route say which source every statement's numbers come from.
+
+**Architecture:** The extractor gains `/v1/xbrl` (modes `classify`, `read`, `text`) and `/v1/xbrl/pdf-check`, over our own `lxml` parser in `packages/financial-engine/src/pdf_financial_qa/xbrl/` with one reviewed element map per mapped format. The worker sniffs XML in `document.verify`, classifies an XBRL instance with no model in `document.classify`, reads it in a new `document.xbrl` job (limit 2) into an `extraction_revision` with `source = 'xbrl'`, and runs the `xbrl_in_pdf` check in a new `document.xbrl_check` job. `decideIntake` applies the source rule, a named, versioned function in `@maester/financial-engine` with a Python twin in `apps/eval`, both tested against one fixture: XBRL wins a slot, a PDF whose bases XBRL covers skips Gemini, and a PDF waits (`waiting_for_xbrl`) for XBRL dropped with it. XBRL text blocks go into the phase 2 index through the extractor's `text` mode and a new indexer route that chunks given text.
+
+**Tech Stack:** Python 3.12, lxml (pinned), FastAPI, python-multipart, Pydantic, unittest; TypeScript, Hono, Zod, Drizzle and drizzle-kit, saxes (pinned), Vitest; Postgres 16 with pgvector.
+
+**Spec:** [`docs/superpowers/specs/2026-10-19-ingestion-pipeline-design.md`](../specs/2026-10-19-ingestion-pipeline-design.md) §6, §7, §8.1 (XBRL text blocks), §11, §13, §14, §15, §16 phase 4, §17 and §19. Research: [`docs/research/2026-10-19-ingestion-research.md`](../../research/2026-10-19-ingestion-research.md) §4. Screen contract: [`docs/superpowers/specs/2026-10-19-documents-filings-design.md`](../specs/2026-10-19-documents-filings-design.md) §3, §8 and §9 (the six asks and the filings route). Rules: [financial data layer](../specs/2026-10-15-financial-data-layer-design.md) §4 (span names), [ADR 0006](../../decisions/0006-concepts-calculations-agent-access.md), [ADR 0007](../../decisions/0007-ingestion-pipeline.md), `CLAUDE.md` "Financial figures". Builds on the [phase 2 plan](2026-10-20-ingestion-phase-2-index.md).
+
+## Survey of the instances on hand
+
+Read-only, 20 October 2026, over the 807 files in `~/Personal/maester-filings/xbrl/`. Only element names, context ids, enumerated values and counts were taken, never a figure. Task 4 repeats it with a committed command.
+
+- **Namespaces.** Facts are in exactly one namespace per file: `http://www.sebi.gov.in/xbrl/2025-01-31/in-capmkt` (412 files) and `…/2026-01-31/in-capmkt` (201), `http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin` (178) and `…/2019-09-30/in-bse-fin` (16, banking). The root is `{http://www.xbrl.org/2003/instance}xbrl`. A comment comes before the root (`<!--IFIndAs V1.0 (07-10-2025)-->`). No DOCTYPE in any file.
+- **Formats** by file-name token: `Integrated_Finance_Ind_As` 550, `Main_Ind_As` 174, `IFBanking` 49, `Banking` 16, `Integrated_Finance_NBFC` 12, `NBFC` 4, `IFOtherthan` 2. **The mapped Ind AS formats are 724 files, not the 550 the spec says** (550 is the in-capmkt Ind AS count alone).
+- **Telling formats apart by elements** (numeric facts), checked on every file: banking always has `CET1Ratio` and `AdditionalTier1Ratio`, which no Ind AS file has. NBFC always has `InterestEarned`, `FeesAndCommissionIncome` and `ImpairmentOnFinancialInstruments`, and no Ind AS file has these. "Other than Ind AS" has `CashFlowsFromUsedInOperatingActivitiesBeforeExtraordinaryItems` and `AdjustmentsForWorkingCapital`, and has no `ComprehensiveIncomeForThePeriod`. Ind AS always has `ComprehensiveIncomeForThePeriod` and `BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations`. Element names are the same in in-capmkt Ind AS and in-bse-fin Ind AS.
+- **Identity and metadata** (non-numeric facts in context `OneD`): `NameOfTheCompany`, `ScripCode`, `Symbol`, `ISIN`, `NatureOfReportStandaloneConsolidated` (`Consolidated` 715, `Standalone` 705, never both in one file), `WhetherResultsAreAuditedOrUnaudited`, `DateOfStartOfReportingPeriod`, `DateOfEndOfReportingPeriod`, `ReportingQuarter` (`First quarter`, `Second quarter`, `Third quarter`, `Fourth quarter`, `Half yearly`, `Yearly`), `TypeOfReportingPeriod` (in-capmkt only: `Quarterly`, `Half Yearly`), `DescriptionOfPresentationCurrency` (`INR` in all 807). The entity identifier scheme is `http://www.sebi.gov.in/in-capmkt/ScripCode` or `http://www.bseindia.com/bse-fin/ScripCode`; it is not used.
+- **Rounding.** `LevelOfRounding` (in-capmkt): `Crores` 339, `Millions` 157, `Lakhs` 117. `LevelOfRoundingUsedInFinancialStatements` (in-bse-fin): `Crores` 102, `Millions` 48, `Lakhs` 44. A Lakhs file holds facts with `decimals` −3, −4 and −5. Earnings per share has `decimals="INF"`.
+- **Units.** `INR` (`iso4217:INR`) and `INRPerShare` (`iso4217:INR` over `xbrli:shares`).
+- **Contexts** without dimensions, by the file name's period token: `MC` (March, cumulative) `FourD, OneD, OneI, PY_I`; `JQ` `OneD` or `OneD, OneI`; `SQ` and `SH` `FourD, OneD, OneI, PY_I`; `DQ` and `DN` `FourD, OneD` or `FourD, OneD, OneI`. Dimensional contexts carry their members in `scenario` (`OneExpenses1D`, `D_ItemsThatWillNotBeReclassifiedToProfitAndLoss11`), never in `segment`. `CashAndCashEquivalentsCashFlowStatement` comes in `PY_I` (opening) and `OneI` (closing).
+- **Text blocks.** Three elements end in `TextBlock`: `DisclosureOfNotesOnFinancialResultsExplanatoryTextBlock` (403 files), `DisclosureOfNotesOnSegmentsExplanatoryTextBlock` (162) and `DisclosureOfNotesOnAssetsAndLiabilitiesExplanatoryTextBlock` (84). Long text also sits in elements ending in `Explanatory`, such as `RelatedPartyTransactionExplanatory` (904 facts). Their text is escaped HTML.
+- **Sizes.** Median 53,615 bytes; the largest is 7,915,421 bytes. No `xsi:nil` occurs.
+
+## Where this plan departs from the spec, and why
+
+1. **Span names are the data layer's.** §7.2 lists `full_year` but says the columns come "with its names". The data layer (§4) names the span `quarter`, `half_year`, `nine_months`, `year` and `other`, so the `fact_span` enum uses those names. The classification's `results_span` keeps `full_year`. `toResultsSpan(span)` in `@maester/contracts` maps `year` to `full_year`.
+2. **A filing is keyed without the span.** The screen spec keys a filing by `(company_id, kind, period_end, span)`. The PDF classifier's span is the first span phrase on the title pages ("quarter and half year ended" is one filing). The XBRL span comes from the reporting period's dates. The two disagree on the same filing. This plan keys by `(company_id, kind, period_end)` and lists the spans, and the skip rule matches XBRL to a PDF by company, `financial_results` and period end.
+3. **ISIN needs columns.** Identity uses `ISIN` (§6.2), but `company` and `document_classification` have no ISIN. Migration 0008 adds `company.isin` (unique per workspace when set) and `document_classification.isin`. `matchCompanies` matches by CIN, then by any of the BSE code, NSE symbol and ISIN, then by name.
+4. **`xbrl_in_pdf` rows.** The check is per fact, it runs again when a PDF arrives after the XBRL, and the screen needs its page and reason (ask 6). So the rows are `extraction_check` rows (`check_type = 'xbrl_in_pdf'`, §13) with five new nullable columns: `fact_id`, `pdf_document_id`, `pdf_classification_id`, `page_index` and `reason`. The new job `document.xbrl_check` writes them, once per (XBRL fact, PDF classification). They are never updated: the facts and the revision's own checks stay as they are, and a later PDF classification adds a new set. "The units the PDF prints" is taken to be the unit the XBRL declares (`LevelOfRounding`), because when Gemini is skipped nothing has read the PDF's unit. `XBRL_PDF_CHECK=false` is read by both the worker (no job) and the API (the reason `disabled`).
+5. **`XBRL_MIXED_BASIS` is held as "what is it?".** The intake states have no basis question. An instance that states both bases, or neither, is classified `not_sure` with the warning, so `decideIntake` holds it as `needs_kind`. If the investor then says "financial results", its facts are read with basis `unknown`, and a fact of unknown basis covers no slot.
+6. **The Q4 question is left out, with no setting.** A slot carries its filing kind (`annual_report` or `financial_results`), so a results instance's full-year facts never compete for an annual report's slot. If the investor decides yes, the change is one line in `slotKey` plus the fixture's case `q4-results-xbrl-does-not-fill-annual`, whose expectation flips.
+7. **The `pipeline` shape grows to carry the asks.** The changes are these:
+   - `coveredByXbrl` is an array, because consolidated and standalone are two instances.
+   - `identified` gains `waiting` (not stored yet).
+   - `numbers.state` gains `not_read`, with a `reason` and a `format` (ask 3).
+   - `waiting` carries `waitingOn` (ask 2).
+   - `text` gains `xbrlBlocks` and `ahead` (ask 4).
+   - Keys are camelCase on the wire, like every other contract.
+8. **A PDF that skips Gemini goes to `read`** with no revision. The slip's "Ready" and the screen's "From XBRL" both read it that way. Only `financial_results` can skip, so Research's `counts()` (annual reports only) is unaffected.
+9. **New codes.** `XBRL_ROUNDING_MISSING` (no declared rounding: the unit is unknown and the revision is `partial`); `XBRL_NOT_INSTANCE` is not added: verify answers `UNSUPPORTED_TYPE`.
+10. **Who releases a waiting PDF.** A PDF waits on XBRL documents whose company is not known yet: during a folder import, that is every one of them. So each time an XBRL document settles, every waiting PDF of the workspace is decided again, not only those of that company. Each new decision is cheap and idempotent. An upload still at `pending_upload` holds no PDF, so an abandoned upload never holds one forever. XBRL that arrives later still takes its slots (§6.3.4).
+11. **The map's sums.** A sum whose lines are all absent from the instance is `not_checked`. When some lines are absent, the check runs over the lines present, and its `detail` names the absent elements. A nil line makes the sum `not_checked`. The spec says the finest `decimals` is the sums' tolerance. A single 10^(−finest) is tighter than rounding allows: seven expense lines and their total, each rounded to the thousand, can be off by 4,000 rupees with nothing wrong. So the tolerance is the most that rounding can move the sum: Σ ½ × 10^(−decimals) over the total and the parts present, with `INF` counting 0. Task 20's report shows how many sums pass under it.
+12. **Precision is padded, never rounded.** `reported_value` is the value divided by the declared scale. It is written with at least max(0, decimals − rounding exponent) places, padded with zeros, and never rounded. The rounding exponent is negative: −5 for lakh, so decimals −3 gives 2 places, and −7 for crore, so decimals −7 gives 0. So stitch's restatement comparison ("the coarser of the two printed precisions") works on XBRL facts unchanged.
+13. **Cash balances in the cash flow.** `CashAndCashEquivalentsCashFlowStatement` is an instant. A map entry with `"cash_balance": true` writes it once into each cash-flow duration column it opens (its instant is the day before the duration starts: the opening label) or closes (its instant is the duration's end: the closing label).
+14. **Text blocks.** These are non-numeric facts whose element ends in `TextBlock` or `Explanatory` (the survey), with or without dimensions. The extractor's `text` mode turns their HTML into plain text. A new indexer route, `/v1/chunk-text`, splits it with the embedding model's tokenizer, because that tokenizer lives in the indexer. There is one hardened XML parser, not two.
+15. **The import command** is a new pnpm package, `@maester/import` (`apps/import`). There is no `@maester/cli`: `apps/cli` is the Python app, and it has no API client. The command signs nothing: it reads the investor's session cookie from `MAESTER_SESSION_COOKIE`.
+16. **Audit status** is read in classify mode and returned on the wire, but not stored. The data layer's phase 4 adds `audit_status`.
+
+## Not in this phase
+
+- The Documents screen (`FilingList`, `Filing`, `Track`, `ConfirmCompanies`) and the figure panel's XBRL words: phase 6. Here, `apps/web` changes only its accept list, its browser check, the upload's MIME type, three copy strings, and the two cases today's slip would otherwise break on: `waiting_for_xbrl` and evidence with no page (Task 19).
+- The source and format strata, `compare --xbrl`, and scoring the map against gold: phase 5. The map's evaluation here is the offline run of Task 20.
+- Concept mappings written from the map (`concept_mapping` with source `xbrl_rule`): the data layer's phase 1. The map carries the concept, and the evaluation uses it.
+- Dimensional facts (segments, related parties) as figures: the data layer's phase 5.
+- Maps for banking, NBFC and "other than Ind AS": these formats are read, write no facts and carry `XBRL_FORMAT_UNMAPPED`.
+
+## Global Constraints
+
+- **Branching.** Branch from `staging` once PR #13 (phase 2) is merged, or from `feat/ingestion-index`. The migration is `0008_xbrl` (`pnpm --filter @maester/db generate --name xbrl`).
+- **Financial figures** (`CLAUDE.md`, the `financial-figures` skill): decimal strings on the wire, `numeric` in Postgres, Python `Decimal` in the parser. The checks are these:
+  - Never a float. `Number()` on a figure is a defect.
+  - Unknown stays unknown: nil is `value_status = 'unparsed'` with `xbrl_source.nil = true` and the warning `XBRL_NIL`. A missing line is absent, never zero.
+  - Basis, currency, unit, span and period are on every fact.
+  - The element map is a mapping rule. A change to it, or to the parser, the sums or `xbrl_in_pdf`, bumps `XBRL_MAP_VERSION` or `XBRL_PARSER_VERSION` and ships with a `maester-eval xbrl-map` report under `docs/eval/`.
+  - The source rule is `sourceRule` in `@maester/financial-engine` (`SOURCE_RULE_VERSION = 1`), with its fixture.
+  - `apps/web` computes nothing.
+- **The values.** These are fixed:
+  - `XBRL_PARSER_VERSION = "1"`, `XBRL_MAP_VERSION = "1"`, `XBRL_TEXT_VERSION = "1"`.
+  - Revision fields: `model` `"xbrl-parser-1"`, `pipeline_version` `"xbrl-1"`, `prompt_version` `"<format id>@<XBRL_MAP_VERSION>"` (for example `"in-capmkt/ind_as@1"`, or `"in-capmkt/banking@-"` unmapped).
+  - Format ids are `<family>/<kind>`. Families: `in-capmkt`, `in-bse-fin`. Kinds: `ind_as`, `banking`, `nbfc`, `other_than_ind_as`, `unknown`. The mapped ids are `in-capmkt/ind_as` and `in-bse-fin/ind_as`.
+- **Limits.** `XBRL_MAX_BYTES` 20971520, `XBRL_MAX_FACTS` 100000, `XBRL_DEADLINE_SECONDS` 30. Each is an extractor setting. Over any of them the answer is `XBRL_UNREADABLE`, not retried. `XBRL_SNIFF_BYTES` 65536 (worker).
+- **Rounding words.** The value is matched case-insensitively and gives `unit_label`, `scale_factor` and the expected coarsest `decimals`:
+  - `Crores`: `₹ crore`, 10000000, −7.
+  - `Lakhs`: `₹ lakh`, 100000, −5.
+  - `Millions`: `₹ million`, 1000000, −6.
+  - `Thousands`: `₹ thousand`, 1000, −3.
+  - `Billions`: `₹ billion`, 1000000000, −9.
+  - `Actual`: `₹`, 1, 0.
+
+  The symbol is `₹` for `iso4217:INR`; for any other currency the unit label starts with the ISO code. A per-share fact (unit `iso4217:INR` over `xbrli:shares`) has `unit_label` `₹ a share` and `scale_factor` 1.
+- **Spans from dates.** A duration whose start is the first of a month and whose end is the last day of a month spans n = 12·(end year − start year) + end month − start month + 1 months. n = 3 is `quarter`, 6 is `half_year`, 9 is `nine_months` and 12 is `year`. Any other duration is `other`. An instant has span null.
+- **Period labels** come from the span and the dates, for example `Quarter ended 30 Sep 2025`, `Half year ended 30 Sep 2025`, `Nine months ended 31 Dec 2025`, `Year ended 31 Mar 2026`, `Period ended 30 Sep 2025` (`other`) and `As at 30 Sep 2025` (instant). The day has no leading zero and the month is a three-letter English abbreviation.
+- **Jobs.** These are the new jobs:
+  - `document.xbrl`: subject type `document`, pipeline version `readVersion(classificationId)`, limit 2, attempts 5.
+  - `document.xbrl_check`: subject type `xbrl_pdf_check`, subject id the XBRL document, pipeline version `pdf-<pdf classification id>`, limit 2, attempts 5.
+
+  No paid call is made, so the default attempts apply.
+- **No paid API calls** in tests or default paths. Tests use synthetic instances, a fake extractor client and the whitespace tokenizer. The live check (Task 21) uploads PDFs, which Gemini Flash classifies: ask the investor first.
+- **No `docker compose up` in a worktree.** Database tests use the investor's Postgres on `localhost:5433` (the pgvector image). Tests on the real instances are gated on `MAESTER_XBRL_DIR` (for example `~/Personal/maester-filings/xbrl`) and skip without it. They read the files and write nothing.
+- **No document text in logs**, errors or traces. This covers element values, text-block text, company names and file contents. Log ids, element names, counts, codes, versions and seconds.
+- **Workspace isolation.** Every new table carries `workspace_id`, and every new query and route filters on it.
+- `docs/systems/*.md` are ASD-STE100 Simplified Technical English (the `writing-ste` skill).
+
+## Review Focus
+
+1. **A results PDF and its instances dropped together, finishing in any order.** The PDF never stays `waiting_for_xbrl` after the last XBRL document of its company and period has settled. That includes an XBRL that failed, was kept, or was confirmed for another company, and a release that races the PDF's own decision. Task 12.
+2. **A crore-declared instance that mixes `decimals` −5, −6 and −7** (the Mahindra case). The table keeps `₹ crore`, values are padded, never rounded, each sum's tolerance comes from its own facts' `decimals`, and the rounding cross-check passes. Task 5.
+3. **A Q4 results instance next to the annual report of the same year.** It never fills an annual column (the open question's default), and in any table a quarter fact and a year-to-date fact that end on the same day never share a column. Tasks 8 and 14.
+4. **The folder imported twice.** The second run makes duplicates. A duplicate gets no `document.xbrl`, no `document.index` and no facts, and coverage and the filings route count the original once. Tasks 11, 17 and 18.
+5. **A hostile or broken file:** a DOCTYPE with entities, a billion-laughs body, 25 MB, 150,000 facts, a parse that runs past 30 seconds, or a `.xml` that is a PDF. Each is refused at verify (`UNSUPPORTED_TYPE`) or fails `XBRL_UNREADABLE` without a retry. No worker hangs, and no text reaches a log. Tasks 2, 6, 9 and 10.
+
+---
+
+### Task 1: Migration 0008, the schema and the contract enums
+
+**Files:**
+- Modify: `packages/db/src/schema/{platform.ts,classification.ts,extraction.ts}`; Create: `packages/db/src/schema/xbrl.ts`; Modify: `packages/db/src/schema/index.ts`
+- Create: `packages/db/drizzle/0008_xbrl.sql` (generated, then edited), `packages/db/drizzle/meta/0008_snapshot.json`
+- Modify: `packages/contracts/src/{document.ts,classification.ts,extraction.ts,job.ts}`; Create: `packages/contracts/src/xbrl.ts`; Modify: `packages/contracts/src/index.ts`
+- Test: `packages/db/test/migrate.test.ts`, `packages/contracts/test/schemas.test.ts`
+
+**Interfaces:**
+- Produces (Postgres):
+  - `document_format` enum (`pdf`, `xbrl`); `document.format document_format not null default 'pdf'`; index `document_workspace_intake` on `(workspace_id, intake_state)`.
+  - `intake_state` gains `waiting_for_xbrl`. `check_type` gains `xbrl_in_pdf`. Both use `ALTER TYPE … ADD VALUE`, and nothing in 0008 uses either new value: Postgres refuses a new enum value in the transaction that added it.
+  - `fact_span` enum (`quarter`, `half_year`, `nine_months`, `year`, `other`); `financial_fact.span fact_span null`, `financial_fact.period_start date null`.
+  - `extraction_source` enum (`pdf`, `xbrl`); `extraction_revision.source extraction_source not null default 'pdf'`.
+  - `xbrl_source`: `id uuid pk`, `workspace_id` → workspace, `fact_id` → financial_fact unique, `document_id` → document, `element text not null`, `context_id text not null`, `decimals text null` (`"INF"` or an integer as text), `nil boolean not null default false`, `footnote_ids text[] not null default '{}'`, `created_at`.
+  - `extraction_check` gains `fact_id uuid null` → financial_fact, `pdf_document_id uuid null` → document, `pdf_classification_id uuid null` → document_classification, `page_index integer null`, `reason text null`. Two indexes: unique `extraction_check_xbrl_pdf` on `(fact_id, pdf_classification_id) where pdf_classification_id is not null`, and `extraction_check_pdf_document` on `(workspace_id, pdf_document_id)`.
+  - `classification_evidence.element text null`, `classification_evidence.context text null`.
+  - `document_classification.isin text null`, `document_classification.xbrl_format text null` (a format id).
+  - `company.isin text null`, unique `company_workspace_isin` on `(workspace_id, isin) where isin is not null`.
+  - Data: `update document set rejection_code = 'UNSUPPORTED_TYPE' where rejection_code = 'NOT_A_PDF'`.
+- Produces (Drizzle, `@maester/db`): `documentFormat`, `factSpan`, `extractionSource`, `xbrlSource`, `XbrlSourceRow`, and the new columns as `format`, `span`, `periodStart`, `source`, `isin`, `xbrlFormat`, `element`, `context`, `factId`, `pdfDocumentId`, `pdfClassificationId`, `pageIndex`, `reason`.
+- Produces (`@maester/contracts`):
+  - `DocumentFormat = z.enum(["pdf", "xbrl"])`; `Document` gains `format: DocumentFormat`.
+  - `RejectionCode = z.enum(["UNSUPPORTED_TYPE", "TOO_LARGE", "OBJECT_MISSING"])`; `IntakeState` gains `"waiting_for_xbrl"`; `CheckType` gains `"xbrl_in_pdf"`.
+  - `FactSpan = z.enum(["quarter", "half_year", "nine_months", "year", "other"])`; `toResultsSpan(span: FactSpan): ResultsSpan | null` (`year` → `full_year`, `other` → null).
+  - `Isin = z.string().regex(/^[A-Z]{2}[A-Z0-9]{9}\d$/, "a 12-character ISIN")`.
+  - `JobTypes.DOCUMENT_XBRL = "document.xbrl"`, `JobTypes.DOCUMENT_XBRL_CHECK = "document.xbrl_check"`, `XBRL_CHECK_SUBJECT = "xbrl_pdf_check"`.
+  - `xbrl.ts`: `XbrlFormatFamily = z.enum(["in-capmkt", "in-bse-fin"])`, `XbrlFormatKind = z.enum(["ind_as", "banking", "nbfc", "other_than_ind_as", "unknown"])`, `XbrlFormat = { family: XbrlFormatFamily.nullable(), kind: XbrlFormatKind, id: z.string().nullable(), mapped: z.boolean() }`, `XbrlPdfNotChecked = z.enum(["no_pdf", "scanned", "no_statement_pages", "disabled", "no_value", "not_yet"])`. Task 6 adds the wire shapes to this file.
+
+- [ ] **Step 1: Write the failing tests.** `migrate.test.ts`:
+  - `document.format` defaults to `'pdf'` for an inserted row.
+  - A revision inserted without `source` reads `'pdf'`.
+  - `xbrl_source.fact_id` is unique.
+  - `extraction_check_xbrl_pdf` refuses a second row for the same fact and PDF classification, and allows two rows whose `pdf_classification_id` is null.
+  - `company_workspace_isin` refuses a second company with the same ISIN in one workspace and allows it in another.
+  - A document with `rejection_code = 'NOT_A_PDF'` seeded before the migration reads `'UNSUPPORTED_TYPE'` after it. Run 0000–0007 on a scratch schema, seed, then run 0008.
+  - `select unnest(enum_range(null::intake_state))` includes `waiting_for_xbrl`.
+
+  `schemas.test.ts`: `RejectionCode.parse("NOT_A_PDF")` throws; `toResultsSpan("year")` is `"full_year"`; `Isin.parse("INE246F01010")` passes; `Isin.parse("INE246F0101")` throws.
+- [ ] **Step 2: Run to see them fail.** `pnpm --filter @maester/db exec vitest run test/migrate.test.ts && pnpm --filter @maester/contracts exec vitest run test/schemas.test.ts`. Expected: FAIL.
+- [ ] **Step 3: Write the schema and generate.** Edit the schema files. Run `pnpm --filter @maester/db generate --name xbrl`, then edit the SQL:
+  - Put the two `ALTER TYPE … ADD VALUE` statements first.
+  - Add the `update` last.
+  - Write the partial unique index's predicate on `pdf_classification_id is not null`, not on the check type.
+
+  Run `generate` again: no diff.
+- [ ] **Step 4: Update the contracts** and every compile error they cause, as plain substitutions only:
+  - `apps/web/src/lib/content/documents.ts` and `apps/web/src/lib/documents/types.ts` rename the key `NOT_A_PDF` to `UNSUPPORTED_TYPE` and keep its copy, which Task 19 rewords.
+  - `toDocument` in `apps/api/src/serialize.ts` sets `format`.
+- [ ] **Step 5: Run to see them pass**, then the `@maester/db`, `@maester/contracts`, `@maester/api` and `@maester/worker` suites. Expected: PASS.
+- [ ] **Step 6: Commit**
+
+```bash
+git add packages/db packages/contracts apps/api/src/serialize.ts apps/web/src/lib/content/documents.ts apps/web/src/lib/documents/types.ts
+git commit -m "feat(db): migration 0008 for XBRL: document format, spans, revision source, xbrl_source, xbrl_in_pdf columns, ISIN, waiting_for_xbrl"
+```
+
+---
+
+### Task 2: The instance parser, with its limits
+
+**Files:**
+- Modify: `packages/financial-engine/pyproject.toml` (`lxml==<pin>`), `uv.lock`
+- Create: `packages/financial-engine/src/pdf_financial_qa/xbrl/{__init__.py,parser.py}`
+- Create: `tests/xbrl_fixtures.py`
+- Test: `tests/test_xbrl_parser.py`
+
+**Interfaces:**
+- Produces:
+  - `xbrl/__init__.py`: `XBRL_PARSER_VERSION = "1"`, `XBRL_MAP_VERSION = "1"`, `XBRL_TEXT_VERSION = "1"`, `INSTANCE_NS = "http://www.xbrl.org/2003/instance"`.
+  - `parser.py`, the records:
+    - `Context(id, start: date | None, end: date | None, instant: date | None, dimensional: bool)`. `dimensional` is true when the context has a `scenario` or a `segment`.
+    - `Unit(id, numerator: tuple[str, ...], denominator: tuple[str, ...])`. Measures are written `prefix:local` as resolved: `iso4217:INR`, `xbrli:shares`.
+    - `RawFact(element: str, namespace: str, context_id: str, unit_id: str | None, decimals: str | None, text: str, nil: bool, order: int)`.
+    - `Instance(root_namespaces: dict[str, str], schema_refs: list[str], contexts: dict[str, Context], units: dict[str, Unit], facts: list[RawFact])`.
+  - `parse_instance(data: bytes, *, max_bytes: int, max_facts: int, deadline_seconds: float, clock: Callable[[], float] = time.monotonic) -> Instance`. It raises `ExtractionError("XBRL_UNREADABLE", <reason code only>, retryable=False)` (from `pdf_financial_qa.workflow.errors`). The reason is one of `TOO_LARGE`, `DOCTYPE`, `MALFORMED`, `NOT_AN_INSTANCE`, `TOO_MANY_FACTS`, `TIMED_OUT`. It reads with `lxml.etree.iterparse` over a `BytesIO` with `resolve_entities=False`, `no_network=True`, `load_dtd=False` and `huge_tree=False`. It refuses a DOCTYPE before parsing, by scanning the prolog up to the root's start tag, and again from the tree's `docinfo.doctype`. It checks the clock every 1000 elements and frees each finished top-level element (`elem.clear()`).
+  - `tests/xbrl_fixtures.py`: `instance(*, namespace=CAPMKT_2025, schema_ref="in-capmkt-ent-2025-01-31.xsd", contexts=Q2_CONTEXTS, units=STANDARD_UNITS, facts: list[tuple[str, str, str | None, str | None, str]] = (), doctype: str | None = None, comment="<!--IFIndAs V1.0 (07-10-2025)-->") -> bytes`. A fact is `(element, context, unit, decimals, text)`, and a `text` of `None` writes `xsi:nil="true"`. Defined there:
+    - `CAPMKT_2025 = "http://www.sebi.gov.in/xbrl/2025-01-31/in-capmkt"`, `CAPMKT_2026` (the 2026-01-31 one), `BSE_FIN = "http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin"`.
+    - `Q2_CONTEXTS`: `OneD` 2025-07-01..2025-09-30, `FourD` 2025-04-01..2025-09-30, `OneI` 2025-09-30, `PY_I` 2025-03-31, and `OneExpenses1D` (OneD's dates with a `scenario`).
+    - `STANDARD_UNITS`: `INR` and `INRPerShare`.
+    - `identity_facts(...)`: the metadata facts of the survey with fictional values (`NameOfTheCompany` "SYNTHETIC CEMENTS LIMITED", `ScripCode` "500999", `Symbol` "SYNCEM", `ISIN` "INE999Z01011", `LevelOfRounding` "Lakhs", `NatureOfReportStandaloneConsolidated` "Consolidated", the reporting period dates, `ReportingQuarter` "Second quarter").
+
+- [ ] **Step 1: Pin lxml.** Take the newest lxml release that is at least two weeks old and has wheels for macOS arm64, Linux aarch64 and x86_64 on Python 3.11–3.14 (`uv lock`). Do not write it from memory.
+- [ ] **Step 2: Write the failing tests** in `tests/test_xbrl_parser.py`:
+
+```python
+def test_contexts_units_and_facts(self):
+    inst = parse(instance(facts=[("RevenueFromOperations", "OneD", "INR", "-5", "1234500000"),
+                                 ("BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations", "OneD", "INRPerShare", "INF", "12.34")]))
+    self.assertEqual(inst.contexts["OneD"].start, date(2025, 7, 1))
+    self.assertEqual(inst.contexts["OneI"].instant, date(2025, 9, 30))
+    self.assertTrue(inst.contexts["OneExpenses1D"].dimensional)
+    self.assertEqual(inst.units["INRPerShare"].denominator, ("xbrli:shares",))
+    self.assertEqual([(f.element, f.decimals, f.text) for f in inst.facts if f.unit_id],
+                     [("RevenueFromOperations", "-5", "1234500000"),
+                      ("BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations", "INF", "12.34")])
+
+def test_nil_is_kept_as_nil(self):
+    fact = parse(instance(facts=[("OtherIncome", "OneD", "INR", "-5", None)])).facts[-1]
+    self.assertEqual((fact.nil, fact.text), (True, ""))
+
+def test_a_doctype_is_refused_before_any_entity_is_read(self):
+    bomb = '<!DOCTYPE x [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">]>'
+    self.assertUnreadable(instance(doctype=bomb), "DOCTYPE")
+
+def test_limits(self):
+    self.assertUnreadable(instance(), "TOO_LARGE", max_bytes=100)
+    self.assertUnreadable(instance(facts=[("OtherIncome", "OneD", "INR", "-5", "1")] * 11), "TOO_MANY_FACTS", max_facts=10)
+    ticks = iter(range(0, 10_000, 31))
+    self.assertUnreadable(instance(facts=[("OtherIncome", "OneD", "INR", "-5", "1")] * 3000), "TIMED_OUT", clock=lambda: next(ticks))
+
+def test_not_an_instance_and_malformed(self):
+    self.assertUnreadable(b"<?xml version='1.0'?><html/>", "NOT_AN_INSTANCE")
+    self.assertUnreadable(instance()[:-40], "MALFORMED")
+
+def test_the_error_carries_no_document_text(self):
+    with self.assertRaises(ExtractionError) as e: parse(b"<x>SYNTHETIC CEMENTS</y>")
+    self.assertNotIn("SYNTHETIC", str(e.exception))
+
+def test_real_instances_parse(self):  # skipped unless MAESTER_XBRL_DIR is set
+    for path in real_instances(): parse(path.read_bytes())   # all 807, within the default limits
+```
+
+  `parse(data, **kw)` calls `parse_instance` with the default limits (20971520, 100000, 30.0) unless given. `assertUnreadable` checks the code and that the message is the reason code exactly. `real_instances()` yields every `.xml` under `MAESTER_XBRL_DIR`.
+- [ ] **Step 3: Run to see them fail.** `uv run --locked python -m unittest tests.test_xbrl_parser -v`. Expected: FAIL (no module).
+- [ ] **Step 4: Implement** `xbrl/__init__.py`, `parser.py` and `tests/xbrl_fixtures.py`.
+- [ ] **Step 5: Run to see them pass.** Run the same command, then `MAESTER_XBRL_DIR=~/Personal/maester-filings/xbrl uv run --locked python -m unittest tests.test_xbrl_parser -v`. Expected: PASS, the gated test reading all 807 files.
+- [ ] **Step 6: Commit**
+
+```bash
+git add packages/financial-engine uv.lock tests/xbrl_fixtures.py tests/test_xbrl_parser.py
+git commit -m "feat(xbrl): own instance parser over lxml: no DTD, no network, byte, fact and time limits"
+```
+
+---
+
+### Task 3: Format, identity, periods and units: the classify answers
+
+**Files:**
+- Create: `packages/financial-engine/src/pdf_financial_qa/xbrl/{formats.json,formats.py,periods.py,units.py,identity.py,classify.py}`
+- Test: `tests/test_xbrl_classify.py`
+
+**Interfaces:**
+- Consumes: `Instance` (Task 2).
+- Produces:
+  - `formats.json`, as data:
+    - `families`: `{ "in-capmkt": { "namespace": "^http://www\\.sebi\\.gov\\.in/xbrl/\\d{4}-\\d{2}-\\d{2}/in-capmkt$", "rounding_element": "LevelOfRounding" }, "in-bse-fin": { "namespace": "^http://www\\.bseindia\\.com/xbrl/fin/\\d{4}-\\d{2}-\\d{2}/in-bse-fin$", "rounding_element": "LevelOfRoundingUsedInFinancialStatements" } }`.
+    - `rules`, ordered, the first match wins, applied to the set of numeric fact elements:
+      - `banking`: `any_of` `["CET1Ratio", "AdditionalTier1Ratio", "CapitalAndLiabilities"]`.
+      - `nbfc`: `all_of` `["InterestEarned", "FeesAndCommissionIncome"]`.
+      - `other_than_ind_as`: `any_of` `["CashFlowsFromUsedInOperatingActivitiesBeforeExtraordinaryItems", "AdjustmentsForWorkingCapital"]`.
+      - `ind_as`: `all_of` `["ComprehensiveIncomeForThePeriod", "BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations"]`.
+    - `identity`: `{ "name": "NameOfTheCompany", "scrip_code": "ScripCode", "symbol": "Symbol", "isin": "ISIN", "basis": "NatureOfReportStandaloneConsolidated", "audited": "WhetherResultsAreAuditedOrUnaudited", "period_start": "DateOfStartOfReportingPeriod", "period_end": "DateOfEndOfReportingPeriod" }`.
+    - `text_suffixes`: `["TextBlock", "Explanatory"]`.
+  - `formats.py`: `family_of(instance) -> str | None` (from the namespace of the facts; several namespaces or none matching gives `None`); `detect_format(instance) -> XbrlFormat(family, kind, id, mapped)`. `id` is `f"{family}/{kind}"` or `None` without a family, and `mapped` is true for `in-capmkt/ind_as` and `in-bse-fin/ind_as` only.
+  - `periods.py`: `span_of(start: date, end: date) -> Span` (Global Constraints); `period_label(span: Span | None, end: date) -> str` (Global Constraints' labels; `None` is the instant form).
+  - `units.py`: `Rounding(word, unit_label, scale: Decimal, exponent: int)`; `rounding_of(word: str | None) -> Rounding | None` (Global Constraints' table, case-insensitive, `None` for anything else); `unit_of(unit: Unit, rounding: Rounding | None) -> tuple[str | None, Decimal | None, str | None, bool]`. The tuple is `(unit_label, scale, currency, per_share)`; a monetary unit with no rounding gives `(None, None, currency, False)`.
+  - `identity.py`: `Identity(name, scrip_code, symbol, isin, basis: ReportingBasis, mixed_basis: bool, audited: bool | None, period_start, period_end, rounding_word)`; `read_identity(instance, family) -> Identity`. Values come from the non-dimensional facts of the identity elements, and the first one in document order is taken.
+    - The basis is `consolidated` when every basis fact's text contains "consolidated" (case-insensitive), `standalone` likewise, else `unknown` with `mixed_basis` true.
+    - `period_end` falls back to the latest end or instant among the non-dimensional contexts of numeric facts.
+  - `classify.py`: `classify_instance(instance) -> XbrlClassificationData` with the answers:
+    - `kind` is `financial_results` when the family is known and the basis is not mixed, else `not_sure`.
+    - `resultsSpan` is `to_results_span(span_of(period_start, period_end))`, where `to_results_span` in `periods.py` mirrors the TypeScript `toResultsSpan`: `year` gives `full_year` and `other` gives `None`.
+    - `periodEnd`, and `periodLabel` from `period_label(span, end)`.
+    - `companyNameAsPrinted`, `cin` (always `None` in the formats on hand), `bseCode` (from `ScripCode` when it is six digits), `nseSymbol` (from `Symbol` when it matches `^[A-Z][A-Z0-9&-]{0,19}$` and is not `NOTLISTED`), `isin`.
+    - `basis`, `audited`, `format`.
+    - `statementsFound` is one `{statement, basis, pages: []}` per statement that has a mapped element among the non-dimensional numeric facts. Task 4 fills it from the maps; until then it is `[]`.
+    - `evidence`: one `XbrlEvidenceData(field, rule_id, element, context, quote)` per answer, with `quote` the fact's text cut to 300 characters. The kind's evidence is `rule_id` `"xbrl.family"`, `element` `None`, `quote` the family name. The rule ids are `xbrl.identity.<key>`.
+    - `warnings`: `XBRL_MIXED_BASIS` when mixed; `XBRL_FORMAT_UNMAPPED` (message: the format id, or `unknown`) when not mapped.
+
+- [ ] **Step 1: Write the failing tests:**
+
+```python
+def test_span_of(self):
+    self.assertEqual([span_of(date(2025, 7, 1), date(2025, 9, 30)), span_of(date(2025, 4, 1), date(2025, 9, 30)),
+                      span_of(date(2025, 4, 1), date(2025, 12, 31)), span_of(date(2025, 4, 1), date(2026, 3, 31)),
+                      span_of(date(2025, 1, 1), date(2025, 12, 31)), span_of(date(2025, 4, 1), date(2025, 7, 31)),
+                      span_of(date(2025, 4, 2), date(2025, 6, 30))],
+                     ["quarter", "half_year", "nine_months", "year", "year", "other", "other"])
+
+def test_period_label(self):
+    self.assertEqual(period_label("quarter", date(2025, 9, 30)), "Quarter ended 30 Sep 2025")
+    self.assertEqual(period_label("year", date(2026, 3, 31)), "Year ended 31 Mar 2026")
+    self.assertEqual(period_label(None, date(2025, 3, 1)), "As at 1 Mar 2025")
+
+def test_rounding_words(self):
+    self.assertEqual(rounding_of("Crores"), Rounding("Crores", "₹ crore", Decimal("10000000"), -7))
+    self.assertEqual(rounding_of("lakhs").exponent, -5)
+    self.assertIsNone(rounding_of("Hundreds"))
+
+def test_formats_from_elements(self):
+    self.assertEqual(detect_format(parse(instance(facts=IND_AS_MARKERS))).id, "in-capmkt/ind_as")
+    self.assertEqual(detect_format(parse(instance(namespace=BSE_FIN, facts=IND_AS_MARKERS))).id, "in-bse-fin/ind_as")
+    self.assertEqual(detect_format(parse(instance(facts=IND_AS_MARKERS + [("CET1Ratio", "OneI", "pure", "INF", "0.15")]))).kind, "banking")
+    self.assertEqual(detect_format(parse(instance(facts=[f("InterestEarned"), f("FeesAndCommissionIncome")]))).kind, "nbfc")
+    self.assertEqual(detect_format(parse(instance(namespace="http://example.com/x", facts=IND_AS_MARKERS))), XbrlFormat(None, "unknown", None, False))
+
+def test_identity_and_answers(self):
+    c = classify_instance(parse(instance(facts=identity_facts() + IND_AS_MARKERS)))
+    self.assertEqual((c.kind, c.results_span, c.period_end, c.period_label), ("financial_results", "quarter", date(2025, 9, 30), "Quarter ended 30 Sep 2025"))
+    self.assertEqual((c.bse_code, c.nse_symbol, c.isin, c.basis), ("500999", "SYNCEM", "INE999Z01011", "consolidated"))
+    self.assertIn(XbrlEvidenceData("identifier", "xbrl.identity.scrip_code", "ScripCode", "OneD", "500999"), c.evidence)
+
+def test_notlisted_symbol_is_no_symbol(self):
+    self.assertIsNone(classify_instance(parse(instance(facts=identity_facts(symbol="NOTLISTED") + IND_AS_MARKERS))).nse_symbol)
+
+def test_mixed_basis_is_not_sure(self):
+    c = classify_instance(parse(instance(facts=identity_facts() + [("NatureOfReportStandaloneConsolidated", "OneD", None, None, "Standalone")] + IND_AS_MARKERS)))
+    self.assertEqual((c.kind, c.basis, [w.code for w in c.warnings]), ("not_sure", "unknown", ["XBRL_MIXED_BASIS"]))
+
+def test_real_instances_detect_the_token_format(self):  # gated on MAESTER_XBRL_DIR
+    # The file-name token decides the expectation: Integrated_Finance_Ind_As → in-capmkt/ind_as,
+    # Main_Ind_As → in-bse-fin/ind_as, *Banking → banking, *NBFC → nbfc, IFOtherthan → other_than_ind_as.
+    for path, token in real_instances_with_token(): self.assertEqual(detect_format(parse(path.read_bytes())).id, EXPECTED[token], path.name)
+```
+
+- [ ] **Step 2: Run to see them fail.** `uv run --locked python -m unittest tests.test_xbrl_classify -v`. Expected: FAIL.
+- [ ] **Step 3: Implement** the five modules and `formats.json`.
+- [ ] **Step 4: Run to see them pass**, without and with `MAESTER_XBRL_DIR`. Expected: PASS, with 807 of 807 detected as their token says. A file that disagrees stops the task: report it and do not loosen the rule list.
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/financial-engine/src/pdf_financial_qa/xbrl tests/test_xbrl_classify.py
+git commit -m "feat(xbrl): format from elements, identity, spans and labels from dates, rounding words: the classify answers"
+```
+
+---
+
+### Task 4: The element maps and the survey command
+
+**Files:**
+- Create: `packages/financial-engine/src/pdf_financial_qa/xbrl/maps.py`, `packages/financial-engine/src/pdf_financial_qa/xbrl/maps/in-capmkt.ind_as.json`, `packages/financial-engine/src/pdf_financial_qa/xbrl/maps/in-bse-fin.ind_as.json`, `packages/financial-engine/src/pdf_financial_qa/xbrl/maps/README.md`
+- Create: `apps/eval/src/maester_eval/xbrl_survey.py`; Modify: `apps/eval/src/maester_eval/cli.py` (command `xbrl-elements`)
+- Test: `tests/test_xbrl_maps.py`, `tests/test_eval_xbrl_survey.py`
+
+**Interfaces:**
+- Produces:
+  - The map file schema, one per mapped format. Its top level holds `"format"` (`"in-capmkt/ind_as"`), `"map_version"` (`"1"`), `"entry_points"` (the `schemaRef` names it was checked on), `"entry_point_differences"` (`[{ "element", "only_in", "note" }]`, the 2025 and 2026 differences found by the survey), and these lists:
+    - `"elements"`: `[{ "element", "statement": "income_statement"|"balance_sheet"|"cash_flow", "section", "order": int, "label", "concept": "<concepts.json id>"|null, "cash_balance"?: { "opening_label", "closing_label", "opening_concept", "closing_concept" } }]`.
+    - `"sums"`: `[{ "id", "total": "<element>", "parts": [{ "element", "sign": 1|-1 }] }]`.
+    - `"identities"`: `[{ "id": "balance", "left": "Assets", "right": "EquityAndLiabilities" }]`.
+    - `"ignored"`: `[element]`: numeric elements that are printed in the results but are not statement lines, such as `FaceValueOfEquityShareCapital` and the ratios. They raise no `XBRL_ELEMENT_UNMAPPED`.
+  - `classify_instance` (Task 3) fills `statementsFound` from `load_map(format.id)`, and an unmapped format gives `[]`.
+  - `maps.py`: `ElementMap` (the parsed file, frozen, with `entry(element) -> MapEntry | None`, `sums_with_total(element)`, `parts_of(element) -> list[str]`, `labels_of_parts(element) -> list[str]`); `load_map(format_id: str) -> ElementMap | None` (cached; `None` for an unmapped format); `MAPPED_FORMATS = ("in-capmkt/ind_as", "in-bse-fin/ind_as")`.
+  - `maester-eval xbrl-elements --instances <dir> --out data/eval/xbrl/` writes `elements-<format id with / as ->.csv` for each detected format. The columns are `element, files, contexts, statement_guess`: element names and counts only, never a value. `statement_guess` is `balance_sheet` when the element's facts are instants and `duration` otherwise. It prints the format counts. `data/eval/xbrl/` is git-ignored.
+- **What the maps must hold.** Draft them from the survey's CSVs and the SEBI results format the PDFs print. Labels are in sentence case, as the PDFs print them. These conditions apply:
+  - Every element listed in "Survey of the instances on hand" that is a statement line is in both maps.
+  - `classify_instance` of a synthetic Ind AS instance with P&L and balance-sheet lines but no cash-flow line gives `statementsFound` `[{income_statement, consolidated, []}, {balance_sheet, consolidated, []}]` (a test in `tests/test_xbrl_maps.py`).
+  - At least these sums are in both maps:
+    - `Income` = `RevenueFromOperations` + `OtherIncome`.
+    - `Expenses` = its seven expense lines: `CostOfMaterialsConsumed`, `PurchasesOfStockInTrade`, `ChangesInInventoriesOfFinishedGoodsWorkInProgressAndStockInTrade`, `EmployeeBenefitExpense`, `FinanceCosts`, `DepreciationDepletionAndAmortisationExpense`, `OtherExpenses`.
+    - `ProfitBeforeExceptionalItemsAndTax` = `Income` − `Expenses`.
+    - `Assets` = `NoncurrentAssets` + `CurrentAssets` (plus held-for-sale, if the survey shows it outside both).
+    - `EquityAndLiabilities` = `Equity` + `Liabilities`.
+    - `IncreaseDecreaseInCashAndCashEquivalentsBeforeEffectOfExchangeRateChanges` = operating + investing + financing.
+  - The balance identity.
+  - `CashAndCashEquivalentsCashFlowStatement` is marked `cash_balance`, with the concepts `cash_at_beginning_of_period` and `cash_at_end_of_period`.
+  - The earnings-per-share labels contain "earnings per share", so stitch's per-share rule finds them, for example "Basic earnings per share".
+  - Each concept exists in `packages/contracts/concepts.json`. An "Others" or next-best-fit element has `concept: null`.
+
+- [ ] **Step 1: Write the survey command and its test.** `test_eval_xbrl_survey.py` runs `xbrl-elements` over a temporary folder of three synthetic instances and checks:
+  - the CSV rows and counts;
+  - that no fact value appears in any output file;
+  - that a DOCTYPE file is counted as unreadable and does not stop the run.
+
+  Run `uv run --locked python -m unittest tests.test_eval_xbrl_survey -v`. Expected: FAIL, then implement, then PASS.
+- [ ] **Step 2: Run the survey** on the investor's files (local, read-only): `uv run --locked maester-eval xbrl-elements --instances ~/Personal/maester-filings/xbrl --out data/eval/xbrl/`. Expected: 724 Ind AS files across the two mapped formats.
+- [ ] **Step 3: Write the failing map tests** in `tests/test_xbrl_maps.py`:
+  - Both maps load.
+  - Their `map_version` equals `XBRL_MAP_VERSION`.
+  - Every concept is in `concepts.json`, read through `maester_eval.concepts.load_taxonomy` as `tests/test_concepts_json.py` does. There is no Python copy of the taxonomy in `pdf_financial_qa` yet.
+  - Every sum's elements are in `elements`.
+  - No element is both in `elements` and `ignored`.
+  - `(statement, order)` pairs are unique.
+  - Every per-share label matches stitch's `PER_SHARE` pattern (`earnings? per (equity )?share|\beps\b`).
+
+  One test is gated on `MAESTER_XBRL_DIR`: every element in a map occurs in at least one real instance of its format. Name three real instances per format in `tests/xbrl_fixtures.py` (`named_real_instances()`): an `MC`, an `SQ` or `SH`, and a `JQ` file. Task 5 counts the sums on them.
+- [ ] **Step 4: Run to see them fail.** Expected: FAIL (no maps).
+- [ ] **Step 5: Write `maps.py` and the two maps;** record in `maps/README.md` how each was drafted and checked (survey date, files used, the sums' sources).
+- [ ] **Step 6: Run to see them pass**, with and without `MAESTER_XBRL_DIR`. Expected: PASS.
+- [ ] **Step 7: Commit**
+
+```bash
+git add packages/financial-engine/src/pdf_financial_qa/xbrl apps/eval tests/test_xbrl_maps.py tests/test_eval_xbrl_survey.py .gitignore
+git commit -m "feat(xbrl): Ind AS element maps for in-capmkt and in-bse-fin, version 1, and the xbrl-elements survey command"
+```
+
+---
+
+### Task 5: Facts, sums and warnings: the read
+
+**Files:**
+- Create: `packages/financial-engine/src/pdf_financial_qa/xbrl/{read.py,checks.py}`
+- Test: `tests/test_xbrl_read.py`
+
+**Interfaces:**
+- Consumes: Tasks 2–4.
+- Produces:
+  - `XbrlFactData`: the fields of `ExtractedFact` except `page_index` and `text_layer_match` (`statement, basis, section, line_order, reported_label, is_subtotal, component_labels, period_label, period_end, as_of_date, reported_text, reported_value, value_status, unit_label, scale_factor, currency, normalized_value`), plus `span, period_start, element, context_id, decimals, nil, concept`.
+  - `read_instance(instance) -> XbrlReadData` with `format, mapped, basis, rounding: Rounding | None, coarsest_decimals: int | None, finest_decimals: int | None, state, warnings, facts, checks` (checks are `ExtractedCheck` from `workflow.contracts`). The rules:
+    - **Which facts.** Numeric facts (with a `unit_id`) whose context is not dimensional and whose element is in the map. An unmapped format writes no facts and warns `XBRL_FORMAT_UNMAPPED`.
+    - **The fact's fields.** `section`, `line_order`, `reported_label` and `concept` come from the map. `is_subtotal` is true when the element is the total of a sum. `component_labels` are the labels of that sum's parts. `basis` is the instance's.
+    - **Period.** A duration has `period_end` = end, `period_start` = start, `span` = `span_of` and `as_of_date` null. An instant has `as_of_date` = instant and `period_end`, `period_start` and `span` null. `period_label` comes from `period_label`.
+    - **Cash balance elements** (Departure 13). For each non-dimensional duration context used by a cash-flow fact: an instant equal to the duration's start minus one day gives a fact with the opening label and concept. An instant equal to the duration's end gives one with the closing label and concept. These facts take the duration's period, span and label, and keep their own `context_id`.
+    - **Value.** `reported_text` is the instant's text, stripped. `normalized_value` is `Decimal(text)` in full rupees, or a share's rupees. `reported_value` is `normalized_value / scale` and keeps at least max(0, `decimals` − `rounding.exponent`) places (for an integer `decimals`; the exponent is negative), padded, never rounded. A per-share fact keeps its own places. `unit_label`, `scale_factor` and `currency` come from `unit_of`. Values go through `format_decimal`.
+    - **Nil** gives `value_status` `unparsed`, `reported_value` and `normalized_value` null, `nil` true, and the revision warning `XBRL_NIL` (message: the elements, sorted, joined by `", "`). A text that is not a decimal gives `unparsed` with `nil` false.
+    - **No declared rounding** gives `unit_label`, `scale_factor` and `reported_value` null (`normalized_value` stays) and the warning `XBRL_ROUNDING_MISSING`; the state is `partial`.
+    - **The rounding cross-check.** `coarsest_decimals` is the minimum integer `decimals` over monetary facts, and `finest_decimals` the maximum. When `coarsest_decimals != rounding.exponent`, the state is `partial` with `XBRL_ROUNDING_MISMATCH` (message `"declared <word>, coarsest decimals <n>"`).
+    - **Unmapped elements.** Numeric non-dimensional elements of a mapped format that are neither in the map nor `ignored` give `XBRL_ELEMENT_UNMAPPED` (message: the sorted names, joined by `", "`).
+    - **The state** is `complete` otherwise.
+  - `checks.py`: `sum_checks(facts: list[XbrlFactData], element_map: ElementMap) -> list[ExtractedCheck]` (each fact carries its own `decimals`). For each sum and each period of its total, the check is a `subtotal` with `statement`, `basis` and `section` of the total, and `period_label` and `subject_label` of the total fact exactly. `expected` is the total's `reported_value`, and `actual` is Σ sign × the parts' `reported_value` present in that period. `status`:
+    - `passed` when |Σ sign × normalised parts − normalised total| ≤ Σ ½ × 10^(−decimals) over the total and its present parts (`INF` counts 0; Departure 11);
+    - `failed` when the difference is larger;
+    - `not_checked` when every part is absent, or the total or a part is nil.
+
+    `detail` names the absent parts' elements. The balance identity is a `balance_identity` check, `section` null, `subject_label` the `Assets` label, `expected` the `Assets` value and `actual` the `EquityAndLiabilities` value, compared the same way.
+
+`ind_as(**lines)` in `tests/xbrl_fixtures.py` writes the format's marker facts, `identity_facts()`, and Revenue, Other income, Income, the seven expense lines, Expenses and the profit lines in `OneD` and `FourD`. Each line is given as `(text, decimals)`. A line not given is written with `decimals` equal to the declared rounding's exponent and with values that add up, so the defaults alone read `complete` with every sum `passed`.
+
+- [ ] **Step 1: Write the failing tests** (synthetic instances; the hand-worked values are in the comments):
+
+```python
+def test_lakh_values_keep_the_lakh_unit_and_are_padded_never_rounded(self):
+    r = read(instance(rounding="Lakhs", facts=ind_as(revenue=("1234500000", "-3"))))   # 1,234,500,000 / 100,000 = 12345; max(0, −3 − (−5)) = 2 places
+    f = fact(r, "RevenueFromOperations", "OneD")
+    self.assertEqual((f.reported_value, f.normalized_value, f.unit_label, f.scale_factor, f.currency),
+                     ("12345.00", "1234500000", "₹ lakh", "100000", "INR"))
+    self.assertEqual((f.span, f.period_start, f.period_end, f.period_label), ("quarter", date(2025, 7, 1), date(2025, 9, 30), "Quarter ended 30 Sep 2025"))
+
+def test_a_crore_file_with_mixed_decimals(self):
+    r = read(instance(rounding="Crores", facts=ind_as(revenue=("12345670000000", "-7"), other_income=("123400000", "-5"), income=("12345793400000", "-5"))))
+    self.assertEqual(fact(r, "RevenueFromOperations", "OneD").reported_value, "1234567")   # max(0, −7 − (−7)) = 0 places
+    self.assertEqual(fact(r, "OtherIncome", "OneD").reported_value, "12.34")               # max(0, −5 − (−7)) = 2 places
+    self.assertEqual((r.coarsest_decimals, r.finest_decimals, r.state), (-7, -5, "complete"))
+    self.assertEqual(check(r, "Income", "Quarter ended 30 Sep 2025").status, "passed")      # 12345670000000 + 123400000 = 12345793400000
+
+def test_rounding_mismatch(self):
+    r = read(instance(rounding="Crores", facts=ind_as(revenue=("1234500000", "-5"))))       # coarsest −5, declared −7
+    self.assertEqual((r.state, codes(r)), ("partial", ["XBRL_ROUNDING_MISMATCH"]))
+
+def test_eps_keeps_rupees_a_share(self):
+    f = fact(read(instance(facts=ind_as(eps=("12.34", "INF")))), "BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations", "OneD")
+    self.assertEqual((f.reported_value, f.unit_label, f.scale_factor), ("12.34", "₹ a share", "1"))
+
+def test_nil_is_unknown_never_zero(self):
+    r = read(instance(facts=ind_as(other_income=(None, "-5"))))
+    f = fact(r, "OtherIncome", "OneD")
+    self.assertEqual((f.value_status, f.reported_value, f.normalized_value, f.nil), ("unparsed", None, None, True))
+    self.assertIn("XBRL_NIL", codes(r)); self.assertEqual(check(r, "Income", "Quarter ended 30 Sep 2025").status, "not_checked")
+
+def test_a_failed_sum_names_its_numbers(self):
+    c = check(read(instance(facts=ind_as(revenue=("1000000", "-3"), other_income=("2000", "-3"), income=("1004000", "-3")))), "Income", "Quarter ended 30 Sep 2025")
+    self.assertEqual((c.status, c.expected, c.actual), ("failed", "10.04", "10.02"))   # lakh: 1004000/1e5, (1000000+2000)/1e5; off by 2000 > 3 × ½ × 10^3 = 1500
+
+def test_rounding_alone_does_not_fail_a_sum(self):
+    c = check(read(instance(facts=ind_as(revenue=("1000000", "-3"), other_income=("2000", "-3"), income=("1003000", "-3")))), "Income", "Quarter ended 30 Sep 2025")
+    self.assertEqual(c.status, "passed")   # off by 1000 ≤ 1500
+
+def test_dimensional_and_unmapped(self):
+    r = read(instance(facts=ind_as() + [("OtherExpenses", "OneExpenses1D", "INR", "-3", "5000"), ("SomethingNew", "OneD", "INR", "-3", "1")]))
+    self.assertFalse(any(f.context_id == "OneExpenses1D" for f in r.facts))
+    self.assertEqual(warning(r, "XBRL_ELEMENT_UNMAPPED").message, "SomethingNew")
+
+def test_cash_balance_opens_and_closes_the_half_year(self):
+    r = read(instance(facts=ind_as() + [("CashAndCashEquivalentsCashFlowStatement", "PY_I", "INR", "-3", "500000"), ("CashAndCashEquivalentsCashFlowStatement", "OneI", "INR", "-3", "700000")]))
+    opening, closing = cash_balances(r)          # sorted by line order
+    self.assertEqual((opening.context_id, opening.period_end, opening.span, opening.as_of_date), ("PY_I", date(2025, 9, 30), "half_year", date(2025, 3, 31)))
+    self.assertEqual((closing.context_id, closing.as_of_date), ("OneI", date(2025, 9, 30)))
+
+def test_no_rounding_declared(self):
+    r = read(instance(facts=ind_as(), rounding=None))
+    self.assertEqual((r.state, fact(r, "RevenueFromOperations", "OneD").reported_value, fact(r, "RevenueFromOperations", "OneD").normalized_value), ("partial", None, "1234500000"))
+
+def test_unmapped_format_writes_nothing(self):
+    r = read(instance(facts=ind_as() + [("CET1Ratio", "OneI", "pure", "INF", "0.15")]))
+    self.assertEqual((r.facts, r.checks, codes(r)), ([], [], ["XBRL_FORMAT_UNMAPPED"]))
+
+def test_real_instances_rounding_cross_check(self):  # gated: 807 of 807 pass (research §4)
+    for path in real_instances(): self.assertNotIn("XBRL_ROUNDING_MISMATCH", codes(read(path.read_bytes())), path.name)
+
+def test_real_instances_sums_are_counted(self):  # gated; records, does not assert all pass
+    counts = sum_outcomes(read(p.read_bytes()) for p in named_real_instances())   # Task 4's three files per format
+    print(counts)   # {sum id: {passed, failed, not_checked}}: copied into the commit message
+    self.assertGreater(counts["income"]["passed"], 0)
+```
+
+- [ ] **Step 2: Run to see them fail.** `uv run --locked python -m unittest tests.test_xbrl_read -v`. Expected: FAIL.
+- [ ] **Step 3: Implement** `read.py` and `checks.py`. Every value is a `Decimal`; there is no float anywhere.
+- [ ] **Step 4: Run to see them pass**, with and without `MAESTER_XBRL_DIR`. Expected: PASS. A sum that fails on a real instance is changed in the map only when the PDF shows the map was wrong (a missing line, a wrong sign). A filer's own inconsistency stays, and Task 20's report counts it.
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/financial-engine/src/pdf_financial_qa/xbrl tests/test_xbrl_read.py
+git commit -m "feat(xbrl): facts with span, period start, declared unit and padded precision; the map's sums and the balance identity as checks"
+```
+
+---
+
+### Task 6: The wire contracts and text blocks, in both runtimes
+
+**Files:**
+- Create: `packages/financial-engine/src/pdf_financial_qa/xbrl/{contracts.py,text.py}`
+- Modify: `packages/contracts/src/xbrl.ts`
+- Create: `packages/contracts/fixtures/xbrl/{stream-classify.ndjson,stream-read.ndjson,stream-text.ndjson,stream-error.ndjson,pdf-check-request.json,pdf-check-result.json}`
+- Test: `packages/contracts/test/xbrl-fixtures.test.ts`, `tests/test_xbrl_contracts.py`, `tests/test_xbrl_text.py`
+
+**Interfaces:**
+- Produces (camelCase on the wire; Pydantic twins with `to_wire()` / `from_wire()` like `workflow.contracts`):
+  - `XbrlEvidence = { field: EvidenceField, ruleId: string, element: string | null, context: string | null, quote: string (1–300) }`.
+  - `XbrlClassification = { parserVersion, mapVersion, format: XbrlFormat, kind: "financial_results" | "not_sure", resultsSpan: ResultsSpan | null, periodEnd: IsoDate | null, periodLabel: string | null, companyNameAsPrinted, cin, bseCode, nseSymbol, isin: string | null, basis: ReportingBasis, audited: boolean | null, statementsFound: StatementFound[], evidence: XbrlEvidence[], warnings: ExtractionWarning[] }`.
+  - `XbrlFact`: `ExtractedFact`'s fields without `pageIndex` and `textLayerMatch`, plus `span: FactSpan | null, periodStart: IsoDate | null, element: string, contextId: string, decimals: string | null, nil: boolean, concept: string | null`.
+  - `XbrlReadResult = { pipelineVersion: "xbrl-1", model: "xbrl-parser-1", promptVersion: string, format: XbrlFormat, basis: ReportingBasis, state: ExtractionState, rounding: { word, unitLabel, scale: DecimalString, exponent: int } | null, coarsestDecimals: int | null, finestDecimals: int | null, warnings, facts: XbrlFact[], checks: ExtractedCheck[] }`. Its `checks` refuse `checkType: "xbrl_in_pdf"`.
+  - `XbrlTextBlock = { element: string, contextId: string, heading: string, text: string }`; `XbrlTextResult = { textVersion: "1", basis: ReportingBasis, blocks: XbrlTextBlock[] }`.
+  - `XbrlEvent` is a discriminated union on `type`:
+    - `started { parserVersion, mapVersion, mode: "classify" | "read" | "text" }`
+    - `heartbeat {}`
+    - `classification { result: XbrlClassification }`
+    - `read { result: XbrlReadResult }`
+    - `text { result: XbrlTextResult }`
+    - `error { code, retryable, message }`
+  - `XbrlPdfCheckRequest = { scale: DecimalString, statementPages: StatementFound[], facts: { factId: Uuid, value: DecimalString /* normalized */, perShare: boolean, statement: StatementKind, basis: ReportingBasis }[] }`; `XbrlPdfCheckResult = { results: { factId: Uuid, status: CheckStatus, pageIndex: int ≥ 0 | null, reason: XbrlPdfNotChecked | null }[] }`.
+  - `text.py`:
+    - `html_to_text(html: str) -> str` (stdlib `html.parser`). `p`, `div`, `br`, `li`, `tr`, `h1`–`h6` and `table` end a line; `td` and `th` are joined by `" | "`; `script` and `style` are dropped; entities are unescaped; spaces collapse within a line; blank lines collapse to one; the result is stripped.
+    - `element_heading(element: str) -> str`: drops the suffixes `ExplanatoryTextBlock`, `TextBlock` and `Explanatory`, splits CamelCase into words, keeps the first word's capital and lowers the rest: `DisclosureOfNotesOnFinancialResultsExplanatoryTextBlock` gives `Disclosure of notes on financial results`.
+    - `text_blocks(instance) -> list[XbrlTextBlock]`: non-numeric facts whose element ends in a `text_suffixes` entry, dimensional or not, in document order, with empty texts dropped and duplicates of `(element, text)` dropped.
+
+- [ ] **Step 1: Write the fixtures and failing tests.** The fixtures are hand-written from Task 5's synthetic cases:
+  - The read stream holds one per-share fact, one nil fact and one cash-balance fact.
+  - The classify stream has an `XBRL_FORMAT_UNMAPPED` warning.
+  - The text stream holds two blocks.
+  - The check request has three facts; the result holds one `passed` with a page, one `failed` and one `not_checked` `scanned`.
+
+  The Zod test parses every line as `XbrlEvent` and the JSON files. It also checks two refusals: a `read` whose check has `checkType: "xbrl_in_pdf"`, and a fact with `span: "full_year"`. The Python test reads the same files through `from_wire`, checks that `to_wire` equals each input, and refuses the same two lines. `test_xbrl_text.py` checks four things:
+  - `html_to_text("<p>Notes&nbsp;to <b>results</b></p><table><tr><td>Segment</td><td>Cement</td></tr></table>")` is `"Notes to results\nSegment | Cement"`.
+  - `element_heading` gives the example above.
+  - `text_blocks` keeps a dimensional `RelatedPartyTransactionExplanatory` fact.
+  - `text_blocks` drops an empty block and a duplicate.
+- [ ] **Step 2: Run to see them fail.** `pnpm --filter @maester/contracts exec vitest run test/xbrl-fixtures.test.ts` and `uv run --locked python -m unittest tests.test_xbrl_contracts tests.test_xbrl_text -v`. Expected: FAIL.
+- [ ] **Step 3: Implement** both contract files and `text.py`; `read.py` and `classify.py` return these wire models through `to_xbrl_classification(...)` and `to_xbrl_read_result(...)`.
+- [ ] **Step 4: Run to see them pass.** Expected: PASS.
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/contracts packages/financial-engine/src/pdf_financial_qa/xbrl tests/test_xbrl_contracts.py tests/test_xbrl_text.py
+git commit -m "feat(contracts): /v1/xbrl events, the read and classify results, text blocks and the PDF check, in Zod and Pydantic"
+```
+
+---
+
+### Task 7: The extractor's `/v1/xbrl`
+
+**Files:**
+- Modify: `apps/extractor/src/maester_extractor/{app.py,settings.py}`, `apps/extractor/pyproject.toml` (`python-multipart==<pin>`, for Task 8), `uv.lock`
+- Test: `tests/test_extractor_xbrl.py`
+
+**Interfaces:**
+- Consumes: `parse_instance`, `classify_instance`, `read_instance`, `text_blocks` and the contracts (Tasks 2–6).
+- Produces:
+  - `Settings` gains `xbrl_max_bytes` (`XBRL_MAX_BYTES`, 20971520), `xbrl_max_facts` (`XBRL_MAX_FACTS`, 100000) and `xbrl_deadline_seconds` (`XBRL_DEADLINE_SECONDS`, 30).
+  - `POST /v1/xbrl`, behind `x-extractor-secret` like `/v1/extract`. The body is the instance, the header `x-xbrl-mode` is `classify | read | text`, and `x-document-id` is optional. The answer is 200 at once with NDJSON: `started`, `heartbeat` lines every `heartbeat_seconds` while the parse runs in a thread, then exactly one `classification`, `read`, `text` or `error` line.
+    - An unknown mode or an empty body is a 400 (`BAD_REQUEST`, `EMPTY_BODY`).
+    - A body over `xbrl_max_bytes` is a 200 with `error XBRL_UNREADABLE` (`retryable: false`, message `TOO_LARGE`), read no further. It is never a 413, because the worker treats this as a document fault, not a transport fault.
+    - A parser `ExtractionError` becomes its `error` line. Any other exception becomes `error XBRL_FAILED`, `retryable: true`, with the exception type only.
+  - Logs carry the document id, the mode, the format id, fact and warning counts, the seconds and error codes, never a value or a name.
+
+- [ ] **Step 1: Write the failing tests** with `fastapi.testclient.TestClient`. A synthetic Ind AS instance in each mode streams `started` then the right result, and each line parses with `XBRL_EVENT`. Then:
+  - a wrong secret gives 401 `EXTRACTOR_UNAUTHORIZED`;
+  - a DOCTYPE gives one `error` line `XBRL_UNREADABLE` with `retryable` false;
+  - 21 MB of padding inside a comment gives `XBRL_UNREADABLE` `TOO_LARGE`;
+  - a patched parser raising `RuntimeError("SYNTHETIC CEMENTS 1234")` gives `XBRL_FAILED`, and neither the line nor any captured log record (`assertLogs`) contains `SYNTHETIC`;
+  - a parser that sleeps past `heartbeat_seconds` (set to 0.05) yields `heartbeat` lines;
+  - `x-xbrl-mode: nope` gives 400.
+- [ ] **Step 2: Run to see them fail.** `uv run --locked python -m unittest tests.test_extractor_xbrl -v`. Expected: FAIL.
+- [ ] **Step 3: Implement** the route and the settings. Pin `python-multipart` as Task 2 pinned lxml.
+- [ ] **Step 4: Run** `uv run --locked python -m unittest discover -s tests -v`. Expected: PASS.
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/extractor uv.lock tests/test_extractor_xbrl.py
+git commit -m "feat(extractor): /v1/xbrl in classify, read and text modes over NDJSON, with limits and XBRL_UNREADABLE"
+```
+
+---
+
+### Task 8: `xbrl_in_pdf`: the check and its route
+
+**Files:**
+- Create: `packages/financial-engine/src/pdf_financial_qa/xbrl/pdf_check.py`
+- Modify: `apps/extractor/src/maester_extractor/app.py`
+- Test: `tests/test_xbrl_pdf_check.py` (uses `tests/pdf_fixtures.py` for text-layer and scanned PDFs)
+
+**Interfaces:**
+- Consumes: `PdfDocument.load` and `text_layer_match` (`workflow/pdf.py`, `workflow/values.py`), unchanged; `XbrlPdfCheckRequest` and `XbrlPdfCheckResult` (Task 6).
+- Produces:
+  - `check_xbrl_in_pdf(pdf: bytes, request: XbrlPdfCheckRequest) -> XbrlPdfCheckResult`. For each fact, the result is decided in this order:
+    1. The fact's value is null: `not_checked` `no_value`.
+    2. The `statementPages` entry for the fact's statement and basis is missing or empty: `not_checked` `no_statement_pages`.
+    3. Otherwise the candidate is the value itself for a per-share fact, or `value / scale` (an exact `Decimal`). Each page is tried in order, and the first page where `text_layer_match(page_text, candidate)` is `True` gives `passed` with that `pageIndex`.
+    4. No page matches and every page's text is empty: `not_checked` `scanned`.
+    5. No page matches and some pages have no text: `not_checked` `scanned`, because a miss next to a scan is not proof.
+    6. Otherwise: `failed`, `pageIndex` null.
+
+    An unreadable PDF raises `ExtractionError("UNREADABLE_PDF", …, False)`.
+  - `POST /v1/xbrl/pdf-check`, behind the secret: `multipart/form-data` with a `pdf` file part and a `request` part (JSON `XbrlPdfCheckRequest`). It answers one JSON `XbrlPdfCheckResult`, or `{"type":"error",…}` like `/v1/classify`. The body limit is `max_bytes`.
+
+- [ ] **Step 1: Write the failing tests.** The fixture PDF prints a lakh statement. Page indexes are 0-based, as `StatementFound.pages` are: index 0 is a cover; index 1 is a table with `12,345.00`, `(234.50)` and an earnings-per-share line `12.34`; index 2 is a scan of the same table.
+
+```python
+def test_found_on_the_second_statement_page(self):
+    r = run(pages=[0, 1], facts=[fact("1234500000"), fact("-23450000")], scale="100000")
+    self.assertEqual([(x.status, x.page_index) for x in r.results], [("passed", 1), ("passed", 1)])   # 1234500000/1e5 = 12345.00; |−23450000/1e5| = 234.50
+
+def test_a_value_not_printed_fails_without_a_page(self):
+    self.assertEqual(one(run(pages=[0, 1], facts=[fact("999900000")])), ("failed", None, None))
+
+def test_scanned_and_missing_pages_are_not_checked_with_their_reason(self):
+    self.assertEqual(one(run(pages=[2], facts=[fact("1234500000")])), ("not_checked", None, "scanned"))
+    self.assertEqual(one(run(pages=[], facts=[fact("1234500000")])), ("not_checked", None, "no_statement_pages"))
+    self.assertEqual(one(run(pages=[1], facts=[fact(None)])), ("not_checked", None, "no_value"))
+
+def test_per_share_is_not_scaled(self):
+    self.assertEqual(one(run(pages=[1], facts=[fact("12.34", per_share=True)]))[0], "passed")   # index 1 prints 12.34 as EPS
+```
+
+  Route tests: a multipart request answers the result, a request with no `pdf` part gives 400, and a wrong secret gives 401.
+- [ ] **Step 2: Run to see them fail.** `uv run --locked python -m unittest tests.test_xbrl_pdf_check -v`. Expected: FAIL.
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4: Run to see them pass.** Expected: PASS.
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/financial-engine/src/pdf_financial_qa/xbrl/pdf_check.py apps/extractor tests/test_xbrl_pdf_check.py
+git commit -m "feat(xbrl): xbrl_in_pdf looks for each XBRL value on the PDF's statement pages with text_layer_match"
+```
+
+---
+
+### Task 9: The source rule, in `@maester/financial-engine` and its Python twin
+
+**Files:**
+- Create: `packages/financial-engine-ts/src/sources.ts`, `packages/financial-engine-ts/fixtures/source-rule.json`, `packages/financial-engine-ts/test/sources.test.ts`, `packages/financial-engine-ts/vitest.config.ts`
+- Modify: `packages/financial-engine-ts/{src/index.ts,package.json,README.md}`
+- Create: `apps/eval/src/maester_eval/source_rule.py`; Test: `tests/test_eval_source_rule.py`
+
+**Interfaces:**
+- Produces (`@maester/financial-engine`, no I/O, no dates beyond ISO strings, no numbers):
+  - `SOURCE_RULE_VERSION = 1`.
+  - `type FilingKind = "annual_report" | "financial_results"`; `type Basis = "consolidated" | "standalone" | "unknown"`; `type Statement = "income_statement" | "balance_sheet" | "cash_flow"`; `type Span = "quarter" | "half_year" | "nine_months" | "year" | "other"`.
+  - `interface Slot { companyId: string; filingKind: FilingKind; statement: Statement; basis: Basis; periodEnd: string; span: Span | null }`; `slotKey(s: Slot): string` (`companyId|filingKind|statement|basis|periodEnd|span-or-instant`).
+  - `interface SlotCandidate { revisionId: string; documentId: string; source: "xbrl" | "pdf"; filingPeriodEnd: string | null; revisionCreatedAt: string }`.
+  - `rankSlotCandidates(cs: SlotCandidate[]): SlotCandidate[]`: owner first. `xbrl` comes before `pdf`, then the newer `filingPeriodEnd` (null last), then the newer `revisionCreatedAt`, then the larger `revisionId`. `slotOwner(cs) => rankSlotCandidates(cs)[0] ?? null`.
+  - `interface XbrlDocInput { documentId: string; state: "unsettled" | "held" | "settled"; companyId: string | null; identity: { cin: string | null; bseCode: string | null; nseSymbol: string | null; isin: string | null }; periodEnd: string | null; coverage: { statement: Statement; basis: Basis }[] }`. `coverage` lists the statements and bases with facts in its current mapped revision; it is empty when unmapped, failed or not read.
+  - `interface PdfNumbersInput { companyId: string; companyIdentity: XbrlDocInput["identity"]; kind: FilingKind; periodEnd: string | null; statementsFound: { statement: Statement; basis: Basis }[] }`.
+  - `type PdfNumbersPlan = { action: "wait"; waitingOn: string[] } | { action: "skip"; coveredBy: string[] } | { action: "read"; coveredBy: string[]; uncovered: { statement: Statement; basis: Basis }[] }`.
+  - `planPdfNumbers(pdf: PdfNumbersInput, xbrl: XbrlDocInput[]): PdfNumbersPlan`. The rules apply in order:
+    1. An `annual_report`, or a PDF with a null `periodEnd`, is `read` with nothing covered (Departure 6).
+    2. An XBRL document **could match** when both hold:
+       - its `companyId` is the PDF's, or it is null and its identity is all null or shares a non-null code with the PDF company's identity;
+       - its `periodEnd` is the PDF's, or it is null.
+    3. If any `unsettled` or `held` XBRL document could match, the plan is `wait`, with those documents oldest first by input order.
+    4. The settled XBRL documents of the same company and period cover their `coverage` pairs. The PDF's `statementsFound` pairs with basis `unknown` are never covered.
+    5. If `statementsFound` is non-empty and every pair is covered, the plan is `skip`.
+    6. Otherwise the plan is `read`, with the covering documents and the uncovered pairs.
+  - `export { … } from "./sources.js"` in `index.ts`; `package.json` gains `"test": "vitest run"` and vitest as a dev dependency; the README drops "no plan to port" and lists the source rule.
+  - `apps/eval/src/maester_eval/source_rule.py`: `SOURCE_RULE_VERSION = 1`, `slot_key`, `rank_slot_candidates`, `slot_owner`, `plan_pdf_numbers`, with the same fields in snake_case.
+  - `fixtures/source-rule.json`: `{ "version": 1, "rank": [{ "name", "candidates", "expected": [revisionId…] }], "plan": [{ "name", "pdf", "xbrl", "expected" }] }`. Each case's expectation is worked out by hand from the rule above, not by running the function.
+
+- [ ] **Step 1: Write the fixture** with at least these cases:
+  - `rank`:
+    - `xbrl-wins-over-a-newer-pdf`;
+    - `newest-xbrl-of-two`;
+    - `pdf-by-filing-period-then-revision` (stitch's rule unchanged);
+    - `null-filing-period-last`;
+    - `later-xbrl-takes-over` (a PDF revision created before the XBRL one still loses);
+    - `no-candidates` (`[]`);
+    - `q4-results-xbrl-does-not-fill-annual`: an annual slot's candidates hold only the annual PDF, because the results XBRL's full-year facts carry slot kind `financial_results`. The case lists both slot keys and checks they differ.
+  - `plan`:
+    - `both-bases-covered-skips`;
+    - `consolidated-only-reads-for-standalone` (`read`, uncovered `[income_statement/standalone, …]`);
+    - `q1-without-cash-flow-reads-cash-flow`;
+    - `unsettled-unknown-company-waits`;
+    - `held-with-matching-bse-code-waits`;
+    - `held-with-other-codes-does-not-wait`;
+    - `failed-xbrl-does-not-wait` (settled, empty coverage, `read`);
+    - `unmapped-format-covers-nothing`;
+    - `annual-report-never-waits-or-skips`;
+    - `empty-statements-found-reads`;
+    - `unknown-basis-never-covered`.
+- [ ] **Step 2: Write the failing tests.** `sources.test.ts` and `test_eval_source_rule.py` both load the fixture by path (`packages/financial-engine-ts/fixtures/source-rule.json`) and assert every case's `expected`. A test in each also asserts `SOURCE_RULE_VERSION === fixture.version`.
+- [ ] **Step 3: Run to see them fail.** `pnpm --filter @maester/financial-engine exec vitest run` and `uv run --locked python -m unittest tests.test_eval_source_rule -v`. Expected: FAIL.
+- [ ] **Step 4: Implement both**, then `pnpm install`.
+- [ ] **Step 5: Run to see them pass.** Expected: PASS.
+- [ ] **Step 6: Commit**
+
+```bash
+git add packages/financial-engine-ts apps/eval tests/test_eval_source_rule.py pnpm-lock.yaml
+git commit -m "feat(financial-engine): the source rule, version 1: XBRL wins a slot, skip, wait or read; Python twin in apps/eval on one fixture"
+```
+
+---
+
+### Task 10: Accepting XML: the upload route and verify's sniff
+
+**Files:**
+- Create: `apps/worker/src/sniff.ts`; Modify: `apps/worker/src/jobs/document-verify.ts`, `apps/worker/package.json` (`saxes==<pin>`), `apps/worker/src/env.ts` (`XBRL_SNIFF_BYTES`)
+- Modify: `packages/contracts/src/document.ts` (`CreateUploadRequest.mimeType`), `apps/api/src/routes/documents.ts`
+- Test: `apps/worker/test/sniff.test.ts`, `apps/worker/test/document-verify.test.ts`, `apps/api/test/documents.test.ts`
+
+**Interfaces:**
+- Produces:
+  - `CreateUploadRequest.mimeType: z.enum(["application/pdf", "application/xml", "text/xml"])`; `formatForMime(mime): DocumentFormat` in `@maester/contracts`.
+  - `storageKeyFor(workspaceId, documentId, format: DocumentFormat)`: `…/original.pdf` or `…/original.xml`. The upload route writes `document.format` from the declared type.
+  - `sniff.ts`: `sniffXbrl(head: Uint8Array): "xbrl" | "doctype" | "not_xbrl"`. It skips a UTF-8 byte-order mark and whitespace, then feeds the bytes to `saxes` (`xmlns: true`, no DTD handling; its `doctype` event answers `doctype`). The first `opentag` must have local name `xbrl` and URI `http://www.xbrl.org/2003/instance`. A parse error, or no root within the bytes given, answers `not_xbrl`.
+  - Verify keeps the hash and the size check over the whole stream and keeps the first `XBRL_SNIFF_BYTES` (65536). A `pdf` document must start with `%PDF-`, as today. An `xbrl` document must sniff `xbrl`. Anything else is rejected with `UNSUPPORTED_TYPE`, a DOCTYPE included. A document whose format is `xbrl` that settles at verify (rejected, or marked a duplicate) calls `redecidePdfsAfterXbrl` (Task 12; until Task 12 lands, a no-op export).
+
+- [ ] **Step 1: Write the failing tests.** `sniff.test.ts`:
+  - a Task 2-style instance, with its `<?xml …?>` declaration and comment before the root, sniffs `xbrl`;
+  - the same with a BOM sniffs `xbrl`;
+  - a DOCTYPE sniffs `doctype`;
+  - `<html/>` and `<xbrl xmlns="urn:other"/>` sniff `not_xbrl`;
+  - 65,536 bytes of comment with no root sniff `not_xbrl`.
+
+  `document-verify.test.ts`:
+  - an `xbrl` document with an instance is stored, and its classify and index jobs are created;
+  - a `.xml` document that holds a PDF is rejected `UNSUPPORTED_TYPE`;
+  - a PDF document holding XML is rejected `UNSUPPORTED_TYPE`;
+  - an instance with a DOCTYPE is rejected `UNSUPPORTED_TYPE`;
+  - a second copy of an instance is a duplicate and gets no classify job.
+
+  `documents.test.ts`:
+  - an upload with `text/xml` creates `format: "xbrl"` and a key ending `original.xml`;
+  - `application/zip` gives 400 `VALIDATION_FAILED`;
+  - `POST /:id/extract` on an `xbrl` document creates a `document.xbrl` job, not `document.extract`.
+- [ ] **Step 2: Run to see them fail.** `pnpm --filter @maester/worker exec vitest run test/sniff.test.ts test/document-verify.test.ts && pnpm --filter @maester/api exec vitest run test/documents.test.ts`. Expected: FAIL.
+- [ ] **Step 3: Implement.** Pin `saxes` to its newest release at least two weeks old.
+- [ ] **Step 4: Run the worker and API suites.** Expected: PASS.
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/worker apps/api packages/contracts pnpm-lock.yaml
+git commit -m "feat(intake): accept XBRL instances: XML uploads, original.xml, a streaming sniff that refuses DTDs, UNSUPPORTED_TYPE"
+```
+
+---
+
+### Task 11: Classifying an XBRL document, and the worker's XBRL client
+
+**Files:**
+- Modify: `apps/worker/src/extractor.ts`, `apps/worker/src/jobs/document-classify.ts`
+- Create: `apps/worker/src/jobs/classification-answers.ts`
+- Modify: `packages/db/src/queries/classification.ts` (`matchCompanies`), `packages/contracts/src/classification.ts` (`Evidence`, `Classification`), `apps/api/src/serialize.ts` (`toEvidence`, `toClassification`), `apps/api/src/routes/classification.ts` (carry `isin`, `xbrlFormat`)
+- Test: `apps/worker/test/extractor-xbrl.test.ts`, `apps/worker/test/document-classify.test.ts`, `packages/db/test/classification.test.ts`
+
+**Interfaces:**
+- Consumes: `XbrlEvent`, `XbrlClassification`, `XbrlReadResult`, `XbrlTextResult`, `XbrlPdfCheckRequest`, `XbrlPdfCheckResult` (Task 6).
+- Produces:
+  - `ExtractorClient` gains:
+    - `xbrl(input: { instance: Uint8Array; documentId: string; mode: "classify" }, onEvent): Promise<XbrlClassification>`, with overloads for `"read"` → `XbrlReadResult` and `"text"` → `XbrlTextResult`;
+    - `xbrlPdfCheck(input: { pdf: Uint8Array; documentId: string; request: XbrlPdfCheckRequest }): Promise<XbrlPdfCheckResult>`, a `FormData` POST.
+
+    The NDJSON is read as `extract` reads it, with the same failure mapping. An `error` event becomes its own `JobFailure`.
+  - `ClassificationAnswers`: `ClassificationResult`'s fields without `pageCount` and `evidence`, plus `isin: string | null`, `xbrlFormat: string | null` and `evidence: StoredEvidence[]`. Here `StoredEvidence = { field, source: "rule" | "model", ruleId, pageIndex: number | null, quote: string | null, textLayerMatch: boolean | null, element: string | null, context: string | null }`.
+  - `answersFromPdf(r: ClassificationResult): ClassificationAnswers` and `answersFromXbrl(r: XbrlClassification): ClassificationAnswers`. The XBRL version sets `rulesVersion` `xbrl-<parserVersion>`, `model` null and `promptVersion` `<format id>@<mapVersion>` or null, and its evidence is `source: "rule"` with `pageIndex` null.
+  - `writeClassification(db, job, doc, answers: ClassificationAnswers, companyId)`: the signature changes from `ClassificationResult`, and it also writes `isin`, `xbrlFormat`, `element` and `context`.
+  - `document.classify` branches on `doc.format`. For `xbrl` it calls `ctx.extractor.xbrl({ mode: "classify" })` (no size check against `EXTRACT_MAX_BYTES`; the extractor's limit applies), matches the company with `isin`, writes and decides, and then calls `redecidePdfsAfterXbrl`. Its `onFinalFailure` also calls `redecidePdfsAfterXbrl` for an `xbrl` document.
+  - `matchCompanies(db, ws, { cin?, bseCode?, nseSymbol?, isin?, name? })`: CIN first, then any of the three codes, then the name.
+  - `Evidence` (API) gains `element: z.string().nullable()` and `context: z.string().nullable()`; `Classification` gains `isin` and `xbrlFormat`. The investor's classification POST carries `isin` and `xbrlFormat` over from the previous answers.
+
+- [ ] **Step 1: Write the failing tests.** `extractor-xbrl.test.ts` runs over a local `node:http` server replaying the Task 6 fixtures:
+  - each mode resolves its result;
+  - `stream-error.ndjson` rejects with `XBRL_UNREADABLE`, not retryable;
+  - a cut stream rejects `EXTRACTOR_STREAM_INTERRUPTED`, retryable;
+  - `xbrlPdfCheck` sends a multipart body with parts `pdf` and `request`.
+
+  `document-classify.test.ts` uses a fake extractor:
+  - an XBRL document of a workspace company with `bse_code` `500999` is classified `financial_results`, its company is matched, and `decideIntake` is called with that classification. Task 12 tests which job it creates;
+  - with no company it is `needs_company`, and its evidence rows have `element` `ScripCode` and `context` `OneD`;
+  - its classification row has `isin`, `xbrl_format` `in-capmkt/ind_as`, `rules_version` `xbrl-1` and `model` null;
+  - a mixed-basis answer is `needs_kind` with the warning;
+  - `XBRL_UNREADABLE` fails the job without a retry and leaves `identify_failed`.
+
+  `classification.test.ts`: `matchCompanies` finds a company by ISIN alone.
+- [ ] **Step 2: Run to see them fail.** `pnpm --filter @maester/worker exec vitest run test/extractor-xbrl.test.ts test/document-classify.test.ts && pnpm --filter @maester/db exec vitest run test/classification.test.ts`. Expected: FAIL.
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4: Run the worker, db, api and contracts suites.** Expected: PASS.
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/worker apps/api packages/db packages/contracts
+git commit -m "feat(worker): classify an XBRL instance with no model: format, identity by ScripCode, Symbol and ISIN, evidence by element"
+```
+
+---
+
+### Task 12: `decideIntake`: read XBRL, skip Gemini, wait, and release
+
+**Files:**
+- Modify: `packages/jobs/src/intake.ts`, `packages/jobs/src/index.ts`
+- Create: `packages/db/src/queries/xbrl.ts`; Modify: `packages/db/src/index.ts`, `packages/jobs/package.json` (`@maester/financial-engine`)
+- Test: `packages/jobs/test/intake-xbrl.test.ts`
+
+**Interfaces:**
+- Consumes: `planPdfNumbers`, `PdfNumbersInput` and `XbrlDocInput` (Task 9).
+- Produces:
+  - `loadWorkspaceXbrlDocs(db, ws): Promise<XbrlDocInput[]>` in `@maester/db`: one fixed set of queries for the whole workspace, so a caller with many PDFs loads it once and plans each PDF in memory. The XBRL documents of the workspace with `format = 'xbrl'` that are not duplicates, with their current classification, ordered by `created_at`. Their state is mapped as follows:
+    - `uploaded`, `verifying`, or intake `identifying` or `reading`: `unsettled`;
+    - `needs_company` or `needs_kind`: `held`;
+    - everything else (`read`, `read_failed`, `identify_failed`, `kept`, rejected): `settled`.
+
+    `coverage` holds the distinct `(statement, basis)` of the facts of the current revision when its `source` is `xbrl`. `pending_upload` documents are left out.
+  - `companyIdentity(db, ws, companyId)` gives `{ cin, bseCode, nseSymbol, isin }`.
+  - `decideIntake` (same signature) with a read kind and a company:
+    - An `xbrl` document gets `reading` and a `document.xbrl` job (`readVersion(c.id)`).
+    - A `pdf` document runs `planPdfNumbers` inside its transaction, under `pg_advisory_xact_lock(hashtext('xbrl-wait:' || workspace_id))`:
+      - `wait` gives `waiting_for_xbrl` and no job;
+      - `skip` gives `read` and no job;
+      - `read` gives `reading` and a `document.extract` job, as today.
+    - After commit, for a `pdf` `financial_results` document, it calls `enqueueXbrlPdfChecks(db, dispatcher, ws, { pdfDocumentId })` (Task 13; until then a no-op export).
+  - `DecideOptions.onlyFrom` accepts `waiting_for_xbrl` and `read`. `DecideOptions.allowWait?: boolean` (default true): with false, a `wait` plan changes nothing.
+  - `redecidePdfsAfterXbrl(db, dispatcher, workspaceId): Promise<number>`. It nests no transaction:
+    1. A short transaction takes the advisory lock, lists the ids of the workspace's `pdf` documents that are `waiting_for_xbrl`, and of those that are `read` with a non-null `readsUnderId` and no revision under it (skipped, so an XBRL confirmed for another company can send them back to Gemini), and commits.
+    2. Then each id gets its own `decideIntake` with its current classification, and that transaction takes the lock itself. A waiting PDF gets `{ read: true, onlyFrom: ["waiting_for_xbrl"] }`. A skipped PDF gets `{ read: true, onlyFrom: ["read"], allowWait: false }`, so it acts only on a `read` plan: a finished PDF never goes back to waiting while a folder imports.
+
+    It returns how many changed state.
+
+    Callers: `document.xbrl` (success, a retry that finds the revision, and final failure); `document.classify` on an `xbrl` document (after `decideIntake`, and in `onFinalFailure`); `document.verify` when an `xbrl` document is rejected or is a duplicate; the API's classification POST and the confirm route (Task 17) for an `xbrl` document.
+
+- [ ] **Step 1: Write the failing tests** (database; fake dispatcher):
+
+```ts
+it("a results PDF whose XBRL is still being identified waits, and goes to Gemini once that XBRL fails", async () => {});
+it("a results PDF whose consolidated and standalone XBRL are read is not read by Gemini: read, no document.extract job", async () => {});
+it("a results PDF with only consolidated XBRL is read by Gemini", async () => {});
+it("an annual report never waits for results XBRL and is read as today", async () => {});
+it("the last XBRL settling releases the PDF, whatever order the PDF and the XBRL finish in", async () => {
+  // interleave: PDF decides while XBRL is identifying; XBRL then settles in each way (read, read_failed, identify_failed, kept,
+  // confirmed for another company); after redecidePdfsAfterXbrl no document is waiting_for_xbrl
+});
+it("a release that runs while the PDF is deciding does not leave it waiting", async () => {
+  // two concurrent transactions: decideIntake(pdf) and (XBRL settles; redecidePdfsAfterXbrl); afterwards the PDF is not waiting
+});
+it("a skipped PDF goes back to Gemini when its XBRL is confirmed for another company", async () => {});
+it("a skipped PDF stays read while new, unidentified XBRL documents of the workspace arrive", async () => {});
+it("a held XBRL whose ScripCode is the PDF company's BSE code holds the PDF; one with other codes does not", async () => {});
+it("a duplicate XBRL holds nothing and covers nothing", async () => {});
+it("another workspace's XBRL never holds or covers a PDF", async () => {});
+```
+
+- [ ] **Step 2: Run to see them fail.** `pnpm --filter @maester/jobs exec vitest run test/intake-xbrl.test.ts`. Expected: FAIL.
+- [ ] **Step 3: Implement**, and wire the callers listed above.
+- [ ] **Step 4: Run the jobs, worker and API suites.** Expected: PASS.
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/jobs packages/db apps/worker apps/api pnpm-lock.yaml
+git commit -m "feat(intake): XBRL documents read by document.xbrl; a PDF covered by XBRL skips Gemini; waiting_for_xbrl and its release"
+```
+
+---
+
+### Task 13: `document.xbrl` and `document.xbrl_check`
+
+**Files:**
+- Create: `apps/worker/src/jobs/document-xbrl.ts`, `apps/worker/src/jobs/document-xbrl-check.ts`
+- Modify: `apps/worker/src/jobs/{index.ts,document-extract.ts}` (export `setIntakeIfCurrent`), `apps/worker/src/queue.ts` (`DEFAULT_CONCURRENCY`), `apps/worker/src/env.ts` (`XBRL_PDF_CHECK`), `packages/jobs/src/intake.ts` (`enqueueXbrlPdfChecks`), `packages/contracts/src/payloads.ts`
+- Test: `apps/worker/test/document-xbrl.test.ts`, `apps/worker/test/document-xbrl-check.test.ts`, `apps/worker/test/queue.test.ts`
+
+**Interfaces:**
+- Consumes: the extractor client (Task 11), `redecidePdfsAfterXbrl` (Task 12), the schema (Task 1).
+- Produces:
+  - `DEFAULT_CONCURRENCY["document.xbrl"] = 2`, `["document.xbrl_check"] = 2`.
+  - `DocumentXbrlResult = { outcome: "read", revisionId: Uuid, state: ExtractionState, factCount: int, failedChecks: int, format: string | null, mapped: boolean }` and `DocumentXbrlCheckResult = { outcome: "checked" | "stale" | "disabled" | "not_mapped", rows: int }` in `payloads.ts`.
+  - `writeXbrlRevision(db, job, doc, result: XbrlReadResult, classificationId): Promise<DocumentXbrlResult>`: one transaction, unique by job.
+    - The revision: `source 'xbrl'`, `pageCount 0`, the result's versions, `coverage.statements` (one entry per statement and basis with facts: `pages: []`, `status: "extracted"`) and the warnings.
+    - Each fact is written with `span` and `periodStart` plus one `xbrl_source` row (`element`, `context_id`, `decimals`, `nil`), and **no** `source_reference`.
+    - The checks, in batches of 500.
+  - `documentXbrl` handler:
+    - Errors: `EXTRACTOR_NOT_CONFIGURED` (not retried); `INVALID_STATE` for a document that is missing, not stored, a duplicate, or `format` not `xbrl`; `OBJECT_MISSING`.
+    - A revision already written for the job sets the intake state again, enqueues the checks and releases.
+    - Otherwise: the read, the write, `setIntakeIfCurrent(…, "read")`, `enqueueXbrlPdfChecks(db, dispatcher, ws, { xbrlDocumentId })`, then `redecidePdfsAfterXbrl`.
+    - Progress stages `reading` and `stored`.
+    - `onFinalFailure` sets `read_failed` when the job is current, then releases.
+  - `enqueueXbrlPdfChecks(db, dispatcher, ws, by: { xbrlDocumentId: string } | { pdfDocumentId: string }): Promise<number>`. It pairs XBRL documents (current revision `source = 'xbrl'` with at least one fact) with stored, non-duplicate `pdf` documents whose current classification is `financial_results` with the XBRL classification's company and period end. One `document.xbrl_check` job is created per pair, keyed `pdf-<pdf classification id>`. It always enqueues: `packages/jobs` reads no settings, so the job itself answers `disabled` when the worker's `XBRL_PDF_CHECK` is false.
+  - `documentXbrlCheck` handler:
+    1. It reads the XBRL document's current revision (`not_mapped` when it has no facts) and the PDF classification from the job key (`stale` when that classification is no longer the PDF's current one).
+    2. `disabled` when `XBRL_PDF_CHECK` is false.
+    3. It sends `statementPages` (the PDF classification's `statementsFound`), `scale` (the revision's facts' `scaleFactor`) and the facts (`value` = `normalizedValue`; `perShare` when `unitLabel` is `₹ a share`) to `xbrlPdfCheck`.
+    4. It writes one `extraction_check` row per result: `check_type 'xbrl_in_pdf'`, `statement`, `basis`, `section`, `period_label` and `subject_label` from the fact, `expected` = the fact's `reported_value`, `actual` null, `detail` `""`, `fact_id`, `pdf_document_id`, `pdf_classification_id`, `page_index` and `reason`, `on conflict do nothing`.
+    5. Logs carry counts by status only.
+
+- [ ] **Step 1: Write the failing tests** with a fake extractor answering Task 6's fixtures:
+  - an XBRL document is read into one revision with `source` `xbrl` and `page_count` 0; every fact has one `xbrl_source` row and no `source_reference`; the checks are stored; the document is `read`;
+  - a retry after a crash following the commit writes nothing new;
+  - an unmapped read writes a revision with no facts and the warning, the document is `read`, and the result says `mapped: false`;
+  - `XBRL_UNREADABLE` gives `read_failed` without a retry, and a waiting PDF is released;
+  - a stored results PDF of the same company and period gets one `document.xbrl_check` job, and a second read enqueues no second job for the same PDF classification;
+  - the check writes one row per fact with its page and reason; running it twice writes each row once;
+  - a PDF re-classified meanwhile is `stale` and writes nothing;
+  - with `XBRL_PDF_CHECK=false` the check job answers `disabled` and writes no row;
+  - `parseConcurrency(undefined, ["document.xbrl", "document.xbrl_check"])` gives 2 and 2;
+  - no instance value reaches the logs.
+- [ ] **Step 2: Run to see them fail.** `pnpm --filter @maester/worker exec vitest run test/document-xbrl.test.ts test/document-xbrl-check.test.ts test/queue.test.ts`. Expected: FAIL.
+- [ ] **Step 3: Implement and register** both handlers.
+- [ ] **Step 4: Run the worker and jobs suites.** Expected: PASS.
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/worker packages/jobs packages/contracts
+git commit -m "feat(worker): document.xbrl writes an XBRL revision with xbrl_source; document.xbrl_check stores xbrl_in_pdf per fact"
+```
+
+---
+
+### Task 14: The reads that join sources, and stitch with source precedence
+
+**Files:**
+- Modify: `packages/db/src/queries/{extraction.ts,research.ts}`, `packages/contracts/src/{extraction.ts,research.ts}`, `apps/api/src/{serialize.ts,financials/stitch.ts,routes/research.ts,routes/documents.ts,routes/dev.ts,env.ts}`
+- Modify: `apps/web/src/lib/research/types.ts` (types only: the page variant gains `kind?: "page"`)
+- Test: `packages/db/test/research.test.ts`, `apps/api/test/stitch.test.ts`, `apps/api/test/research.test.ts`, `apps/api/test/extraction.test.ts`, `packages/contracts/test/research.test.ts`, `packages/contracts/test/readme-examples.test.ts`
+
+**Interfaces:**
+- Produces:
+  - `FactWithSource = { fact: FinancialFactRow; source: SourceReferenceRow | null; xbrl: XbrlSourceRow | null }`. `listFactsWithSources` and `listFactsWithSourcesForRevisions` **left join** `source_reference` and `xbrl_source`. A fact with neither is returned with both null, and stitch shows it with source null.
+  - `listXbrlPdfChecks(db, ws, factIds: string[]): Promise<ExtractionCheckRow[]>` (rows with `check_type = 'xbrl_in_pdf'`).
+  - Contracts:
+    - `FinancialFact.source` becomes `FactSource`, a discriminated union on `kind`: `{ kind: "page", documentId, pageIndex, textLayerMatch }` and `{ kind: "xbrl", documentId, element, contextId, decimals: string | null, nil: boolean }`. It is nullable.
+    - `FinancialFact` gains `span: FactSpan.nullable()` and `periodStart: IsoDate.nullable()`.
+    - `ExtractionRevision` gains `source: z.enum(["pdf", "xbrl"])`.
+  - `CellSource` becomes a discriminated union on `kind`:
+    - `{ kind: "page", documentId, pageIndex, pageCount, textLayerMatch }`;
+    - `{ kind: "xbrl", documentId, originalName, element, contextId, decimals: string | null, nil: boolean, periodStart: IsoDate | null, span: FactSpan | null, inPdf: XbrlInPdf }`, where `XbrlInPdf = { status: CheckStatus, pdfDocumentId: Uuid | null, pageIndex: int ≥ 0 | null, statementPages: int[], reason: XbrlPdfNotChecked | null }`.
+
+    `Restated` becomes `{ kind: "page", documentId, filingPeriodEnd, pageIndex, value, printed }` or `{ kind: "xbrl", documentId, filingPeriodEnd, element, value, printed }`.
+  - `inPdfFor(fact, checks, pdf: { documentId, classificationId, statementPages } | null, enabled: boolean): XbrlInPdf` in `apps/api/src/financials/in-pdf.ts`. Its answers:
+    - no PDF of the filing gives `not_checked` `no_pdf`;
+    - `enabled` false gives `not_checked` `disabled`;
+    - no row for that PDF's current classification gives `not_checked` `not_yet`;
+    - otherwise the row's status, page and reason.
+
+    `statementPages` are the PDF classification's pages for the fact's statement and basis, so the screen can open "where the statement pages start". The API env gains `XBRL_PDF_CHECK` (default true).
+  - `stitch(filings)`: `Filing` gains `source: "pdf" | "xbrl"`. Within a period the placed filings are ordered by `rankSlotCandidates` (Task 9) instead of `newestFirst`. An XBRL filing's facts are admitted to an annual table only when `span` is `year` or null, so a quarter and a year-to-date that end on one day never share a column. `cellOf` builds the right `CellSource` variant, and the restated variant is chosen by the other filing's source. `precisionOf` is unchanged (Departure 12).
+  - `/companies/:id/financials` passes `source` and the XBRL facts' `inPdf`. The filings it stitches stay annual reports only (`counts()`), so no results XBRL reaches Research in this phase (Departure 6). The `/documents/:id/facts` and `dev.ts` routes use the new shapes.
+
+- [ ] **Step 1: Write the failing tests.** `research.test.ts` (db):
+  - XBRL facts come back from both queries with their `xbrl` row and `source` null;
+  - a PDF fact comes back with `source` and `xbrl` null.
+
+  `stitch.test.ts`:
+
+```ts
+it("an XBRL filing owns a year a newer annual-report PDF also prints, and the column never mixes them", () => {});
+it("a line only the PDF prints stays out of the XBRL-owned column", () => { /* missing, never filled */ });
+it("a year XBRL does not print comes from the PDF", () => {});
+it("an XBRL quarter and its half year ending on 30 Sep never sit in an annual table", () => {});
+it("an XBRL cell carries its element, context, decimals and the in-PDF outcome; a page cell carries kind 'page'", () => {});
+it("XBRL restated against a PDF: the restated variant is the PDF's, at the coarser precision", () => {
+  // XBRL 12345.00 lakh against PDF 12,345 lakh → not restated; against 12,346 → restated with kind "page"
+});
+it("an XBRL fact whose value is nil is '—' with status unparsed and nil true", () => {});
+```
+
+  `research.test.ts` (API): a company with a read results XBRL and a read annual report shows only the annual report's columns. `extraction.test.ts`: `/documents/:id/facts` of an XBRL document returns `source.kind` `xbrl`. Contracts: `CellSource` refuses a page variant without `pageIndex` and an XBRL variant with one. Update the README examples.
+- [ ] **Step 2: Run to see them fail.** `pnpm --filter @maester/db exec vitest run test/research.test.ts && pnpm --filter @maester/api exec vitest run test/stitch.test.ts test/research.test.ts test/extraction.test.ts && pnpm --filter @maester/contracts exec vitest run`. Expected: FAIL.
+- [ ] **Step 3: Implement**, and update the web's mirror types (types only; no component changes) and `cd apps/web && pnpm check`.
+- [ ] **Step 4: Run the db, contracts and API suites and `apps/web`'s `pnpm verify`.** Expected: PASS.
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/db packages/contracts apps/api apps/web/src/lib/research/types.ts
+git commit -m "feat(research): reads left-join page and XBRL sources; CellSource and Restated xbrl variants; stitch puts XBRL first"
+```
+
+---
+
+### Task 15: XBRL text blocks into the index
+
+**Files:**
+- Create: `apps/indexer/src/maester_indexer/text_chunker.py`; Modify: `apps/indexer/src/maester_indexer/{app.py,contracts.py}`
+- Modify: `packages/contracts/src/document-index.ts`, `apps/worker/src/indexer.ts`, `apps/worker/src/jobs/document-index.ts`
+- Create: `packages/contracts/fixtures/index/{chunk-text-request.json,chunk-text-response.json}`
+- Test: `apps/indexer/tests/test_text_chunker.py`, `apps/indexer/tests/test_service.py`, `packages/contracts/test/index-fixtures.test.ts`, `apps/worker/test/document-index-xbrl.test.ts`
+
+**Interfaces:**
+- Produces:
+  - Contracts: `ChunkTextRequest = { blocks: { element: string; heading: string; text: string }[]; basis: "consolidated" | "standalone" | null; embeddingModel: string }`, `TextChunk = { element, seq: int ≥ 0, kind: ChunkKind, sectionPath: string[], basis, text, tokenCount }` and `ChunkTextResponse = { versions: IndexerVersions; chunks: TextChunk[] }`, with Pydantic twins.
+  - `chunk_text_blocks(blocks, basis, tokenizer) -> list[TextChunk]`:
+    - Each block is split on blank lines into paragraphs, and a paragraph whose every line holds `" | "` is a table paragraph.
+    - Paragraphs are packed in order while `contextualize([heading], text)` fits the budget Task 4 of phase 2 uses (`CHUNK_TOKENS`, at most `MAX_EMBED_TOKENS` in all). A paragraph over it is split by lines, then by words.
+    - `seq` counts from 0 across all blocks.
+    - `kind` is `table` when every paragraph of the chunk is a table paragraph.
+    - `sectionPath` is `[heading]` and `basis` is the request's.
+  - `POST /v1/chunk-text` (secret, `INDEX_MAX_BYTES`): it answers JSON `ChunkTextResponse`. A model that is not the loaded tokenizer's gives 409 `INDEXER_MODEL_MISMATCH`.
+  - `IndexerClient.chunkText(request, signal): Promise<ChunkTextResponse>`.
+  - `document.index` on a `format = 'xbrl'` document runs `indexXbrl`:
+    - No extractor gives `EXTRACTOR_NOT_CONFIGURED`; no indexer or embedder gives `INDEXER_NOT_CONFIGURED`.
+    - It calls `extractor.xbrl({ mode: "text" })`, then `indexer.chunkText`.
+    - It starts or resumes the revision with versions `doclingVersion: "none"`, `ocrEngine: "none"`, `readerOptions: "xbrl-text=<textVersion>"`, the indexer's `chunkerVersion` and `tokenizer`.
+    - It runs `writeRange(…, pages: [], chunks with pageNumber null, element, textSource "xbrl", { pageCount: 0, pagesRead: 0, pagesOcr: 0, warnings: [] })`, then `embedPending` and `completeRevision`.
+    - No block completes the revision with no chunks.
+
+- [ ] **Step 1: Write the failing tests.** `test_text_chunker.py` (whitespace tokenizer):
+  - two short blocks give two chunks with `seq` 0 and 1 and their headings;
+  - a block of 2,000 words splits into chunks within the budget;
+  - a table block is `kind` `table`;
+  - consolidated basis carries through.
+
+  `test_service.py`: `/v1/chunk-text` answers the fixture; a model mismatch gives 409. `document-index-xbrl.test.ts`, with a fake extractor and indexer and `FakeEmbedder`:
+  - an XBRL document is indexed into a complete revision whose chunks have `page_number` null, an `element` and `text_source` `xbrl`, every chunk embedded;
+  - a search for a word in the block finds it with `pageNumber` null and the element;
+  - an embedder failure and retry write no chunk twice.
+- [ ] **Step 2: Run to see them fail.** `cd apps/indexer && uv run python -m unittest tests.test_text_chunker tests.test_service -v` and `pnpm --filter @maester/worker exec vitest run test/document-index-xbrl.test.ts`. Expected: FAIL.
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4: Run the indexer, contracts and worker suites.** Expected: PASS.
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/indexer apps/worker packages/contracts
+git commit -m "feat(index): XBRL text blocks as chunks with text_source xbrl and their element, chunked by the indexer's tokenizer"
+```
+
+---
+
+### Task 16: The `pipeline` object
+
+**Files:**
+- Create: `packages/contracts/src/pipeline.ts`; Modify: `packages/contracts/src/{document.ts,index.ts}`
+- Create: `packages/db/src/queries/pipeline.ts`; Create: `apps/api/src/documents/pipeline.ts`
+- Modify: `apps/api/src/{serialize.ts,routes/documents.ts,routes/classification.ts}`
+- Test: `apps/api/test/pipeline.test.ts` (pure), `packages/db/test/pipeline.test.ts`, `apps/api/test/documents.test.ts`
+
+**Interfaces:**
+- Produces:
+  - `DocumentPipeline` (`pipeline.ts`):
+
+```ts
+DocumentPipeline = z.strictObject({
+  stored: z.enum(["done", "now", "failed"]),
+  identified: z.enum(["done", "now", "needs_you", "failed", "waiting"]),
+  numbers: z.strictObject({
+    source: z.enum(["xbrl", "pdf"]).nullable(),
+    state: z.enum(["done", "now", "not_needed", "failed", "waiting", "not_read"]),
+    coveredByXbrl: z.array(Uuid),           // not_needed, and pdf partial coverage
+    waitingOn: z.array(Uuid),               // waiting on XBRL (ask 2)
+    reason: z.enum(["format_unmapped", "not_a_read_kind", "duplicate", "waiting_for_xbrl", "not_identified", "needs_you"]).nullable(),
+    format: XbrlFormatKind.nullable(),      // with format_unmapped (ask 3)
+  }),
+  text: z.strictObject({
+    state: z.enum(["done", "now", "partial", "failed", "waiting"]),
+    pages: z.number().int().min(0), pagesRead: z.number().int().min(0), pagesOcr: z.number().int().min(0),
+    chunks: z.number().int().min(0), xbrlBlocks: z.number().int().min(0),
+    ahead: z.number().int().min(0).nullable(),   // queued document.index jobs before this one (ask 4)
+  }),
+})
+```
+
+  - `Document` gains `pipeline: DocumentPipeline`.
+  - `loadPipelineInputs(db, ws, documentIds: string[]): Promise<Map<string, PipelineInput>>`. Batched: one query each for the documents, current classifications, current extraction revisions (with `source` and `warnings`), the latest `document`, `document.xbrl` and `document_index` jobs, the current index revisions with chunk and block counts (`count(distinct element) filter (where text_source = 'xbrl')`), and queue positions. The queue position is the count of `document.index` jobs in state `queued` with `(run_after, created_at)` below this job's, as the runner claims.
+  - `computePipeline(input: PipelineInput, plan: PdfNumbersPlan | null): DocumentPipeline` (pure):
+    - `stored`: document `stored` is `done`; `rejected` is `failed`; else `now`.
+    - `identified`: not stored is `waiting`; `identifying` is `now`; `needs_company` or `needs_kind` is `needs_you`; `identify_failed` is `failed`; else `done`.
+    - `numbers` for an XBRL document: `source "xbrl"`.
+      - Intake `reading`, or a running or queued `document.xbrl` job, is `now`.
+      - `read_failed` is `failed`.
+      - `read` with the warning `XBRL_FORMAT_UNMAPPED` is `not_read` `format_unmapped`, `format` the classification's kind.
+      - `read` otherwise is `done`.
+      - Not identified yet is `waiting` `not_identified`.
+      - `kept` is `not_read` `not_a_read_kind`.
+      - A duplicate is `not_read` `duplicate`.
+    - `numbers` for a PDF:
+      - `waiting_for_xbrl` is `waiting` with `waitingOn` from the plan.
+      - `read` with no revision is `not_needed`, `source "xbrl"`, `coveredByXbrl` from the plan.
+      - `reading` is `now`, `source "pdf"`.
+      - `read` is `done`, `source "pdf"`, with `coveredByXbrl` for a partly covered PDF.
+      - `read_failed` is `failed`.
+      - `kept` is `not_read` `not_a_read_kind`.
+      - `needs_*` is `waiting` `needs_you`; earlier states are `waiting` `not_identified`.
+      - A duplicate is `not_read` `duplicate`.
+    - `text`:
+      - A complete revision is `done`; a partial one is `partial`.
+      - The `document.index` job `running` is `now`; `queued` is `waiting` with `ahead`; `failed` with no revision is `failed`.
+      - No job is `waiting` with `ahead` null.
+      - The counts come from the newest revision for `EMBEDDING_MODEL` (0 without one).
+  - The plan for a PDF is `planPdfNumbers` over `loadWorkspaceXbrlDocs`, loaded once per request and applied to each PDF in memory. Every `toDocument` call site passes the pipeline: the upload, finalize, list, get and classification POST.
+
+- [ ] **Step 1: Write the failing tests.** `pipeline.test.ts` gives one case per branch above with hand-built inputs, among them:
+  - a PDF waiting on two XBRL ids;
+  - a PDF `not_needed` covered by two;
+  - an unmapped banking instance giving `not_read`, `format_unmapped`, `banking`;
+  - a text job third in the queue giving `ahead: 2`.
+
+  `packages/db/test/pipeline.test.ts`:
+  - the batched loader returns the right counts for an XBRL revision with 12 blocks in 30 chunks;
+  - it runs a fixed number of queries for 50 documents (count through a query logger);
+  - it never reads another workspace's jobs.
+
+  `documents.test.ts`: `GET /documents` items carry a `pipeline` that parses as `DocumentPipeline`.
+- [ ] **Step 2: Run to see them fail.** `pnpm --filter @maester/api exec vitest run test/pipeline.test.ts test/documents.test.ts && pnpm --filter @maester/db exec vitest run test/pipeline.test.ts`. Expected: FAIL.
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4: Run the API, db and contracts suites.** Expected: PASS.
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/contracts packages/db apps/api
+git commit -m "feat(api): the per-document pipeline object, computed on read: tracks, waiting on, covered by XBRL, unmapped format, queue position"
+```
+
+---
+
+### Task 17: `GET …/filings` and confirming a company once
+
+**Files:**
+- Create: `packages/contracts/src/filings.ts`; Modify: `packages/contracts/src/{company.ts,index.ts}`
+- Create: `apps/api/src/documents/{filings.ts,held.ts,reclassify.ts}`, `apps/api/src/routes/filings.ts`; Modify: `apps/api/src/{app.ts,routes/companies.ts,routes/classification.ts}`
+- Create: `packages/db/src/queries/filings.ts`
+- Test: `apps/api/test/filings-build.test.ts` (pure), `apps/api/test/held.test.ts` (pure), `apps/api/test/filings.test.ts`, `apps/api/test/confirm.test.ts`
+
+**Interfaces:**
+- Produces:
+  - Contracts (`filings.ts`):
+
+```ts
+StatementSourceReason = z.enum(["xbrl_lacks_statement", "xbrl_format_unmapped", "no_xbrl", "not_in_filing", "not_read_yet", "read_failed"])
+InPdfCount = z.strictObject({ found: int, checked: int, notFound: z.array(Uuid) /* fact ids */, notChecked: XbrlPdfNotChecked.nullable() })
+StatementSource = z.strictObject({
+  statement: StatementKind, source: z.enum(["xbrl", "pdf"]).nullable(),
+  xbrlDocumentId: Uuid.nullable(), xbrlSpans: z.array(FactSpan),
+  pdfDocumentId: Uuid.nullable(), pdfPages: z.array(int ≥ 0),
+  reason: StatementSourceReason.nullable(), inPdf: InPdfCount.nullable(),
+})
+BasisSources = z.strictObject({ basis: ReportingBasis, statements: z.array(StatementSource) })      // ask 1
+FilingFile = z.strictObject({ documentId: Uuid, originalName: z.string(), format: DocumentFormat, basis: ReportingBasis.nullable(),
+  createdAt: IsoTimestamp, intakeState: IntakeState.nullable(), duplicates: z.array(Uuid), pipeline: DocumentPipeline })
+WorkspaceFiling = z.strictObject({ key: z.string(), kind: ClassificationKind, otherType: OtherType.nullable(), periodEnd: IsoDate.nullable(),
+  spans: z.array(ResultsSpan), files: z.array(FilingFile), sources: z.array(BasisSources), settled: z.boolean(), addedAt: IsoTimestamp })
+HeldIdentity = z.strictObject({ key: z.string(), nameAsPrinted: z.string().nullable(), cin, bseCode, isin, nseSymbol: z.string().nullable(),
+  files: int, filings: int, documentIds: z.array(Uuid), matches: z.array(Uuid) })                   // ask 5's grouping
+WorkspaceFilings = z.strictObject({ companies: z.array(z.strictObject({ company: Company, filings: z.array(WorkspaceFiling) })),
+  held: z.array(HeldIdentity), unsorted: z.array(FilingFile) })
+ConfirmCompanyRequest = z.strictObject({
+  identity: z.strictObject({ cin: Cin.optional(), bseCode: BseCode.optional(), isin: Isin.optional(), nseSymbol: NseSymbol.optional() })
+    .refine((i) => Object.values(i).some(Boolean), "at least one identifier"),
+  company: z.union([z.strictObject({ id: Uuid }), z.strictObject({ new: CreateCompanyRequest.extend({ cin: Cin.optional(), bseCode: BseCode.optional(), isin: Isin.optional(), nseSymbol: NseSymbol.optional() }) })]),
+})
+ConfirmCompanyResponse = z.strictObject({ companyId: Uuid, confirmed: int })
+```
+
+  - `Company` gains `isin: z.string().nullable()`. The contract names are `WorkspaceFiling` and `WorkspaceFilings`, not `Filing`, because `apps/api/src/financials/stitch.ts` already exports a `Filing` type.
+  - `buildFilings(input: FilingsInput): WorkspaceFilings` (pure, in `documents/filings.ts`):
+    - **Grouping.** Files with a company are grouped by `(companyId, kind, periodEnd)` (Departure 2). The key is `${companyId}:${kind}:${periodEnd}`, or `${companyId}:${kind}:${documentId}` when the period is null.
+    - **Ordering.** Filings are newest `periodEnd` first, and companies by display name.
+    - **Duplicates** are not files: their ids sit under the original's `duplicates`.
+    - **Unsorted.** Files with no company that are not held, and files whose current classification prints no identity at all, go to `unsorted`.
+    - **Sources**, for each basis among the filing's XBRL instances and its PDF's `statementsFound`, and each statement:
+      - an XBRL instance of that basis whose current revision has facts of that statement gives `source "xbrl"`, with `xbrlSpans` the distinct fact spans and `inPdf` counted from that statement's `xbrl_in_pdf` rows for the PDF's current classification;
+      - else the PDF has the pair in `statementsFound`: `source "pdf"`, with `pdfPages`, and `reason` set to `xbrl_lacks_statement` (an XBRL of that basis exists and has facts), `xbrl_format_unmapped` (its revision is unmapped) or `no_xbrl` (there is none). When the PDF is not read yet the reason is `not_read_yet`, and when its read failed the reason is `read_failed`;
+      - else `source` null and `not_in_filing`.
+
+      The ranking between sources is `slotOwner` (Task 9).
+    - **`settled`** is true when every file's `identified` is `done`, `numbers.state` is one of `done`, `not_needed`, `not_read` or `failed`, and `text.state` is one of `done`, `partial` or `failed`.
+  - `groupHeld(rows: { documentId, kind, periodEnd, nameAsPrinted, cin, bseCode, isin, nseSymbol }[], companies: CompanyRow[]): HeldIdentity[]` (pure, `documents/held.ts`):
+    - Documents that share any non-null identifier value are one group (union-find over `cin`, `bse`, `isin` and `nse` values). Documents with no identifier are left out; they are `unsorted`.
+    - `key` is the group's identifiers sorted and joined, for example `bse:500999|isin:INE999Z01011`.
+    - `nameAsPrinted` is the most common name.
+    - `filings` counts the distinct `(kind, periodEnd)`.
+    - `matches` are the `matchCompanies` results for the group's identifiers.
+    - Groups are ordered by file count, largest first, then by key.
+  - `GET /v1/workspaces/:ws/filings` (session and membership through `requireWorkspace`): `WorkspaceFilings`, read with batched queries (`listFilingRows`, `loadPipelineInputs`, the checks by fact id), never one query per file.
+  - `writeInvestorClassification(tx, ws, userId, documentId, input: ChangeClassificationRequest): Promise<{ row: ClassificationRow; read: boolean }>`. This is the body of today's classification POST, moved and reused. That route calls it unchanged in behaviour.
+  - `POST /v1/workspaces/:ws/companies/confirm`: `ConfirmCompanyRequest` → `ConfirmCompanyResponse`. It runs in one transaction:
+    1. Create the company when the request says `new`, with the given identity's codes.
+    2. Lock and list the workspace's `needs_company` documents whose current classification shares any given identifier.
+    3. Write an investor classification for each: `basedOn` its current one, company `{ id }`.
+
+    After commit it calls `decideIntake` for each, then `redecidePdfsAfterXbrl`. It answers the count. With no held document it answers `confirmed: 0`, still 200. A company name or code already used gives 409 `CONFLICT`.
+
+- [ ] **Step 1: Write the failing tests.** `held.test.ts`:
+  - two instances with `bse:500999` and a PDF with `bse:500999` and a CIN form one group of 3 files and 2 filings;
+  - an instance with only `isin` and one with the same ISIN and a BSE code form one group;
+  - a file with no codes is not grouped.
+
+  `filings-build.test.ts`:
+  - **A Q2 filing** with a PDF (both bases found) and consolidated and standalone instances gives one filing with three files, both bases' P&L and balance sheet `source "xbrl"` with spans `["quarter", "half_year"]`, and `inPdf` `{ found: 38, checked: 38, notFound: [] }` from 38 passed rows.
+  - **A Q1 filing**, whose instances have no cash flow, gives cash flow `source "pdf"` with `xbrl_lacks_statement` and its pages.
+  - **A banking instance** gives `xbrl_format_unmapped`.
+  - **A duplicate** sits under its original.
+  - **A filing with a waiting PDF** is not settled.
+  - **A PDF classified half year and its instance classified quarter** for the same period end are one filing with `spans` `["half_year", "quarter"]`.
+
+  `filings.test.ts` (route):
+  - signed out gives 401; another workspace gives 404;
+  - a seeded workspace answers a body that parses as `WorkspaceFilings`;
+  - 100 documents are answered within a fixed query count.
+
+  `confirm.test.ts`:
+  - confirming `{ bseCode: "500999" }` as a new company releases every held document printing it, answers `confirmed: 3`, and creates their `document.xbrl` and `document.extract` jobs (or `waiting_for_xbrl`, as `decideIntake` decides);
+  - a second confirm answers `confirmed: 0`;
+  - a document of another workspace printing the same code is untouched;
+  - an empty identity gives 400.
+- [ ] **Step 2: Run to see them fail.** `pnpm --filter @maester/api exec vitest run test/held.test.ts test/filings-build.test.ts test/filings.test.ts test/confirm.test.ts`. Expected: FAIL.
+- [ ] **Step 3: Implement**, and move the classification POST's body into `writeInvestorClassification`. The existing `classification.test.ts` must pass unchanged.
+- [ ] **Step 4: Run the API and contracts suites.** Expected: PASS.
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/contracts packages/db apps/api
+git commit -m "feat(api): GET /filings by company and filing with per-basis statement sources; confirm a printed identity once for all its files"
+```
+
+---
+
+### Task 18: `@maester/import`: a folder through the API
+
+**Files:**
+- Create: `apps/import/{package.json,tsconfig.json,eslint.config.js,README.md,vitest.config.ts}`, `apps/import/src/{cli.ts,import.ts,walk.ts}`
+- Modify: `pnpm-workspace.yaml` (`apps/import`)
+- Test: `apps/import/test/import.test.ts`
+
+**Interfaces:**
+- Produces:
+  - `walk(folder: string): AsyncIterable<{ path: string; name: string; size: number }>`. It goes depth first and in sorted order. It takes `.pdf` and `.xml` (case-insensitive). It skips names starting with `.`, plus `Thumbs.db` and `desktop.ini`. It follows no symbolic link.
+  - `importFolder(opts: { apiUrl: string; workspaceId: string; cookie: string; folder: string; concurrency?: number /* 4 */; fetch?: typeof fetch; onSettled?: (n: number, total: number) => void }): Promise<{ sent: number; refused: { name: string; code: string }[]; failed: { name: string; code: string }[] }>`. Each file goes through three requests: `POST /v1/workspaces/:ws/documents/uploads` (`mimeType` `application/pdf` or `application/xml` by extension), `PUT` to the signed URL with its headers, then `POST …/:id/finalize`.
+    - A 400 or 413 is `refused` with the error code.
+    - A 401 stops the run: files already started finish, nothing new starts, and the run exits 2.
+    - A network error, or a 5xx after two retries with waits of 1 s and 2 s, is `failed`.
+    - A file over 52428800 bytes is refused locally (`UPLOAD_TOO_LARGE`) without a request.
+    - The PUT goes to the signed `url` as given. The disk store signs an absolute URL on its own base URL; a relative one is resolved against `MAESTER_API_URL`. It sends the signed headers except `Content-Length`, which `fetch` sets from the body.
+  - `pnpm --filter @maester/import import <folder> [--workspace <id>] [--api <url>]`. The command reads `MAESTER_SESSION_COOKIE` (the browser's `better-auth.session_token` cookie, as `name=value`), plus `MAESTER_WORKSPACE` and `MAESTER_API_URL` (default `http://localhost:8787`).
+    - It prints a progress line every 25 files, then `Sent N. Refused M. Failed K.` and each refused or failed file by name with its code.
+    - It exits 0 when nothing failed and 1 otherwise. A file's contents are never printed.
+    - The README says how to copy the cookie. It also says that a second run of the same folder creates duplicates, which are not read again.
+
+- [ ] **Step 1: Write the failing tests**, over a local `node:http` server that answers the three endpoints:
+  - a folder of 3 PDFs, 2 XML files, a `.DS_Store` and a `notes.txt` makes 5 uploads with the right MIME types and 5 finalizes;
+  - at most 4 requests are in flight at once (counted in the server);
+  - a 413 on one file lists it as refused and goes on;
+  - a 401 on the third upload stops new uploads, and the exit code is 2;
+  - a 503 then a 200 succeeds after one retry;
+  - a 60 MB sparse file is refused locally;
+  - a relative signed URL (`/dev/blobs/…`) is resolved against the API URL.
+- [ ] **Step 2: Run to see them fail.** `pnpm --filter @maester/import exec vitest run`. Expected: FAIL.
+- [ ] **Step 3: Implement**, then `pnpm install`.
+- [ ] **Step 4: Run to see them pass.** Expected: PASS.
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/import pnpm-workspace.yaml pnpm-lock.yaml
+git commit -m "feat(import): pnpm --filter @maester/import import <folder> uploads PDFs and XBRL instances through the API, four at a time"
+```
+
+---
+
+### Task 19: The drop strip takes XBRL
+
+**Files:**
+- Modify: `apps/web/src/lib/documents/{batch.ts,client.ts,types.ts,intake.ts}`, `apps/web/src/lib/content/documents.ts`, `apps/web/src/lib/components/documents/DropStrip.svelte` (the `accept` attribute only), `docs/DESIGN.md` (§5 Drop strip, Stage ladder and Slip)
+- Test: `apps/web/src/lib/documents/batch.test.ts`, `apps/web/src/lib/documents/client.test.ts`, `apps/web/src/lib/documents/intake.test.ts`
+
+**Interfaces:**
+- Produces:
+  - `checkFile`: a `.xml` with type `application/xml`, `text/xml` or empty is accepted on name and type. The `xbrl` refusal is removed.
+  - `looksLikeXml(head)`: true when the first bytes, after an optional BOM and whitespace, start with `<`.
+  - `screen` checks `.pdf` files with `looksLikePdf` and `.xml` files with `looksLikeXml`; `notPdfInside` gains a twin `notXmlInside`: "Named .xml, but not XML inside."
+  - `client.ts` sends `mimeType` `application/xml` for `.xml`.
+  - The copy, from the screen spec §6, is these three strings:
+    - `title` "Drop PDFs or XBRL files here";
+    - `note` "PDF or XBRL (.xml), up to 50 MB a file. A whole folder works too.";
+    - `notPdf` "Not a PDF or an XBRL file.", also used for the API's `UNSUPPORTED_MEDIA_TYPE` and the verify rejection `UNSUPPORTED_TYPE`.
+  - `accept="application/pdf,.pdf,.xml,application/xml,text/xml"`.
+  - `DESIGN.md` §5's Drop strip entry changes in four places:
+    - `accept` gets the list above;
+    - the title and the limit get the new strings;
+    - the sentence "An XBRL .xml is refused with … until XBRL is read." is replaced by "An XBRL `.xml` is checked by its first bytes as XML; the server checks it is an XBRL instance.";
+    - the type check reads "(by name and by its first bytes)".
+
+    Nothing else in the drop strip changes.
+  - **Today's slip meets two new inputs** before phase 6 replaces it, and must not break on them:
+    - **The intake state `waiting_for_xbrl`.** Without a case, `statuses()` and `stateLabel()` in `intake.ts` return `undefined` and the ladder fails to render. It becomes `['done', 'done', 'next', 'next']`, and the state label is `copy.states.waitingForXbrl`: "Waiting for its XBRL file." The web's `IntakeState` mirror gains the value.
+    - **XBRL evidence**, with `pageIndex` null and an `element`. `sourceOf` answers `"<element> <quote>"`, for example "ScripCode 500999" (screen spec §5), when the evidence has an element. The web's `Evidence` mirror gains `element` and `context`.
+    - `DESIGN.md` §5 gains one sentence under **Stage ladder**: "A PDF waiting for its XBRL shows Next on Reading the statements." It gains one under **Slip**: "An answer read from an XBRL file shows the element and its value (\"ScripCode 500999\") in place of a page."
+
+- [ ] **Step 1: Write the failing tests:**
+  - `checkFile({ name: "q2.xml", size: 10, type: "text/xml" })` is null;
+  - `screen` refuses a `.xml` whose head is `%PDF-1.7` with "Named .xml, but not XML inside.";
+  - `looksLikeXml` is true for `"﻿\n<?xml"` and false for `"%PDF"`;
+  - the client's upload request for `a.xml` has `mimeType` `application/xml`;
+  - `ladder` of a document in `waiting_for_xbrl` is Done, Done, Next, Next, and `stateLabel` is "Waiting for its XBRL file.";
+  - `sourceOf` of evidence `{ field: 'identifier', source: 'rule', pageIndex: null, element: 'ScripCode', quote: '500999' }` is "ScripCode 500999".
+- [ ] **Step 2: Run to see them fail.** `cd apps/web && pnpm vitest run src/lib/documents`. Expected: FAIL.
+- [ ] **Step 3: Implement**, and edit `DESIGN.md`.
+- [ ] **Step 4: Run** `cd apps/web && pnpm verify`. Expected: PASS (guard, types, lint, tests).
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/web docs/DESIGN.md
+git commit -m "feat(web): the drop strip takes XBRL instances; the slip names waiting_for_xbrl and shows XBRL evidence by element"
+```
+
+---
+
+### Task 20: The map's evaluation run, and the documentation
+
+**Files:**
+- Create: `apps/eval/src/maester_eval/xbrl_map.py`; Modify: `apps/eval/src/maester_eval/cli.py`, `apps/eval/README.md`
+- Create: `docs/eval/2026-10-<day>-xbrl-map-v1.md` (the report, written by the command)
+- Modify: `docs/systems/{extractor.md,worker.md,api.md,eval.md,packages.md,indexer.md,maester.md}`, `docs/DATA_MODEL.md`, `docs/EXTRACTION.md`, `packages/financial-engine/README.md`, `.env.example`, `docker-compose.yml` (worker and API `XBRL_PDF_CHECK`; extractor `XBRL_*` limits)
+- Test: `tests/test_eval_xbrl_map.py`
+
+**Interfaces:**
+- Produces: `maester-eval xbrl-map --instances <dir> [--manifest <xbrl-manifest.csv>] [--to docs/eval/<file>.md] [--against <report.json>]`. It runs offline and makes no model call. For every `.xml` it runs `parse_instance`, `classify_instance` and `read_instance` and writes `report.json` and `report.md` into `data/eval/runs/<timestamp>-xbrl-map/`. Element names, ids and counts only, never a value or a company name. The report shows:
+  - the files read and unreadable, by reason;
+  - the detected format against the file-name token: a matrix and the disagreeing files by name;
+  - per mapped format: files, facts written, the share of numeric non-dimensional facts mapped, and the top 30 unmapped elements with file counts;
+  - per sum id: passed, failed and not checked;
+  - the balance identity likewise;
+  - the rounding cross-check: files that pass;
+  - nil facts;
+  - the share of facts with a concept;
+  - the 2025 and 2026 entry-point differences seen;
+  - with `--against`, the change in each count.
+- [ ] **Step 1: Write the failing test.** The command over a temporary folder of four synthetic instances (Ind AS in both families, a banking one and an unreadable one) writes a report with:
+  - the expected counts: 3 read, 1 unreadable `DOCTYPE`, 2 mapped, 1 unmapped;
+  - no value from any instance in either file;
+  - with `--against` an earlier report, the deltas.
+- [ ] **Step 2: Run to see it fail, implement, run to see it pass.** `uv run --locked python -m unittest tests.test_eval_xbrl_map -v`.
+- [ ] **Step 3: Run the evaluation** on the investor's files (local, free, read-only): `uv run --locked maester-eval xbrl-map --instances ~/Personal/maester-filings/xbrl --manifest ~/Personal/maester-filings/xbrl-manifest.csv --to docs/eval/2026-10-<day>-xbrl-map-v1.md`. Expected:
+  - 807 read and 0 unreadable;
+  - 807 of 807 formats as their tokens say;
+  - 807 of 807 rounding cross-checks pass (research §4).
+
+  Write a short "What this run says" section at the top of the report: the sums that fail most, and whether each failure is the map's or the filer's, checked against the PDF for two of them. This is the baseline. Nothing is held out and nothing earlier exists to regress against; phase 5 scores the map against gold.
+- [ ] **Step 4: Write the documentation** in STE:
+  - `extractor.md`: `/v1/xbrl` and its modes, `/v1/xbrl/pdf-check`, the limits, the maps and how a map change is evaluated.
+  - `worker.md`: `document.xbrl`, `document.xbrl_check`, the classify branch, `waiting_for_xbrl` and its release, the skip rule, the XBRL index branch, the codes of §15.
+  - `api.md`: `pipeline`, `/filings`, `/companies/confirm`, the `CellSource` variants.
+  - `eval.md`: `xbrl-elements`, `xbrl-map`.
+  - `packages.md`: the source rule in `@maester/financial-engine`, with its §7.2-style row, and `@maester/import`.
+  - `indexer.md`: `/v1/chunk-text`.
+  - `maester.md`: upload XML and the import command.
+
+  Also update `DATA_MODEL.md` (migration 0008) and `EXTRACTION.md` (two readers: PDF and XBRL).
+- [ ] **Step 5: Check** with `uv run --locked python scripts/check_workspace.py` (expected: `Workspace OK`), `docker compose config --quiet` (expected: exit 0) and `pnpm -r --filter "./apps/*" --filter "./packages/*" exec vitest run` (expected: PASS).
+- [ ] **Step 6: Commit**
+
+```bash
+git add apps/eval tests/test_eval_xbrl_map.py docs .env.example docker-compose.yml packages/financial-engine/README.md
+git commit -m "feat(eval): maester-eval xbrl-map, the map's first report over the 807 instances; docs for XBRL ingestion"
+```
+
+---
+
+### Task 21: Live check, from the main checkout, with the investor
+
+This task runs on the investor's machine from the main checkout after the branch is merged, never from a worktree, and only once the investor says go. Importing XBRL makes no paid call. **The PDF in Step 3 is classified by Gemini Flash (one small paid call): ask before running it.**
+
+- [ ] **Step 1: Migrate and start** — `docker compose build api worker extractor indexer && docker compose up -d`. Expected: `migrate` applied `0008_xbrl`.
+- [ ] **Step 2: Import the folder** — `MAESTER_SESSION_COOKIE=… MAESTER_WORKSPACE=… pnpm --filter @maester/import import ~/Personal/maester-filings/xbrl`. Expected: `Sent 807. Refused 0. Failed 0.` Then, in Postgres:
+  - `select intake_state, count(*) from document where format = 'xbrl' group by 1` shows every instance settled (`read`, `needs_company` or `kept`) within minutes;
+  - `select count(*) from extraction_revision where source = 'xbrl'` is the number of read instances;
+  - the unmapped ones carry `XBRL_FORMAT_UNMAPPED`.
+
+  Confirm the held companies through `POST …/companies/confirm` (or the investor's choice of a few) and check that their instances read.
+- [ ] **Step 3: The done-when test.** Pick a corpus company whose Q2 results PDF is in `maester-filings/filings` and whose consolidated and standalone instances are imported. Upload the PDF. Expected:
+  - its `pipeline.numbers` is `not_needed` with both XBRL ids in `coveredByXbrl`;
+  - no `document.extract` job exists for it;
+  - the `document.xbrl_check` jobs ran, and `GET …/filings` shows the filing with both bases' statements from XBRL and the `inPdf` counts.
+
+  Record the counts in the PR.
+- [ ] **Step 4: Dropped together.** Upload a second company's results PDF and its instances in one drop. Expected: the PDF shows `waiting` with `waitingOn` while the instances read, then `not_needed`.
+- [ ] **Step 5: Commit** nothing unless a limit or a setting changed; record the run in the PR description.
+
+---
+
+## Task order
+
+1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14 → 15 → 16 → 17 → 18 → 19 → 20 → 21.
+
+The dependencies are these:
+- Task 1 (schema and enums) comes before every TypeScript task.
+- Tasks 2 to 8 are the Python reader, in order, and need nothing from TypeScript but Task 6's Zod half.
+- Task 9 needs nothing else and may run beside Tasks 2 to 8.
+- Task 10 needs Task 1.
+- Task 11 needs Tasks 6, 7 and 10.
+- Task 12 needs Tasks 9 and 11.
+- Task 13 needs Tasks 8 and 12.
+- Task 14 needs Tasks 9 and 13.
+- Task 15 needs Tasks 7 and 11.
+- Task 16 needs Tasks 12 and 15.
+- Task 17 needs Tasks 14 and 16.
+- Task 18 needs Task 10.
+- Task 19 needs Tasks 10 and 12 (the new intake state).
+- Task 20 needs Tasks 5 and 8, and documents everything.
+- Task 21 comes last.
+
+## Open questions for the investor
+
+- **Q4 results XBRL for annual years** (spec §6.3, screen spec §11). This plan leaves it out: a results instance's full-year facts never fill an annual column, and an annual report is never skipped. Saying yes changes `slotKey` and one fixture case (Departure 6).
+- **The unit the PDF prints, for `xbrl_in_pdf`.** The check assumes the PDF prints in the unit the XBRL declares. If Task 20's report or the live run shows filings that print in another unit, the next step is to read the PDF's unit note with the existing `scale_for`. That is a reader change with its own evaluation run.
+
+## After this plan
+
+- **Phase 5 (measure the numbers)** needs, from this plan:
+  - `extraction_revision.source` and the XBRL revisions;
+  - `xbrl_source`, and each map entry's `concept` through `load_map(format).entry(element).concept`;
+  - `XbrlFact.concept` on the read result;
+  - the source rule's Python twin `maester_eval.source_rule`;
+  - the `xbrl-map` report as the map's baseline;
+  - the `xbrl_in_pdf` rows.
+
+  Phase 5 adds the source and format strata, `compare --xbrl` with the manifest's XBRL pairing, and scores the map against gold.
+- **Phase 6 (the screen)** needs, from this plan:
+  - `GET /v1/workspaces/:ws/filings`;
+  - `DocumentPipeline` on every document;
+  - `POST /v1/workspaces/:ws/companies/confirm`;
+  - `CellSource`'s `xbrl` variant with `inPdf` and its reason codes;
+  - the drop strip's XBRL acceptance.
+
+  It builds `FilingList`, `Filing`, `Track`, `ConfirmCompanies` and the figure panel's XBRL words, and amends `DESIGN.md` §5 and §10. The interface sheet `.superpowers/plans-1-6/phase-4-interfaces.md` lists every name and shape both phases consume.
