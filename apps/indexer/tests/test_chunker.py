@@ -3,11 +3,13 @@
 No models: the saved reads in tests/fixtures and a whitespace tokenizer built in code.
 """
 
+import copy
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
+from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
 from docling_core.types.doc import DoclingDocument
 
 from maester_indexer.chunker import (
@@ -47,6 +49,37 @@ def table_rows(read: RangeRead, index: int = 0) -> list[str]:
         if cell["text"].strip():
             rows.setdefault(cell["start_row_offset_idx"], []).append(cell["text"].strip())
     return [" ".join(row) for _, row in sorted(rows.items())]
+
+
+class NewlineCountingTokenizer(HuggingFaceTokenizer):
+    """The whitespace tokenizer, with each newline counted as a token too."""
+
+    def count_tokens(self, text: str) -> int:
+        return super().count_tokens(text) + text.count("\n")
+
+
+def newline_tok(max_tokens: int) -> NewlineCountingTokenizer:
+    return NewlineCountingTokenizer(tokenizer=tok(max_tokens).get_tokenizer(), max_tokens=max_tokens)
+
+
+def with_heading(read: RangeRead, index: int, text: str) -> RangeRead:
+    """The read with text item `index` turned into a section header saying `text`."""
+    document = copy.deepcopy(read.document)
+    item = document["texts"][index]
+    item.update(label="section_header", level=1, text=text, orig=text)
+    item["prov"][0]["charspan"] = [0, len(text)]
+    return read.model_copy(update={"document": document})
+
+
+def with_paragraph(read: RangeRead, words: int) -> RangeRead:
+    """text-layer with its paragraph (under "Statement of profit and loss") `words` words long."""
+
+    def lengthen(document: DoclingDocument) -> None:
+        paragraph = document.texts[1]
+        paragraph.text = paragraph.orig = " ".join(["word"] * words)
+        paragraph.prov[0].charspan = (0, len(paragraph.text))
+
+    return edited(read, lengthen)
 
 
 def edited(read: RangeRead, edit) -> RangeRead:
@@ -125,6 +158,37 @@ class SectionPathTests(unittest.TestCase):
         self.assertEqual([c for c in chunks if c.page_number == 3], [])
         self.assertEqual(path_after(pages, 3), ["Consolidated balance sheet"])
 
+    def test_a_heading_with_no_basis_nests_under_the_root(self):
+        # "Note 2. Inventories …" on page 1 becomes a heading; the paragraph after it runs onto page 2.
+        source = with_heading(read("two-sections"), 3, "25 Borrowings")
+        pages, chunks = chunk_range(source, [], tok())
+        nested = ["Standalone balance sheet", "25 Borrowings"]
+        under = [c for c in chunks if FIRST_HALF in c.text or SECOND_HALF in c.text]
+        self.assertEqual([(c.page_number, c.section_path, c.basis) for c in under], [(1, nested, "standalone"), (2, nested, "standalone")])
+        self.assertEqual(path_after(pages, 1), nested)
+        self.assertEqual({(tuple(c.section_path), c.basis) for c in chunks if c.page_number == 3}, {(("Consolidated balance sheet",), "consolidated")})
+        self.assertEqual(path_after(pages, 3), ["Consolidated balance sheet"])
+
+    def test_the_root_carries_across_a_range_boundary(self):
+        pages, _ = chunk_range(with_heading(read("two-sections"), 3, "25 Borrowings"), [], tok())
+        _, chunks = chunk_range(read("two-sections", pages=(2, 3)), path_after(pages, 1), tok())
+        self.assertEqual(
+            [(c.page_number, c.section_path, c.basis) for c in chunks],
+            [(2, ["Standalone balance sheet", "25 Borrowings"], "standalone"), (3, ["Consolidated balance sheet"], "consolidated")],
+        )
+
+    def test_a_carried_heading_nests_under_the_carried_root(self):
+        pages, chunks = chunk_range(read("text-layer"), ["Notes to the standalone financial statements", "24 Equity"], tok())
+        root_and_heading = ["Notes to the standalone financial statements", "Statement of profit and loss"]
+        self.assertEqual({(tuple(c.section_path), c.basis) for c in chunks}, {(tuple(root_and_heading), "standalone")})
+        self.assertEqual(pages[0].section_path_after, root_and_heading)
+
+    def test_the_basis_stays_when_the_root_is_cut_from_the_shown_path(self):
+        carried = ["Standalone notes " + "x " * 80, "Notes"]
+        pages, chunks = chunk_range(read("two-sections", pages=(2, 2)), carried, tok())
+        self.assertEqual([(c.section_path, c.basis) for c in chunks], [(["Notes"], "standalone")])
+        self.assertEqual(pages[0].section_path_after, carried)  # whole, so the root carries on
+
     def test_a_long_carried_path_is_cut_from_the_left(self):
         carried = ["Part " + "x " * 80, "Notes", "25 Borrowings"]
         _, chunks = chunk_range(read("two-sections", pages=(2, 2)), carried, tok())
@@ -197,19 +261,28 @@ class SourceAndBudgetTests(unittest.TestCase):
         _, chunks = chunk_range(read("scanned"), [], tok())
         self.assertEqual({c.text_source for c in chunks}, {"ocr"})
 
-    def test_a_chunk_with_no_recorded_source_is_refused(self):
-        source = read("mixed").model_copy(update={"item_sources": {}})
-        with self.assertRaises(IndexingError) as raised:
-            chunk_range(source, [], tok())
-        self.assertEqual(raised.exception.code, "INDEX_FAILED")
+    def test_items_with_no_recorded_source_are_left_out(self):
+        source = read("mixed")
+        source = source.model_copy(update={"item_sources": {"#/texts/2": source.item_sources["#/texts/2"]}})
+        _, chunks = chunk_range(source, [], tok())
+        self.assertEqual([c.text_source for c in chunks], ["ocr"])
 
-    def test_a_chunk_over_the_embedding_limit_is_a_bug(self):
-        def lengthen(document: DoclingDocument) -> None:
-            paragraph = document.texts[1]
-            paragraph.text = paragraph.orig = " ".join(["word"] * 600)
-            paragraph.prov[0].charspan = (0, len(paragraph.text))
+    def test_a_chunk_with_no_recorded_source_takes_the_reads_ocr_setting(self):
+        for ocr_on, expected in ((False, "text_layer"), (True, "mixed")):
+            source = read("mixed").model_copy(update={"item_sources": {}, "ocr_on": ocr_on})
+            _, chunks = chunk_range(source, [], tok())
+            self.assertEqual([c.text_source for c in chunks], [expected])
 
-        source = edited(read("text-layer"), lengthen)
+    def test_the_path_fits_the_embedding_limit_with_its_newline(self):
+        heading = ["Statement of profit and loss"]  # 5 tokens, then 1 for the newline
+        _, at_edge = chunk_range(with_paragraph(read("text-layer"), 506), [], newline_tok(1000))
+        self.assertEqual((at_edge[0].section_path, at_edge[0].token_count), (heading, MAX_EMBED_TOKENS))
+        _, over = chunk_range(with_paragraph(read("text-layer"), 507), [], newline_tok(1000))
+        self.assertEqual((over[0].section_path, over[0].token_count), ([], 507))
+        self.assertEqual(over[0].basis, None)
+
+    def test_a_text_over_the_embedding_limit_alone_is_a_bug(self):
+        source = with_paragraph(read("text-layer"), MAX_EMBED_TOKENS + 1)
         with self.assertRaises(IndexingError) as raised:
             chunk_range(source, [], tok(1000))
         self.assertEqual(raised.exception.code, "INDEX_FAILED")

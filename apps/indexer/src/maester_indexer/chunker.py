@@ -4,8 +4,12 @@ Each page is chunked on its own, so a chunk never crosses a page and a page chun
 alone gets the same chunks. Within a page, Docling's HybridChunker cuts by element and
 merges small peers under one heading; a table is always its own chunk and, when it is too
 large, splits by rows with its header repeated. Furniture (running headers and footers)
-never enters a chunk. The section path runs from page to page: a chunk's path is the
-headings above it on its page, or else the path carried from the pages before.
+never enters a chunk.
+
+The section path runs from page to page. A heading that names a basis ("consolidated" or
+"standalone") becomes the root of the path, and later headings that name none nest under
+it, until another heading names a basis and replaces it; the chunk's basis comes from that
+root. A chunk with no heading above it on its page takes the path carried from before.
 """
 
 import json
@@ -33,9 +37,9 @@ from transformers import AutoTokenizer
 from maester_indexer.contracts import ChunkEvent, PageEvent, RangeRead, TextSource, contextualize
 from maester_indexer.errors import IndexingError
 
-MAX_EMBED_TOKENS = 512  # the most the embedding model is given: the path and the text
-PATH_TOKENS = 64  # the most a carried section path may take
-CHUNK_TOKENS = 448  # the chunker's budget, so a carried path still fits under MAX_EMBED_TOKENS
+MAX_EMBED_TOKENS = 512  # the most the embedding model is given: the path, its newline and the text
+PATH_TOKENS = 64  # the most a chunk's section path may take
+CHUNK_TOKENS = 448  # the chunker's budget for the text, so a path of PATH_TOKENS still fits
 
 LOCK_FILE = "models.lock.json"
 _ALL_LAYERS = set(ContentLayer)
@@ -48,12 +52,12 @@ def chunk_range(
     """The range's page events and chunk events, page by page in order.
 
     `section_path_before` is the path in effect at the end of the page before the range
-    (the previous range's last `sectionPathAfter`). `tokenizer` carries the chunker's
-    budget (`get_max_tokens()`, CHUNK_TOKENS in production)."""
+    (the previous range's last `sectionPathAfter`, whole: it carries the root). `tokenizer`
+    carries the chunker's budget (`get_max_tokens()`, CHUNK_TOKENS in production)."""
     document = DoclingDocument.model_validate(read.document)
     range_pages = {page.page_number for page in read.pages}
     chunker = HybridChunker(tokenizer=tokenizer, merge_peers=True, repeat_table_header=True)
-    carried = cut_path(section_path_before, tokenizer)
+    carried = list(section_path_before)
     page_events: list[PageEvent] = []
     chunk_events: list[ChunkEvent] = []
     for page in read.pages:
@@ -69,12 +73,13 @@ def chunk_range(
                 section_path_after=path_after,
             )
         )
-        carried = cut_path(path_after, tokenizer)
+        carried = path_after
     return page_events, chunk_events
 
 
 def basis_of(section_path: list[str]) -> str | None:
-    """From the innermost heading out, the first that names a basis decides."""
+    """From the innermost heading out, the first that names a basis decides. In a path the
+    chunker builds, that is the root."""
     for heading in reversed(section_path):
         if match := _BASIS.search(heading):
             return match.group(1).lower()
@@ -85,6 +90,15 @@ def cut_path(section_path: list[str], tokenizer: BaseTokenizer) -> list[str]:
     """The path with its outermost headings dropped until it fits PATH_TOKENS."""
     path = list(section_path)
     while path and tokenizer.count_tokens("\n".join(path)) > PATH_TOKENS:
+        path = path[1:]
+    return path
+
+
+def fit_path(section_path: list[str], text: str, tokenizer: BaseTokenizer) -> list[str]:
+    """The path a chunk is embedded with: cut to PATH_TOKENS, then further from the left
+    (down to none) until `contextualize(path, text)`, newline included, fits MAX_EMBED_TOKENS."""
+    path = cut_path(section_path, tokenizer)
+    while path and tokenizer.count_tokens(contextualize(path, text)) > MAX_EMBED_TOKENS:
         path = path[1:]
     return path
 
@@ -162,17 +176,21 @@ def _chunk_page(
         return [], carried
     page_doc, originals = filter_document(_cut_to_page(document, page_no, range_pages), {page_no})
     tokenizer = chunker.tokenizer
+    roots, end_root = _roots(page_doc, _root_of(carried))
     events: list[ChunkEvent] = []
-    for doc_chunk, kind in _doc_chunks(chunker, page_doc):
-        path = list(doc_chunk.meta.headings or carried)
-        source = _text_source(read, originals, doc_chunk, page_no)
-        texts = [doc_chunk.text] if kind == "prose" else _table_texts(page_doc, doc_chunk, path, tokenizer)
+    for doc_chunk, kind, root in _doc_chunks(chunker, page_doc, roots, _root_of(carried)):
+        whole = _section_path(doc_chunk.meta.headings or [], root, carried)
+        basis = basis_of(whole)
+        shown = cut_path(whole, tokenizer)
+        source = _text_source(read, originals, doc_chunk)
+        texts = [doc_chunk.text] if kind == "prose" else _table_texts(page_doc, doc_chunk, shown, tokenizer)
         for text in texts:
             text = text.strip()
             if not text:
                 continue
+            path = fit_path(shown, text, tokenizer)
             token_count = tokenizer.count_tokens(contextualize(path, text))
-            if token_count > MAX_EMBED_TOKENS:
+            if token_count > MAX_EMBED_TOKENS:  # the text alone: the chunker's budget failed
                 raise IndexingError(
                     "INDEX_FAILED",
                     f"A chunk on page {page_no} came to {token_count} tokens, over the {MAX_EMBED_TOKENS} the model takes.",
@@ -185,12 +203,45 @@ def _chunk_page(
                     kind=kind,
                     text_source=source,
                     section_path=path,
-                    basis=basis_of(path),
+                    basis=basis,
                     text=text,
                     token_count=token_count,
                 )
             )
-    return events, _headings_at_end(page_doc) or carried
+    return events, _section_path(_headings_at_end(page_doc), end_root, carried)
+
+
+def _section_path(headings: list[str], root: str | None, carried: list[str]) -> list[str]:
+    """A chunk's whole path from the headings above it on its page and the root in effect.
+
+    The innermost heading that names a basis is the root, with the headings under it; with
+    none among them, the headings nest under the root in effect. No heading above it on the
+    page: the carried path."""
+    if not headings:
+        return list(carried)
+    named = [index for index, heading in enumerate(headings) if _BASIS.search(heading)]
+    if named:
+        return headings[named[-1] :]
+    return [*([root] if root else []), *headings]
+
+
+def _root_of(path: list[str]) -> str | None:
+    """The heading in a path that names a basis (the innermost, if a caller sent several)."""
+    return next((heading for heading in reversed(path) if _BASIS.search(heading)), None)
+
+
+def _roots(page_doc: DoclingDocument, root: str | None) -> tuple[dict[str, str | None], str | None]:
+    """For each item of the page, the root in effect at it, walking in reading order from
+    the carried root; and the root at the end of the page. A heading that names a basis
+    counts even with nothing under it before the next heading."""
+    at: dict[str, str | None] = {}
+    for item, _ in page_doc.iterate_items():
+        if isinstance(item, TitleItem | SectionHeaderItem):
+            if _BASIS.search(item.text):
+                root = item.text
+        else:
+            at[item.self_ref] = root
+    return at, root
 
 
 def _cut_to_page(document: DoclingDocument, page_no: int, range_pages: set[int]) -> DoclingDocument:
@@ -219,31 +270,40 @@ def _cut_to_page(document: DoclingDocument, page_no: int, range_pages: set[int])
     return copy
 
 
-def _doc_chunks(chunker: HybridChunker, page_doc: DoclingDocument) -> list[tuple[DocChunk, str]]:
+def _doc_chunks(
+    chunker: HybridChunker, page_doc: DoclingDocument, roots: dict[str, str | None], carried_root: str | None
+) -> list[tuple[DocChunk, str, str | None]]:
     """HybridChunker's steps on one page, with every table kept out of the merging.
 
     The hierarchical pass gives one chunk per element with its headings. Prose between two
-    tables is split to the budget and merged with its peers as HybridChunker does; a table
-    chunk is passed on whole, to be split by rows (`_table_texts`)."""
+    tables, under one root, is split to the budget and merged with its peers as
+    HybridChunker does, so a change of root also ends a merge; a table chunk is passed on
+    whole, to be split by rows (`_table_texts`). Each chunk comes with its root."""
     serializer = chunker.serializer_provider.get_serializer(doc=page_doc)
-    out: list[tuple[DocChunk, str]] = []
+    out: list[tuple[DocChunk, str, str | None]] = []
     run: list[DocChunk] = []
+    run_root: str | None = None
 
     def flush() -> None:
         split = [part for c in run for part in chunker._split_by_doc_items(c, doc_serializer=serializer)]
         split = [part for c in split for part in chunker._split_using_plain_text(c, doc_serializer=serializer)]
-        out.extend((c, "prose") for c in chunker._merge_chunks_with_matching_metadata(split))
+        out.extend((c, "prose", run_root) for c in chunker._merge_chunks_with_matching_metadata(split))
         run.clear()
 
     with warnings.catch_warnings():
         # HybridChunker warns, with the chunk's text, when headings alone overflow the budget.
         warnings.filterwarnings("ignore", message="Headers and captions for this chunk", category=UserWarning)
         for doc_chunk in chunker._inner_chunker.chunk(dl_doc=page_doc):
-            if any(isinstance(item, TableItem) for item in doc_chunk.meta.doc_items):
+            items = doc_chunk.meta.doc_items
+            root = roots.get(items[0].self_ref, carried_root) if items else carried_root
+            if any(isinstance(item, TableItem) for item in items):
                 flush()
-                out.append((doc_chunk, "table"))
-            else:
-                run.append(doc_chunk)
+                out.append((doc_chunk, "table", root))
+                continue
+            if run and root != run_root:
+                flush()
+            run.append(doc_chunk)
+            run_root = root
         flush()
     return out
 
@@ -304,15 +364,19 @@ def _cut_text(text: str, path: list[str], tokenizer: BaseTokenizer) -> list[str]
     return split(text)
 
 
-def _text_source(read: RangeRead, originals: dict[str, str], doc_chunk: DocChunk, page_no: int) -> TextSource:
-    """The union of the chunk's items' sources, looked up by the items' refs in the read."""
+def _text_source(read: RangeRead, originals: dict[str, str], doc_chunk: DocChunk) -> TextSource:
+    """The union of the chunk's items' sources, looked up by the items' refs in the read.
+
+    An item with no recorded source is left out. When none of the chunk's items has one,
+    the read's OCR setting decides: with OCR off it can only be the text layer; with OCR on
+    it is labelled `mixed`, as text that may have been read by OCR."""
     sources = {
         read.item_sources[original]
         for item in doc_chunk.meta.doc_items
         if (original := originals.get(item.self_ref)) in read.item_sources
     }
     if not sources:
-        raise IndexingError("INDEX_FAILED", f"A chunk on page {page_no} has no recorded text source.", False)
+        return "mixed" if read.ocr_on else "text_layer"
     return sources.pop() if len(sources) == 1 else "mixed"
 
 
