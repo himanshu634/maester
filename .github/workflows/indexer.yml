@@ -35,7 +35,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/maester/docling
-          key: docling-models-${{ hashFiles('apps/indexer/uv.lock') }}
+          key: docling-models-${{ hashFiles('apps/indexer/uv.lock', 'apps/indexer/models.lock.json') }}
       - name: Fetch Docling models
         if: steps.docling-models.outputs.cache-hit != 'true'
         run: uv run maester-indexer-fetch-models --out ~/.cache/maester --docling-only
