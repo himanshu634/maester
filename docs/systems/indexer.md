@@ -43,7 +43,7 @@ The indexer stores nothing. It has no access to the database or to object storag
 | Errors | `apps/indexer/src/maester_indexer/errors.py` | Defines `IndexingError`, which has a code, a message and a `retryable` value. |
 | Entry point | `apps/indexer/src/maester_indexer/__main__.py` | Starts `uvicorn` on `PORT`. The command `maester-indexer` runs it. |
 | Model fetch | `apps/indexer/src/maester_indexer/fetch_models.py` | The command `maester-indexer-fetch-models`. It gets the weights. |
-| Versions | `apps/indexer/src/maester_indexer/versions.py` | Reads the versions of Docling, the OCR engine and the chunker. |
+| Versions | `apps/indexer/src/maester_indexer/versions.py` | Reads the versions of the Docling packages, the Docling artifacts in `models.lock.json`, the OCR engine and the chunker. |
 | Lock file | `apps/indexer/models.lock.json` | Records the commit of each model. |
 | Container | `apps/indexer/Dockerfile` | Builds the image `maester/indexer:local`. |
 
@@ -149,7 +149,7 @@ The indexer reads these environment variables.
 
 ### Pinned versions
 
-`apps/indexer/pyproject.toml` pins Docling, docling-core, RapidOCR and onnxruntime to exact versions. `apps/indexer/uv.lock` pins all other packages. `versions.py` reads the versions from the installed packages, so the recorded versions agree with the lock. The table of versions and the reason for each version are in the [README of the indexer](../../apps/indexer/README.md).
+`apps/indexer/pyproject.toml` pins Docling, docling-core, RapidOCR and onnxruntime to exact versions. `apps/indexer/uv.lock` pins all other packages. `versions.py` reads the versions from the installed packages, so the recorded versions agree with the lock. The Docling version (`doclingVersion`) has the versions of docling, docling-core, docling-ibm-models and docling-parse, and a hash of the `docling` section of `models.lock.json`, for example `docling=2.134.0;docling-core=2.103.0;docling-ibm-models=4.0.3;docling-parse=7.22.3;models=6a701a655efc`. The worker uses this value in the key of a cached page read. Thus, when one of these packages or one Docling artifact changes, the worker reads the pages again. The table of versions and the reason for each version are in the [README of the indexer](../../apps/indexer/README.md).
 
 `models.lock.json` records the embedding model with a commit and the commit of each Docling artifact. RapidOCR gets its models at the tag that has the version of the `rapidocr` package.
 

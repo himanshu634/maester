@@ -6,7 +6,7 @@ The indexer is its own uv project, not a member of the root workspace: Docling n
 
 ## Pinned versions
 
-Docling, docling-core, RapidOCR and onnxruntime are pinned to exact versions in `pyproject.toml`; `uv.lock` pins the rest. The lock covers macOS arm64 and Linux aarch64 and x86_64. `src/maester_indexer/versions.py` reads the recorded versions from the installed packages, so they cannot drift from the lock.
+Docling, docling-core, RapidOCR and onnxruntime are pinned to exact versions in `pyproject.toml`; `uv.lock` pins the rest. The lock covers macOS arm64 and Linux aarch64 and x86_64. `src/maester_indexer/versions.py` reads the recorded versions from the installed packages, so they cannot drift from the lock. `doclingVersion`, which keys the worker's cached page reads, names docling, docling-core, docling-ibm-models and docling-parse and ends with a 12-character hash of the `docling` section of `models.lock.json`, so a change to any one of them reads the pages again.
 
 | Package | Version | Why this one |
 | --- | --- | --- |

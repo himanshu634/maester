@@ -13,12 +13,12 @@ the tag that matches the pinned `rapidocr` version (recorded in the lock).
 
 import argparse
 import json
-import os
 import shutil
 import sys
 from pathlib import Path
 
-LOCK_FILE = "models.lock.json"
+from maester_indexer.lockfile import LOCK_FILE, shipped_lock
+
 # Docling's artifact folders: a repository id with "/" written "--".
 DOCLING_REPOS = (
     "docling-project/docling-layout-heron",
@@ -29,12 +29,10 @@ DOCLING_REPOS = (
 
 def find_lock(explicit: str | None) -> Path:
     """--lock, else INDEXER_MODELS_LOCK, else the lock in the image (/app) or beside pyproject.toml."""
-    candidates = [explicit, os.environ.get("INDEXER_MODELS_LOCK"), "/app/" + LOCK_FILE,
-                  str(Path(__file__).resolve().parents[2] / LOCK_FILE)]
-    for candidate in candidates:
-        if candidate and Path(candidate).is_file():
-            return Path(candidate)
-    raise SystemExit(f"{LOCK_FILE} not found; pass --lock")
+    path = shipped_lock(explicit)
+    if path is None:
+        raise SystemExit(f"{LOCK_FILE} not found; pass --lock")
+    return path
 
 
 def fetch_docling(out: Path, lock: dict) -> None:
