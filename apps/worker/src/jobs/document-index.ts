@@ -276,8 +276,7 @@ async function index(job: { id: string; workspaceId: string; subjectId: string }
       text: clean(p.text),
       itemsTextLayer: p.itemsTextLayer,
       itemsOcr: p.itemsOcr,
-      // The column is text; PageInput's union predates PAGE_UNREADABLE.
-      noneReason: p.noneReason as PageInput["noneReason"],
+      noneReason: p.noneReason,
       sectionPathAfter: cleanPath(p.sectionPathAfter),
     }));
     const chunkRows: ChunkInput[] = chunks.map((c) => ({

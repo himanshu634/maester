@@ -25,7 +25,7 @@ export type PageInput = {
   text: string;
   itemsTextLayer: number | null;
   itemsOcr: number | null;
-  noneReason: "NO_TEXT" | "OCR_FAILED" | "OCR_BUDGET" | null;
+  noneReason: "NO_TEXT" | "OCR_FAILED" | "OCR_BUDGET" | "PAGE_UNREADABLE" | null;
   sectionPathAfter: string[];
 };
 
