@@ -5,7 +5,10 @@ export const JobTypes = {
   DOCUMENT_VERIFY: "document.verify",
   DOCUMENT_CLASSIFY: "document.classify",
   DOCUMENT_EXTRACT: "document.extract",
+  DOCUMENT_INDEX: "document.index",
 } as const;
+/** The job subject type for `document.index`; the subject id is the document id. */
+export const DOCUMENT_INDEX_SUBJECT = "document_index";
 export type JobType = (typeof JobTypes)[keyof typeof JobTypes];
 
 export const JobState = z.enum(["queued", "running", "succeeded", "failed", "cancelled"]);
