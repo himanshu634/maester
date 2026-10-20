@@ -3,7 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { DOCUMENT_INDEX_SUBJECT, JobTypes } from "@maester/contracts";
 import { schema } from "@maester/db";
 import { indexPipelineVersion } from "@maester/document-index";
-import { backfillIndex, runIndexBackfillOnce } from "../src/index-backfill.js";
+import { backfillIndex, requeue, runIndexBackfillOnce } from "../src/index-backfill.js";
 import { createWorkerContext, seedWorkspace, workerTestEnv } from "./context.js";
 
 const MODEL = workerTestEnv().EMBEDDING_MODEL;
@@ -104,6 +104,44 @@ describe("backfillIndex", () => {
     expect(ctx.dispatcher.enqueued).toEqual([]);
   });
 
+  it("does not overwrite a job claimed since it was read", async () => {
+    const doc = await seedDoc();
+    const id = await seedIndexJob(doc, { state: "failed", attempt: 1, maxAttempts: 1 });
+    const [stale] = await jobsFor(doc);
+    await ctx.db.update(schema.job).set({ state: "running", leaseToken: LEASE, leaseExpiresAt: new Date(Date.now() + 60_000) }).where(eq(schema.job.id, id));
+    expect(await requeue(ctx.db, ctx.dispatcher, stale!)).toBe(false);
+    expect((await jobsFor(doc))[0]).toMatchObject({ state: "running", leaseToken: LEASE });
+    expect(ctx.dispatcher.enqueued).toEqual([]);
+  });
+
+  it("does not count a document indexed under another model as current", async () => {
+    const doc = await seedDoc();
+    const jobId = await seedIndexJob(doc, { state: "succeeded" });
+    await ctx.db.insert(schema.documentIndexRevision).values({
+      id: crypto.randomUUID(), workspaceId, documentId: doc, jobId, state: "complete", indexVersion: "v", doclingVersion: "d",
+      ocrEngine: "o", readerOptions: "r", chunkerVersion: "c", embeddingModel: "some-other-model",
+    });
+    expect(await backfillIndex(ctx.db, ctx.dispatcher, opts)).toEqual({ created: 0, requeued: 1, waiting: 0, current: 0 });
+  });
+
+  it("scopes the current count by workspace and document", async () => {
+    const other = await seedWorkspace(ctx.db);
+    const mine = await seedDoc();
+    const mine2 = await seedDoc();
+    const theirs = await seedDoc({}, other.workspaceId);
+    for (const [doc, ws] of [[mine, workspaceId], [mine2, workspaceId], [theirs, other.workspaceId]] as const) {
+      const jobId = crypto.randomUUID();
+      await ctx.db.insert(schema.job).values({ id: jobId, workspaceId: ws, type: JobTypes.DOCUMENT_INDEX, subjectType: DOCUMENT_INDEX_SUBJECT, subjectId: doc, idempotencyKey: `k-${jobId}`, state: "succeeded" });
+      await ctx.db.insert(schema.documentIndexRevision).values({
+        id: crypto.randomUUID(), workspaceId: ws, documentId: doc, jobId, state: "complete", indexVersion: "v", doclingVersion: "d",
+        ocrEngine: "o", readerOptions: "r", chunkerVersion: "c", embeddingModel: MODEL,
+      });
+    }
+    expect((await backfillIndex(ctx.db, ctx.dispatcher, opts)).current).toBe(3);
+    expect((await backfillIndex(ctx.db, ctx.dispatcher, { ...opts, workspaceId })).current).toBe(2);
+    expect((await backfillIndex(ctx.db, ctx.dispatcher, { ...opts, documentIds: [mine] })).current).toBe(1);
+  });
+
   it("limits by workspace and by document", async () => {
     const other = await seedWorkspace(ctx.db);
     const a = await seedDoc();
@@ -153,6 +191,17 @@ describe("index:backfill CLI", () => {
     expect(code).toBe(0);
     expect(lines.log).toEqual(["dry run: created 1, requeued 0, waiting 0, current 0"]);
     expect(await jobsFor(doc)).toHaveLength(0);
+  });
+
+  it("exits 1 with one line free of query text when the database fails", async () => {
+    const { lines, out } = capture();
+    const db = { select: () => { throw new Error("select * from document where secret"); } } as never;
+    let closed = false;
+    const code = await runIndexBackfillOnce([], source, out, () => ({ db, dispatcher: ctx.dispatcher, close: async () => { closed = true; } }));
+    expect(code).toBe(1);
+    expect(lines.error).toHaveLength(1);
+    expect(lines.error[0]).not.toContain("select");
+    expect(closed).toBe(true);
   });
 
   it("exits 1 on an unknown flag", async () => {

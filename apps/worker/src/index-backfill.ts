@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { indexPipelineVersion } from "@maester/document-index";
 import { DOCUMENT_INDEX_SUBJECT, JobTypes } from "@maester/contracts";
 import { closeDb, createDb, documentsNeedingIndex, schema, type Db, type JobRow } from "@maester/db";
@@ -26,8 +26,12 @@ export interface BackfillCounts {
   current: number;
 }
 
-/** Queue the job again with a manual retry's terms (as the API's retry does), then wake the queue. */
-async function requeue(db: Db, dispatcher: Dispatcher, job: JobRow): Promise<void> {
+/**
+ * Queue the job again with a manual retry's terms (as the API's retry does), then wake the queue.
+ * Only a job that is still failed or succeeded is touched: one claimed or retried since the caller
+ * read it keeps its lease. Returns whether the job was queued again.
+ */
+export async function requeue(db: Db, dispatcher: Dispatcher, job: JobRow): Promise<boolean> {
   const [updated] = await db
     .update(schema.job)
     .set({
@@ -40,9 +44,11 @@ async function requeue(db: Db, dispatcher: Dispatcher, job: JobRow): Promise<voi
       runAfter: sql`now()`,
       updatedAt: sql`now()`,
     })
-    .where(eq(schema.job.id, job.id))
+    .where(and(eq(schema.job.id, job.id), inArray(schema.job.state, ["failed", "succeeded"])))
     .returning();
-  if (updated) await dispatcher.enqueue(updated);
+  if (!updated) return false;
+  await dispatcher.enqueue(updated);
+  return true;
 }
 
 /**
@@ -61,31 +67,48 @@ export async function backfillIndex(db: Db, dispatcher: Dispatcher, opts: Backfi
   const counts: BackfillCounts = { created: 0, requeued: 0, waiting: 0, current: 0 };
   for (const { documentId, workspaceId, job } of needing) {
     if (!job) {
-      counts.created++;
-      if (!opts.dryRun) {
-        await createJob(db, dispatcher, {
-          workspaceId,
-          type: JobTypes.DOCUMENT_INDEX,
-          subjectType: DOCUMENT_INDEX_SUBJECT,
-          subjectId: documentId,
-          pipelineVersion,
-        });
+      if (opts.dryRun) {
+        counts.created++;
+        continue;
       }
+      // createJob dispatches only the job it inserted, so a dispatch of this id means it was created here.
+      const dispatched = new Set<string>();
+      const watching: Dispatcher = { enqueue: async (j) => { dispatched.add(j.id); await dispatcher.enqueue(j); } };
+      const made = await createJob(db, watching, {
+        workspaceId,
+        type: JobTypes.DOCUMENT_INDEX,
+        subjectType: DOCUMENT_INDEX_SUBJECT,
+        subjectId: documentId,
+        pipelineVersion,
+      });
+      if (dispatched.has(made.id)) counts.created++;
+      else counts.waiting++;
     } else if (job.state === "queued" || job.state === "running") {
       counts.waiting++;
     } else {
-      counts.requeued++;
-      if (!opts.dryRun) await requeue(db, dispatcher, job);
+      if (opts.dryRun || (await requeue(db, dispatcher, job))) counts.requeued++;
+      else counts.waiting++;
     }
   }
-  counts.current = await countCurrent(db, opts, needing.length);
+  counts.current = await countCurrent(db, opts, new Set(needing.map((n) => n.documentId)));
   return counts;
 }
 
-/** Stored non-duplicate documents in scope that the query left out: asking for a model nothing is indexed under lists them all. */
-async function countCurrent(db: Db, opts: BackfillOptions, needing: number): Promise<number> {
-  const all = await documentsNeedingIndex(db, { ...opts, pipelineVersion: "", model: "none" });
-  return Math.max(0, all.length - needing);
+/** Stored non-duplicate documents in scope that are not in `needing`: they have a complete or partial index. */
+async function countCurrent(db: Db, opts: BackfillOptions, needing: Set<string>): Promise<number> {
+  if (opts.documentIds && opts.documentIds.length === 0) return 0;
+  const rows = await db
+    .select({ id: schema.document.id })
+    .from(schema.document)
+    .where(
+      and(
+        eq(schema.document.state, "stored"),
+        sql`${schema.document.intakeState} is distinct from 'duplicate'`,
+        opts.workspaceId ? eq(schema.document.workspaceId, opts.workspaceId) : undefined,
+        opts.documentIds ? inArray(schema.document.id, opts.documentIds) : undefined,
+      ),
+    );
+  return rows.filter((r) => !needing.has(r.id)).length;
 }
 
 type Out = { log: (line: string) => void; error: (line: string) => void };
@@ -133,6 +156,10 @@ export async function runIndexBackfillOnce(
     });
     out.log(`${args["dry-run"] ? "dry run: " : ""}created ${counts.created}, requeued ${counts.requeued}, waiting ${counts.waiting}, current ${counts.current}`);
     return 0;
+  } catch {
+    // The driver's message holds the query text; say only that it failed.
+    out.error("index backfill failed: the database could not be read or written");
+    return 1;
   } finally {
     await close?.();
   }
