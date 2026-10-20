@@ -1,0 +1,43 @@
+name: indexer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/indexer/**"
+      - "packages/contracts/fixtures/index/**"
+      - ".github/workflows/indexer.yml"
+  pull_request:
+    paths:
+      - "apps/indexer/**"
+      - "packages/contracts/fixtures/index/**"
+      - ".github/workflows/indexer.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/indexer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.17"
+      - run: uv python install 3.12
+      - run: uv sync --locked
+      # Free downloads only; no secret is used.
+      - name: Cache Docling models
+        id: docling-models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/maester/docling
+          key: docling-models-${{ hashFiles('apps/indexer/uv.lock') }}
+      - name: Fetch Docling models
+        if: steps.docling-models.outputs.cache-hit != 'true'
+        run: uv run maester-indexer-fetch-models --out ~/.cache/maester --docling-only
+      - name: Test
+        run: MAESTER_DOCLING_MODELS="$HOME/.cache/maester/docling" uv run python -m unittest discover -s tests -v

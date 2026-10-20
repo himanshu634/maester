@@ -7,7 +7,7 @@
 | Worker | The `apps/worker` service. It runs jobs. |
 | API | The `apps/api` service. It creates the first job for each uploaded document. |
 | Job | One row in the `job` table. A job tells the worker to do one task on one subject. |
-| Job type | The `type` column of a job: `document.verify`, `document.classify` or `document.extract`. |
+| Job type | The `type` column of a job: `document.verify`, `document.classify`, `document.extract` or `document.index`. |
 | Handler | The function that does the work for one job type. |
 | `attempt` | The `attempt` column of a job. The worker adds 1 to it each time that it starts the job. |
 | `maxAttempts` | The `max_attempts` column of a job. The value is 2 for `document.classify` and `document.extract`, because these jobs call a paid model. The value is 5 for all other types. |
@@ -58,7 +58,7 @@
 
 The worker runs the background jobs for document intake. In `queue` mode, the worker claims each job from the database, takes the lease and runs the handler for the job type. In `cloud-tasks` mode, it receives a dispatch request instead.
 
-The three handlers verify an uploaded PDF, classify it and read its financial statements. The worker writes all results to the Postgres database. The API creates the first job. The worker creates the next jobs. For the full system, see the [Maester overview](maester.md).
+The four handlers verify an uploaded PDF, classify it, read its financial statements and index its text for search. The worker writes all results to the Postgres database. The API creates the first job. The worker creates the next jobs. For the full system, see the [Maester overview](maester.md).
 
 The worker also refreshes the market data for the market mood page. When `CONNECTIONS_KEY` has a value, the market refresher starts a pass 30 minutes after the end of the previous pass. The pass reads daily values from FRED and Dhan with the keys that the investor saved in Settings. It writes the values and the breadth to the database.
 
@@ -227,6 +227,42 @@ A rejected document does not make the job fail. The job is `succeeded`, and its 
 14. If `reads_under_id` of the current classification is equal to the classification ID of this job, the handler sets the intake state to `read`.
 15. If a newer classification replaced the classification of this job, the handler does not change the document.
 
+### `document.index`
+
+The handler is in `apps/worker/src/jobs/document-index.ts`. It cuts a stored PDF into chunks, keeps the chunks and the pages in the database, and adds a vector to each chunk.
+
+1. If the worker has no indexer client or no embedder client, the handler throws `INDEXER_NOT_CONFIGURED`.
+2. The handler reads the document. If it is not `stored`, or it is a duplicate, the handler throws `INVALID_STATE`.
+3. If a revision for this job is complete, the handler returns its summary. It does not call the indexer.
+4. The handler reads the full PDF from the object store. If the object does not exist, the handler throws `OBJECT_MISSING`.
+5. The handler calls `GET /v1/versions` on the indexer. If the tokenizer of the indexer or the model of the embedder is not `EMBEDDING_MODEL`, the handler throws `INDEXER_MODEL_MISMATCH`.
+6. The handler starts the revision for this job, or resumes it. The revision records the versions.
+7. The handler reads the ranges in order. A range has `INDEX_PAGE_RANGE` pages (default 20). The first range starts at page 1. Each range starts at a multiple of `INDEX_PAGE_RANGE` from page 1.
+8. If the database has the read of a range, the handler sends it to `POST /v1/chunk`. The read is the cache. The key of the cache has the hash of the PDF, the range, the version of Docling, the OCR engine and the reader options.
+9. If the database has no read of the range, the handler sends the PDF to `POST /v1/index`. The handler keeps the read in the cache, but only if OCR was on for the read.
+10. The handler writes the pages and the chunks of the range in one transaction.
+11. After each range, the handler embeds the chunks that have no vector. It sends them to the embedder in batches of `EMBED_BATCH`, longest text first.
+12. After the last range, the handler completes the revision. The revision is `complete`. If a page has the reason `OCR_FAILED`, `OCR_BUDGET` or `PAGE_UNREADABLE`, the revision is `partial`.
+13. The handler calls `heartbeat` for each event, and writes the progress of the job.
+
+#### Resume
+
+If a job runs again, the handler resumes the same revision. It finds the last stored page and starts at the range that has the next page. It does not read a stored page again. If all pages are stored and the chunks need only vectors, the handler reads no range and embeds the chunks.
+
+#### OCR budget
+
+The indexer reads at most `OCR_PAGE_BUDGET` pages of one document with OCR (default 400). The handler sends the pages that are left in the header `x-ocr-pages-left`. When the budget is 0, a scanned page has no text and the reason `OCR_BUDGET`. The value 0 turns OCR off.
+
+#### Backfill
+
+The command `index:backfill` creates a `document.index` job for each stored document that has no current index. It queues again a job that failed or that finished without an index. It only queues jobs. The queue loop of the worker does the work. The command prints the counts of jobs created, queued again, waiting and current.
+
+```bash
+pnpm --filter @maester/worker index:backfill [--workspace <id>] [--document <id>]... [--dry-run]
+```
+
+The option `--dry-run` shows the counts and changes nothing.
+
 ### Retries
 
 1. If a handler throws a `JobFailure`, the worker records its code. For a different error, the worker records the code `HANDLER_ERROR`.
@@ -377,6 +413,13 @@ The breadth uses the current member list for all past days. Thus the past breadt
 | `EXTRACTOR_UNAUTHORIZED` | With `EXTRACTOR_AUTH` = `oidc`, the worker cannot get an ID token. | Retry. |
 | `EXTRACTOR_UNAVAILABLE` | The request to the extractor fails before an answer, or the time limit ends first. | Retry. |
 | `EXTRACTOR_HTTP_<status>` | The extractor sends a different error status. | Retry for status 500 or more. Final failure for other status codes. |
+| `INDEXER_NOT_CONFIGURED` | `INDEXER_URL` or `EMBEDDER_URL` has no value, and a `document.index` job runs. | Final failure. The backfill creates the job again after the configuration. |
+| `INDEXER_MODEL_MISMATCH` | The tokenizer of the indexer or the model of the embedder is not `EMBEDDING_MODEL`. | Final failure. |
+| `INDEXER_VERSIONS_CHANGED` | The versions in the events of a range are not the versions of the revision. | Retry. |
+| `INDEX_TIMEOUT` | The job ran longer than `INDEX_TIMEOUT_SECONDS`. | Retry. |
+| `EMBEDDING_FAILED` | The embedder fails, or it sends a wrong number of vectors. | Retry. The revision stays `building`. The next attempt resumes it. |
+| `INVALID_INDEXER_RESULT` | The indexer sends data that does not agree with the schema. | Final failure. |
+| A code from the indexer | The indexer sends an `error` event or an error status. | The worker uses the code and the `retryable` value of the indexer. The message has the code only. |
 | `INVALID_CLASSIFIER_RESULT` | The classify answer is not valid for the `ClassifyResponse` schema. | Final failure. |
 | `INVALID_EXTRACTOR_RESULT` | A stream line is not valid for the `ExtractorEvent` schema. | Final failure. |
 | `EXTRACTOR_STREAM_INTERRUPTED` | The stream stops before a `result` event, or the stream breaks. | Retry. |
@@ -518,6 +561,14 @@ The `jobId` column is unique in `document_classification` and in `extraction_rev
 | `CONNECTIONS_KEY` | No default | The connections key: 32 bytes in base64. It must be the same in the API and in the worker. If it has no value, the market refresher does not run. |
 | `DHAN_REQUESTS_PER_SECOND` | `4` | The maximum number of Dhan calls in each second. The maximum value is 5. |
 | `MARKET_REFRESH_MINUTES` | `30` | The time from the end of a pass to the start of the next pass. |
+| `INDEXER_URL` | No default | The base URL of the indexer. Without a value, `document.index` fails with `INDEXER_NOT_CONFIGURED`. |
+| `INDEXER_SECRET` | No default | Necessary when `INDEXER_URL` has a value. The worker sends it in `x-indexer-secret`. |
+| `EMBEDDER_URL` | No default | The base URL of the embedder. |
+| `EMBEDDING_MODEL` | `Snowflake/snowflake-arctic-embed-l-v2.0` | The embedding model. It must be a model that `@maester/document-index` knows. |
+| `INDEX_PAGE_RANGE` | `20` | The number of pages in one range. |
+| `INDEX_TIMEOUT_SECONDS` | `7200` | The time limit of one `document.index` job. |
+| `EMBED_BATCH` | `16` | The number of chunks in one request to the embedder. |
+| `OCR_PAGE_BUDGET` | `400` | The most pages of one document that OCR can read. The value 0 turns OCR off. |
 
 ### Default limits
 
@@ -528,6 +579,7 @@ The `jobId` column is unique in `document_classification` and in `extraction_rev
 | `document.verify` | 4 |
 | `document.classify` | 2 |
 | `document.extract` | 2 |
+| `document.index` | 1 |
 
 The worker does not start in these conditions:
 
@@ -649,6 +701,8 @@ Note: The command exits with code 0 for `ok` or `skipped`. It exits with code 1 
 
 WARNING: Keep `EXTRACTOR_SECRET` private. A person with `EXTRACTOR_SECRET` can send requests to the extractor.
 
+WARNING: Keep `INDEXER_SECRET` private. A person with `INDEXER_SECRET` can send requests to the indexer.
+
 WARNING: Keep `CONNECTIONS_KEY` private. A person with this key and access to the database can decrypt the Dhan token and the FRED key of the investor.
 
 CAUTION: Do not set `DATABASE_URL_TEST_WORKER` to a database with real data. The tests delete all rows in the `job`, `document`, `workspace`, `user`, `market_point`, `market_fetch`, `market_connection` and related tables.
@@ -694,6 +748,8 @@ CAUTION: Do not change `CONNECTIONS_KEY` after the investor saves a connection. 
 - [apps/worker/src/jobs/document-verify.ts](../../apps/worker/src/jobs/document-verify.ts)
 - [apps/worker/src/jobs/document-classify.ts](../../apps/worker/src/jobs/document-classify.ts)
 - [apps/worker/src/jobs/document-extract.ts](../../apps/worker/src/jobs/document-extract.ts)
+- [apps/worker/src/jobs/document-index.ts](../../apps/worker/src/jobs/document-index.ts)
+- [apps/worker/src/indexer.ts](../../apps/worker/src/indexer.ts)
 - [apps/worker/src/market/refresh.ts](../../apps/worker/src/market/refresh.ts)
 - [apps/worker/src/market/breadth.ts](../../apps/worker/src/market/breadth.ts)
 - [apps/worker/src/market/members.ts](../../apps/worker/src/market/members.ts)

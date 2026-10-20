@@ -13,8 +13,9 @@ docker compose up --build
 | Component | Path | Language | Status |
 | --- | --- | --- | --- |
 | HTTP API | `apps/api` | TypeScript, Hono | Running: identity, workspaces, document uploads, jobs, SSE ([README](../apps/api/README.md)) |
-| Job worker | `apps/worker` | TypeScript, Hono | Running: leased job execution, `document.verify`, `document.classify`, `document.extract` ([README](../apps/worker/README.md)) |
+| Job worker | `apps/worker` | TypeScript, Hono | Running: leased job execution, `document.verify`, `document.classify`, `document.extract`, `document.index` ([README](../apps/worker/README.md)) |
 | Extractor | `apps/extractor` | Python, FastAPI | Running: stateless extraction service the worker calls ([README](../apps/extractor/README.md)) |
+| Indexer | `apps/indexer` | Python | Running: stateless page reader and chunker the worker calls ([README](../apps/indexer/README.md), [description](systems/indexer.md)) |
 | Web client | `apps/web` | SvelteKit, static | Running: public pages at `/`, sign-in and recovery pages (`/login`, `/signup`, `/verify-email`, `/forgot-password`, `/reset-password`), `/terminal`; investor journeys planned ([README](../apps/web/README.md)) |
 | CLI | `apps/cli` | Python, Typer | Running: `maester ingest`, `list-docs`, `ask` |
 | Document engine | `packages/financial-engine` | Python | Running: the LangGraph extraction workflow ([spec](EXTRACTION.md)), plus the CLI's extraction, checks, cache and Q&A |
@@ -40,11 +41,15 @@ Nothing but Docker is required for the first section below.
 
 ## 3. Start the whole stack
 
+First setup has three steps. The weights for search are fetched once into the `models` volume:
+
 ```bash
-docker compose up --build      # or: pnpm stack:up
+docker compose build indexer                       # builds maester/indexer:local, which the models service reuses
+docker compose --profile setup run --rm models     # fetches the embedding model and Docling's weights, then exits
+docker compose up --build                          # or: pnpm stack:up
 ```
 
-That single command builds four images, starts Postgres, applies database migrations, then starts the extractor, the API, the worker and the web client. The first build takes a few minutes; later starts take seconds. Everything runs with local development defaults — no cloud project, no credentials, no secrets to fill in.
+The `up` command builds five images, starts Postgres, applies database migrations, then starts the extractor, the indexer, the embedder, the API, the worker and the web client. The first build takes a few minutes; later starts take seconds. Everything runs with local development defaults — no cloud project, no credentials, no secrets to fill in.
 
 | Service | Address | What it is |
 | --- | --- | --- |
@@ -53,13 +58,34 @@ That single command builds four images, starts Postgres, applies database migrat
 | Dev upload page | <http://localhost:5173/dev/upload> | The working upload flow, end to end in a browser, through the web origin |
 | Worker | <http://localhost:8788> | Job execution; it pulls jobs from Postgres |
 | Extractor | <http://localhost:8790> | Python extraction service; the worker streams PDFs to it |
+| Indexer | <http://localhost:8791> | Python service that reads a filing's pages with Docling and cuts them into chunks; the worker streams PDFs to it |
+| Embedder | <http://localhost:8792> | text-embeddings-inference serving the embedding model; the worker embeds chunks with it and the API embeds search queries |
 | Postgres | `localhost:5433` | User `maester`, password `maester`, database `maester`. The image is `pgvector/pgvector:pg16`, with `shm_size: 1gb` |
 
-The Postgres image changed to `pgvector/pgvector:pg16`. The major version is the same, so the data volume stays valid. A stack that you started before this change keeps the old container. Recreate it once:
+The Postgres image is `pgvector/pgvector:pg16`, started with `shared_buffers=256MB` and `maintenance_work_mem=512MB`. A stack that you started before the pgvector image keeps the old container, which is the stock `postgres:16` image and has no `vector` extension. Recreate the container once. The major version is the same, so the data volume stays valid:
 
 ```bash
 docker compose up -d --force-recreate postgres
 ```
+
+The worker and the API do not wait for the indexer or the embedder. Until they answer, index jobs back off and retry, and `GET /v1/workspaces/:ws/search` answers 503 `SEARCH_UNAVAILABLE`. Index every document that was stored before search existed with `pnpm --filter @maester/worker index:backfill [--workspace <id>] [--document <id>]… [--dry-run]`.
+
+### Memory budget
+
+Docker Desktop's VM has 7.75 GiB by default. The compose file caps four services and leaves the other three uncapped until they are measured:
+
+| Service | `mem_limit` | `cpus` | Why |
+| --- | --- | --- | --- |
+| postgres | 1g | 2 | Records, queue and vectors. An HNSW build needs `maintenance_work_mem`; a rebuild wants 1 to 2 GB, so raise Docker's limit first |
+| embedder | 2560m | 8 | The embedding model in fp32 is about 2.3 GB |
+| indexer | 2304m | 8 | Docling's peak is unpublished; one job at a time, 20-page ranges, page batch 4 |
+| extractor | no limit | 2 | Gemini calls; holds whole PDFs |
+| api | no limit | 2 | |
+| worker | no limit | 2 | Holds a whole PDF per running job: up to 2 extract, 2 classify and 1 index at 50 MB each, briefly doubled while the buffer is built |
+| web | 96m | 1 | nginx |
+| capped total | 5.9 GiB | | Leaves about 1.8 GiB for the three uncapped services and the VM |
+
+These limits are a first budget; the measured run (Task 13 of the phase 2 plan) adjusts them. Before a backfill or an HNSW rebuild, raise Docker Desktop's memory limit to 12 GB (Settings, Resources), then restart Docker. If the indexer is killed for memory, lower `INDEX_PAGE_BATCH` or the worker's `INDEX_PAGE_RANGE`.
 
 Useful lifecycle commands:
 
@@ -143,9 +169,27 @@ The dev server proxies `/api/auth`, `/v1` and `/dev` to `API_PROXY_TARGET` (defa
 
 Do not run both this and the full compose stack at once: they compete for ports 8787, 8788, 8790 and 5173.
 
+### The indexer's tests
+
+The indexer is its own uv project in `apps/indexer`. Without models, the tests that need them are skipped:
+
+```bash
+cd apps/indexer
+uv run --locked python -m unittest discover -s tests -v
+```
+
+With models, fetch Docling's weights once and point the tests at them:
+
+```bash
+uv run maester-indexer-fetch-models --out "$HOME/.cache/maester" --docling-only
+MAESTER_DOCLING_MODELS="$HOME/.cache/maester/docling" uv run --locked python -m unittest discover -s tests -v
+```
+
+The workflow [`indexer.yml`](../.github/workflows/indexer.yml) runs the second form on changes under `apps/indexer`.
+
 ## 6. Configuration
 
-Copy [`.env.example`](../.env.example) to `.env`. The TypeScript services validate their environment at boot and refuse to start on anything invalid, so a typo is a clear error rather than a runtime surprise. The compose file sets its own values inline; from `.env` it reads only `GOOGLE_CLOUD_PROJECT`, `GCLOUD_CONFIG_DIR`, `VERTEX_LOCATION`, `GEMINI_MODEL` and `GEMINI_CLASSIFY_MODEL`, for the extractor, and `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, for Google sign-in.
+Copy [`.env.example`](../.env.example) to `.env`. The TypeScript services validate their environment at boot and refuse to start on anything invalid, so a typo is a clear error rather than a runtime surprise. The compose file sets its own values inline; from `.env` it reads only `GOOGLE_CLOUD_PROJECT`, `GCLOUD_CONFIG_DIR`, `VERTEX_LOCATION`, `GEMINI_MODEL` and `GEMINI_CLASSIFY_MODEL`, for the extractor, and `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, for Google sign-in, and `EMBEDDING_MODEL`.
 
 **Upgrading an older `.env`.** `cp -n` keeps the `.env` you already have, so it may still set `DISPATCH_MODE=local` and `DISPATCH_SECRET`. The API and the worker read `local` as `queue` and log "DISPATCH_MODE=local is now queue; update .env" at start; change it to `queue` when convenient. `DISPATCH_SECRET` is ignored and can be deleted. Recreate the Postgres container once for the pgvector image (`docker compose up -d --force-recreate postgres`, see section 3).
 
@@ -172,6 +216,10 @@ Copy [`.env.example`](../.env.example) to `.env`. The TypeScript services valida
 | `API_SERVICE_ACCOUNT_EMAIL` | worker | When the mode is `cloud-tasks` | Unset |
 | `EXTRACTOR_URL` | worker | To classify and extract; unset: `document.classify` fails with `CLASSIFIER_NOT_CONFIGURED` | `http://localhost:8790` |
 | `EXTRACTOR_AUTH`, `EXTRACTOR_SECRET` | worker | `secret` (default) needs the secret, which must match the extractor's; `oidc` uses Cloud Run IAM | `secret`, `local-extractor-secret` |
+| `INDEXER_URL`, `INDEXER_SECRET` | worker | To index; the secret is required when the URL is set and must match the indexer's. Unset: `document.index` fails with `INDEXER_NOT_CONFIGURED` | `http://localhost:8791`, `local-indexer-secret` |
+| `EMBEDDER_URL`, `EMBEDDING_MODEL` | worker, api | To embed chunks (worker) and search queries (api); unset in the API: search answers 503 | `http://localhost:8792`, `Snowflake/snowflake-arctic-embed-l-v2.0` |
+| `INDEX_PAGE_RANGE`, `INDEX_TIMEOUT_SECONDS`, `EMBED_BATCH`, `OCR_PAGE_BUDGET` | worker | Defaulted | 20 pages, 7200 s, 16, 400 pages |
+| `INDEXER_SECRET`, `INDEX_THREADS`, `INDEX_PAGE_BATCH`, `INDEX_MAX_BYTES`, `DOCLING_ARTIFACTS_PATH`, `INDEX_TOKENIZER_PATH` | indexer | See the [indexer description](systems/indexer.md) | Compose sets them |
 | `EXTRACT_TIMEOUT_SECONDS`, `EXTRACT_MAX_BYTES` | worker | Defaulted | 1800 s, 50 MiB |
 | `GOOGLE_CLOUD_PROJECT`, `WORKER_INVOKER_SA`, `CLOUD_TASKS_QUEUE`, `TASK_DISPATCH_DEADLINE_SECONDS` | worker | To enqueue extraction when the mode is `cloud-tasks` | Unset |
 | `EXTRACTOR_SECRET`, `GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION`, `GEMINI_MODEL`, `GEMINI_CLASSIFY_MODEL` | extractor | The project and Application Default Credentials for any extraction | See the [extractor README](../apps/extractor/README.md) |

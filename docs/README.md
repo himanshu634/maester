@@ -20,8 +20,9 @@ Maester's product plan connects portfolio tracking with company research and ver
 | [Design specification](DESIGN.md) | The visual contract for every web page: colour, type, structure, motion, copy, enforcement | Design and frontend |
 | [System: overview](systems/maester.md) | The whole system in Simplified Technical English: apps, flows, data, how to run it | Engineering |
 | [System: API](systems/api.md) | The Hono API: routes, sign-in, documents, jobs, Research, market mood, Settings connections, configuration | Backend |
-| [System: worker](systems/worker.md) | The job worker: verify, classify, extract, leases and retries, and the market data refresher | Backend |
+| [System: worker](systems/worker.md) | The job worker: verify, classify, extract, index, leases and retries, and the market data refresher | Backend |
 | [System: extractor](systems/extractor.md) | The Python extraction service: workflow, model calls, page provenance | Backend and data |
+| [System: indexer](systems/indexer.md) | The Python page reader and chunker: routes, events, settings, weights | Backend and data |
 | [System: web](systems/web.md) | The SvelteKit web app: routes, API client, build and serving, checks | Frontend |
 | [System: CLI](systems/cli.md) | The command-line tool: commands, cache, model calls | Engineering |
 | [System: shared packages](systems/packages.md) | Config, contracts, database, financial engines, jobs, market data and storage | Engineering |

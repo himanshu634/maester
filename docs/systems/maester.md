@@ -39,7 +39,7 @@ This document gives the system level of Maester. Each app and each shared packag
 
 Maester reads financial filings for an investor. The investor signs in to the web client and adds a PDF. Maester finds what the PDF is and which company it is for. If the PDF is an annual report or financial results, Maester reads the statements into facts. Each fact keeps the page that it came from.
 
-Maester also shows a market mood. It calculates the market mood from daily market data that the investor's own Dhan and FRED accounts give. The repository holds five apps, eight shared packages and the deployment scripts.
+Maester also shows a market mood. It calculates the market mood from daily market data that the investor's own Dhan and FRED accounts give. The repository holds six apps, eight shared packages and the deployment scripts.
 
 ## Parts
 
@@ -48,6 +48,7 @@ Maester also shows a market mood. It calculates the market mood from daily marke
 | [API](api.md) | `apps/api` | TypeScript HTTP service (Hono). It serves sign-in at `/api/auth/*` through Better Auth and the routes for workspaces, companies, documents and jobs at `/v1`. It writes documents and jobs and dispatches jobs. It also serves the market mood at `/v1/market-mood`, the market connections at `/v1/settings/connections` and the statements and prices of a company for Research. |
 | [Worker](worker.md) | `apps/worker` | TypeScript HTTP service (Hono). In the `queue` mode, it claims each job from the database. In the `cloud-tasks` mode, it receives a dispatch at `POST /tasks/:type`. It takes a lease and runs `document.verify`, `document.classify` or `document.extract`. If `CONNECTIONS_KEY` has a value, it also runs the market refresh on a timer. |
 | [Extractor](extractor.md) | `apps/extractor` | Python HTTP service (FastAPI). It answers `POST /v1/classify` and `POST /v1/extract` for the worker and calls Gemini on Vertex AI. It does not write data. |
+| [Indexer](indexer.md) | `apps/indexer` | Python HTTP service. It answers `POST /v1/index` and `POST /v1/chunk` for the worker. It reads the pages of a PDF with Docling and cuts them into chunks. It does not write data. |
 | [Web client](web.md) | `apps/web` | Static SvelteKit site. In a container, nginx serves it and sends `/api/auth/`, `/v1/` and `/dev/` to the API. |
 | [CLI](cli.md) | `apps/cli` | Python command `maester` with `ingest`, `ask` and `list-docs`. It keeps a JSON cache in `data/cache`. It does not use the API or the database. |
 | [Contracts](packages.md) | `packages/contracts` | Zod shapes for requests, responses and the wire format of the extractor. |
@@ -65,6 +66,7 @@ The repository has three package managers:
 - The pnpm workspace at the root holds `apps/api`, `apps/worker` and `packages/*`. Turborepo runs its scripts.
 - `apps/web` is a separate pnpm project with its own lockfile. A root `pnpm install` does not install it.
 - The uv workspace holds `apps/cli`, `apps/extractor` and `packages/financial-engine`.
+- `apps/indexer` is a separate uv project with its own `uv.lock`, because Docling needs torch.
 
 ## Operation
 
@@ -102,6 +104,7 @@ The repository has three package managers:
 15. The worker writes the result in one transaction: one revision with its facts, its `source_reference` rows and its extraction checks (`apps/worker/src/jobs/document-extract.ts:36-128`). Then it sets the intake state to `read` (`apps/worker/src/jobs/document-extract.ts:131-139`).
 16. While Maester works on the document in the slip, the Documents page reads `GET .../documents/:id` again every 2 seconds (`apps/web/src/lib/documents/intake.ts:25`, `apps/web/src/lib/components/documents/DocumentsPage.svelte:236-243`). While any document in the list has work in progress, the page reads the list again every 5 seconds (`apps/web/src/lib/documents/intake.ts:28`).
 17. The page shows the intake state, the classification and its evidence. It does not show facts.
+18. In parallel, `document.verify` creates a `document.index` job for each stored document that is not a duplicate. The job sends the PDF to the indexer one range at a time. It keeps the pages and the chunks. It sends the chunks to the embedder for their vectors. The API route `GET .../search` finds the chunks. Read the [worker description](worker.md) and the [indexer description](indexer.md).
 
 ### Change by the investor
 
@@ -194,16 +197,19 @@ The repository has three package managers:
 | --- | --- | --- | --- |
 | `postgres` | `pgvector/pgvector:pg16` | 5433 | None |
 | `migrate` | `apps/api/Dockerfile` | None | `postgres`. It applies the migrations and stops. |
-| `api` | `apps/api/Dockerfile` | 8787 | `postgres`, the `blobs` volume |
-| `worker` | `apps/worker/Dockerfile` | 8788 | `postgres`, `extractor`, the `blobs` volume |
+| `api` | `apps/api/Dockerfile` | 8787 | `postgres`, `embedder`, the `blobs` volume |
+| `worker` | `apps/worker/Dockerfile` | 8788 | `postgres`, `extractor`, `indexer`, `embedder`, the `blobs` volume |
 | `extractor` | `apps/extractor/Dockerfile` | 8790 | Vertex AI. It reads Google credentials from a folder that it mounts read-only. |
+| `models` | `apps/indexer/Dockerfile` | None | The `models` volume. It runs one time, by hand, in the profile `setup`. It gets the weights and stops. |
+| `indexer` | `apps/indexer/Dockerfile` | 8791 | The `models` volume, read-only |
+| `embedder` | `ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9` | 8792 (container port 80) | The `models` volume, read-only |
 | `web` | `apps/web/Dockerfile` | 5173 (container port 8080) | `api` (nginx sends `/api/auth/`, `/v1/` and `/dev/` to it) |
 
-The volume `pgdata` keeps the database. The volume `blobs` keeps the PDFs for the `disk` driver. The API and the worker share it.
+The worker and the API do not wait for the indexer or the embedder. Until they answer, index jobs wait and retry, and the search route sends status 503. The volume `models` keeps the weights. The volume `pgdata` keeps the database. The volume `blobs` keeps the PDFs for the `disk` driver. The API and the worker share it.
 
 ### Database
 
-Postgres 16 holds one database, `maester`. The schema is in `packages/db/src/schema`. The migrations are in `packages/db/drizzle`. Of the five apps, only the API and the worker connect to the database.
+Postgres 16 holds one database, `maester`. The schema is in `packages/db/src/schema`. The migrations are in `packages/db/drizzle`. Of the six apps, only the API and the worker connect to the database.
 
 | Group | Tables |
 | --- | --- |
@@ -231,6 +237,7 @@ Maester has no separate queue in the local stack. The `job` table holds the stat
 | --- | --- | --- |
 | Google OAuth | API | Sign-in with Google. It is off when `GOOGLE_CLIENT_ID` has no value. |
 | Resend | API | Confirmation and reset mail when `MAIL_DRIVER` is `resend`. |
+| Hugging Face | `models` service | The weights, one time. Nothing is fetched at run time. |
 | Gemini on Vertex AI | Extractor, CLI | Classification, extraction and the answers of the CLI. |
 | Cloud Storage | API, worker | PDFs when `STORAGE_DRIVER` is `gcs`. |
 | Cloud Tasks | API, worker | Dispatch when `DISPATCH_MODE` is `cloud-tasks`. In `queue` mode, Postgres does this work. |
@@ -244,14 +251,15 @@ Maester has no separate queue in the local stack. The `job` table holds the stat
 
 1. Install Docker with Compose version 2.
 2. Go to the root of the repository.
-3. Start the stack:
+3. Build the indexer image and get the weights. Do this one time. The [development guide](../DEVELOPMENT.md) gives the commands.
+4. Start the stack:
 
    ```bash
    docker compose up --build
    ```
 
-4. Open `http://localhost:5173` in a browser.
-5. To stop the stack and keep the data, run this command:
+5. Open `http://localhost:5173` in a browser.
+6. To stop the stack and keep the data, run this command:
 
    ```bash
    pnpm stack:down
@@ -474,6 +482,7 @@ CAUTION: `pnpm stack:reset` deletes the `pgdata` and `blobs` volumes. Use `pnpm 
 - [`apps/api/src/middleware/workspace.ts`](../../apps/api/src/middleware/workspace.ts), [`apps/api/src/routes/documents.ts`](../../apps/api/src/routes/documents.ts), [`apps/api/src/routes/classification.ts`](../../apps/api/src/routes/classification.ts), [`apps/api/src/routes/dev.ts`](../../apps/api/src/routes/dev.ts), [`apps/api/src/routes/jobs.ts`](../../apps/api/src/routes/jobs.ts), [`apps/api/src/jobs/create.ts`](../../apps/api/src/jobs/create.ts)
 - [`apps/worker/src/app.ts`](../../apps/worker/src/app.ts), [`apps/worker/src/auth.ts`](../../apps/worker/src/auth.ts), [`apps/worker/src/env.ts`](../../apps/worker/src/env.ts), [`apps/worker/src/dispatch.ts`](../../apps/worker/src/dispatch.ts), [`apps/worker/src/run.ts`](../../apps/worker/src/run.ts), [`apps/worker/src/lease.ts`](../../apps/worker/src/lease.ts), [`apps/worker/src/extractor.ts`](../../apps/worker/src/extractor.ts)
 - [`apps/worker/src/jobs/document-verify.ts`](../../apps/worker/src/jobs/document-verify.ts), [`apps/worker/src/jobs/document-classify.ts`](../../apps/worker/src/jobs/document-classify.ts), [`apps/worker/src/jobs/document-extract.ts`](../../apps/worker/src/jobs/document-extract.ts)
+- [`apps/indexer/README.md`](../../apps/indexer/README.md), [`docker-compose.yml`](../../docker-compose.yml)
 - [`apps/extractor/src/maester_extractor/app.py`](../../apps/extractor/src/maester_extractor/app.py), [`apps/extractor/src/maester_extractor/settings.py`](../../apps/extractor/src/maester_extractor/settings.py)
 - [`apps/web/nginx.conf.template`](../../apps/web/nginx.conf.template), [`apps/web/vite.config.ts`](../../apps/web/vite.config.ts), [`apps/web/package.json`](../../apps/web/package.json), [`apps/web/src/lib/session.ts`](../../apps/web/src/lib/session.ts), [`apps/web/src/routes/login/+page.svelte`](../../apps/web/src/routes/login/+page.svelte), [`apps/web/src/lib/components/terminal/SignedInPage.svelte`](../../apps/web/src/lib/components/terminal/SignedInPage.svelte)
 - [`apps/api/src/routes/market-mood.ts`](../../apps/api/src/routes/market-mood.ts), [`apps/api/src/market-mood/compute.ts`](../../apps/api/src/market-mood/compute.ts), [`apps/api/src/routes/connections.ts`](../../apps/api/src/routes/connections.ts)

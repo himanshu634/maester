@@ -18,6 +18,22 @@ Docling, docling-core, RapidOCR and onnxruntime are pinned to exact versions in 
 
 The models are recorded in `models.lock.json`: the embedding model at a commit, and the commit of each Docling artifact (Docling itself asks for the layout models at `main` and the TableFormer models at the `v2.3.0` tag). RapidOCR's models come from ModelScope at the `v3.9.2` tag, which follows the `rapidocr` version.
 
+## Running
+
+```bash
+cd apps/indexer
+INDEXER_SECRET=local-indexer-secret \
+DOCLING_ARTIFACTS_PATH=$HOME/.cache/maester/docling \
+INDEX_TOKENIZER_PATH=$HOME/.cache/maester/embed/Snowflake/snowflake-arctic-embed-l-v2.0 \
+HF_HUB_OFFLINE=1 uv run maester-indexer          # PORT defaults to 8791
+```
+
+`uv run maester-indexer-fetch-models --out <dir> [--docling-only]` fetches the weights offline use needs: Docling's under `<dir>/docling`, the embedding model under `<dir>/embed/<model id>`, and a copy of `models.lock.json`. Settings (`INDEX_THREADS`, `INDEX_PAGE_BATCH`, `INDEX_MAX_BYTES` and the rest) are in `src/maester_indexer/settings.py` and the [system description](../../docs/systems/indexer.md).
+
+In Docker Compose the stack builds `maester/indexer:local` from `Dockerfile`, with the repository root as the build context. The same image runs two services: `models` (profile `setup`, `maester-indexer-fetch-models --out /models`, `HF_HUB_OFFLINE=0`, the only one that downloads) and `indexer` (read-only `/models`, `HF_HUB_OFFLINE=1`, limit 2304 MiB, 8 CPUs). Run `docker compose --profile setup run --rm models` once before the first `up`. The embedder (text-embeddings-inference) reads the same volume. See [DEVELOPMENT.md](../../docs/DEVELOPMENT.md) for the memory budget.
+
+CI: `.github/workflows/indexer.yml` runs the suite with Docling's models on changes under `apps/indexer` and `packages/contracts/fixtures/index`; it needs no secret.
+
 ## Tests
 
 ```bash

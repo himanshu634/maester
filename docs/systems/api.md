@@ -126,6 +126,7 @@ All routes under `/v1` need a session. All routes under `/v1/workspaces/:ws/` al
 | GET | `/v1/workspaces/:ws/documents/:id/classification` | The current classification and its evidence. |
 | POST | `/v1/workspaces/:ws/documents/:id/classification` | Changes the answers. |
 | POST | `/v1/workspaces/:ws/documents/:id/classify` | Creates a new `document.classify` job. Status 202. |
+| GET | `/v1/workspaces/:ws/search` | The passages of indexed documents that match the query `q`. Status 503 with `SEARCH_UNAVAILABLE` when the embedder does not answer. |
 | GET | `/v1/workspaces/:ws/jobs/:id` | One job. |
 | POST | `/v1/workspaces/:ws/jobs/:id/retry` | Starts a job again. |
 | GET | `/v1/workspaces/:ws/jobs/:id/events` | A Server-Sent Events stream of the job. |
@@ -294,6 +295,17 @@ Other rules for the mood:
 
 `GET /v1/market-mood/readings/:key` calculates the full mood, then sends one reading and the last 500 values of its series, oldest first. If `:key` is not one of the 10 readings, the result is `NOT_FOUND`.
 
+### Search
+
+1. `GET .../search` takes the query `q` (1 to 500 characters), the query `limit` (1 to 50, default 10) and the optional query `company` (a UUID).
+2. If `EMBEDDER_URL` has no value, the route sends `SEARCH_UNAVAILABLE` with status 503.
+3. The route sends the query `q` to the embedder, with the model `EMBEDDING_MODEL`.
+4. `searchChunks` finds the 50 nearest chunks by vector and the 50 best chunks by keyword. It joins the two lists by reciprocal rank with k = 60. It searches only the current chunks of the workspace.
+5. The response is `{ "items" }`. Each item has the document, the company, the page, the section path, the text source, the kind, the text and the two ranks.
+6. If the embedder fails, the route sends `SEARCH_UNAVAILABLE` with status 503. The log has the error code and the trace ID. It does not have the query.
+
+The search result has no figure. It has text and the place of the text.
+
 ### Research
 
 1. `GET .../research/companies` reads up to 100 companies and the filings of all companies in the workspace.
@@ -392,6 +404,7 @@ The API sends each error in the error envelope. The trace ID is in the envelope 
 | `UPLOAD_TOO_LARGE` | 413 | The declared `size` is more than `MAX_UPLOAD_BYTES`. |
 | `INVALID_STATE` | 409 | The document or the job is not in the correct state for the action. Also a connections route when `CONNECTIONS_KEY` has no value. |
 | `RATE_LIMITED` | 429 | Dhan sends a rate limit to the check of a Dhan secret, also after three more tries. |
+| `SEARCH_UNAVAILABLE` | 503 | The search route cannot embed the query: `EMBEDDER_URL` has no value, or the embedder fails. |
 | `INTERNAL` | 500 | An unexpected error. The message is `internal error`. The log has the stack. |
 | `INTERNAL` | 503 | The check of a secret fails because the provider does not answer correctly. The message is `SOURCE_UNAVAILABLE`. |
 | `FORBIDDEN` | 403 | Not used by an API route. |
@@ -519,6 +532,8 @@ The `dev` script reads the root `.env` file. A value that is an empty string cou
 | `MAIL_DRIVER` | `console` | `console` or `resend`. The `console` driver writes the mail to the log. Production refuses it. |
 | `RESEND_API_KEY`, `MAIL_FROM` | None | Necessary for `resend`. |
 | `CONNECTIONS_KEY` | None | 32 bytes in base64. It encrypts each secret. Without a value, the connections routes give `INVALID_STATE`. A value that is not 32 bytes in base64 stops the start. |
+| `EMBEDDER_URL` | None | The base URL of the embedder. Without a value, the search route sends `SEARCH_UNAVAILABLE`. |
+| `EMBEDDING_MODEL` | `Snowflake/snowflake-arctic-embed-l-v2.0` | The embedding model for search queries. It must be the model of the index. |
 | `MIGRATIONS_FOLDER` | None | Only for `migrate.ts`. The Docker image sets `/app/drizzle`. |
 | `DATABASE_URL_TEST_API` | `postgres://maester:maester@localhost:5433/maester_test_api` | Only for the tests. |
 
@@ -621,6 +636,8 @@ CAUTION: Set `DATABASE_URL_TEST_API` only to a test database. The test setup emp
 - The port of the API in production: Not known. The Dockerfile declares port 8080, but the image does not set `PORT`, and the default is 8787.
 
 ## Sources
+
+- [apps/api/src/routes/search.ts](../../apps/api/src/routes/search.ts)
 
 - [apps/api/package.json](../../apps/api/package.json)
 - [apps/api/Dockerfile](../../apps/api/Dockerfile)

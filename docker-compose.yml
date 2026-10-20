@@ -14,6 +14,13 @@
 # else keeps working. To enable it, set in the root .env:
 #   GOOGLE_CLOUD_PROJECT=<your project>
 #   GCLOUD_CONFIG_DIR=<absolute path to ~/.config/gcloud>  (after gcloud auth application-default login)
+#
+# Indexing and search need the models volume. Once, before the first up:
+#   docker compose build indexer && docker compose --profile setup run --rm models
+# Until the indexer and the embedder answer, index jobs back off and search says 503.
+#
+# Memory: the capped services (postgres, embedder, indexer, web) total about 5.9 GiB;
+# the api, worker and extractor have no cap until measured. See docs/DEVELOPMENT.md.
 name: maester
 
 x-service-build: &api-build
@@ -45,11 +52,18 @@ x-api-env: &api-env
   CONNECTIONS_KEY: ${CONNECTIONS_KEY:-}
   DHAN_REQUESTS_PER_SECOND: ${DHAN_REQUESTS_PER_SECOND:-4}
   MARKET_REFRESH_MINUTES: ${MARKET_REFRESH_MINUTES:-30}
+  # Search embeds the query with the embedder; unanswered, the search route says 503.
+  EMBEDDER_URL: http://embedder
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-Snowflake/snowflake-arctic-embed-l-v2.0}
 
 services:
   postgres:
     image: pgvector/pgvector:pg16
     shm_size: 1gb
+    # An HNSW build needs maintenance_work_mem; shm_size stays at least as large.
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "maintenance_work_mem=512MB"]
+    mem_limit: 1g
+    cpus: 2
     environment:
       POSTGRES_USER: maester
       POSTGRES_PASSWORD: maester
@@ -85,6 +99,7 @@ services:
     environment:
       <<: *api-env
       PORT: 8787
+    cpus: 2
     ports:
       - "8787:8787"
     volumes:
@@ -108,6 +123,9 @@ services:
       PORT: 8788
       EXTRACTOR_URL: http://extractor:8790
       EXTRACTOR_SECRET: local-extractor-secret
+      INDEXER_URL: http://indexer:8791
+      INDEXER_SECRET: local-indexer-secret
+    cpus: 2
     # On stop the worker waits up to 25 s for running jobs; Docker's default 10 s would kill it mid-wait.
     stop_grace_period: 30s
     ports:
@@ -140,6 +158,7 @@ services:
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-pro}
       GEMINI_CLASSIFY_MODEL: ${GEMINI_CLASSIFY_MODEL:-gemini-2.5-flash}
       GOOGLE_APPLICATION_CREDENTIALS: /var/lib/maester/gcloud/application_default_credentials.json
+    cpus: 2
     volumes:
       - ${GCLOUD_CONFIG_DIR:-./data/gcloud}:/var/lib/maester/gcloud:ro
     ports:
@@ -148,6 +167,69 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8790/healthz').status == 200 else 1)"]
       interval: 5s
       timeout: 3s
+      retries: 12
+
+  # One-shot, run by hand once: fetches the embedding model and Docling's weights
+  # into the models volume. Every other service reads that volume offline.
+  #   docker compose --profile setup run --rm models
+  models:
+    profiles: ["setup"]
+    build:
+      context: .
+      dockerfile: apps/indexer/Dockerfile
+    image: maester/indexer:local
+    command: ["maester-indexer-fetch-models", "--out", "/models"]
+    environment:
+      # The image sets HF_HUB_OFFLINE=1; this is the one service that downloads.
+      HF_HUB_OFFLINE: "0"
+    volumes:
+      - models:/models
+    restart: "no"
+
+  # Reads a filing's pages with Docling and cuts them into chunks. Stateless: the
+  # worker streams the PDF in and writes the chunks to Postgres itself.
+  indexer:
+    build:
+      context: .
+      dockerfile: apps/indexer/Dockerfile
+    image: maester/indexer:local
+    environment:
+      PORT: 8791
+      INDEXER_SECRET: local-indexer-secret
+      DOCLING_ARTIFACTS_PATH: /models/docling
+      INDEX_TOKENIZER_PATH: /models/embed/Snowflake/snowflake-arctic-embed-l-v2.0
+      INDEX_THREADS: 6
+      INDEX_PAGE_BATCH: 4
+      HF_HUB_OFFLINE: 1
+    volumes:
+      - models:/models:ro
+    mem_limit: 2304m
+    cpus: 8
+    ports:
+      - "8791:8791"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8791/healthz').status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # Text Embeddings Inference serving the embedding model on the CPU. The worker
+  # embeds chunks with it and the API embeds search queries.
+  embedder:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9
+    command: ["--model-id", "/models/embed/Snowflake/snowflake-arctic-embed-l-v2.0", "--max-client-batch-size", "32", "--port", "80"]
+    environment:
+      HF_HUB_OFFLINE: 1
+    volumes:
+      - models:/models:ro
+    mem_limit: 2560m
+    cpus: 8
+    ports:
+      - "8792:80"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:80/health"]
+      interval: 10s
+      timeout: 5s
       retries: 12
 
   # The web client, served statically by nginx, which proxies /api/auth, /v1 and
@@ -161,6 +243,8 @@ services:
       NGINX_RESOLVER: 127.0.0.11
       API_PROXY_TARGET: http://api:8787
       API_PROXY_HOST: localhost:5173
+    mem_limit: 96m
+    cpus: 1
     ports:
       - "5173:8080"
     depends_on:
@@ -170,3 +254,4 @@ services:
 volumes:
   pgdata:
   blobs:
+  models:
