@@ -106,8 +106,8 @@ class DoclingProbe(unittest.TestCase):
         self.assertIn("page_header", labels)
 
     def test_the_text_layer_reader_writes_an_en_dash_as_a_hyphen(self):
-        # docling-parse sanitizes text and Docling does not expose the switch, so "2025–26"
-        # as printed reads "2025-26". The middle dot is kept.
+        # docling-parse reads the en dash of "2025–26" as "-" at the character level, with or
+        # without its do_sanitization switch; pypdfium2 reads it as printed. The middle dot is kept.
         doc = convert(FIXTURES / "two-sections.pdf").document
         headers = {i.text for i, _ in doc.iterate_items(included_content_layers={ContentLayer.FURNITURE})}
         self.assertEqual(headers, {"Synthetic Cements Limited · Annual report 2025-26"})
