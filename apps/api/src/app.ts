@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Db, MembershipRow, WorkspaceRow } from "@maester/db";
+import type { Embedder } from "@maester/document-index";
 import type { DhanSource, FredSource } from "@maester/market";
 import type { ObjectStore } from "@maester/storage";
 import type { Auth } from "./auth.js";
@@ -21,6 +22,7 @@ import { jobRoutes } from "./routes/jobs.js";
 import { marketMoodRoutes } from "./routes/market-mood.js";
 import { meRoutes } from "./routes/me.js";
 import { companyResearchRoutes, researchRoutes } from "./routes/research.js";
+import { searchRoutes } from "./routes/search.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
 
 export type AppEnv = {
@@ -40,6 +42,8 @@ export interface AppDeps {
   auth: Auth;
   store: ObjectStore;
   dispatcher: Dispatcher;
+  /** Embeds a search query; null when EMBEDDER_URL is not set, and search answers SEARCH_UNAVAILABLE. */
+  embedder: Embedder | null;
   /** Builds the market data clients that check a key before Settings keeps it. Defaults to the HTTP ones. */
   marketSources?: MarketSources;
 }
@@ -88,6 +92,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}) {
   ws.route("/companies", companyRoutes(deps));
   ws.route("/companies", companyResearchRoutes(deps));
   ws.route("/research", researchRoutes(deps));
+  ws.route("/search", searchRoutes(deps));
   ws.route("/documents", documentRoutes(deps));
   ws.route("/documents", classificationRoutes(deps));
   v1.route("/workspaces/:ws", ws);

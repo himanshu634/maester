@@ -8,7 +8,7 @@ import { silentLogger } from "../src/logger.js";
 import { testEnv } from "./env.js";
 
 const deps = (env: ReturnType<typeof testEnv>, store: unknown = null) =>
-  ({ env, logger: silentLogger, db: null as never, auth: null as never, store: store as never, dispatcher: null as never });
+  ({ env, logger: silentLogger, db: null as never, auth: null as never, store: store as never, dispatcher: null as never, embedder: null });
 
 describe("dev upload page", () => {
   it("is served outside production", async () => {

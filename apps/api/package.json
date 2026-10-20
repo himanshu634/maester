@@ -17,6 +17,7 @@
     "@hono/zod-validator": "^0.9.0",
     "@maester/contracts": "workspace:*",
     "@maester/db": "workspace:*",
+    "@maester/document-index": "workspace:*",
     "@maester/jobs": "workspace:*",
     "@maester/market": "workspace:*",
     "@maester/storage": "workspace:*",

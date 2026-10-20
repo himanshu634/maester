@@ -10,6 +10,7 @@ export const ErrorCode = z.enum([
   "UNSUPPORTED_MEDIA_TYPE",
   "INVALID_STATE",
   "RATE_LIMITED",
+  "SEARCH_UNAVAILABLE",
   "INTERNAL",
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;

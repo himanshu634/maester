@@ -38,6 +38,9 @@ const EnvSchema = z.object({
   MAIL_DRIVER: z.enum(["console", "resend"]).default("console"),
   RESEND_API_KEY: z.string().optional().transform((v) => v || undefined),
   MAIL_FROM: z.string().optional().transform((v) => v || undefined),
+  // The text embedder (TEI) that turns a search query into a vector. Unset: search answers SEARCH_UNAVAILABLE.
+  EMBEDDER_URL: z.string().optional().transform((v) => v || undefined).pipe(z.url().optional()),
+  EMBEDDING_MODEL: z.string().default("Snowflake/snowflake-arctic-embed-l-v2.0"),
   // 32 bytes, base64. Encrypts saved market data keys. Unset: the Settings routes answer INVALID_STATE and the refresher is off.
   CONNECTIONS_KEY: z
     .string()

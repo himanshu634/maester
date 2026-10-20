@@ -9,7 +9,7 @@ import { silentLogger } from "../src/logger.js";
 import { RecordingMailer } from "../src/mail/index.js";
 import { testEnv } from "./env.js";
 
-export async function createTestContext(overrides: Partial<NodeJS.ProcessEnv> = {}, deps: Partial<Pick<AppDeps, "marketSources" | "logger">> = {}) {
+export async function createTestContext(overrides: Partial<NodeJS.ProcessEnv> = {}, deps: Partial<Pick<AppDeps, "marketSources" | "logger" | "embedder">> = {}) {
   const env = testEnv(overrides);
   const db = createDb(env.DATABASE_URL);
   await runMigrations(db);
@@ -18,7 +18,7 @@ export async function createTestContext(overrides: Partial<NodeJS.ProcessEnv> = 
   const dispatcher = new RecordingDispatcher();
   const mailer = new RecordingMailer();
   const auth = createAuth({ db, env, mailer, logger: silentLogger });
-  const app = createApp({ env, logger: silentLogger, db, auth, store, dispatcher, ...deps }, { sse: { pollMs: 50, heartbeatMs: 1000, maxLifetimeMs: 10000 } });
+  const app = createApp({ env, logger: silentLogger, db, auth, store, dispatcher, embedder: null, ...deps }, { sse: { pollMs: 50, heartbeatMs: 1000, maxLifetimeMs: 10000 } });
 
   async function signUp(email: string) {
     await approveWaitlistEmail(db, email);

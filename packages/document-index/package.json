@@ -12,7 +12,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@maester/contracts": "workspace:*"
+    "@maester/contracts": "workspace:*",
+    "@maester/db": "workspace:*",
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "@maester/config": "workspace:*",

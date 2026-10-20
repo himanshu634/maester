@@ -5,7 +5,7 @@ import { silentLogger } from "../src/logger.js";
 import { testEnv } from "./env.js";
 
 function app() {
-  return createApp({ env: testEnv(), logger: silentLogger, db: null as never, auth: null as never, store: null as never, dispatcher: null as never });
+  return createApp({ env: testEnv(), logger: silentLogger, db: null as never, auth: null as never, store: null as never, dispatcher: null as never, embedder: null });
 }
 
 describe("skeleton", () => {
