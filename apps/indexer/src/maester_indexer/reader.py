@@ -128,7 +128,7 @@ class Reader:
         ocr_on = ocr_pages_left > 0
         if cancel.is_set():
             raise ReadCancelled()
-        result = self._convert(pdf, first, last, ocr_on)
+        result = self._convert(pdf, first, last, ocr_on, cancel)
         if cancel.is_set():
             raise ReadCancelled()
         failure: str | None = None
@@ -138,13 +138,20 @@ class Reader:
             failure = type(error).__name__
         raise _index_failed(failure)
 
-    def _convert(self, pdf: bytes, first: int, last: int, ocr_on: bool) -> ConversionResult:
+    def _convert(
+        self, pdf: bytes, first: int, last: int, ocr_on: bool, cancel: threading.Event
+    ) -> ConversionResult:
         stream = DocumentStream(name=STREAM_NAME, stream=BytesIO(pdf))
         # The errors are raised outside the handlers, so they carry no cause or context.
         unreadable, failure = False, None
         try:
             with self._lock:
+                # A read that waited here for another may have been abandoned meanwhile.
+                if cancel.is_set():
+                    raise ReadCancelled()
                 result = self._converter_for(ocr_on).convert(stream, raises_on_error=False, page_range=(first, last))
+        except ReadCancelled:
+            raise
         except StopIteration:  # Docling did not take the bytes for a PDF
             unreadable = True
         except Exception as error:

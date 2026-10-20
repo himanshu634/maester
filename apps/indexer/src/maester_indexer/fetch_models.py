@@ -66,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
     lock_path = find_lock(args.lock)
     lock = json.loads(lock_path.read_text(encoding="utf-8"))
     args.out.mkdir(parents=True, exist_ok=True)
+    (args.out / LOCK_FILE).unlink(missing_ok=True)  # a fetch that fails partway must not read as finished
     fetch_docling(args.out, lock)
     if not args.docling_only:
         fetch_embedding(args.out, lock)

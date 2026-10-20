@@ -150,14 +150,16 @@ def create_app(settings: Settings | None = None, reader: Reader | None = None, t
     async def body(request: Request, content_length: Annotated[int | None, Header()] = None) -> bytes:
         if content_length is not None and content_length > settings.max_bytes:
             raise HTTPException(status_code=413, detail={"code": "TOO_LARGE_FOR_INDEX"})
-        data = bytearray()
+        parts: list[bytes] = []
+        size = 0
         async for part in request.stream():
-            data += part
-            if len(data) > settings.max_bytes:
+            size += len(part)
+            if size > settings.max_bytes:
                 raise HTTPException(status_code=413, detail={"code": "TOO_LARGE_FOR_INDEX"})
-        if not data:
+            parts.append(part)
+        if not size:
             raise HTTPException(status_code=400, detail={"code": "EMPTY_BODY"})
-        return bytes(data)
+        return b"".join(parts)
 
     def mismatch(model: str) -> bytes | None:
         if model == settings.embedding_model:
@@ -215,14 +217,18 @@ def create_app(settings: Settings | None = None, reader: Reader | None = None, t
             return
         cancel = threading.Event()
         try:
-            # Before the read, so a missing tokenizer fails at once, not after the minutes a read takes.
-            await asyncio.to_thread(get_tokenizer)
             page_count = await asyncio.to_thread(reader.page_count, pdf)
             if params.first > page_count:
                 raise IndexingError("INDEX_FAILED", "The page range does not start on a page of the file.", False)
             last = min(params.last, page_count)
             yield _line(StartedEvent(versions=reader.versions, page_count=page_count, first_page=params.first,
                                      last_page=last))
+            # Before the read, so a missing tokenizer fails at once, not after the minutes a read
+            # takes; the first load is slow, so the worker hears heartbeats meanwhile.
+            tokenizer_task = asyncio.ensure_future(asyncio.to_thread(get_tokenizer))
+            async for line in _beats(tokenizer_task, heartbeat_seconds):
+                yield line
+            tokenizer_task.result()
             read_task = asyncio.ensure_future(asyncio.to_thread(
                 reader.read_range, pdf, params.first, last, params.ocr_pages_left, cancel))
             async for line in _beats(read_task, heartbeat_seconds):

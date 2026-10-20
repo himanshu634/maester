@@ -126,7 +126,8 @@ class Service(unittest.TestCase):
         reader = FakeReader()
         client = TestClient(create_app(Settings(secret=SECRET), reader))
         got = events(client.post("/v1/index", content=PDF, headers=headers()))
-        self.assertEqual([(e.type, e.code) for e in got], [("error", "INDEXER_NOT_CONFIGURED")])
+        self.assertEqual([e.type for e in got], ["started", "error"])
+        self.assertEqual(got[-1].code, "INDEXER_NOT_CONFIGURED")
         self.assertEqual(reader.calls, [])
 
     def test_a_body_over_the_limit_is_413(self):
@@ -195,10 +196,9 @@ class Service(unittest.TestCase):
                 "headers": [(k.encode(), v.encode()) for k, v in {**headers(), "content-length": str(len(PDF))}.items()],
             }
             task = asyncio.ensure_future(app(scope, incoming.get, outgoing.put))
-            while True:  # wait for the first body chunk, so the reader is running
-                message = await asyncio.wait_for(outgoing.get(), 5)
-                if message["type"] == "http.response.body" and message.get("body"):
-                    break
+            deadline = time.monotonic() + 5
+            while reader.cancel is None and time.monotonic() < deadline:  # until the reader is running
+                await asyncio.sleep(0.02)
             await incoming.put({"type": "http.disconnect"})
             await asyncio.wait_for(task, 5)
 
@@ -208,6 +208,79 @@ class Service(unittest.TestCase):
         while not reader.cancel.is_set() and time.monotonic() < deadline:
             time.sleep(0.02)
         self.assertTrue(reader.cancel.is_set())
+
+
+class ReaderQueue(unittest.TestCase):
+    def reader(self, convert):
+        from maester_indexer.reader import Reader
+
+        reader = object.__new__(Reader)
+        reader._lock = threading.Lock()
+        reader._converter_for = lambda ocr_on: type("C", (), {"convert": staticmethod(convert)})()
+        return reader
+
+    def test_a_waiting_read_that_is_cancelled_never_converts(self):
+        from maester_indexer.reader import ReadCancelled
+
+        started, release, converted = threading.Event(), threading.Event(), []
+
+        def convert(stream, **kwargs):
+            converted.append(1)
+            started.set()
+            release.wait(5)
+            raise RuntimeError("stop")  # ends the first read; not under test
+
+        reader = self.reader(convert)
+        first = threading.Thread(target=lambda: self._swallow(reader, threading.Event()))
+        first.start()
+        self.assertTrue(started.wait(5))
+        cancel, outcome = threading.Event(), []
+
+        def second():
+            try:
+                reader._convert(PDF, 1, 1, True, cancel)
+            except BaseException as error:
+                outcome.append(error)
+
+        waiting = threading.Thread(target=second)
+        waiting.start()
+        time.sleep(0.1)
+        cancel.set()  # the client of the second request went away while it waited
+        release.set()
+        first.join(5)
+        waiting.join(5)
+        self.assertEqual(len(converted), 1)
+        self.assertIsInstance(outcome[0], ReadCancelled)
+
+    @staticmethod
+    def _swallow(reader, cancel):
+        try:
+            reader._convert(PDF, 1, 1, True, cancel)
+        except Exception:
+            pass
+
+
+class Concurrency(ReaderQueue):
+    def test_overlapping_reads_never_run_docling_at_once(self):
+        state = {"running": 0, "overlap": False, "calls": 0}
+        guard = threading.Lock()
+
+        def convert(stream, **kwargs):
+            with guard:
+                state["running"] += 1
+                state["calls"] += 1
+                state["overlap"] = state["overlap"] or state["running"] > 1
+            time.sleep(0.1)
+            with guard:
+                state["running"] -= 1
+            return type("R", (), {"input": type("I", (), {"valid": False})()})()
+
+        reader = self.reader(convert)
+        threads = [threading.Thread(target=self._swallow, args=(reader, threading.Event())) for _ in range(3)]
+        [t.start() for t in threads]
+        [t.join(10) for t in threads]
+        self.assertEqual(state["calls"], 3)
+        self.assertFalse(state["overlap"])
 
 
 if __name__ == "__main__":
