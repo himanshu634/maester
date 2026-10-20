@@ -1,28 +1,30 @@
 import { createHash } from "node:crypto";
 import { EmbedderError, type Embedder } from "./embedder.js";
-import { embeddingInput, embeddingModel } from "./models.js";
+import { embeddingModel } from "./models.js";
 
 const DEFAULT_MODEL = "Snowflake/snowflake-arctic-embed-l-v2.0";
 
-/** Deterministic embedder for tests: equal inputs give equal unit vectors. */
+/** Deterministic embedder for tests: equal texts give equal unit vectors, whatever the kind. */
 export class FakeEmbedder implements Embedder {
   private failures = 0;
+  private failure: EmbedderError | undefined;
   constructor(readonly model: string = DEFAULT_MODEL) {
     embeddingModel(model);
   }
 
-  /** The next `times` calls to embed throw a retryable EMBEDDING_FAILED. */
-  fail(times: number): void {
+  /** The next `times` calls to embed throw `err` (default: a retryable EMBEDDING_FAILED). */
+  fail(times: number, err?: EmbedderError): void {
     this.failures = times;
+    this.failure = err;
   }
 
-  async embed(texts: string[], kind: "query" | "document"): Promise<number[][]> {
+  async embed(texts: string[], _kind: "query" | "document"): Promise<number[][]> {
     if (this.failures > 0) {
       this.failures -= 1;
-      throw new EmbedderError("EMBEDDING_FAILED", true, "The fake embedder was told to fail.");
+      throw this.failure ?? new EmbedderError("EMBEDDING_FAILED", true, "The fake embedder was told to fail.");
     }
     const dims = embeddingModel(this.model).dimensions;
-    return texts.map((t) => unitVector(embeddingInput(this.model, kind, t), dims));
+    return texts.map((t) => unitVector(t, dims));
   }
 }
 

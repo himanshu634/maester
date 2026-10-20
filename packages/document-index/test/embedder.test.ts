@@ -73,6 +73,28 @@ describe("TeiEmbedder", () => {
     expect(err).toMatchObject({ code: "EMBEDDER_UNAVAILABLE", retryable: true });
   });
 
+  it("retries a body that is cut off mid-read", async () => {
+    let n = 0;
+    server = createServer((req, res) => {
+      req.resume();
+      req.on("end", () => {
+        if (++n === 1) {
+          res.writeHead(200, { "content-type": "application/json", "content-length": "5000" });
+          res.write("[[0.1,");
+          setTimeout(() => res.destroy(), 10);
+        } else {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify([vec(1024)]));
+        }
+      });
+    });
+    await new Promise<void>((ok) => server!.listen(0, "127.0.0.1", ok));
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const out = await new TeiEmbedder(url, M, { backoffMs: 1 }).embed(["a"], "document");
+    expect(out).toHaveLength(1);
+    expect(n).toBe(2);
+  });
+
   it("throws on a vector of the wrong dimensions", async () => {
     const s = await serve([{ status: 200, body: [vec(768)] }]);
     const err = await new TeiEmbedder(s.url, M, { backoffMs: 1 }).embed(["a"], "document").catch((e) => e);
@@ -88,6 +110,18 @@ describe("FakeEmbedder", () => {
     expect(a).toEqual(b);
     expect(a).not.toEqual(c);
     expect(Math.hypot(...a!)).toBeCloseTo(1, 6);
+  });
+  it("gives a query and a document of equal text the same vector", async () => {
+    const f = new FakeEmbedder();
+    const [q] = await f.embed(["same"], "query");
+    const [d] = await f.embed(["same"], "document");
+    expect(q).toEqual(d);
+  });
+  it("fails with a custom error", async () => {
+    const f = new FakeEmbedder();
+    f.fail(1, new EmbedderError("EMBEDDER_UNAVAILABLE", true, "down"));
+    await expect(f.embed(["a"], "query")).rejects.toMatchObject({ code: "EMBEDDER_UNAVAILABLE" });
+    await expect(f.embed(["a"], "query")).resolves.toHaveLength(1);
   });
   it("fails the requested number of times", async () => {
     const f = new FakeEmbedder();

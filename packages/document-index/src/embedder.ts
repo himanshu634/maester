@@ -64,7 +64,16 @@ export class TeiEmbedder implements Embedder {
         last = new EmbedderError("EMBEDDER_UNAVAILABLE", true, "The embedder did not answer.");
         continue;
       }
-      if (res.ok) return this.check(await this.read(res), texts.length);
+      if (res.ok) {
+        let text: string;
+        try {
+          text = await res.text();
+        } catch {
+          last = new EmbedderError("EMBEDDER_UNAVAILABLE", true, "The embedder answer was cut short.");
+          continue;
+        }
+        return this.check(this.parse(text), texts.length);
+      }
       if (res.status >= 500 || res.status === 429) {
         last = new EmbedderError("EMBEDDING_FAILED", true, `The embedder answered ${res.status}.`);
         continue;
@@ -74,9 +83,9 @@ export class TeiEmbedder implements Embedder {
     throw last ?? new EmbedderError("EMBEDDER_UNAVAILABLE", true, "The embedder did not answer.");
   }
 
-  private async read(res: Response): Promise<unknown> {
+  private parse(text: string): unknown {
     try {
-      return await res.json();
+      return JSON.parse(text);
     } catch {
       throw new EmbedderError("EMBEDDING_FAILED", false, "The embedder answer was not JSON.");
     }
