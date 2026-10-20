@@ -3,11 +3,13 @@
 from datetime import date
 import threading
 import unittest
+from unittest import mock
 
 from pdf_fixtures import make_pdf
 
 from pdf_financial_qa.workflow import ExtractionError, WorkflowSettings, run_extraction
 from pdf_financial_qa.workflow.errors import ModelOutputError
+from pdf_financial_qa.workflow.pdf import PdfDocument
 from pdf_financial_qa.workflow.model import (
     ExtractedLine, ExtractedSection, ExtractedValue, LocatedStatement, LocateOutput, StatementOutput,
 )
@@ -150,6 +152,14 @@ class HappyPathTests(unittest.TestCase):
 
         result = run_extraction(PDF, model=ScriptedModel(), settings=FAST)
         self.assertEqual(ExtractionResult.model_validate(result.to_wire()), result)
+
+    def test_a_loaded_document_reads_the_same_as_its_bytes_without_loading_again(self):
+        doc = PdfDocument.load(PDF)
+        from_bytes = run_extraction(PDF, model=ScriptedModel(), settings=FAST)
+        with mock.patch.object(PdfDocument, "load") as load:
+            from_doc = run_extraction(doc, model=ScriptedModel(), settings=FAST)
+        load.assert_not_called()
+        self.assertEqual(from_doc.to_wire(), from_bytes.to_wire())
 
 
 class SelfCorrectionTests(unittest.TestCase):
