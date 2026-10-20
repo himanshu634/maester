@@ -1,6 +1,6 @@
 # Ingestion phase 2: the document index — Implementation Plan
 
-Status: built (PR #13, branch `feat/ingestion-index`, commits `5e2fce8..aede6d2`). Tasks 1–12 are done and describe the code as built, except three open steps a review on 20 Oct 2026 found (Task 10 Step 6, Task 11 Step 6, Task 12 Step 6), which are not built. Task 13 (the live check and the backfill) is the investor's to run, from the main checkout after #13 merges; it does not wait for the open steps.
+Status: built (PR #13, branch `feat/ingestion-index`, commits `5e2fce8..aede6d2`). Tasks 1–12 are done and describe the code as built, except two open steps that the reviews of 20 Oct 2026 found and that are not built: Task 10 Step 6 (search reads one snapshot, and a partial revision is searched) and Task 12 Step 6 (`actions/cache` pinned by commit). An earlier revision of this plan also named a "Task 11 Step 6"; no record says what it was, so it is dropped. Task 13 (the live check and the backfill) is the investor's to run, from the main checkout after #13 merges; it does not wait for the open steps.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -8,7 +8,7 @@ Status: built (PR #13, branch `feat/ingestion-index`, commits `5e2fce8..aede6d2`
 
 **Architecture:** Two new services. The **indexer** (Python, FastAPI, Docling pinned, RapidOCR on onnxruntime set explicitly) reads one page range per request and streams NDJSON pages and chunks; it also re-chunks a cached read. The **embedder** is text-embeddings-inference with no code of ours. The worker's `document.index` job (subject type `document_index`, limit 1) drives the ranges, writes pages and chunks per range and embeddings per batch, so a failure loses one range or one batch; Docling's reads are cached in `page_read`, so a retry or a rebuild never reads or OCRs a page twice. Search is hybrid: an HNSW cosine branch over `halfvec` and a `simple` full-text branch, fused by reciprocal rank.
 
-**Tech Stack:** Python 3.12, FastAPI, Docling, docling-core's HybridChunker, RapidOCR on onnxruntime, uv; text-embeddings-inference `cpu-arm64-1.9` with `Snowflake/snowflake-arctic-embed-l-v2.0`; TypeScript, Drizzle and drizzle-kit, pgvector 0.8 on `pgvector/pgvector:pg16`, Hono, Zod, Vitest; Docker Compose.
+**Tech Stack:** Python 3.12, FastAPI, Docling, docling-core's HybridChunker, RapidOCR on onnxruntime, uv; text-embeddings-inference `cpu-arm64-1.9` with `Snowflake/snowflake-arctic-embed-l-v2.0`; TypeScript, Drizzle and drizzle-kit, pgvector 0.8 on `pgvector/pgvector:pg16` (CI) and, from Task 13 Step 2, `pgvector/pgvector:0.8.1-pg16-trixie` locally, Hono, Zod, Vitest; Docker Compose.
 
 **Spec:** [`docs/superpowers/specs/2026-10-19-ingestion-pipeline-design.md`](../specs/2026-10-19-ingestion-pipeline-design.md) §5, §8, §13, §15, §16 phase 2, §17 and §19. Research: [`docs/research/2026-10-19-ingestion-research.md`](../../research/2026-10-19-ingestion-research.md) §1 (pgvector, hybrid search), §2 (Docling, RapidOCR, chunking), §3 (the embedding model, TEI) and §6 (memory). Builds on the [phase 1 plan](2026-10-19-ingestion-phase-1-runner.md).
 
@@ -28,7 +28,7 @@ Where the build departed from this plan as first written. Each line gives the co
 9. **The chunker runs HybridChunker's steps itself** (private: `_inner_chunker.chunk`, `_split_by_doc_items`, `_split_using_plain_text`, `_merge_chunks_with_matching_metadata`), so a table is never merged with its peers. Every table is its own chunk. An oversized table splits by rows, each part with the header repeated. Header rows over half the budget (`HEADER_SHARE = 2`) are read as body rows. An oversized caption goes out ahead of the table, cut to the budget. `merge_peers` and `repeat_table_header` therefore do nothing. `chunk_range` takes a docling-core `BaseTokenizer` that carries `max_tokens` (`CHUNK_TOKENS` 448 in production) instead of a raw tokenizer. `filter_document` maps the refs that `filter()` renumbers back to the read's own. `9206a4e`, `0d3de51`.
 10. **A basis heading roots the section path.** Docling gives every PDF section header level 1, so a heading that names "consolidated" or "standalone" becomes the sticky root. Later headings nest under it as `[root, latest]` until another basis heading replaces it. Basis comes from that root. `f8a8805`.
 11. **The embedded text fits 512 tokens by construction.** `fit_path` cuts the path to `PATH_TOKENS` and then further from the left, down to empty, until `contextualize(path, text)` plus the model's special tokens (`num_special_tokens_to_add`) fits. Only a text over the budget on its own raises `INDEX_FAILED`. `f8a8805`, `0d3de51`.
-12. **Text source for an unrecorded item.** A chunk holding an item with text but no recorded source is `text_layer` with OCR off. With OCR on it is `mixed`, or `ocr` when every recorded source is OCR. `f8a8805`, `0d3de51`.
+12. **Text source for an unrecorded item.** A chunk holding an item with text but no recorded source is `text_layer` with OCR off. With OCR on it is `mixed`, or `ocr` when every recorded source is OCR. An item is unrecorded when no text cell lies under its boxes: the reader leaves it out of the page text, the item counts and `itemSources` (Task 3), but the chunker still puts it in a chunk. So a chunk, and a search hit, can hold text that no stored `document_page.text` holds. `f8a8805`, `0d3de51`.
 13. **Model fetch.** `fetch_models` uses Docling's `download_hf_model` at the lock's revisions for the three `DOCLING_REPOS`, plus `RapidOcrModel.download_models(backend="onnxruntime")` with no revision, not `docling-tools`. (Task 1's probe ran before this command existed, on `docling-tools`' download; the probe's docstring and the README's local test command still use it.) From the embedding repository it takes only `*.json`, `*.safetensors`, `sentencepiece.bpe.model`, `vocab.txt` and `merges.txt`, ignoring `onnx/*` and `openvino/*`: about 2.3 GB instead of 10.6 GB. It deletes the old lock first and writes the lock last. The Dockerfile installs `libgl1` and `libglib2.0-0` (OpenCV) and creates `/models` owned by `app`. `51153e7`, `7ee16f2`, `603a9c8`.
 14. **`doclingVersion`**, which keys the page-read cache, is `docling=…;docling-core=…;docling-ibm-models=…;docling-parse=…;models=<12-hex hash of the lock's docling section>`. A change to any reader package or artefact reads the pages again. `023856f`.
 15. **A missing `models.lock.json`** in or above `INDEX_TOKENIZER_PATH` is `INDEXER_NOT_CONFIGURED`, not a mismatch: the fetch writes the lock last, so a missing lock means the fetch did not finish. The tokenizer loads on the first request, and `/v1/index` loads it before reading, while sending heartbeats. `0c892e4`, `7ee16f2`.
@@ -36,7 +36,7 @@ Where the build departed from this plan as first written. Each line gives the co
 
 **Database, package, worker, API**
 17. **Schema details.** The chunk key is `UNIQUE NULLS NOT DISTINCT (revision_id, page_number, seq)`, so a future XBRL chunk with no page is still unique. `writeRange` refuses a revision that is not `building` or belongs to another document. `insertEmbeddings` refuses a chunk outside the workspace. A revision is `partial` on `OCR_FAILED`, `OCR_BUDGET` or `PAGE_UNREADABLE`. `heading_text` is `sectionPath.join(" ")`, computed in `writeRange`. `documentsNeedingIndex` takes `documentIds?` for the backfill's `--document`. `dd33a69`, `bc665e8`.
-18. **`IndexVersions` carries `tokenizer`, but no column stores it**, and `versionsMatch` in `startOrResumeRevision` does not compare it. The worker's `sameVersions` does compare it on every range (`INDEXER_VERSIONS_CHANGED`), and the job checks `versions.tokenizer === EMBEDDING_MODEL` before it starts. The same line also compares `embedder.model`, but that is the model string the worker gave its own `TeiEmbedder`, so that half can never fail: the worker never asks TEI which model it serves. A worker whose `EMBEDDING_MODEL` changes while TEI still serves the old `--model-id` would store the old model's vectors under the new label, stopped only by the 1024-dimension check on each answer. The fix is listed under "After this plan" for phase 3, which swaps models. `dd33a69`, `16880ac`.
+18. **`IndexVersions` carries `tokenizer`, but no column stores it**, and `versionsMatch` in `startOrResumeRevision` does not compare it. The worker's `sameVersions` does compare it on every range (`INDEXER_VERSIONS_CHANGED`), and the job checks `versions.tokenizer === EMBEDDING_MODEL` before it starts. The same line also compares `embedder.model`, but that is the model string the worker gave its own `TeiEmbedder`, so that half can never fail: the worker never asks TEI which model it serves. A worker whose `EMBEDDING_MODEL` changes while TEI still serves the old `--model-id` would store the old model's vectors under the new label, stopped only by the 1024-dimension check on each answer, which any other 1024-dimension candidate passes. The fix, a check of TEI's `GET /info` `model_id`, is the first item under "After this plan", to land in phase 3 before it serves another model. `dd33a69`, `16880ac`.
 19. **`TeiEmbedder` options:**
    - `timeoutMs` (default 60 000), `retries` (3), `backoffMs` (1000) and `retryOnTimeout` (true);
    - a timeout with `retryOnTimeout: false` throws `EMBEDDER_UNAVAILABLE`, retryable;
@@ -72,8 +72,8 @@ Where the build departed from this plan as first written. Each line gives the co
 
 **Compose and CI**
 26. **`restart: unless-stopped` on the indexer and the embedder.** The memory caps are not measured, and an OOM kill must not leave a service down while a backfill uses up every job's attempts. Both healthchecks have `start_period: 120s`. `df79e11`, `a51766c`.
-27. **Four `mem_limit`s, not seven**: postgres 1g, embedder 2560m, indexer 2304m, web 96m. The worker, the extractor and the API stay uncapped until measured. Task 13 can cap the API from an index run; the worker and the extractor stay uncapped until one extraction is measured. `212360a`.
-28. **CI.** The Docling model cache is keyed on `apps/indexer/uv.lock` and `apps/indexer/models.lock.json`. `indexer.yml` runs on a push to `main` and on a pull request into any branch (as `ts.yml` does), and pins two of its three actions by commit: `actions/cache` is pinned only by its `v4` tag (Task 12 Step 6). CI's Postgres has been `pgvector/pgvector:pg16` since phase 1 (`81c8c5e`). The investor's local `maester-postgres-1` is still `postgres:16` and must be recreated (Task 13, Step 2). On 20 Oct 2026 its image ships glibc 2.41 (Debian 13), while `pgvector/pgvector:pg16` ships glibc 2.36 (Debian 12), so Step 2 checks the C library and the collation versions before and after. `83a81e6`.
+27. **Four `mem_limit`s, not seven**: postgres 1g, embedder 2560m, indexer 2304m, web 96m. The worker, the extractor and the API stay uncapped until measured. Task 13 Step 11 caps the API from the index run (five limits in all) and gives it `restart: unless-stopped`; the worker and the extractor stay uncapped until one extraction is measured, because a cap too low for an extraction kills a paid call mid-way and neither service has a restart policy. `212360a`.
+28. **CI.** The Docling model cache is keyed on `apps/indexer/uv.lock` and `apps/indexer/models.lock.json`. `indexer.yml` runs on a push to `main` and on a pull request into any branch (as `ts.yml` does), and pins two of its three actions by commit: `actions/cache` is pinned only by its `v4` tag until Task 12 Step 6 pins it by commit. CI's Postgres has been `pgvector/pgvector:pg16` since phase 1 (`81c8c5e`); its database is created fresh on every run, so its C library does not matter. The investor's local `maester-postgres-1` is still `postgres:16` and must be recreated (Task 13, Step 2). On 20 Oct 2026, `ldd --version` in the images gives glibc 2.41 (Debian 13, trixie) for `postgres:16` and glibc 2.36 (Debian 12, bookworm) for `pgvector/pgvector:pg16`. A cluster's text indexes are sorted by the C library's collation, so recreating the volume's container on `pgvector/pgvector:pg16` would leave every text B-tree (the unique `job_idempotency_key_unique`, `document_storage_key_unique`, `page_read_key` and `user_email_unique` among them) in an order the new library does not keep, with no error at start. Step 2 therefore reads the collation version the cluster was built under, recreates on the pgvector build of the same Debian release (`pgvector/pgvector:0.8.1-pg16-trixie`, on Docker Hub on 20 Oct 2026), and checks the C library and the collation versions before and after, with a stop rule. `docs/DEVELOPMENT.md` still says the volume stays valid because the major version is the same; Step 2 corrects it. `83a81e6`.
 29. **Task 13 was not run in the build.** It needs the investor's machine, the pgvector Postgres and their go-ahead; it is rewritten below as their runbook.
 
 ## Where this plan departs from the spec, and why
@@ -102,7 +102,7 @@ Where the build departed from this plan as first written. Each line gives the co
 
 - **Branching.** Built on `feat/ingestion-index` from `staging` after phase 1 merged (PR #12); PR #13 into `staging`. The migration is `packages/db/drizzle/0007_document_index.sql`; the next free number is 0008.
 - **No paid API calls.** Tests use fakes (a fake indexer client, a fake `/embed` server, a whitespace tokenizer built in code) or the free local Docling and RapidOCR models. No test, live check or default path calls Gemini, Claude or any hosted embedding API.
-- **No `docker compose up` in a worktree** (the compose project name is shared with the investor's running stack). Database tests use a Postgres on `localhost:5433` that must be a pgvector image (phase 1). CI's is `pgvector/pgvector:pg16`; the investor's `maester-postgres-1` was still `postgres:16` at the end of the build, and Task 13 Step 2 recreates it on a pgvector image with the same C library. In a worktree, compose files are checked with `docker compose config` only. The live check (Task 13) runs from the main checkout after merge, with the investor's go-ahead.
+- **No `docker compose up` in a worktree** (the compose project name is shared with the investor's running stack). Database tests use a Postgres on `localhost:5433` that must be a pgvector image (phase 1). CI's is `pgvector/pgvector:pg16`; the investor's `maester-postgres-1` was still `postgres:16` (glibc 2.41) at the end of the build. `pgvector/pgvector:pg16` has another C library (glibc 2.36), so Task 13 Step 2 recreates the container on `pgvector/pgvector:0.8.1-pg16-trixie`, the pgvector build on the same Debian release, and checks the C library and the collation versions before and after (As built 28). In a worktree, compose files are checked with `docker compose config` only. The live check (Task 13) runs from the main checkout after merge, with the investor's go-ahead.
 - **The indexer is its own uv project**, not a member of the root uv workspace: Docling needs torch, which would slow every Python CI run and may have no wheel for the 3.14 matrix entry. `apps/indexer` has its own `pyproject.toml` and `uv.lock`, `requires-python = ">=3.12,<3.13"`, torch from the PyTorch CPU index on Linux, and its own CI job. `scripts/check_workspace.py` still parses its `.py` files and Markdown links.
 - **Pinned, never automatic.** Docling, docling-core, RapidOCR and onnxruntime are pinned to exact versions in `apps/indexer/pyproject.toml`; the OCR engine is `RapidOcrOptions` on onnxruntime, never Docling's automatic choice; the TEI image is `ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9`; the embedding model is pinned to a commit revision. Task 1 records the versions and the revision as resolved on 20 Oct 2026 (Docling 2.134.0, docling-core 2.103.0, rapidocr 3.9.2, onnxruntime 1.31.0, model revision `ac6544c8a46e00af67e330e85a9028c66b8cfd9a`); none is written from memory, and moving any of them is a change of its own that runs the probe again. They are recorded in `apps/indexer/README.md` and `apps/indexer/models.lock.json`.
 - **Nothing is fetched at run time.** Weights (Docling's layout, TableFormer and RapidOCR models; the embedding model with its tokenizer) are fetched once into the `models` volume by `docker compose --profile setup run --rm models`; the indexer and the embedder run with `HF_HUB_OFFLINE=1`. The fetch takes the embedding model's safetensors, configuration and tokenizer files only (no `onnx/*`, no `openvino/*`).
@@ -143,7 +143,7 @@ Where the build departed from this plan as first written. Each line gives the co
     - `INVALID_INDEXER_RESULT`, not retried;
     - `INDEX_STREAM_INTERRUPTED`, retried;
     - `INDEX_TIMEOUT`, retried;
-    - `INDEX_FAILED`: retried for an unexpected error and for a Docling status that is not success; not retried for a range past the end, a chunk over the budget, or an item lost or changed by filtering. The job row shows the code and the range only, so the two kinds look alike there;
+    - `INDEX_FAILED`: retried for an unexpected error and for a Docling status that is neither success nor partial success (a partial success keeps its failed pages as `PAGE_UNREADABLE`); not retried for a range past the end, a chunk over the budget, or an item lost or changed by filtering. The job row shows the code and the range only, so the two kinds look alike there;
     - the index queries' own codes `INDEX_REVISION_NOT_FOUND`, `REVISION_DOCUMENT_MISMATCH`, `REVISION_NOT_BUILDING` and `CHUNK_NOT_IN_WORKSPACE`, retried (Task 9);
     - `HANDLER_ERROR`, the runner's code for an error that is not a `JobFailure` (`apps/worker/src/run.ts`), retried: a database write that failed without a query code (message "… failed (SQLSTATE …)"), or a failure in an unwrapped query (Task 9);
     - the job's `INVALID_STATE` and `OBJECT_MISSING`, not retried;
@@ -311,9 +311,9 @@ git commit -m "feat(contracts): the indexer's NDJSON events, the cached range re
     - `source_of(cells) -> TextSource | None`;
     - `item_source(cells, bbox | [bbox, …]) -> TextSource | None`: all OCR is `ocr`, none is `text_layer`, both is `mixed`, and no cell is `None` (the item has no text and is ignored). Several boxes take the union.
   - Pages:
-    - `text` is every text and table item on the page in reading order, furniture included, joined by `"\n"`.
+    - `text` is every text and table item on the page that has at least one text cell under its boxes, in reading order, furniture included, joined by `"\n"`. An item with no cell under it (`item_source` gives `None`) is left out of the page text, the counts and `itemSources`; the chunker still chunks it as an unrecorded item (As built 12).
     - A table is one row a line, its cells separated by a space, and goes whole on its first page. A text item over a page break gives each page its `prov.charspan` part.
-    - `itemsTextLayer` and `itemsOcr` count items by source (a mixed item counts in both), and only on pages where the item's part has text.
+    - `itemsTextLayer` and `itemsOcr` count the items kept in the page text by source (a mixed item counts in both), and only on pages where the item's part has text.
     - `noneReason` is one of:
       - `PAGE_UNREADABLE`: missing from `result.pages`, or named by one of `result.errors`; logged as page number and category only;
       - `null`: the page has text;
@@ -688,7 +688,7 @@ git commit -m "feat(document-index): the embedding model registry, the query pre
 - Produces:
   - `interface IndexInput { pdf: Uint8Array; documentId: string; firstPage: number; lastPage: number; sectionPathBefore: string[]; ocrPagesLeft: number; signal: AbortSignal }`.
   - `interface IndexerClient { versions(): Promise<IndexerVersions>; index(input: IndexInput, onEvent: (e: IndexerEvent) => Promise<void>): Promise<IndexResult>; chunk(request: ChunkRequest, signal: AbortSignal, onEvent: (e: IndexerEvent) => Promise<void>): Promise<IndexResult> }`, where `IndexResult = { started: Started; pages: PageEvent[]; chunks: ChunkEvent[]; read: RangeRead | null; ocrPages: number }`. `Started`, `PageEvent` and `ChunkEvent` are local aliases in `indexer.ts`, not exports of `@maester/contracts` (Task 2 names its event types only on the Pydantic side): `type Started = Extract<IndexerEvent, { type: "started" }>`, and the same with `"page"` and `"chunk"`.
-  - `HttpIndexerClient(baseUrl, secret, embeddingModel)` reads the NDJSON like `HttpExtractorClient.extract` (`apps/worker/src/extractor.ts`). It sends `x-indexer-secret` on every call, `x-embedding-model` from the constructor, and `x-section-path` as base64url JSON. `versions()` waits up to 30 s (`VERSIONS_TIMEOUT_MS`). Failures map to `JobFailure`s:
+  - `HttpIndexerClient(baseUrl, secret, embeddingModel)` reads the NDJSON like `HttpExtractorClient.extract` (`apps/worker/src/extractor.ts`). It sends `x-indexer-secret` on every call. Only `/v1/index` carries the other headers: `x-document-id`, `x-page-range`, `x-section-path` (base64url JSON), `x-ocr-pages-left` and `x-embedding-model` (from the constructor). `/v1/chunk` sends `content-type: application/json` and the secret only, with the model as the body's `embeddingModel` and no `x-document-id`, so the indexer logs each cached-range chunk call as `document=-`. `versions()` waits up to 30 s (`VERSIONS_TIMEOUT_MS`). Failures map to `JobFailure`s:
 
     | Failure | Code | Retried |
     | --- | --- | --- |
@@ -816,7 +816,8 @@ it("past OCR_PAGE_BUDGET the indexer is told no budget is left, and the revision
 });
 it("a range read with OCR off for the budget is not cached, so a rebuild reads it again with OCR", async () => {});
 it("while a rebuild builds, the older complete revision is still the current one", async () => {
-  // complete R1; start a second job that stops after one range; documentIndexCurrent → R1; finish it → R2 only
+  // complete R1; start a second job that stops after one range; the test's currentOf(documentId) (revisions in
+  // complete or partial) → [R1]; finish it → R2 only
 });
 it("with no indexer configured the job fails INDEXER_NOT_CONFIGURED at once and is not retried", async () => {});
 it("a duplicate document is refused", async () => {});
@@ -858,7 +859,7 @@ git commit -m "feat(worker): document.index reads by page range, writes as it go
     - `SearchResults { items: SearchHit[] }`.
   - Exported from `@maester/document-index`: `fuse`, `searchChunks`, `vectorBranchSql`, `keywordBranchSql` and the types `SearchInput`, `BranchInput` and `Fused`.
   - Constants: `BRANCH_LIMIT = 50`, `DEFAULT_LIMIT = 10`, `MAX_LIMIT = 50`, `RRF_K = 60`.
-  - `fuse(vector: string[], keyword: string[], k = RRF_K): Fused[]`, where `Fused = { id; score; vectorRank: number | null; keywordRank: number | null }`. The first place of an id repeated in one ranking counts.: reciprocal rank fusion, score `Σ 1/(k + rank)` with ranks from 1, ties broken by the better vector rank, then the better keyword rank, then id.
+  - `fuse(vector: string[], keyword: string[], k = RRF_K): Fused[]`, where `Fused = { id; score; vectorRank: number | null; keywordRank: number | null }`: reciprocal rank fusion, score `Σ 1/(k + rank)` with ranks from 1; an id repeated in one ranking counts at its first place; ties broken by the better vector rank, then the better keyword rank, then id.
   - `searchChunks(db: Db, embedder: Embedder, input: SearchInput): Promise<SearchHit[]>`, where `SearchInput = { workspaceId: string; query: string; limit?: number; companyId?: string; documentIds?: string[] }`:
     1. **Embed the query:** `embedder.embed([query], "query")`. No vector back is `EMBEDDING_FAILED`.
     2. **Vector branch, top 50.** The SQL comes from `vectorBranchSql(input: BranchInput, exact = false)`, with `BranchInput = { workspaceId; model; vector; companyId?; documentIds? }`, so the test can `explain` the same statement. It searches the workspace's chunks whose revision is complete or partial for `embedder.model` and whose embedding is for that model.
@@ -866,8 +867,11 @@ git commit -m "feat(worker): document.index reads by page range, writes as it go
        - **Filtered** by company or documents, and the exact statement: a join with `order by e.embedding <=> $q::vector, c.id`. The HNSW expression index does not serve it, so the filters apply first.
     3. **Keyword branch, top 50:** `keywordBranchSql(…)` computes `websearch_to_tsquery('simple', $query)` once in a cross join, keeps `c.tsv @@ q.tsq` with the same scope, and orders by `ts_rank(c.tsv, q.tsq) desc, c.id`. An empty tsquery gives no rows.
     4. **Hits:** `fuse`, then up to `limit` hits (`trunc`, clamped to 1–50; default 10), loaded with `document.original_name` and `company.display_name`, in fused order.
+
+    As built, steps 2, 3 and 4 are separate statements under read committed (only the vector branch has a transaction, for its `set local` lines). Step 6 (open) puts them in one read-only repeatable-read transaction.
   - `GET /v1/workspaces/:ws/search?q=&limit=&company=` goes through the existing `requireWorkspace` for session and membership.
-    - `q` must be 1–500 characters after trimming, `limit` 1–50 (default 10), and `company` a uuid; otherwise 400 `VALIDATION_FAILED`.     - No embedder, or an `EmbedderError`, is 503 `SEARCH_UNAVAILABLE` ("Search is not available right now."), logged with the trace id and the error code only.
+    - `q` must be 1–500 characters after trimming, `limit` 1–50 (default 10), and `company` a uuid; otherwise 400 `VALIDATION_FAILED`.
+    - No embedder, or an `EmbedderError`, is 503 `SEARCH_UNAVAILABLE` ("Search is not available right now."), logged with the trace id and the error code only.
     - A failed statement (`DrizzleQueryError`) is 500 `INTERNAL`, logged by name and SQLSTATE, never by its message, which holds the bound parameters.
     - The query is never logged.
 
@@ -881,6 +885,63 @@ git commit -m "feat(worker): document.index reads by page range, writes as it go
 git add packages/document-index packages/contracts apps/api apps/web/nginx.conf.template
 git commit -m "feat(search): hybrid searchChunks (HNSW halfvec and simple full-text, RRF k=60) and GET /v1/workspaces/:ws/search"
 ```
+
+- [ ] **Step 6 (open): Search reads one snapshot, and a partial revision is searched.** Found by the review of 20 Oct 2026 (Review Focus 2 and 5). As built, a rebuild's `completeRevision` that commits after the branches and before the hit load deletes the ids the branches found, and the answer comes back short or empty.
+
+  **Files:** Modify `packages/document-index/src/search.ts` (`searchChunks` only). Test: `packages/document-index/test/search.test.ts`.
+
+  **Interfaces:**
+  - `searchChunks(db, embedder, input)` keeps its signature and its answer.
+  - The query is embedded first, outside any transaction, so no snapshot is held while the embedder works.
+  - Then one `db.transaction(async (tx) => …, { isolationLevel: "repeatable read", accessMode: "read only" })` runs, in order:
+    1. the two `set local hnsw.*` lines (unfiltered only);
+    2. the vector branch, and its exact statement when the answer is short;
+    3. the keyword branch;
+    4. the hit load.
+  - Postgres takes a repeatable-read snapshot at the first statement that reads (a `set` takes none), so the three reads see one snapshot. A read-only transaction under repeatable read never fails with a serialization error, so nothing is retried.
+  - The HNSW statement stays the third statement of the transaction, so the existing short-HNSW proxy still cuts the right answer. That proxy's `transaction` passes the config on: `(fn, config) => target.transaction((tx) => …, config)`.
+  - Test helpers in `search.test.ts`:
+    - `seedDocument` gains `warnings?: string[]` (passed to `writeRange`'s counts; default `[]`) and also returns `revisionId`.
+    - `seedRebuild(ws: string, documentId: string, chunks: { text: string }[]): Promise<{ revisionId: string }>`: a second `document.index` job (idempotency key `document.index:${documentId}:2:${MODEL}`), then `startOrResumeRevision`, `writeRange`, `chunksWithoutEmbedding` and `insertEmbeddings` as `seedDocument` does. The revision is left `building`.
+    - `swapBeforeHitLoad(db: Db, swap: () => Promise<unknown>): Db`: a `Proxy` over `db` that wraps `db.execute`, `db.transaction` (passing its config on) and the transaction's `execute`. Before the first statement whose text contains `original_name`, it awaits `swap()` once. The text comes from `new PgDialect().sqlToQuery(q).sql` (`PgDialect` from `drizzle-orm/pg-core`), and the hit load is the only statement of `searchChunks` that reads `original_name`. `swap` runs on `db` itself, another connection of the pool (`max: 10`). Both `db.execute` and the transaction's `execute` are wrapped because, as built, the hit load goes through `db` and, after this step, through `tx`.
+
+  ```ts
+  describe("one snapshot", () => {
+    it("a rebuild that completes between the branches and the hit load does not empty the answer", async () => {
+      const { ws, userId } = await seedWorkspace("a");
+      const r1 = await seedDocument(ws, userId, { chunks: [{ text: "dividend policy" }, { text: "borrowings note" }] });
+      const r2 = await seedRebuild(ws, r1.documentId, [{ text: "dividend policy restated" }]);
+      let swapped = false;
+      const racing = swapBeforeHitLoad(db, async () => { await completeRevision(db, ws, r2.revisionId); swapped = true; });
+      const hits = await searchChunks(racing, embedder, { workspaceId: ws, query: "dividend policy" });
+      expect(swapped).toBe(true);
+      expect(hits.map((h) => h.text).sort()).toEqual(["borrowings note", "dividend policy"]); // R1, as the snapshot saw it
+      const after = await searchChunks(db, embedder, { workspaceId: ws, query: "dividend policy" });
+      expect(after.map((h) => h.text)).toEqual(["dividend policy restated"]); // R2 only, once the swap is seen
+    });
+  });
+
+  describe("a partial revision", () => {
+    it("is searched: a scanned filing's text-layer pages are found", async () => {
+      const { ws, userId } = await seedWorkspace("a");
+      const text = "text layer page of a scanned filing";
+      const d = await seedDocument(ws, userId, { chunks: [{ text }], warnings: ["OCR_BUDGET"] });
+      expect((await db.execute(sql`select state from document_index_revision where id = ${d.revisionId}`)).rows).toEqual([{ state: "partial" }]);
+      const hits = await searchChunks(db, embedder, { workspaceId: ws, query: text });
+      expect(hits).toHaveLength(1);
+      expect(hits[0]).toMatchObject({ documentId: d.documentId, text, vectorRank: 1, keywordRank: 1 });
+    });
+  });
+  ```
+
+  Run `pnpm --filter @maester/document-index exec vitest run test/search.test.ts`. Expected: the "one snapshot" test FAILS with `expected [] to deeply equal [ 'borrowings note', 'dividend policy' ]`: as built, the branches read R1 and the hit load, a new statement under read committed, finds R1 gone. "a partial revision" PASSES already: `scope()` takes `'partial'`, and the test pins it.
+
+  Make the change in `searchChunks`, then run the same command. Expected: PASS, the short-HNSW and the plan tests included. Then run `pnpm --filter @maester/api exec vitest run test/search.test.ts`. Expected: PASS.
+
+  ```bash
+  git add packages/document-index
+  git commit -m "fix(search): one read-only repeatable-read snapshot per search, so a rebuild completing mid-search cannot empty the answer; a partial revision is searched"
+  ```
 
 ---
 
@@ -903,7 +964,15 @@ git commit -m "feat(search): hybrid searchChunks (HNSW halfvec and simple full-t
     - **`dryRun`:** counts without writing.
   - `runIndexBackfillOnce(argv, source = process.env, out = console, make = …) -> Promise<number>` is the CLI behind `pnpm --filter @maester/worker index:backfill [--workspace <id>] [--document <id>]… [--dry-run]`.
     - It runs on the host through `tsx --env-file=../../.env src/index-backfill-cli.ts`; the worker image bundles only `server.ts`.
-    - It loads `WorkerEnv`, so the root `.env` needs `DATABASE_URL` (`localhost:5433`) and must not set `INDEXER_URL` without `INDEXER_SECRET`. It uses `EMBEDDING_MODEL` and dispatches with the worker's `createDispatcher`, which under `DISPATCH_MODE=queue` is a `QueueNotifier` (`NOTIFY job_ready`).
+    - It loads the whole `WorkerEnv` (`loadWorkerEnv` in `apps/worker/src/env.ts`), so the root `.env` must pass every check the worker makes at start, not only the ones the backfill uses:
+      - `DATABASE_URL` (`postgres://maester:maester@localhost:5433/maester`);
+      - `WORKER_URL`, a URL with no default (`.env.example` sets `http://localhost:8788`; the backfill never calls it);
+      - `STORAGE_DRIVER=disk`, because the default `gcs` then needs `GCS_BUCKET`, and `disk` is refused under `NODE_ENV=production`;
+      - `EXTRACTOR_SECRET` whenever `EXTRACTOR_URL` is set (with the default `EXTRACTOR_AUTH=secret`);
+      - `INDEXER_SECRET` whenever `INDEXER_URL` is set;
+      - `EMBEDDING_MODEL` unset or a key of `EMBEDDING_MODELS`, and `CONNECTIONS_KEY` empty or 32 bytes of base64.
+
+      A `.env` that fails one of them exits 1 with `invalid environment: <key>: …` or the rule's own line. Task 13 Step 1 checks this without the database. The CLI uses `EMBEDDING_MODEL` and dispatches with the worker's `createDispatcher`, which under `DISPATCH_MODE=queue` is a `QueueNotifier` (`NOTIFY job_ready`).
     - It prints one line, `[dry run: ]created N, requeued N, waiting N, current N`, and exits 0.
     - An unknown flag, a bad env, or a database failure exits 1 with one line. The database line is `index backfill failed: the database could not be read or written`, with no query text.
     - It enqueues and never runs the work itself; the worker's queue loop does, one job at a time.
@@ -935,24 +1004,24 @@ git commit -m "feat(worker): index backfill enqueues or requeues document.index 
   - `embedder`: image `ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9`, `command: ["--model-id", "/models/embed/Snowflake/snowflake-arctic-embed-l-v2.0", "--max-client-batch-size", "32", "--port", "80"]`, `HF_HUB_OFFLINE: 1`, `models:/models:ro`, port `8792:80`, `mem_limit: 2560m`, `cpus: 8`, `restart: unless-stopped`. The healthcheck is `["CMD", "curl", "-fsS", "http://127.0.0.1:80/health"]` with the same timings; Task 13 checks that the image has `curl`.
   - `x-api-env` (shared by `migrate`, `api` and `worker`): `EMBEDDER_URL: http://embedder`, `EMBEDDING_MODEL: ${EMBEDDING_MODEL:-Snowflake/snowflake-arctic-embed-l-v2.0}`. The `worker` adds `INDEXER_URL: http://indexer:8791` and `INDEXER_SECRET: local-indexer-secret`. Neither the API nor the worker `depends_on` the indexer or the embedder: until they answer, index jobs back off and search answers 503.
   - Postgres `command: ["postgres", "-c", "shared_buffers=256MB", "-c", "maintenance_work_mem=512MB"]` (`shm_size` stays 1 GB, at least `maintenance_work_mem`).
-  - Memory and CPU limits (`mem_limit`, `cpus`) within the 7.75 GiB VM. Four services are capped (postgres, embedder, indexer, web); the worker, the extractor and the API get `cpus: 2` and no `mem_limit` until Task 13 measures them:
+  - Memory and CPU limits (`mem_limit`, `cpus`) within the 7.75 GiB VM. Four services are capped (postgres, embedder, indexer, web); the worker, the extractor and the API get `cpus: 2` and no `mem_limit`. Task 13 Step 11 caps the API from its index run; the worker and the extractor stay uncapped until one extraction is measured (As built 27):
 
 | Service | `mem_limit` | `cpus` | Why |
 | --- | --- | --- | --- |
 | postgres | 1g | 2 | Records, queue, vectors; an HNSW build needs `maintenance_work_mem` (rebuilds want 1–2 GB: raise Docker's limit first) |
 | embedder | 2560m | 8 | arctic in fp32 is about 2.3 GB |
 | indexer | 2304m | 8 | Docling's peak is unpublished; one job at a time, 20-page ranges, page batch 4 |
-| extractor | no limit until measured | 2 | Gemini calls; holds whole PDFs |
-| api | no limit until measured | 2 | |
-| worker | no limit until measured | 2 | Holds a whole PDF per running job: up to 2 extract, 2 classify and 1 index at 50 MB each, briefly doubled while the buffer is built |
+| extractor | no limit until an extraction is measured | 2 | Gemini calls; holds whole PDFs |
+| api | no limit until Task 13 measures it | 2 | |
+| worker | no limit until an extraction is measured | 2 | Holds a whole PDF per running job: up to 2 extract, 2 classify and 1 index at 50 MB each, briefly doubled while the buffer is built |
 | web | 96m | 1 | nginx |
 | capped total | 5.9 GiB | | Leaves about 1.8 GiB for the three uncapped services and the VM; Docker Desktop's limit can be raised to 12 GB (§19) before a backfill |
 
-  - `.github/workflows/indexer.yml`: on changes under `apps/indexer/**` or `packages/contracts/fixtures/index/**`; uv 0.11.17, Python 3.12, `uv sync --locked` in `apps/indexer`, `actions/cache` on `~/.cache/maester/docling` keyed by `hashFiles('apps/indexer/uv.lock', 'apps/indexer/models.lock.json')` (`83a81e6`), `uv run maester-indexer-fetch-models --out ~/.cache/maester --docling-only` when the cache missed, then `MAESTER_DOCLING_MODELS="$HOME/.cache/maester/docling" uv run python -m unittest discover -s tests -v`. It also runs on changes to `.github/workflows/indexer.yml`, with actions pinned by commit. Free downloads only; no secret is used.
+  - `.github/workflows/indexer.yml`: on changes under `apps/indexer/**` or `packages/contracts/fixtures/index/**`; uv 0.11.17, Python 3.12, `uv sync --locked` in `apps/indexer`, `actions/cache` on `~/.cache/maester/docling` keyed by `hashFiles('apps/indexer/uv.lock', 'apps/indexer/models.lock.json')` (`83a81e6`), `uv run maester-indexer-fetch-models --out ~/.cache/maester --docling-only` when the cache missed, then `MAESTER_DOCLING_MODELS="$HOME/.cache/maester/docling" uv run python -m unittest discover -s tests -v`. It also runs on changes to `.github/workflows/indexer.yml`. `checkout` and `setup-uv` are pinned by commit; `actions/cache` by its `v4` tag until Step 6 pins it by commit. Free downloads only; no secret is used.
 
 - [x] **Step 1: Write the compose and CI changes.**
 - [x] **Step 2: Check them without starting anything** — `docker compose config --quiet && docker compose --profile setup config --services | grep -x models` — exit 0; `docker compose config | grep -c mem_limit` gives 4.
-- [x] **Step 3: Write the documentation** in STE: `docs/systems/indexer.md` (what the service does, its two routes and events, the settings table, the pinned versions and where they are recorded, how weights are fetched, what is logged); `worker.md` (`document.index`: ranges, the cache, resume, the OCR budget, the backfill command, the errors of §15 it raises); `api.md` (the search route, 503); `maester.md` and `ARCHITECTURE.md` (five services); `DEVELOPMENT.md` (first setup: `docker compose build indexer`, `docker compose --profile setup run --rm models`, then `up`; recreating Postgres on the pgvector image with `docker compose up -d --force-recreate postgres`; the memory table; raising Docker Desktop's limit to 12 GB; running the indexer's tests with and without models); `packages.md` (`@maester/document-index`); the indexer's error codes in `indexer.md`, including that picture-only pages read `OCR_FAILED` or `OCR_BUDGET` (`a51766c`, `eb4ce6a`).
+- [x] **Step 3: Write the documentation** in STE: `docs/systems/indexer.md` (what the service does, its two routes and events, the settings table, the pinned versions and where they are recorded, how weights are fetched, what is logged); `worker.md` (`document.index`: ranges, the cache, resume, the OCR budget, the backfill command, the errors of §15 it raises); `api.md` (the search route, 503); `maester.md` and `ARCHITECTURE.md` (five services); `DEVELOPMENT.md` (first setup: `docker compose build indexer`, `docker compose --profile setup run --rm models`, then `up`; recreating Postgres on the pgvector image with `docker compose up -d --force-recreate postgres` (as built it says the volume stays valid because the major version is the same; Task 13 Step 2 corrects that to the C library check); the memory table; raising Docker Desktop's limit to 12 GB; running the indexer's tests with and without models); `packages.md` (`@maester/document-index`); the indexer's error codes in `indexer.md`, including that picture-only pages read `OCR_FAILED` or `OCR_BUDGET` (`a51766c`, `eb4ce6a`).
 - [x] **Step 4: Check links and the workspace** — `uv run --locked python scripts/check_workspace.py` — `Workspace OK`; and `pnpm -r --filter "./apps/*" --filter "./packages/*" exec vitest run` — PASS.
 - [x] **Step 5: Commit**
 
@@ -960,6 +1029,21 @@ git commit -m "feat(worker): index backfill enqueues or requeues document.index 
 git add docker-compose.yml .env.example .github/workflows/indexer.yml docs apps/indexer/README.md
 git commit -m "feat(compose): indexer, embedder and model setup services with a memory budget; indexer CI; docs"
 ```
+
+- [ ] **Step 6 (open): Pin `actions/cache` by commit**, as `checkout` and `setup-uv` are. In `.github/workflows/indexer.yml`, `uses: actions/cache@v4` becomes `uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0`. On 20 Oct 2026, `git ls-remote https://github.com/actions/cache refs/tags/v4 refs/tags/v4.3.0` names that commit for both tags. If `v4` names another commit when this step runs, pin the commit it names, with its `v4.x.y` tag in the comment. Never write a commit that `ls-remote` did not print.
+
+  ```bash
+  git ls-remote https://github.com/actions/cache refs/tags/v4 refs/tags/v4.3.0
+  grep -cE 'uses: [^ ]+@[0-9a-f]{40} # v[0-9]' .github/workflows/indexer.yml
+  grep -c 'actions/cache@v4' .github/workflows/indexer.yml
+  ```
+
+  Expected: two lines, both `0057852bfaa89a56745cba8c7296529d2fc39830`; then `3`; then `0`. Then, in this plan, As built 28 says all three actions are pinned by commit, and Step 6 is ticked.
+
+  ```bash
+  git add .github/workflows/indexer.yml docs/superpowers/plans/2026-10-20-ingestion-phase-2-index.md
+  git commit -m "ci(indexer): pin actions/cache by commit, as the other two actions are"
+  ```
 
 ---
 
@@ -977,8 +1061,9 @@ Three rules hold for the whole run:
 - Upload nothing while it runs.
 - Keep notes and measurements in `~/maester-index-run`.
 
-**Files** (changed only in Step 11, on a branch):
-- Modify: `docker-compose.yml` (seven `mem_limit`s and the header comment), `docs/DEVELOPMENT.md` (the memory budget, measured), `apps/indexer/README.md` (the indexer's limit), `docs/systems/indexer.md` (the CAUTION line, in STE), `.env.example` (`INDEX_TIMEOUT_SECONDS` is the whole job, not one request).
+**Files** (changed only in Steps 2 and 11, and in Step 6's fallbacks, on the branch `chore/index-memory-limits` that Step 2 creates):
+- Step 2: `docker-compose.yml` (the `postgres` image), `docs/DEVELOPMENT.md` (the Postgres image and the recreate, section 3 and "Upgrading an older `.env`"), `docs/systems/maester.md` (the services table). ADR 0007, the ingestion spec and the phase 1 plan name `pgvector/pgvector:pg16` as the decision they recorded, and stay as written.
+- Step 11: `docker-compose.yml` (five `mem_limit`s: postgres, embedder, indexer, api and web; `restart: unless-stopped` on the api; the header comment), `docs/DEVELOPMENT.md` (the memory budget, measured), `apps/indexer/README.md` (the indexer's limit), `docs/systems/indexer.md` (the CAUTION line, in STE), `.env.example` (`INDEX_TIMEOUT_SECONDS` is the whole job, not one request).
 - Only if Step 6's fallbacks apply: `apps/indexer/src/maester_indexer/fetch_models.py`, `apps/indexer/tests/test_fetch_models.py`, the embedder's healthcheck in `docker-compose.yml`.
 
 **Interfaces:**
@@ -989,7 +1074,8 @@ Three rules hold for the whole run:
   - `GET /v1/workspaces/:ws/search`;
   - `EMBED_BATCH` 16 and `EMBED_TIMEOUT_SECONDS` 300.
 - Produces:
-  - measured `mem_limit`s for all seven services;
+  - `maester-postgres-1` on `pgvector/pgvector:0.8.1-pg16-trixie`, with the same C library and collation versions as before;
+  - measured `mem_limit`s for postgres, the embedder, the indexer and the API (web stays `96m`), and the worker's and the extractor's idle peaks, recorded, with no cap;
   - a measured memory table in `docs/DEVELOPMENT.md`;
   - an index for every stored, non-duplicate document in the investor's workspace.
 
@@ -999,6 +1085,13 @@ Shell helpers, set in every terminal used below:
 cd /Users/himanshu/Personal/maester-chatbot
 pg() { docker compose exec -T postgres psql -U maester -d maester -v ON_ERROR_STOP=1 "$@"; }
 WS=<the investor's workspace id>     # from Step 3
+# Every container of the project, stopped ones included, then the kernel's OOM kills per running service
+# (a killed child process, or one Postgres backend, leaves the container running with OOMKilled false).
+oom_check() {
+  for c in $(docker compose ps -aq); do docker inspect "$c" --format '{{.Name}} {{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} restarts={{.RestartCount}}'; done
+  for s in postgres embedder indexer worker extractor api web; do printf '%s ' "$s"; docker compose exec -T "$s" cat /sys/fs/cgroup/memory.events 2>/dev/null | grep '^oom_kill ' || echo "not running, or no memory.events"; done
+  printf 'postgres backends killed: '; docker compose logs postgres | grep -c 'terminated by signal 9'
+}
 ```
 
 - [ ] **Step 1: Prepare the checkout and Docker.**
@@ -1010,52 +1103,136 @@ git switch staging && git pull --ff-only
 git log --oneline -3                # the merge of PR #13 is there
 pnpm install                        # the host-side backfill needs @maester/document-index
 mkdir -p ~/maester-index-run
-grep -E '^(DATABASE_URL|DISPATCH_MODE|INDEXER_URL|INDEXER_SECRET|EMBEDDING_MODEL|GOOGLE_CLOUD_PROJECT)=' .env
+grep -E '^(NODE_ENV|DATABASE_URL|WORKER_URL|STORAGE_DRIVER|GCS_BUCKET|DISPATCH_MODE|EXTRACTOR_URL|INDEXER_URL|EMBEDDING_MODEL|GOOGLE_CLOUD_PROJECT)=' .env
+grep -oE '^(EXTRACTOR_SECRET|INDEXER_SECRET)=.' .env | cut -d= -f1      # names only: these keys have a value
+(cd apps/worker && ./node_modules/.bin/tsx --env-file=../../.env -e 'import("./src/env.ts").then((m) => { m.loadWorkerEnv(); console.log("worker env ok"); }).catch((e) => { console.error(e.message); process.exit(1); })')
 docker info --format '{{.MemTotal}}'
+docker ps --format '{{.Names}} {{.Ports}}'
+lsof -nP -iTCP -sTCP:LISTEN | grep -E ':(5173|5433|8787|8788|8790|8791|8792) '
 ```
 
 Expected:
 - **`.env`:** `DATABASE_URL=postgres://maester:maester@localhost:5433/maester` and `DISPATCH_MODE=queue` (`local` reads as `queue`).
+  - `WORKER_URL` is a URL (`.env.example` has `http://localhost:8788`); the backfill loads the whole worker environment and refuses to start without it (Task 11).
+  - `STORAGE_DRIVER=disk`. Unset means `gcs`, which then needs `GCS_BUCKET`. `NODE_ENV` is unset or `development`, because `production` refuses `disk`.
+  - `EXTRACTOR_URL`, when set, comes with `EXTRACTOR_SECRET` in the names-only line; `INDEXER_URL` is unset, or set with `INDEXER_SECRET` in that line.
   - `EMBEDDING_MODEL` is unset or `Snowflake/snowflake-arctic-embed-l-v2.0`; any other value gives the backfill a different pipeline version from the worker.
-  - `INDEXER_URL` is unset, or set together with `INDEXER_SECRET`; otherwise the backfill CLI refuses to start.
   - Note whether `GOOGLE_CLOUD_PROJECT` is set: it decides whether Step 3's guard matters.
+- **Worker environment:** `worker env ok`. This loads the `.env` exactly as the backfill CLI does, without the database, so it also checks the rules a grep cannot see (`EXTRACTOR_AUTH`, the `CONNECTIONS_KEY` format). Anything else prints `invalid environment: <key>: …` or the broken rule, and Step 7's backfill would exit 1 the same way: fix the `.env` before going on. It prints no value from the file.
 - **Docker:** raise Docker Desktop's memory to 12 GB (Settings, Resources) and restart Docker before going on. `MemTotal` then reads about 12 GB (12884901888 bytes or a little less). Record it in `~/maester-index-run/notes.md`.
+- **Other projects:** `docker ps` lists no running container (Maester's own are all stopped on 20 Oct 2026), and `lsof` prints nothing. `lsof` names Docker's own process, not a container, so `docker ps` says whose a port is. On 20 Oct 2026 another project's `insider-web-1` held `127.0.0.1:5173`: Maester's web publishes `5173:8080`, so Step 5 could fail to bind, or Step 10's `http://localhost:5173` could reach the other app. Before Step 2, stop another project's stack, with the investor's say-so, from its own folder (`docker compose stop`); do not go on while another project holds one of these ports. Any other container the investor keeps running takes memory from `MemTotal`: write its `docker stats --no-stream` figure in `notes.md`, for Step 11.
 
-- [ ] **Step 2: Recreate `maester-postgres-1` on `pgvector/pgvector:pg16`, keeping its volume.** On 20 Oct 2026 the container was `postgres:16`, stopped, with the volume `maester_pgdata`, and there was no `maester_models` volume yet.
+- [ ] **Step 2: Recreate `maester-postgres-1` on the pgvector build of its own C library, keeping its volume.** On 20 Oct 2026 the container was `postgres:16` (Debian 13, glibc 2.41), stopped, with the volume `maester_pgdata` (created 10 Sep 2026), and there was no `maester_models` volume yet. The text indexes in its databases are sorted by glibc's `en_US.utf8` collation, so the new image must have the same glibc (As built 28). The collation version each database was built under (`datcollversion`) decides the image, not the old container's own `ldd`: a cluster first made under an older image keeps that image's version.
+
+First, read the old container:
 
 ```bash
 docker start maester-postgres-1     # it was stopped (exited) on 20 Oct 2026
 until docker exec maester-postgres-1 pg_isready -U maester -q; do sleep 1; done
 docker inspect maester-postgres-1 --format '{{.Config.Image}}'
 docker inspect maester-postgres-1 --format '{{range .Mounts}}{{.Name}} -> {{.Destination}}{{println}}{{end}}'
-docker exec maester-postgres-1 pg_dump -U maester -d maester -Fc > ~/maester-index-run/before-pgvector.dump
-ls -lh ~/maester-index-run/before-pgvector.dump
-docker exec maester-postgres-1 psql -U maester -d maester -Atc "select count(*) from document" | tee ~/maester-index-run/documents-before.txt
+docker exec maester-postgres-1 sh -c 'ldd --version | head -1' | tee ~/maester-index-run/glibc-before.txt
+docker exec maester-postgres-1 psql -U maester -d maester -Atc "select datname, datcollate, datcollversion, pg_database_collation_actual_version(oid) from pg_database order by datname" | tee ~/maester-index-run/collations-before.txt
+docker logs maester-postgres-1 2>&1 | grep -c 'collation version mismatch'
 ```
 
 Expected:
-- **Image:** `postgres:16`. Stop if it is anything else (an `-alpine` tag, or another major version). A different C library or major version needs a dump and restore, not a recreate.
+- **Image:** `postgres:16`. Stop if it is anything else: an `-alpine` tag (musl, another C library) or another major version needs a dump and restore, not a recreate.
 - **Mount:** `maester_pgdata -> /var/lib/postgresql/data` (beside the `init.sql` bind mount).
-- **Dump:** not empty.
+- **C library:** `ldd (Debian GLIBC 2.41-…) 2.41`.
+- **Collations:** one row per database (`maester`, the `maester_test_*` databases, `postgres`, `template0`, `template1`, and any other a test suite made), each `en_US.utf8`, with the last two columns equal on every row: `2.41|2.41`.
+- **Log:** `0` (it was `0` on 20 Oct 2026).
+- **Stop** if any row's two versions differ, or the log count is above 0: the cluster was already out of step with its C library before this run. Show `collations-before.txt` to the investor; the way out is theirs (the note at the end of this step).
+
+Then take the safety dump, and check it:
+
+```bash
+docker exec maester-postgres-1 pg_dump -U maester -d maester -Fc > ~/maester-index-run/before-pgvector.dump && echo "dump ok"
+chmod 600 ~/maester-index-run/before-pgvector.dump
+docker exec -i maester-postgres-1 pg_restore -l < ~/maester-index-run/before-pgvector.dump | grep -c 'TABLE DATA'
+docker exec maester-postgres-1 psql -U maester -d maester -Atc "select count(*) from pg_tables where schemaname not in ('pg_catalog', 'information_schema')"
+docker exec maester-postgres-1 psql -U maester -d maester -Atc "select count(*) from document" | tee ~/maester-index-run/documents-before.txt
+```
+
+Expected: `dump ok` (pg_dump's exit status, which `docker exec` passes on), then two equal counts: the archive can be read, and it holds the data of every table. The dump holds sessions and the encrypted connection keys, so it stays mode 600; keep it until Step 12 is done.
+
+Then confirm the image and put it in compose, on the branch that carries this run's changes:
+
+```bash
+git switch -c chore/index-memory-limits staging
+docker pull pgvector/pgvector:0.8.1-pg16-trixie
+docker run --rm --entrypoint sh pgvector/pgvector:0.8.1-pg16-trixie -c 'ldd --version | head -1'
+```
+
+Expected: the version in `datcollversion` (`2.41`). `pgvector/pgvector:0.8.1-pg16-trixie` is pgvector 0.8.1 on PostgreSQL 16 and Debian 13; it was on Docker Hub on 20 Oct 2026 (`docker manifest inspect`). If its version is not `datcollversion`, stop: write no tag this check did not confirm.
+
+Edit, unless #13 already landed it:
+- **`docker-compose.yml`:** the `postgres` service's `image: pgvector/pgvector:0.8.1-pg16-trixie`, with the comment `# Debian 13 (glibc 2.41), the C library the pgdata volume's text indexes were built under; another Debian release sorts text differently.`
+- **`docs/DEVELOPMENT.md`, section 3:** name `pgvector/pgvector:0.8.1-pg16-trixie` in the services table and in the paragraph under it, and replace "The major version is the same, so the data volume stays valid:" with "The data volume stays valid only on an image with the same major version and the same C library. Both images are PostgreSQL 16 on Debian 13 (glibc 2.41). The untagged `pgvector/pgvector:pg16` is Debian 12 (glibc 2.36): on it, every index on a text column would be in an order the library no longer keeps. Before and after the recreate, `select datname, datcollversion, pg_database_collation_actual_version(oid) from pg_database` must show the same version in both columns (Task 13 Step 2 of the phase 2 plan):".
+- **`docs/DEVELOPMENT.md`, "Upgrading an older `.env`":** "Recreate the Postgres container once for the pgvector image, after the C library check in section 3 (`docker compose up -d --force-recreate postgres`)."
+- **`docs/systems/maester.md`:** the `postgres` row of the services table names `pgvector/pgvector:0.8.1-pg16-trixie`.
+
+```bash
+docker compose config --images | grep -x 'pgvector/pgvector:0.8.1-pg16-trixie'
+uv run --locked python scripts/check_workspace.py
+git add docker-compose.yml docs/DEVELOPMENT.md docs/systems/maester.md
+git commit -m "fix(compose): Postgres on the pgvector build of Debian 13, the C library the existing volume was built under"
+```
+
+Expected: the tag, then `Workspace OK`.
 
 Then recreate the container only:
 
 ```bash
-docker compose pull postgres
-docker compose up -d --force-recreate --no-deps postgres
+docker compose up -d --wait --force-recreate --no-deps postgres
 docker inspect maester-postgres-1 --format '{{.Config.Image}}'
 docker compose logs --tail 20 postgres
+docker exec maester-postgres-1 sh -c 'ldd --version | head -1'
+pg -Atc "select datname, datcollate, datcollversion, pg_database_collation_actual_version(oid) from pg_database order by datname" | tee ~/maester-index-run/collations-after.txt
+diff ~/maester-index-run/collations-before.txt ~/maester-index-run/collations-after.txt && echo "collations unchanged"
 pg -Atc "select default_version from pg_available_extensions where name = 'vector'"
 pg -Atc "select count(*) from document"
 pg -Atc "show shared_buffers" -c "show maintenance_work_mem"
 ```
 
 Expected:
-- **Image:** `pgvector/pgvector:pg16`.
+- **Image:** `pgvector/pgvector:0.8.1-pg16-trixie`. `--wait` returns once the healthcheck passes.
 - **Log:** ends with "database system is ready to accept connections".
-- **Checks:** one `vector` version, 0.8 or later; the same document count as `documents-before.txt`; `256MB` and `512MB`.
+- **C library:** the same line as `glibc-before.txt`.
+- **Collations:** `collations unchanged`, and no psql call printed `WARNING:  database "maester" has a collation version mismatch`.
+- **Checks:** `0.8.1`; the same document count as `documents-before.txt`; `256MB` and `512MB`.
 
 If the log says the data files are incompatible, stop. Leave the volume alone, and restore `before-pgvector.dump` with `pg_restore` into a fresh database only after the investor decides.
+
+**Stop rule (open for the investor).** If the versions differed before the recreate, `diff` shows a change, or psql prints the warning below, stop before Step 3. Nothing has written to the database yet; Step 5's `up -d` would start `migrate` and the worker on it. The warning reads:
+
+```text
+WARNING:  database "maester" has a collation version mismatch
+DETAIL:  The database was created using collation version 2.41, but the operating system provides version 2.36.
+HINT:  Rebuild all objects in this database that use the default collation and run ALTER DATABASE maester REFRESH COLLATION VERSION, or build PostgreSQL with the right library version.
+```
+
+The investor picks one of two ways out, and neither is taken without their word. When the mismatch was there before the recreate, recreate on the confirmed tag first: it keeps the old container's C library. Check each command's output.
+- **Rebuild in place.** In each database that takes connections, `REINDEX DATABASE` (it reindexes only the database it is connected to), then `REFRESH COLLATION VERSION`; then refresh `template0` from `maester`:
+
+  ```bash
+  for d in $(pg -At -c "select datname from pg_database where datallowconn order by 1"); do
+    docker compose exec -T postgres psql -U maester -d "$d" -v ON_ERROR_STOP=1 -c "reindex database \"$d\"" -c "alter database \"$d\" refresh collation version"
+  done
+  pg -c 'alter database template0 refresh collation version'
+  ```
+
+- **Dump and restore into a fresh volume.** Keep a copy of the old files, give compose an empty `pgdata`, and restore `before-pgvector.dump`, which builds every index under the new library. The test databases come back empty from `init.sql`; their suites fill them.
+
+  ```bash
+  docker compose rm -sf postgres
+  docker run --rm -v maester_pgdata:/from:ro -v maester_pgdata_before_pgvector:/to --entrypoint cp postgres:16 -a /from/. /to/
+  docker volume rm maester_pgdata
+  docker compose up -d --wait --no-deps postgres
+  docker exec -i maester-postgres-1 pg_restore -U maester -d maester --exit-on-error < ~/maester-index-run/before-pgvector.dump && echo "restore ok"
+  ```
+
+Either way, expected after: the collation query shows the same version in both columns on every row, psql prints no warning, and the document count equals `documents-before.txt`.
 
 - [ ] **Step 3: Guard against paid calls before the worker starts.** Starting the worker resumes every queued job, and the sweeper requeues any whose lease ran out.
 
@@ -1070,6 +1247,7 @@ Expected: no `document.verify`, `document.classify` or `document.extract` row, a
 
 ```bash
 docker compose build
+docker image ls maester/indexer:local
 docker compose pull embedder
 docker volume ls --format '{{.Name}}' | grep -x maester_models || echo "no models volume yet"
 docker compose --profile setup run --rm models
@@ -1077,7 +1255,7 @@ docker compose --profile setup run --rm models sh -c 'ls /models; ls /models/emb
 ```
 
 Expected:
-- **Build:** `maester/indexer:local` among the images, about 2.7 GB. Before the fetch, "no models volume yet".
+- **Build:** `docker image ls` shows one `maester/indexer:local` row, about 2.7 GB. Before the fetch, "no models volume yet".
   - The volume must first be mounted by `models`, whose image owns `/models` as `app`. If the volume already exists and the fetch fails with a permission error, another container created it as root. Run `docker volume rm maester_models`, which holds only downloadable weights, and fetch again.
 - **Fetch:** ends with `models are in /models`.
 - **`/models`:** holds `docling`, `embed` and `models.lock.json`.
@@ -1088,16 +1266,19 @@ Expected:
 
 ```bash
 docker compose up -d
-docker compose ps
+docker compose ps -a migrate
 docker compose logs migrate | tail -5
 pg -Atc "select extversion from pg_extension where extname = 'vector'"
 pg -Atc "select count(*) from pg_indexes where indexname in ('chunk_embedding_hnsw', 'document_chunk_tsv', 'document_index_current')"
+for i in $(seq 36); do [ "$(docker inspect -f '{{.State.Health.Status}}' maester-indexer-1)" = healthy ] && [ "$(docker inspect -f '{{.State.Health.Status}}' maester-embedder-1)" = healthy ] && break; sleep 5; done
+docker compose ps
 curl -fsS http://localhost:8791/healthz
 ```
 
 Expected:
-- **Migration:** `migrate` exited 0, and its log shows no error. The checks print a `vector` version and `3`.
-- **Health:** within about two minutes (`start_period: 120s`), `docker compose ps` shows `indexer` and `embedder` healthy, with `api`, `worker`, `extractor` and `web` up. The indexer answers `{"status":"ok"}`.
+- **Start:** `up -d` returns once each service's start condition holds (postgres healthy, `migrate` finished, the extractor healthy, the API healthy), so it does not wait for the indexer or the embedder. A plain `docker compose ps` leaves out exited containers, so `migrate` is read with `ps -a`.
+- **Migration:** `docker compose ps -a migrate` shows `Exited (0)`, and its log shows no error. The checks print `0.8.1` and `3`.
+- **Health:** the loop ends within 3 minutes (36 checks 5 s apart; `start_period: 120s`). `docker compose ps` then shows `indexer` and `embedder` `(healthy)`, `api`, `worker` and `extractor` `(healthy)`, and `web` up. The indexer answers `{"status":"ok"}`. If the loop ran out first, read `docker compose logs --tail 40 indexer embedder` before going on.
 
 - [ ] **Step 6: Check that the embedder starts from safetensors and that its healthcheck tool exists.**
 
@@ -1115,7 +1296,7 @@ Expected:
 - **`/info`:** names the model folder, with `max_client_batch_size` 32 and `max_input_length` at least 512.
 - **Health:** `healthy restarts=0`.
 
-**Fallback A: TEI cannot start from safetensors.** The log names `onnx/model.onnx`, or the embedder keeps restarting. Fetch the fp32 ONNX files too, on the Step 11 branch (`git switch -c chore/index-memory-limits staging` now).
+**Fallback A: TEI cannot start from safetensors.** The log names `onnx/model.onnx`, or the embedder keeps restarting. Fetch the fp32 ONNX files too, on `chore/index-memory-limits`, the branch Step 2 created.
 1. In `fetch_models.py`, set the two pattern lists:
 
    ```python
@@ -1125,10 +1306,10 @@ Expected:
 
    An ignore pattern beats an allow pattern in `snapshot_download`, so `onnx/*` must go; the remaining patterns still leave out `model_O4`, `model_bnb4`, `model_fp16`, `model_int8`, `model_q4`, `model_q4f16`, `model_quantized` and `model_uint8`.
 2. In `test_fetch_models.py`, add `"onnx/model.onnx"` and `"onnx/model.onnx_data"` to the expected set, and rename the test `test_fetches_what_tei_and_the_tokenizer_load_and_only_the_fp32_onnx`.
-3. Run `cd apps/indexer && uv run python -m unittest tests.test_fetch_models -v` and expect PASS. Then `docker compose build indexer && docker compose --profile setup run --rm models && docker compose up -d --force-recreate embedder`, and repeat this step's checks. The models volume grows by the size of the two ONNX files.
+3. Run `(cd apps/indexer && uv run --locked python -m unittest tests.test_fetch_models -v)` and expect PASS. The subshell keeps the terminal at the checkout's root, where the later relative commands (`scripts/check_workspace.py`, `git add`) run. Then `docker compose build indexer && docker compose --profile setup run --rm models && docker compose up -d --force-recreate embedder`, and repeat this step's checks. The models volume grows by the size of the two ONNX files.
 4. Commit: `fix(indexer): the fetch takes the embedding model's fp32 ONNX files, which TEI starts from`.
 
-**Fallback B: no `curl` in the image** (the container reads `unhealthy` while `curl http://localhost:8792/health` from the host answers). Nothing `depends_on` the embedder's health, so this only changes what `docker compose ps` shows. On the Step 11 branch:
+**Fallback B: no `curl` in the image** (the container reads `unhealthy` while `curl http://localhost:8792/health` from the host answers). Nothing `depends_on` the embedder's health, so this only changes what `docker compose ps` shows. On `chore/index-memory-limits`:
 - If `docker compose exec embedder sh -c 'command -v bash head'` prints two paths, set the embedder's test to:
 
   ```yaml
@@ -1188,7 +1369,7 @@ Check the jobs:
 pg -c "select subject_id, state, attempt, last_error_code, progress, finished_at - started_at as took from job where type = 'document.index' order by created_at"
 ```
 
-Done when all three are `succeeded`. A `failed` job with `INDEXER_UNAVAILABLE`, `INDEX_STREAM_INTERRUPTED` or `EMBEDDING_FAILED` means a service went down: check Step 9's OOM line, then run the same `--document` command again, which requeues it.
+Done when all three are `succeeded`. A `failed` job with `INDEXER_UNAVAILABLE`, `INDEX_STREAM_INTERRUPTED` or `EMBEDDING_FAILED` means a service went down: run `oom_check` (Step 9 reads it), then run the same `--document` command again, which requeues it.
 
 - [ ] **Step 8: Measure embed seconds per batch against `EMBED_TIMEOUT_SECONDS` (300).** No log line gives one embed call's time (`index range stored` adds reading and embedding together), so time a worst-case batch directly. Once the annual report is indexed (its `document indexed` line is in `worker-index.log`) and while the scanned filing is being read (OCR is the heaviest CPU load), build a batch of `EMBED_BATCH` (16) of the longest stored chunks, embedded as the worker embeds them (`contextualize`: the path's entries, one per line, then the text). Check the batch is a real worst case before timing it:
 
@@ -1216,15 +1397,15 @@ from document_index_revision r order by r.created_at;
 SQL
 awk -F, '{split($3, u, " / "); v = u[1]; n = v + 0; if (v ~ /GiB/) n *= 1024; else if (v ~ /KiB/) n /= 1024; else if (v !~ /MiB/) n /= 1048576; if (n > max[$2]) max[$2] = n} END {for (s in max) printf "%-24s %6.0f MiB\n", s, max[s]}' ~/maester-index-run/stats.csv | sort
 for s in postgres embedder indexer worker extractor api; do v=$(docker compose exec -T "$s" cat /sys/fs/cgroup/memory.peak 2>/dev/null) && echo "$s $((v / 1048576)) MiB peak" || echo "$s no memory.peak"; done
-for c in $(docker compose ps -q); do docker inspect "$c" --format '{{.Name}} oom={{.State.OOMKilled}} restarts={{.RestartCount}}'; done
+oom_check
 ```
 
 Expected:
 - **Revisions:** three rows, `complete` or `partial`, with `chunks` equal to `embedded`.
 - **Peaks:** one peak per container from `stats.csv`. Where cgroup v2 exposes it, also the kernel's peak since the container started (`memory.peak`), which catches a spike between two samples.
-- **OOM:** `oom=false restarts=0` for every container.
+- **OOM:** every service `/maester-<service>-1 running exit=0 oom=false restarts=0`, and `/maester-migrate-1 exited exit=0 oom=false restarts=0`; `<service> oom_kill 0` for every service; `postgres backends killed: 0`. `docker compose ps -aq` lists stopped containers too, so a service that was killed and has no restart policy (postgres, the worker, the API, the extractor) shows as `exited` rather than dropping out of the list. `memory.events` counts every kill inside the container, a child process's included, and the Postgres log counts a backend the kernel killed while the postmaster kept running, which leaves `OOMKilled` false.
 - **Record:** write in `notes.md`, for each document, its pages, OCR pages, chunks, seconds, the per-range seconds from `worker-index.log` (reading and embedding that range together), and its state and warnings. Also write each service's peak, the larger of the two readings.
-- **If the indexer was OOM-killed** (`oom=true` or `restarts` over 0):
+- **If a service was stopped or killed** (`exited`, `oom=true`, `restarts` over 0, `oom_kill` over 0, or a Postgres backend killed): a service with no restart policy is started again with `docker compose up -d <service>`, and the jobs that failed meanwhile are requeued by id (Step 12). If it was the indexer:
   1. Set `INDEX_PAGE_BATCH: 2` in the indexer's environment.
   2. Run `docker compose up -d indexer`.
   3. Requeue that document with `--document`.
@@ -1246,21 +1427,24 @@ docker compose start embedder
 docker compose logs api web | grep -c borrowings      # 0: no query reaches a log line
 ```
 
-- [ ] **Step 11: Set the measured limits, on a branch.** Run `git switch -c chore/index-memory-limits staging`, or stay on it if Step 6 created it. In `docker-compose.yml`, set:
-- **`postgres`, `embedder` and `indexer`:** `mem_limit` = the measured peak × 1.2, rounded up to a multiple of 64 MiB, written in `m`.
-- **`worker`, `extractor` and `api`:** a new `mem_limit` = the measured peak × 1.2 + 400 MiB, rounded up the same way. This run started no extract or classify job and no upload, so their peaks are idle peaks (the API served only search). The 400 MiB covers what the code allows the worker and the extractor on top: up to 2 extract and 2 classify jobs, each holding a PDF of up to 50 MB (`EXTRACT_MAX_BYTES`), held twice while its buffer is built. The API gets the same headroom until an upload is measured.
+- [ ] **Step 11: Set the measured limits, on the branch.** Stay on `chore/index-memory-limits`, which Step 2 created. In `docker-compose.yml`, set:
+- **`postgres`:** `mem_limit` = the larger of the measured peak × 1.2 and `1g`, rounded up to a multiple of 64 MiB, written in `m`. The floor covers `shared_buffers` (256 MB), `maintenance_work_mem` (512 MB) and the connections, and it is the 1g that `docs/DEVELOPMENT.md` keeps for an HNSW build. A three-document sample builds no HNSW index, runs no `REINDEX` or long autovacuum, and fills `shared_buffers` only slowly over a backfill that takes days, so its peak never lowers the limit below `1g`.
+- **`embedder` and `indexer`:** `mem_limit` = the measured peak × 1.2, rounded up the same way.
+- **`api`:** a new `mem_limit` = the measured peak × 1.2 + 400 MiB, rounded up the same way, and `restart: unless-stopped`, for As built 26's reason: a limit not measured under the service's full load must not leave it down. The API served only search in this run; the 400 MiB stands in for uploads (up to 50 MB each) until one is measured.
+- **`worker` and `extractor`:** no `mem_limit` (As built 27). This run started no extract or classify job, so their peaks are idle peaks. Their peak under extraction was not measured: the worker can hold 2 extract and 2 classify PDFs of up to 50 MB (`EXTRACT_MAX_BYTES`), each twice while its buffer is built, and the extractor encodes a whole PDF for Gemini. A limit too low would kill a paid call mid-way, its retry would pay again (`MAX_ATTEMPTS_BY_TYPE` 2), and neither service has a restart policy. Record their idle peaks; they are capped once an extraction is measured ("After this plan").
 - **`web`:** stays at `96m`.
-- **The header comment:** update "the capped services … no cap until measured" to the seven measured limits.
-- **The total:** the seven limits together must stay at least 0.8 GiB under `MemTotal` from Step 1. If they do not, lower `INDEX_PAGE_BATCH` first and measure the indexer again.
+- **The header comment:** "Memory: the capped services (postgres, embedder, indexer, web) total about 5.9 GiB; the api, worker and extractor have no cap until measured." becomes "Memory: postgres, embedder, indexer, api and web are capped from the measured index run of <date>, <total> GiB in all; the worker and the extractor have no cap until an extraction is measured."
+- **The total:** the five limits, plus the worker's and the extractor's idle peaks, plus what other projects' containers use (Step 1's note), must stay at least 0.8 GiB under `MemTotal` from Step 1. If they do not, lower `INDEX_PAGE_BATCH` first and measure the indexer again.
 
 ```bash
 docker compose config --quiet && docker compose config | grep -c mem_limit
 docker compose up -d
+docker compose ps
 ```
 
-Expected: `7`, then the changed services recreated and healthy.
+Expected: `5`, then the changed services recreated and healthy.
 
-Write the measured table into `docs/DEVELOPMENT.md` under "Memory budget". For each service, give the measured peak, its `mem_limit`, `cpus` and how it was measured (sampled `docker stats` and `memory.peak`, the date, the three sample documents by kind, pages and OCR pages, and the slowest embed batch). Mark the worker, extractor and API rows "idle peak; not measured under extraction". Replace "These limits are a first budget; the measured run (Task 13 of the phase 2 plan) adjusts them." with a sentence giving the date of the measured run. Also:
+Write the measured table into `docs/DEVELOPMENT.md` under "Memory budget". For each service, give the measured peak, its `mem_limit`, `cpus` and how it was measured (sampled `docker stats` and `memory.peak`, the date, the three sample documents by kind, pages and OCR pages, and the slowest embed batch). Give the postgres row's reason as "`shared_buffers` 256 MB, `maintenance_work_mem` 512 MB and the connections; never below 1g, which an HNSW build needs". Mark the API row "measured under search only; 400 MiB more for uploads", and the worker and extractor rows "idle peak; no limit until an extraction is measured". Change "The compose file caps four services and leaves the other three uncapped until they are measured" to "The compose file caps five services and leaves the worker and the extractor uncapped until an extraction is measured". Replace "These limits are a first budget; the measured run (Task 13 of the phase 2 plan) adjusts them." with a sentence giving the date of the measured run, and add the API to the sentence on `restart: unless-stopped`. Also:
 - In `apps/indexer/README.md`, set "limit 2304 MiB" to the new limit.
 - In `docs/systems/indexer.md`, set the CAUTION line "The container limit is 2304 MiB." to the new limit, in STE.
 - In `.env.example`, change the `INDEX_TIMEOUT_SECONDS` comment from "seconds one request may take" to "seconds the whole index job may take".
@@ -1286,13 +1470,34 @@ pg -v ws="$WS" <<'SQL'
 select state, count(*) from job where type = 'document.index' and workspace_id = :'ws' group by 1 order by 1;
 select last_error_code, count(*) from job where type = 'document.index' and workspace_id = :'ws' and state = 'failed' group by 1 order by 2 desc;
 SQL
-for c in $(docker compose ps -q); do docker inspect "$c" --format '{{.Name}} oom={{.State.OOMKilled}} restarts={{.RestartCount}}'; done
+oom_check
 ```
 
-How to read a `failed` job:
-- **Retryable codes** (`INDEXER_UNAVAILABLE`, `INDEX_STREAM_INTERRUPTED`, `INDEX_TIMEOUT`, `EMBEDDING_FAILED`, `INDEXER_VERSIONS_CHANGED`) used up their attempts while a service was down. Run the backfill again; it requeues them.
-- **Codes that are not retried** (`UNREADABLE_PDF`, `INVALID_INDEXER_RESULT`, `INDEXER_MODEL_MISMATCH`, `OBJECT_MISSING`, `INVALID_STATE`, and `INDEX_FAILED` on a range past the end or a chunk over the budget) are a fact about that file or a bug. List them for the investor, and do not requeue them in a loop.
-- **A restart count** that grows on the indexer or the embedder means its limit is too low. Raise it on the branch, and go back to Step 9.
+Expected: the same `oom_check` reading as Step 9: every service `running`, `oom_kill 0`, `postgres backends killed: 0`.
+
+How to read a `failed` job. A plain `index:backfill --workspace "$WS"` requeues every failed job, whatever its `last_error_code`, so it is not the routine way to recover a few: each not-retried job then gets one more attempt and fails again. That costs no paid call, but an `INVALID_INDEXER_RESULT` job may read its ranges again first. Use the plain run only after a fix that should help them all; otherwise requeue by id.
+- **Retried codes that used up their attempts while a service was down:** `INDEXER_UNAVAILABLE`, `INDEX_STREAM_INTERRUPTED`, `INDEX_TIMEOUT`, `EMBEDDING_FAILED`, `INDEXER_VERSIONS_CHANGED`, `INDEXER_HTTP_5xx`, `HANDLER_ERROR`, and the index queries' `INDEX_REVISION_NOT_FOUND`, `REVISION_DOCUMENT_MISMATCH`, `REVISION_NOT_BUILDING` and `CHUNK_NOT_IN_WORKSPACE`. Requeue only these, by id, with the command after this list.
+- **`INDEX_FAILED`:** the job row cannot tell the retried kind (an unexpected error, or a Docling status that is neither success nor partial success) from the kind that is not retried (a range past the end, a chunk over the budget, an item lost by filtering). Requeue it once, by id, with `--document`. If it fails again on its first attempt, it is the kind that is not retried: list it for the investor.
+- **Configuration to fix, then requeue by id:** `INDEXER_NOT_CONFIGURED` (an indexer or embedder URL, the tokenizer path or `models.lock.json` missing), `INDEXER_UNAUTHORIZED` (the two `INDEXER_SECRET`s differ) and `INDEXER_MODEL_MISMATCH` (the worker's `EMBEDDING_MODEL` is not the indexer's). These say nothing about the file.
+- **Not retried, a fact about the file or a bug:** `UNREADABLE_PDF`, `INVALID_INDEXER_RESULT`, `OBJECT_MISSING`, `INVALID_STATE`, and the indexer's own refusals `INDEXER_HTTP_400` and `INDEXER_HTTP_413` (any other `INDEXER_HTTP_4xx` too). List them for the investor, and do not requeue them in a loop.
+- **A restart count** that grows on the indexer, the embedder or the API, or `oom_kill` above 0 anywhere, means that limit is too low. Raise it on the branch, and go back to Step 9. A service shown `exited` is started again with `docker compose up -d <service>`, then its failed jobs are requeued by id (below).
+
+The requeue by id. psql's `:'ws'` works in a heredoc but not in `-c`, and `xargs -n 1` gives each id its own `--document`, so an empty list starts no backfill (one with no `--document` would requeue every failed job):
+
+```bash
+pg -At -v ws="$WS" > ~/maester-index-run/requeue.txt <<'SQL'
+select subject_id from job
+where type = 'document.index' and workspace_id = :'ws' and state = 'failed'
+  and (last_error_code in ('INDEXER_UNAVAILABLE', 'INDEX_STREAM_INTERRUPTED', 'INDEX_TIMEOUT', 'EMBEDDING_FAILED',
+                           'INDEXER_VERSIONS_CHANGED', 'HANDLER_ERROR', 'INDEX_REVISION_NOT_FOUND',
+                           'REVISION_DOCUMENT_MISMATCH', 'REVISION_NOT_BUILDING', 'CHUNK_NOT_IN_WORKSPACE')
+       or last_error_code like 'INDEXER\_HTTP\_5%')
+order by subject_id;
+SQL
+if [ -s ~/maester-index-run/requeue.txt ]; then xargs -n 1 pnpm --filter @maester/worker index:backfill --workspace "$WS" --document < ~/maester-index-run/requeue.txt; else echo "nothing to requeue"; fi
+```
+
+Expected: one `created 0, requeued 1, waiting 0, current 0` line per id, or `nothing to requeue`. For one `INDEX_FAILED` job or a fixed configuration, write its `subject_id` to `requeue.txt` (or pass `--document <id>`) and run the same `xargs` line.
 
 Done when this query returns 0 for the investor's workspace, or every document it still counts has a `failed` job with a code that is not retried and that the investor has looked at:
 
@@ -1320,5 +1525,8 @@ Then stop the `docker stats` loop, and add the corpus totals (documents, pages, 
 ---
 
 ## After this plan
+
+- **Before phase 3 serves another model, check the embedder's model (As built 18).** The worker, at the start of each `document.index` job, and the API, at start and before a search's first embed, read TEI's `GET /info` and compare its `model_id` with `EMBEDDING_MODEL`. Compose passes `--model-id /models/embed/<id>`, so the check accepts the id itself or a path ending in `/<id>`. A difference fails the job `INDEXER_MODEL_MISMATCH` (not retried) and makes search answer 503 `SEARCH_UNAVAILABLE`. The test serves a fake `/info` that names another 1024-dimension model and expects both. Without it, a worker whose `EMBEDDING_MODEL` changes while TEI still serves the old model stores the old model's vectors under the new label, and the dimension check cannot tell.
+- **Cap the worker and the extractor once one extraction is measured** (As built 27, Task 13 Step 11), with `restart: unless-stopped` on both, and with their peaks under 2 extract and 2 classify jobs in the memory table.
 
 Phase 3 measures the index from these tables: the OCR spot check (RapidOCR against Tesseract 5 on ten scanned pages) and the retrieval set (recall at 5 and 10 and MRR by text source, for vectors, keywords and hybrid, per candidate model). A model or OCR change is a new `EMBEDDING_MODEL` or reader version, which the cache and `indexPipelineVersion` already key on. Phase 4 adds XBRL text blocks as chunks with `text_source = 'xbrl'` and an `element`, and the `pipeline.text` object reads `document_index_revision`.
