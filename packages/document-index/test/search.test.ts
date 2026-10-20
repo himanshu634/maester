@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   closeDb, createDb, ensurePersonalWorkspace, completeRevision, insertEmbeddings, chunksWithoutEmbedding,
@@ -43,12 +44,12 @@ async function seedCompany(ws: string, userId: string, displayName: string) {
   return id;
 }
 
-interface Seeded { documentId: string; chunkIds: string[] }
+interface Seeded { documentId: string; revisionId: string; chunkIds: string[] }
 
 /** One document with the given chunks, embedded with `model` (the text itself is embedded, so a query equal to a chunk's text finds it first). */
 async function seedDocument(
   ws: string, userId: string,
-  opts: { name?: string; companyId?: string; chunks: { text: string; sectionPath?: string[]; pageNumber?: number }[]; state?: "complete" | "building"; model?: string },
+  opts: { name?: string; companyId?: string; chunks: { text: string; sectionPath?: string[]; pageNumber?: number }[]; state?: "complete" | "building"; model?: string; warnings?: string[] },
 ): Promise<Seeded> {
   const model = opts.model ?? MODEL;
   const documentId = crypto.randomUUID();
@@ -70,13 +71,71 @@ async function seedDocument(
     pageNumber: c.pageNumber ?? 1, seq: i, sectionPath: c.sectionPath ?? [], kind: "prose", textSource: "text_layer", text: c.text, tokenCount: 4,
   }));
   await writeRange(db, ws, rev.id, documentId, [{ pageNumber: 1, text: "p", itemsTextLayer: 1, itemsOcr: 0, noneReason: null, sectionPathAfter: [] }], inputs, {
-    pageCount: 1, pagesRead: 1, pagesOcr: 0, warnings: [],
+    pageCount: 1, pagesRead: 1, pagesOcr: 0, warnings: opts.warnings ?? [],
   });
   const rows = await chunksWithoutEmbedding(db, ws, rev.id, model, inputs.length);
   const vectors = await embedder.embed(rows.map((r) => r.text), "document");
   await insertEmbeddings(db, ws, model, rows.map((r, i) => ({ chunkId: r.id, embedding: vectors[i]! })));
   if ((opts.state ?? "complete") === "complete") await completeRevision(db, ws, rev.id);
-  return { documentId, chunkIds: rows.map((r) => r.id) };
+  return { documentId, revisionId: rev.id, chunkIds: rows.map((r) => r.id) };
+}
+
+/** A second index of a seeded document, embedded and left building: completing it swaps it in for the first. */
+async function seedRebuild(ws: string, documentId: string, chunks: { text: string }[]): Promise<{ revisionId: string }> {
+  const jobId = crypto.randomUUID();
+  await db.insert(schema.job).values({
+    id: jobId, workspaceId: ws, type: "document.index", subjectType: "document_index", subjectId: documentId,
+    idempotencyKey: `document.index:${documentId}:2:${MODEL}`, state: "queued",
+  });
+  const rev = await startOrResumeRevision(db, ws, {
+    documentId, jobId,
+    versions: { doclingVersion: "2", ocrEngine: "rapidocr", readerOptions: "o", chunkerVersion: "c", tokenizer: MODEL, indexVersion: "1", embeddingModel: MODEL },
+  });
+  const inputs: ChunkInput[] = chunks.map((c, i) => ({
+    pageNumber: 1, seq: i, sectionPath: [], kind: "prose", textSource: "text_layer", text: c.text, tokenCount: 4,
+  }));
+  await writeRange(db, ws, rev.id, documentId, [{ pageNumber: 1, text: "p", itemsTextLayer: 1, itemsOcr: 0, noneReason: null, sectionPathAfter: [] }], inputs, {
+    pageCount: 1, pagesRead: 1, pagesOcr: 0, warnings: [],
+  });
+  const rows = await chunksWithoutEmbedding(db, ws, rev.id, MODEL, inputs.length);
+  const vectors = await embedder.embed(rows.map((r) => r.text), "document");
+  await insertEmbeddings(db, ws, MODEL, rows.map((r, i) => ({ chunkId: r.id, embedding: vectors[i]! })));
+  return { revisionId: rev.id };
+}
+
+/**
+ * `db`, but `swap` runs once, on another connection of the pool, just before the first statement that reads
+ * `original_name`: the hit load, the only such statement in `searchChunks`. It is caught through `db.execute` and
+ * through a transaction's `execute`, so it works wherever the hit load runs.
+ */
+function swapBeforeHitLoad(target: Db, swap: () => Promise<unknown>): Db {
+  const dialect = new PgDialect();
+  let done = false;
+  const wrapExecute = (exec: Db["execute"]) => async (q: Parameters<Db["execute"]>[0]) => {
+    const text = typeof q === "string" ? q : dialect.sqlToQuery(q.getSQL()).sql;
+    if (!done && text.includes("original_name")) {
+      done = true;
+      await swap();
+    }
+    return exec(q);
+  };
+  return new Proxy(target, {
+    get(t, prop, receiver) {
+      if (prop === "execute") return wrapExecute(t.execute.bind(t));
+      if (prop === "transaction") {
+        return (fn: (tx: Db) => Promise<unknown>, config?: Parameters<Db["transaction"]>[1]) =>
+          t.transaction((tx) => {
+            const wrapped = new Proxy(tx, {
+              get(x, p, r) {
+                return p === "execute" ? wrapExecute(x.execute.bind(x)) : Reflect.get(x, p, r);
+              },
+            });
+            return fn(wrapped as unknown as Db);
+          }, config);
+      }
+      return Reflect.get(t, prop, receiver);
+    },
+  }) as Db;
 }
 
 describe("fuse", () => {
@@ -214,7 +273,7 @@ describe("a short HNSW answer", () => {
     const shortHnsw = new Proxy(db, {
       get(target, prop, receiver) {
         if (prop !== "transaction") return Reflect.get(target, prop, receiver);
-        return (fn: (tx: Db) => Promise<unknown>) =>
+        return (fn: (tx: Db) => Promise<unknown>, config?: Parameters<Db["transaction"]>[1]) =>
           target.transaction((tx) => {
             let n = 0;
             const wrapped = new Proxy(tx, {
@@ -227,11 +286,38 @@ describe("a short HNSW answer", () => {
               },
             });
             return fn(wrapped as unknown as Db);
-          });
+          }, config);
       },
     }) as Db;
     const hits = await searchChunks(shortHnsw, embedder, { workspaceId: ws, query: "zzz unmatched", limit: 50 });
     expect(hits).toHaveLength(50);
+  });
+});
+
+describe("one snapshot", () => {
+  it("a rebuild that completes between the branches and the hit load does not empty the answer", async () => {
+    const { ws, userId } = await seedWorkspace("a");
+    const r1 = await seedDocument(ws, userId, { chunks: [{ text: "dividend policy" }, { text: "borrowings note" }] });
+    const r2 = await seedRebuild(ws, r1.documentId, [{ text: "dividend policy restated" }]);
+    let swapped = false;
+    const racing = swapBeforeHitLoad(db, async () => { await completeRevision(db, ws, r2.revisionId); swapped = true; });
+    const hits = await searchChunks(racing, embedder, { workspaceId: ws, query: "dividend policy" });
+    expect(swapped).toBe(true);
+    expect(hits.map((h) => h.text).sort()).toEqual(["borrowings note", "dividend policy"]); // R1, as the snapshot saw it
+    const after = await searchChunks(db, embedder, { workspaceId: ws, query: "dividend policy" });
+    expect(after.map((h) => h.text)).toEqual(["dividend policy restated"]); // R2 only, once the swap is seen
+  });
+});
+
+describe("a partial revision", () => {
+  it("is searched: a scanned filing's text-layer pages are found", async () => {
+    const { ws, userId } = await seedWorkspace("a");
+    const text = "text layer page of a scanned filing";
+    const d = await seedDocument(ws, userId, { chunks: [{ text }], warnings: ["OCR_BUDGET"] });
+    expect((await db.execute(sql`select state from document_index_revision where id = ${d.revisionId}`)).rows).toEqual([{ state: "partial" }]);
+    const hits = await searchChunks(db, embedder, { workspaceId: ws, query: text });
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({ documentId: d.documentId, text, vectorRank: 1, keywordRank: 1 });
   });
 });
 

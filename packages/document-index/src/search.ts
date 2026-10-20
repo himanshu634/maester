@@ -146,28 +146,40 @@ export async function searchChunks(db: Db, embedder: Embedder, input: SearchInpu
     ...(input.documentIds !== undefined ? { documentIds: input.documentIds } : {}),
   };
 
-  const vectorIds = await db.transaction(async (tx) => {
-    if (isFiltered(input)) return idsOf((await tx.execute(vectorBranchSql(branch))).rows);
-    await tx.execute(sql`set local hnsw.ef_search = 100`);
-    await tx.execute(sql`set local hnsw.iterative_scan = relaxed_order`);
-    const ids = idsOf((await tx.execute(vectorBranchSql(branch))).rows);
-    // An iterative scan stops at hnsw.max_scan_tuples, so a model or workspace with few vectors among many can get a
-    // short answer. A short answer is checked exactly (the workspace's own chunks are few in that case).
-    return ids.length < BRANCH_LIMIT ? idsOf((await tx.execute(vectorBranchSql(branch, true))).rows) : ids;
-  });
-  const keywordIds = idsOf((await db.execute(keywordBranchSql({ ...branch, query: input.query }))).rows);
+  // The branches and the hit load read one snapshot, so a rebuild that completes mid-search cannot delete the chunks
+  // the branches found. Postgres takes the snapshot at the first statement that reads (a `set` takes none), and a
+  // read-only transaction under repeatable read never fails with a serialization error.
+  const { top, rows } = await db.transaction(
+    async (tx) => {
+      let vectorIds: string[];
+      if (isFiltered(input)) {
+        vectorIds = idsOf((await tx.execute(vectorBranchSql(branch))).rows);
+      } else {
+        await tx.execute(sql`set local hnsw.ef_search = 100`);
+        await tx.execute(sql`set local hnsw.iterative_scan = relaxed_order`);
+        vectorIds = idsOf((await tx.execute(vectorBranchSql(branch))).rows);
+        // An iterative scan stops at hnsw.max_scan_tuples, so a model or workspace with few vectors among many can get
+        // a short answer. A short answer is checked exactly (the workspace's own chunks are few in that case).
+        if (vectorIds.length < BRANCH_LIMIT) vectorIds = idsOf((await tx.execute(vectorBranchSql(branch, true))).rows);
+      }
+      const keywordIds = idsOf((await tx.execute(keywordBranchSql({ ...branch, query: input.query }))).rows);
 
-  const top = fuse(vectorIds, keywordIds).slice(0, limit);
+      const top = fuse(vectorIds, keywordIds).slice(0, limit);
+      if (top.length === 0) return { top, rows: [] };
+      const ids = sql.join(top.map((t) => sql`${t.id}::uuid`), sql`, `);
+      const rows = (
+        await tx.execute(sql`select c.id, c.document_id, d.original_name as document_name, d.company_id, co.display_name as company_name,
+            c.page_number, c.element, c.section_path, c.text_source, c.kind, c.text
+          from document_chunk c
+          join document d on d.id = c.document_id
+          left join company co on co.id = d.company_id
+          where c.workspace_id = ${input.workspaceId} and c.id in (${ids})`)
+      ).rows;
+      return { top, rows };
+    },
+    { isolationLevel: "repeatable read", accessMode: "read only" },
+  );
   if (top.length === 0) return [];
-  const ids = sql.join(top.map((t) => sql`${t.id}::uuid`), sql`, `);
-  const rows = (
-    await db.execute(sql`select c.id, c.document_id, d.original_name as document_name, d.company_id, co.display_name as company_name,
-        c.page_number, c.element, c.section_path, c.text_source, c.kind, c.text
-      from document_chunk c
-      join document d on d.id = c.document_id
-      left join company co on co.id = d.company_id
-      where c.workspace_id = ${input.workspaceId} and c.id in (${ids})`)
-  ).rows;
   const byId = new Map(rows.map((r) => [String(r.id), r]));
   const hits: SearchHit[] = [];
   for (const t of top) {
