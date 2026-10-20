@@ -8,21 +8,24 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
-from docling_core.types.doc import DoclingDocument
+from docling_core.types.doc import DocItemLabel, DoclingDocument
 
 from maester_indexer.chunker import (
     MAX_EMBED_TOKENS,
     PATH_TOKENS,
     basis_of,
     chunk_range,
+    embed_budget,
     filter_document,
     load_tokenizer,
 )
 from maester_indexer.contracts import ChunkEvent, PageEvent, RangeRead, contextualize
 from maester_indexer.errors import IndexingError
 from tests.helpers import fixture_read as read
+from tests.helpers import restrict_read
 from tests.helpers import whitespace_tokenizer
 
 # The fixture's running header. docling-parse reads its en dash as a hyphen, so the test
@@ -58,8 +61,9 @@ class NewlineCountingTokenizer(HuggingFaceTokenizer):
         return super().count_tokens(text) + text.count("\n")
 
 
-def newline_tok(max_tokens: int) -> NewlineCountingTokenizer:
-    return NewlineCountingTokenizer(tokenizer=tok(max_tokens).get_tokenizer(), max_tokens=max_tokens)
+def newline_tok(max_tokens: int, special_tokens: bool = False) -> NewlineCountingTokenizer:
+    model = whitespace_tokenizer(max_tokens, special_tokens).get_tokenizer()
+    return NewlineCountingTokenizer(tokenizer=model, max_tokens=max_tokens)
 
 
 def with_heading(read: RangeRead, index: int, text: str) -> RangeRead:
@@ -116,6 +120,21 @@ class WithinAPageTests(unittest.TestCase):
         _, chunks = chunk_range(read("text-layer"), [], tok(24))
         self.assertGreater(len(chunks), 2)
         self.assertEqual([c.seq for c in chunks], list(range(len(chunks))))
+
+    def test_a_table_on_two_pages_stays_on_its_first_however_the_range_is_cut(self):
+        def onto_page_2(document: DoclingDocument) -> None:
+            table = document.tables[0]
+            table.prov.append(table.prov[0].model_copy(update={"page_no": 2}))
+
+        whole = edited(read("two-sections"), onto_page_2)
+        _, all_pages = chunk_range(whole, [], tok())
+        pages, _ = chunk_range(restrict_read(whole, (1, 1)), [], tok())
+        _, from_2 = chunk_range(restrict_read(whole, (2, 3)), path_after(pages, 1), tok())
+        self.assertEqual([c.kind for c in all_pages if c.page_number == 2], ["prose"])
+        self.assertEqual(
+            [(c.page_number, c.seq, c.text) for c in all_pages if c.page_number >= 2],
+            [(c.page_number, c.seq, c.text) for c in from_2],
+        )
 
     def test_seq_is_stable_when_a_page_is_chunked_alone(self):
         _, all_pages = chunk_range(read("two-sections"), [], tok())
@@ -189,6 +208,14 @@ class SectionPathTests(unittest.TestCase):
         self.assertEqual([(c.section_path, c.basis) for c in chunks], [(["Notes"], "standalone")])
         self.assertEqual(pages[0].section_path_after, carried)  # whole, so the root carries on
 
+    def test_a_root_heading_dropped_by_the_chunker_still_roots_the_path(self):
+        # A heading longer than the budget: HybridChunker leaves it out of the chunk's headings.
+        heading = "Standalone " + " ".join(["x"] * 30)
+        _, chunks = chunk_range(with_heading(read("text-layer"), 0, heading), [], tok(24))
+        prose = [c for c in chunks if c.kind == "prose"]
+        self.assertTrue(prose)
+        self.assertEqual({(tuple(c.section_path), c.basis) for c in prose}, {((heading,), "standalone")})
+
     def test_a_long_carried_path_is_cut_from_the_left(self):
         carried = ["Part " + "x " * 80, "Notes", "25 Borrowings"]
         _, chunks = chunk_range(read("two-sections", pages=(2, 2)), carried, tok())
@@ -231,13 +258,45 @@ class TableTests(unittest.TestCase):
             self.assertLessEqual(chunk.token_count, 24)
         self.assertEqual([line for c in tables for line in c.text.split("\n")[1:]], body)
 
-    def test_a_row_too_wide_for_its_header_is_cut_on_its_own(self):
+    def test_a_row_too_wide_for_its_header_is_cut_under_it(self):
         source = read("text-layer")
-        body = table_rows(source)[1:]
+        header, *body = table_rows(source)
         _, chunks = chunk_range(source, [], tok(10))
         tables = [c for c in chunks if c.kind == "table"]
         self.assertTrue(all(c.token_count <= 10 for c in chunks))
-        self.assertEqual(" ".join(c.text for c in tables).split(), " ".join(body).split())
+        self.assertTrue(all(c.text.split("\n")[0] == header for c in tables))
+        pieces = [line for c in tables for line in c.text.split("\n")[1:]]
+        self.assertEqual(" ".join(pieces).split(), " ".join(body).split())
+
+    def test_header_rows_too_large_to_repeat_are_read_as_rows(self):
+        def all_header(document: DoclingDocument) -> None:
+            for cell in document.tables[0].data.table_cells:
+                cell.column_header = True
+
+        source = edited(read("text-layer"), all_header)
+        _, chunks = chunk_range(source, [], tok(24))
+        tables = [c for c in chunks if c.kind == "table"]
+        self.assertGreater(len(tables), 1)
+        self.assertTrue(all(c.token_count <= 24 for c in chunks))
+        self.assertEqual([line for c in tables for line in c.text.split("\n")], table_rows(read("text-layer")))
+
+    def test_a_caption_too_long_for_the_budget_is_cut_ahead_of_the_table(self):
+        caption = " ".join(f"c{n}" for n in range(40))
+
+        def add_caption(document: DoclingDocument) -> None:
+            table = document.tables[0]
+            prov = table.prov[0].model_copy(update={"charspan": (0, len(caption))})
+            item = document.add_text(label=DocItemLabel.CAPTION, text=caption, prov=prov, parent=table)
+            table.captions.append(item.get_ref())
+
+        source = edited(read("text-layer"), add_caption)
+        _, chunks = chunk_range(source, [], tok(24))
+        tables = [c for c in chunks if c.kind == "table"]
+        self.assertTrue(all(c.token_count <= 24 for c in chunks))
+        words = " ".join(c.text for c in tables).split()
+        self.assertEqual(words[:40], caption.split())
+        self.assertEqual(words.count("c0"), 1)
+        self.assertEqual([c for c in chunks if c.kind == "prose" and "c0" in c.text], [])
 
     def test_a_table_takes_the_source_of_its_own_item(self):
         # Mark only page 3's table as OCR: filtering renumbers it #/tables/0 on its page.
@@ -267,6 +326,14 @@ class SourceAndBudgetTests(unittest.TestCase):
         _, chunks = chunk_range(source, [], tok())
         self.assertEqual([c.text_source for c in chunks], ["ocr"])
 
+    def test_an_unrecorded_item_under_ocr_makes_the_chunk_mixed(self):
+        mixed = read("mixed")
+        text_layer_only = {"#/texts/1": mixed.item_sources["#/texts/1"]}  # the OCR item #/texts/2 dropped
+        for ocr_on, expected in ((True, "mixed"), (False, "text_layer")):
+            source = mixed.model_copy(update={"item_sources": text_layer_only, "ocr_on": ocr_on})
+            _, chunks = chunk_range(source, [], tok())
+            self.assertEqual([c.text_source for c in chunks], [expected])
+
     def test_a_chunk_with_no_recorded_source_takes_the_reads_ocr_setting(self):
         for ocr_on, expected in ((False, "text_layer"), (True, "mixed")):
             source = read("mixed").model_copy(update={"item_sources": {}, "ocr_on": ocr_on})
@@ -280,6 +347,16 @@ class SourceAndBudgetTests(unittest.TestCase):
         _, over = chunk_range(with_paragraph(read("text-layer"), 507), [], newline_tok(1000))
         self.assertEqual((over[0].section_path, over[0].token_count), ([], 507))
         self.assertEqual(over[0].basis, None)
+
+    def test_the_models_special_tokens_are_kept_out_of_the_budget(self):
+        tokenizer = newline_tok(1000, special_tokens=True)  # start and end tokens: 510 left
+        self.assertEqual(embed_budget(tokenizer), MAX_EMBED_TOKENS - 2)
+        _, at_edge = chunk_range(with_paragraph(read("text-layer"), 504), [], tokenizer)
+        self.assertEqual((len(at_edge[0].section_path), at_edge[0].token_count), (1, 510))
+        _, over = chunk_range(with_paragraph(read("text-layer"), 505), [], tokenizer)
+        self.assertEqual((over[0].section_path, over[0].token_count), ([], 505))
+        with self.assertRaises(IndexingError):
+            chunk_range(with_paragraph(read("text-layer"), 511), [], tokenizer)
 
     def test_a_text_over_the_embedding_limit_alone_is_a_bug(self):
         source = with_paragraph(read("text-layer"), MAX_EMBED_TOKENS + 1)
@@ -303,6 +380,13 @@ class FilterDocumentTests(unittest.TestCase):
         self.assertEqual(original["#/texts/1"], "#/texts/7")
         self.assertEqual(original["#/tables/0"], "#/tables/1")
         self.assertEqual(page_3.texts[1].text, "Consolidated balance sheet")
+
+    def test_an_item_lost_by_filtering_is_an_indexing_error(self):
+        document = DoclingDocument.model_validate(read("two-sections").document)
+        with mock.patch.object(DoclingDocument, "filter", return_value=DoclingDocument(name="empty")):
+            with self.assertRaises(IndexingError) as raised:
+                filter_document(document, {3})
+        self.assertEqual(raised.exception.code, "INDEX_FAILED")
 
 
 class LoadTokenizerTests(unittest.TestCase):
@@ -338,6 +422,15 @@ class LoadTokenizerTests(unittest.TestCase):
             with self.assertRaises(IndexingError) as raised:
                 load_tokenizer(str(folder), self.MODEL)
             self.assertEqual((raised.exception.code, raised.exception.retryable), ("INDEXER_NOT_CONFIGURED", False))
+
+    def test_refuses_a_malformed_lock(self):
+        for content in ("{not json", '{"embedding": "Example/whitespace-model"}'):
+            with tempfile.TemporaryDirectory() as root:
+                folder = self._models(Path(root), None)
+                (Path(root) / "models.lock.json").write_text(content, encoding="utf-8")
+                with self.assertRaises(IndexingError) as raised:
+                    load_tokenizer(str(folder), self.MODEL)
+                self.assertEqual((raised.exception.code, raised.exception.retryable), ("INDEXER_NOT_CONFIGURED", False))
 
     def test_refuses_a_folder_with_no_lock(self):
         with tempfile.TemporaryDirectory() as root:

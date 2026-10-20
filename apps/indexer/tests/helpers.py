@@ -10,17 +10,22 @@ from docling_core.types.doc import DoclingDocument
 from tokenizers import Tokenizer
 from tokenizers.models import WordLevel
 from tokenizers.pre_tokenizers import WhitespaceSplit
+from tokenizers.processors import TemplateProcessing
 from transformers import PreTrainedTokenizerFast
 
 from maester_indexer.contracts import RangeRead
 
 
-def whitespace_tokenizer(max_tokens: int) -> HuggingFaceTokenizer:
+def whitespace_tokenizer(max_tokens: int, special_tokens: bool = False) -> HuggingFaceTokenizer:
     """A tokenizer built in code, with no download: one token per run of non-space characters.
 
-    Every word is the unknown token, which is all a chunker needs to count."""
-    model = Tokenizer(WordLevel(vocab={"[UNK]": 0}, unk_token="[UNK]"))
+    Every word is the unknown token, which is all a chunker needs to count. With
+    `special_tokens`, the model adds a start and an end token to each text, as a real
+    embedding model's does."""
+    model = Tokenizer(WordLevel(vocab={"[UNK]": 0, "[CLS]": 1, "[SEP]": 2}, unk_token="[UNK]"))
     model.pre_tokenizer = WhitespaceSplit()
+    if special_tokens:
+        model.post_processor = TemplateProcessing(single="[CLS] $A [SEP]", special_tokens=[("[CLS]", 1), ("[SEP]", 2)])
     return HuggingFaceTokenizer(
         tokenizer=PreTrainedTokenizerFast(tokenizer_object=model, unk_token="[UNK]"),
         max_tokens=max_tokens,
@@ -53,8 +58,11 @@ def fixture_read(name: str, pages: tuple[int, int] | None = None) -> RangeRead:
     pages first..last had been read: the document filtered to them, its item sources
     renumbered with it, and only those pages' page reads."""
     read = RangeRead.from_wire(json.loads((FIXTURES / f"{name}.read.json").read_text(encoding="utf-8")))
-    if pages is None:
-        return read
+    return read if pages is None else restrict_read(read, pages)
+
+
+def restrict_read(read: RangeRead, pages: tuple[int, int]) -> RangeRead:
+    """The read as if only pages first..last had been read (see `fixture_read`)."""
     from maester_indexer.chunker import filter_document
 
     first, last = pages

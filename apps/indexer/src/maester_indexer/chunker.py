@@ -37,11 +37,12 @@ from transformers import AutoTokenizer
 from maester_indexer.contracts import ChunkEvent, PageEvent, RangeRead, TextSource, contextualize
 from maester_indexer.errors import IndexingError
 
-MAX_EMBED_TOKENS = 512  # the most the embedding model is given: the path, its newline and the text
+MAX_EMBED_TOKENS = 512  # the most the embedding model is given: the path, its newline, the text and its special tokens
 PATH_TOKENS = 64  # the most a chunk's section path may take
 CHUNK_TOKENS = 448  # the chunker's budget for the text, so a path of PATH_TOKENS still fits
 
 LOCK_FILE = "models.lock.json"
+HEADER_SHARE = 2  # a table's header rows are repeated only while they take at most 1/HEADER_SHARE of the budget
 _ALL_LAYERS = set(ContentLayer)
 _BASIS = re.compile(r"\b(consolidated|standalone)\b", re.IGNORECASE)
 
@@ -55,13 +56,14 @@ def chunk_range(
     (the previous range's last `sectionPathAfter`, whole: it carries the root). `tokenizer`
     carries the chunker's budget (`get_max_tokens()`, CHUNK_TOKENS in production)."""
     document = DoclingDocument.model_validate(read.document)
-    range_pages = {page.page_number for page in read.pages}
-    chunker = HybridChunker(tokenizer=tokenizer, merge_peers=True, repeat_table_header=True)
+    # Only HybridChunker's steps are used (`_doc_chunks`), so its merge_peers and
+    # repeat_table_header switches would do nothing here; the table rule is `_table_texts`.
+    chunker = HybridChunker(tokenizer=tokenizer)
     carried = list(section_path_before)
     page_events: list[PageEvent] = []
     chunk_events: list[ChunkEvent] = []
     for page in read.pages:
-        page_chunks, path_after = _chunk_page(read, document, page.page_number, range_pages, chunker, carried)
+        page_chunks, path_after = _chunk_page(read, document, page.page_number, chunker, carried)
         chunk_events.extend(page_chunks)
         page_events.append(
             PageEvent(
@@ -94,11 +96,20 @@ def cut_path(section_path: list[str], tokenizer: BaseTokenizer) -> list[str]:
     return path
 
 
+def embed_budget(tokenizer: BaseTokenizer) -> int:
+    """The most `contextualize(path, text)` may count: MAX_EMBED_TOKENS less the start and
+    end tokens the model adds, which `count_tokens` leaves out."""
+    model = tokenizer.get_tokenizer()
+    special = model.num_special_tokens_to_add(pair=False) if hasattr(model, "num_special_tokens_to_add") else 0
+    return MAX_EMBED_TOKENS - special
+
+
 def fit_path(section_path: list[str], text: str, tokenizer: BaseTokenizer) -> list[str]:
     """The path a chunk is embedded with: cut to PATH_TOKENS, then further from the left
-    (down to none) until `contextualize(path, text)`, newline included, fits MAX_EMBED_TOKENS."""
+    (down to none) until `contextualize(path, text)`, newline included, fits `embed_budget`."""
     path = cut_path(section_path, tokenizer)
-    while path and tokenizer.count_tokens(contextualize(path, text)) > MAX_EMBED_TOKENS:
+    budget = embed_budget(tokenizer)
+    while path and tokenizer.count_tokens(contextualize(path, text)) > budget:
         path = path[1:]
     return path
 
@@ -123,7 +134,10 @@ def filter_document(document: DoclingDocument, page_nrs: set[int]) -> tuple[Docl
             continue
         new_ref = f"#/{key}/{counts.get(key, 0)}"
         counts[key] = counts.get(key, 0) + 1
-        new_item = RefItem(cref=new_ref).resolve(filtered)
+        try:
+            new_item = RefItem(cref=new_ref).resolve(filtered)
+        except (IndexError, KeyError, ValueError, AttributeError):
+            raise IndexingError("INDEX_FAILED", "Filtering the document by page lost an item.", False) from None
         if new_item.label != item.label or _boxes(new_item) != _boxes(item):
             raise IndexingError("INDEX_FAILED", "Filtering the document by page changed its items.", False)
         originals[new_ref] = item.self_ref
@@ -156,7 +170,12 @@ def _locked_model(folder: Path) -> str | None:
     for directory in (folder, *folder.parents):
         lock = directory / LOCK_FILE
         if lock.is_file():
-            model_id = json.loads(lock.read_text(encoding="utf-8")).get("embedding", {}).get("id")
+            try:
+                model_id = json.loads(lock.read_text(encoding="utf-8")).get("embedding", {}).get("id")
+            except (OSError, UnicodeDecodeError, ValueError, AttributeError):
+                raise IndexingError(
+                    "INDEXER_NOT_CONFIGURED", f"The {LOCK_FILE} above INDEX_TOKENIZER_PATH could not be read.", False
+                ) from None
             if isinstance(model_id, str) and folder.parts[-len(model_id.split("/")) :] == tuple(model_id.split("/")):
                 return model_id
             return None
@@ -167,22 +186,22 @@ def _chunk_page(
     read: RangeRead,
     document: DoclingDocument,
     page_no: int,
-    range_pages: set[int],
     chunker: HybridChunker,
     carried: list[str],
 ) -> tuple[list[ChunkEvent], list[str]]:
     """One page's chunk events and the section path in effect at its end."""
     if page_no not in document.pages:  # Docling kept nothing of the page
         return [], carried
-    page_doc, originals = filter_document(_cut_to_page(document, page_no, range_pages), {page_no})
+    page_doc, originals = filter_document(_cut_to_page(document, page_no), {page_no})
     tokenizer = chunker.tokenizer
+    budget = embed_budget(tokenizer)
     roots, end_root = _roots(page_doc, _root_of(carried))
     events: list[ChunkEvent] = []
     for doc_chunk, kind, root in _doc_chunks(chunker, page_doc, roots, _root_of(carried)):
         whole = _section_path(doc_chunk.meta.headings or [], root, carried)
         basis = basis_of(whole)
         shown = cut_path(whole, tokenizer)
-        source = _text_source(read, originals, doc_chunk)
+        source = _text_source(read, page_doc, originals, doc_chunk)
         texts = [doc_chunk.text] if kind == "prose" else _table_texts(page_doc, doc_chunk, shown, tokenizer)
         for text in texts:
             text = text.strip()
@@ -190,10 +209,10 @@ def _chunk_page(
                 continue
             path = fit_path(shown, text, tokenizer)
             token_count = tokenizer.count_tokens(contextualize(path, text))
-            if token_count > MAX_EMBED_TOKENS:  # the text alone: the chunker's budget failed
+            if token_count > budget:  # the text alone: the chunker's budget failed
                 raise IndexingError(
                     "INDEX_FAILED",
-                    f"A chunk on page {page_no} came to {token_count} tokens, over the {MAX_EMBED_TOKENS} the model takes.",
+                    f"A chunk on page {page_no} came to {token_count} tokens, over the {budget} the model takes.",
                     False,
                 )
             events.append(
@@ -216,9 +235,10 @@ def _section_path(headings: list[str], root: str | None, carried: list[str]) -> 
 
     The innermost heading that names a basis is the root, with the headings under it; with
     none among them, the headings nest under the root in effect. No heading above it on the
-    page: the carried path."""
+    page: the carried path, or the page's own root if one replaced the carried root (a
+    heading HybridChunker dropped for overflowing its budget)."""
     if not headings:
-        return list(carried)
+        return list(carried) if root == _root_of(carried) else [root]
     named = [index for index, heading in enumerate(headings) if _BASIS.search(heading)]
     if named:
         return headings[named[-1] :]
@@ -244,12 +264,13 @@ def _roots(page_doc: DoclingDocument, root: str | None) -> tuple[dict[str, str |
     return at, root
 
 
-def _cut_to_page(document: DoclingDocument, page_no: int, range_pages: set[int]) -> DoclingDocument:
+def _cut_to_page(document: DoclingDocument, page_no: int) -> DoclingDocument:
     """A copy of the document in which every item on the page holds only that page's part.
 
     `filter()` keeps an item with a prov on the page whole, with its provs on other pages.
     A text item that runs over a page break keeps this page's `prov.charspan` slices, as
-    the page text does; any other item (a table) stays on its first page in the range only."""
+    the page text does; any other item (a table) stays on its first page only, so where it
+    lands does not depend on how the document was split into ranges."""
     copy = document.model_copy(deep=True)
     items = [
         item
@@ -265,8 +286,7 @@ def _cut_to_page(document: DoclingDocument, page_no: int, range_pages: set[int])
             item.text = item.orig = text
             item.prov = [prov.model_copy(update={"charspan": (0, len(text))}) for prov in on_page]
         else:
-            first_page = min((prov.page_no for prov in item.prov if prov.page_no in range_pages), default=page_no)
-            item.prov = on_page if first_page == page_no else []
+            item.prov = on_page if min(prov.page_no for prov in item.prov) == page_no else []
     return copy
 
 
@@ -311,7 +331,12 @@ def _doc_chunks(
 def _table_texts(page_doc: DoclingDocument, doc_chunk: DocChunk, path: list[str], tokenizer: BaseTokenizer) -> list[str]:
     """A table chunk's texts: one row a line, cells separated by a space as the page text
     prints them, the caption first. When the whole does not fit the budget (with its path),
-    it splits by rows, each part starting with the header rows."""
+    it splits by rows, each part starting with the header rows.
+
+    Header rows taking more than 1/HEADER_SHARE of the budget are not repeated: they are
+    read as body rows. A caption that does not fit with the header goes out ahead of the
+    table, cut to the budget; a row too wide to sit under the header is cut into pieces,
+    each under the header. So no part is over the budget."""
     budget = tokenizer.get_max_tokens()
 
     def fits(lines: list[str]) -> bool:
@@ -319,19 +344,25 @@ def _table_texts(page_doc: DoclingDocument, doc_chunk: DocChunk, path: list[str]
 
     texts: list[str] = []
     for table in (item for item in doc_chunk.meta.doc_items if isinstance(item, TableItem)):
-        caption = table.caption_text(page_doc).strip()
-        lead = [caption] if caption else []
         header, body = _table_rows(table)
-        lines, rows_in, with_lead = [*lead, *header], 0, bool(lead)
+        if header and tokenizer.count_tokens("\n".join(header)) * HEADER_SHARE > budget:
+            header, body = [], [*header, *body]
+        lead: list[str] = []
+        if caption := table.caption_text(page_doc).strip():
+            if fits([caption, *header]):
+                lead = [caption]
+            else:
+                texts.extend(_cut_text(caption, path, tokenizer))
+        lines, rows_in = [*lead, *header], 0
         for row in body:
             if not fits([*lines, row]):
                 if rows_in:
                     texts.append("\n".join(lines))
-                elif with_lead:
-                    texts.append("\n".join(lead))  # the caption, when no row fits under it
-                lines, rows_in, with_lead = list(header), 0, False
-                if not fits([*lines, row]):  # too wide to sit under its header: cut on its own
-                    texts.extend(_cut_text(row, path, tokenizer))
+                elif lead:
+                    texts.append("\n".join(lead))  # the caption, when no row fits under it with the header
+                lead, lines, rows_in = [], list(header), 0
+                if not fits([*lines, row]):  # too wide to sit under its header: cut, each piece under it
+                    texts.extend("\n".join([*header, piece]) for piece in _cut_text(row, path, tokenizer, header))
                     continue
             lines.append(row)
             rows_in += 1
@@ -357,27 +388,40 @@ def _table_rows(table: TableItem) -> tuple[list[str], list[str]]:
     return lines[:leading], lines[leading:]
 
 
-def _cut_text(text: str, path: list[str], tokenizer: BaseTokenizer) -> list[str]:
-    """A text too long for one chunk, cut at natural boundaries to fit with its path."""
-    available = tokenizer.get_max_tokens() - tokenizer.count_tokens(contextualize(path, ""))
+def _cut_text(text: str, path: list[str], tokenizer: BaseTokenizer, under: list[str] | None = None) -> list[str]:
+    """A text too long for one chunk, cut at natural boundaries to fit with its path and
+    the lines it goes under (a table's header rows)."""
+    prefix = "\n".join([*(under or []), ""])
+    available = tokenizer.get_max_tokens() - tokenizer.count_tokens(contextualize(path, prefix))
     split: Callable[[str], list[str]] = semchunk.chunkerify(tokenizer.get_tokenizer(), chunk_size=max(available, 1))
     return split(text)
 
 
-def _text_source(read: RangeRead, originals: dict[str, str], doc_chunk: DocChunk) -> TextSource:
+def _text_source(read: RangeRead, page_doc: DoclingDocument, originals: dict[str, str], doc_chunk: DocChunk) -> TextSource:
     """The union of the chunk's items' sources, looked up by the items' refs in the read.
 
-    An item with no recorded source is left out. When none of the chunk's items has one,
-    the read's OCR setting decides: with OCR off it can only be the text layer; with OCR on
-    it is labelled `mixed`, as text that may have been read by OCR."""
-    sources = {
-        read.item_sources[original]
-        for item in doc_chunk.meta.doc_items
-        if (original := originals.get(item.self_ref)) in read.item_sources
-    }
-    if not sources:
-        return "mixed" if read.ocr_on else "text_layer"
+    With OCR off, every item is text layer, recorded or not. With OCR on, an item with text
+    and no recorded source may have been read by OCR: the chunk is `mixed`, or `ocr` when
+    every recorded source is OCR."""
+    sources: set[str] = set()
+    unrecorded = False
+    for item in doc_chunk.meta.doc_items:
+        original = originals.get(item.self_ref)
+        if original in read.item_sources:
+            sources.add(read.item_sources[original])
+        elif _has_text(RefItem(cref=item.self_ref).resolve(page_doc)):  # a chunk's meta keeps only DocItem
+            unrecorded = True
+    if not read.ocr_on:
+        return "text_layer" if not sources else (sources.pop() if len(sources) == 1 else "mixed")
+    if unrecorded or not sources:
+        return "ocr" if sources == {"ocr"} else "mixed"
     return sources.pop() if len(sources) == 1 else "mixed"
+
+
+def _has_text(item) -> bool:
+    if isinstance(item, TableItem):
+        return any(cell.text.strip() for cell in item.data.table_cells)
+    return isinstance(item, TextItem) and bool(item.text.strip())
 
 
 def _headings_at_end(page_doc: DoclingDocument) -> list[str]:
