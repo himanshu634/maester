@@ -25,6 +25,12 @@ DOCLING_REPOS = (
     "docling-project/docling-layout-heron-onnx",
     "docling-project/docling-models",
 )
+# What text-embeddings-inference and the chunker's tokenizer load from the embedding model's
+# repository: its configuration (config.json, the sentence-transformers files and
+# 1_Pooling/config.json, which "*.json" matches because the match crosses "/"), the tokenizer
+# files and the safetensors weights. The ONNX variants under onnx/ (several GB) are left out.
+EMBED_ALLOW_PATTERNS = ("*.json", "*.safetensors", "sentencepiece.bpe.model", "vocab.txt", "merges.txt")
+EMBED_IGNORE_PATTERNS = ("onnx/*", "openvino/*")
 
 
 def find_lock(explicit: str | None) -> Path:
@@ -51,7 +57,13 @@ def fetch_embedding(out: Path, lock: dict) -> None:
     from huggingface_hub import snapshot_download
 
     model = lock["embedding"]
-    snapshot_download(repo_id=model["id"], revision=model["revision"], local_dir=out / "embed" / model["id"])
+    snapshot_download(
+        repo_id=model["id"],
+        revision=model["revision"],
+        local_dir=out / "embed" / model["id"],
+        allow_patterns=list(EMBED_ALLOW_PATTERNS),
+        ignore_patterns=list(EMBED_IGNORE_PATTERNS),
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
