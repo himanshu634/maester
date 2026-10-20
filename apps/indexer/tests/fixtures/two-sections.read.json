@@ -1,0 +1,2025 @@
+{
+  "document": {
+    "body": {
+      "children": [
+        {
+          "$ref": "#/texts/0"
+        },
+        {
+          "$ref": "#/texts/1"
+        },
+        {
+          "$ref": "#/tables/0"
+        },
+        {
+          "$ref": "#/groups/0"
+        },
+        {
+          "$ref": "#/texts/3"
+        },
+        {
+          "$ref": "#/texts/4"
+        },
+        {
+          "$ref": "#/texts/5"
+        },
+        {
+          "$ref": "#/texts/6"
+        },
+        {
+          "$ref": "#/texts/7"
+        },
+        {
+          "$ref": "#/tables/1"
+        }
+      ],
+      "content_layer": "body",
+      "label": "unspecified",
+      "name": "_root_",
+      "self_ref": "#/body"
+    },
+    "form_items": [],
+    "furniture": {
+      "children": [],
+      "content_layer": "furniture",
+      "label": "unspecified",
+      "name": "_root_",
+      "self_ref": "#/furniture"
+    },
+    "groups": [
+      {
+        "children": [
+          {
+            "$ref": "#/texts/2"
+          }
+        ],
+        "content_layer": "body",
+        "label": "list",
+        "name": "list",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "self_ref": "#/groups/0"
+      }
+    ],
+    "key_value_items": [],
+    "name": "document",
+    "origin": {
+      "binary_hash": 8538319030360420461,
+      "filename": "document.pdf",
+      "mimetype": "application/pdf"
+    },
+    "pages": {
+      "1": {
+        "page_no": 1,
+        "size": {
+          "height": 841.89,
+          "width": 595.276
+        }
+      },
+      "2": {
+        "page_no": 2,
+        "size": {
+          "height": 841.89,
+          "width": 595.276
+        }
+      },
+      "3": {
+        "page_no": 3,
+        "size": {
+          "height": 841.89,
+          "width": 595.276
+        }
+      }
+    },
+    "pictures": [],
+    "schema_name": "DoclingDocument",
+    "tables": [
+      {
+        "annotations": [],
+        "captions": [],
+        "children": [],
+        "content_layer": "body",
+        "data": {
+          "grid": [
+            [
+              {
+                "bbox": {
+                  "b": 126.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 60.0,
+                  "r": 121.323,
+                  "t": 116.402
+                },
+                "col_span": 1,
+                "column_header": true,
+                "end_col_offset_idx": 1,
+                "end_row_offset_idx": 1,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 0,
+                "start_row_offset_idx": 0,
+                "text": "Particulars"
+              },
+              {
+                "bbox": {
+                  "b": 126.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 313.198,
+                  "r": 340.0,
+                  "t": 116.402
+                },
+                "col_span": 1,
+                "column_header": true,
+                "end_col_offset_idx": 2,
+                "end_row_offset_idx": 1,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 1,
+                "start_row_offset_idx": 0,
+                "text": "Note"
+              },
+              {
+                "bbox": {
+                  "b": 126.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 356.611,
+                  "r": 440.0,
+                  "t": 116.402
+                },
+                "col_span": 1,
+                "column_header": true,
+                "end_col_offset_idx": 3,
+                "end_row_offset_idx": 1,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 2,
+                "start_row_offset_idx": 0,
+                "text": "31 March 2026"
+              },
+              {
+                "bbox": {
+                  "b": 126.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 449.611,
+                  "r": 533.0,
+                  "t": 116.402
+                },
+                "col_span": 1,
+                "column_header": true,
+                "end_col_offset_idx": 4,
+                "end_row_offset_idx": 1,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 3,
+                "start_row_offset_idx": 0,
+                "text": "31 March 2025"
+              }
+            ],
+            [
+              {
+                "bbox": {
+                  "b": 146.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 60.0,
+                  "r": 213.867,
+                  "t": 136.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 1,
+                "end_row_offset_idx": 2,
+                "fillable": false,
+                "row_header": true,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 0,
+                "start_row_offset_idx": 1,
+                "text": "Property, plant and equipment"
+              },
+              {
+                "bbox": {
+                  "b": 146.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 333.638,
+                  "r": 340.0,
+                  "t": 136.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 2,
+                "end_row_offset_idx": 2,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 1,
+                "start_row_offset_idx": 1,
+                "text": "1"
+              },
+              {
+                "bbox": {
+                  "b": 146.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 389.106,
+                  "r": 440.0,
+                  "t": 136.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 3,
+                "end_row_offset_idx": 2,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 2,
+                "start_row_offset_idx": 1,
+                "text": "56,789.01"
+              },
+              {
+                "bbox": {
+                  "b": 146.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 482.106,
+                  "r": 533.0,
+                  "t": 136.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 4,
+                "end_row_offset_idx": 2,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 3,
+                "start_row_offset_idx": 1,
+                "text": "52,345.67"
+              }
+            ],
+            [
+              {
+                "bbox": {
+                  "b": 166.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 60.0,
+                  "r": 115.986,
+                  "t": 156.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 1,
+                "end_row_offset_idx": 3,
+                "fillable": false,
+                "row_header": true,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 0,
+                "start_row_offset_idx": 2,
+                "text": "Inventories"
+              },
+              {
+                "bbox": {
+                  "b": 166.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 333.638,
+                  "r": 340.0,
+                  "t": 156.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 2,
+                "end_row_offset_idx": 3,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 1,
+                "start_row_offset_idx": 2,
+                "text": "2"
+              },
+              {
+                "bbox": {
+                  "b": 166.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 395.469,
+                  "r": 440.0,
+                  "t": 156.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 3,
+                "end_row_offset_idx": 3,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 2,
+                "start_row_offset_idx": 2,
+                "text": "8,765.43"
+              },
+              {
+                "bbox": {
+                  "b": 166.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 488.469,
+                  "r": 533.0,
+                  "t": 156.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 4,
+                "end_row_offset_idx": 3,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 3,
+                "start_row_offset_idx": 2,
+                "text": "7,654.32"
+              }
+            ],
+            [
+              {
+                "bbox": {
+                  "b": 186.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 60.0,
+                  "r": 149.253,
+                  "t": 176.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 1,
+                "end_row_offset_idx": 4,
+                "fillable": false,
+                "row_header": true,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 0,
+                "start_row_offset_idx": 3,
+                "text": "Trade receivables"
+              },
+              {
+                "bbox": {
+                  "b": 186.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 333.638,
+                  "r": 340.0,
+                  "t": 176.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 2,
+                "end_row_offset_idx": 4,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 1,
+                "start_row_offset_idx": 3,
+                "text": "3"
+              },
+              {
+                "bbox": {
+                  "b": 186.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 395.469,
+                  "r": 440.0,
+                  "t": 176.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 3,
+                "end_row_offset_idx": 4,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 2,
+                "start_row_offset_idx": 3,
+                "text": "6,543.21"
+              },
+              {
+                "bbox": {
+                  "b": 186.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 488.469,
+                  "r": 533.0,
+                  "t": 176.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 4,
+                "end_row_offset_idx": 4,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 3,
+                "start_row_offset_idx": 3,
+                "text": "5,432.10"
+              }
+            ],
+            [
+              {
+                "bbox": {
+                  "b": 206.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 60.0,
+                  "r": 120.063,
+                  "t": 196.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 1,
+                "end_row_offset_idx": 5,
+                "fillable": false,
+                "row_header": true,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 0,
+                "start_row_offset_idx": 4,
+                "text": "Total assets"
+              },
+              {
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 2,
+                "end_row_offset_idx": 5,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 1,
+                "start_row_offset_idx": 4,
+                "text": ""
+              },
+              {
+                "bbox": {
+                  "b": 206.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 389.106,
+                  "r": 440.0,
+                  "t": 196.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 3,
+                "end_row_offset_idx": 5,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 2,
+                "start_row_offset_idx": 4,
+                "text": "72,097.65"
+              },
+              {
+                "bbox": {
+                  "b": 206.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 482.106,
+                  "r": 533.0,
+                  "t": 196.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 4,
+                "end_row_offset_idx": 5,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 3,
+                "start_row_offset_idx": 4,
+                "text": "65,432.09"
+              }
+            ]
+          ],
+          "num_cols": 4,
+          "num_rows": 5,
+          "orientation": "rot_0",
+          "table_cells": [
+            {
+              "bbox": {
+                "b": 126.402,
+                "coord_origin": "TOPLEFT",
+                "l": 60.0,
+                "r": 121.323,
+                "t": 116.402
+              },
+              "col_span": 1,
+              "column_header": true,
+              "end_col_offset_idx": 1,
+              "end_row_offset_idx": 1,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 0,
+              "start_row_offset_idx": 0,
+              "text": "Particulars"
+            },
+            {
+              "bbox": {
+                "b": 126.402,
+                "coord_origin": "TOPLEFT",
+                "l": 313.198,
+                "r": 340.0,
+                "t": 116.402
+              },
+              "col_span": 1,
+              "column_header": true,
+              "end_col_offset_idx": 2,
+              "end_row_offset_idx": 1,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 1,
+              "start_row_offset_idx": 0,
+              "text": "Note"
+            },
+            {
+              "bbox": {
+                "b": 126.402,
+                "coord_origin": "TOPLEFT",
+                "l": 356.611,
+                "r": 440.0,
+                "t": 116.402
+              },
+              "col_span": 1,
+              "column_header": true,
+              "end_col_offset_idx": 3,
+              "end_row_offset_idx": 1,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 2,
+              "start_row_offset_idx": 0,
+              "text": "31 March 2026"
+            },
+            {
+              "bbox": {
+                "b": 126.402,
+                "coord_origin": "TOPLEFT",
+                "l": 449.611,
+                "r": 533.0,
+                "t": 116.402
+              },
+              "col_span": 1,
+              "column_header": true,
+              "end_col_offset_idx": 4,
+              "end_row_offset_idx": 1,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 3,
+              "start_row_offset_idx": 0,
+              "text": "31 March 2025"
+            },
+            {
+              "bbox": {
+                "b": 146.402,
+                "coord_origin": "TOPLEFT",
+                "l": 60.0,
+                "r": 213.867,
+                "t": 136.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 1,
+              "end_row_offset_idx": 2,
+              "fillable": false,
+              "row_header": true,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 0,
+              "start_row_offset_idx": 1,
+              "text": "Property, plant and equipment"
+            },
+            {
+              "bbox": {
+                "b": 146.402,
+                "coord_origin": "TOPLEFT",
+                "l": 333.638,
+                "r": 340.0,
+                "t": 136.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 2,
+              "end_row_offset_idx": 2,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 1,
+              "start_row_offset_idx": 1,
+              "text": "1"
+            },
+            {
+              "bbox": {
+                "b": 146.402,
+                "coord_origin": "TOPLEFT",
+                "l": 389.106,
+                "r": 440.0,
+                "t": 136.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 3,
+              "end_row_offset_idx": 2,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 2,
+              "start_row_offset_idx": 1,
+              "text": "56,789.01"
+            },
+            {
+              "bbox": {
+                "b": 146.402,
+                "coord_origin": "TOPLEFT",
+                "l": 482.106,
+                "r": 533.0,
+                "t": 136.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 4,
+              "end_row_offset_idx": 2,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 3,
+              "start_row_offset_idx": 1,
+              "text": "52,345.67"
+            },
+            {
+              "bbox": {
+                "b": 166.402,
+                "coord_origin": "TOPLEFT",
+                "l": 60.0,
+                "r": 115.986,
+                "t": 156.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 1,
+              "end_row_offset_idx": 3,
+              "fillable": false,
+              "row_header": true,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 0,
+              "start_row_offset_idx": 2,
+              "text": "Inventories"
+            },
+            {
+              "bbox": {
+                "b": 166.402,
+                "coord_origin": "TOPLEFT",
+                "l": 333.638,
+                "r": 340.0,
+                "t": 156.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 2,
+              "end_row_offset_idx": 3,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 1,
+              "start_row_offset_idx": 2,
+              "text": "2"
+            },
+            {
+              "bbox": {
+                "b": 166.402,
+                "coord_origin": "TOPLEFT",
+                "l": 395.469,
+                "r": 440.0,
+                "t": 156.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 3,
+              "end_row_offset_idx": 3,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 2,
+              "start_row_offset_idx": 2,
+              "text": "8,765.43"
+            },
+            {
+              "bbox": {
+                "b": 166.402,
+                "coord_origin": "TOPLEFT",
+                "l": 488.469,
+                "r": 533.0,
+                "t": 156.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 4,
+              "end_row_offset_idx": 3,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 3,
+              "start_row_offset_idx": 2,
+              "text": "7,654.32"
+            },
+            {
+              "bbox": {
+                "b": 186.402,
+                "coord_origin": "TOPLEFT",
+                "l": 60.0,
+                "r": 149.253,
+                "t": 176.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 1,
+              "end_row_offset_idx": 4,
+              "fillable": false,
+              "row_header": true,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 0,
+              "start_row_offset_idx": 3,
+              "text": "Trade receivables"
+            },
+            {
+              "bbox": {
+                "b": 186.402,
+                "coord_origin": "TOPLEFT",
+                "l": 333.638,
+                "r": 340.0,
+                "t": 176.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 2,
+              "end_row_offset_idx": 4,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 1,
+              "start_row_offset_idx": 3,
+              "text": "3"
+            },
+            {
+              "bbox": {
+                "b": 186.402,
+                "coord_origin": "TOPLEFT",
+                "l": 395.469,
+                "r": 440.0,
+                "t": 176.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 3,
+              "end_row_offset_idx": 4,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 2,
+              "start_row_offset_idx": 3,
+              "text": "6,543.21"
+            },
+            {
+              "bbox": {
+                "b": 186.402,
+                "coord_origin": "TOPLEFT",
+                "l": 488.469,
+                "r": 533.0,
+                "t": 176.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 4,
+              "end_row_offset_idx": 4,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 3,
+              "start_row_offset_idx": 3,
+              "text": "5,432.10"
+            },
+            {
+              "bbox": {
+                "b": 206.402,
+                "coord_origin": "TOPLEFT",
+                "l": 60.0,
+                "r": 120.063,
+                "t": 196.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 1,
+              "end_row_offset_idx": 5,
+              "fillable": false,
+              "row_header": true,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 0,
+              "start_row_offset_idx": 4,
+              "text": "Total assets"
+            },
+            {
+              "bbox": {
+                "b": 206.402,
+                "coord_origin": "TOPLEFT",
+                "l": 389.106,
+                "r": 440.0,
+                "t": 196.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 3,
+              "end_row_offset_idx": 5,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 2,
+              "start_row_offset_idx": 4,
+              "text": "72,097.65"
+            },
+            {
+              "bbox": {
+                "b": 206.402,
+                "coord_origin": "TOPLEFT",
+                "l": 482.106,
+                "r": 533.0,
+                "t": 196.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 4,
+              "end_row_offset_idx": 5,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 3,
+              "start_row_offset_idx": 4,
+              "text": "65,432.09"
+            }
+          ]
+        },
+        "footnotes": [],
+        "label": "table",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 631.469,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 54.902,
+              "r": 539.688,
+              "t": 733.205
+            },
+            "charspan": [
+              0,
+              0
+            ],
+            "page_no": 1
+          }
+        ],
+        "references": [],
+        "self_ref": "#/tables/0"
+      },
+      {
+        "annotations": [],
+        "captions": [],
+        "children": [],
+        "content_layer": "body",
+        "data": {
+          "grid": [
+            [
+              {
+                "bbox": {
+                  "b": 126.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 60.0,
+                  "r": 121.323,
+                  "t": 116.402
+                },
+                "col_span": 1,
+                "column_header": true,
+                "end_col_offset_idx": 1,
+                "end_row_offset_idx": 1,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 0,
+                "start_row_offset_idx": 0,
+                "text": "Particulars"
+              },
+              {
+                "bbox": {
+                  "b": 126.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 313.198,
+                  "r": 340.0,
+                  "t": 116.402
+                },
+                "col_span": 1,
+                "column_header": true,
+                "end_col_offset_idx": 2,
+                "end_row_offset_idx": 1,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 1,
+                "start_row_offset_idx": 0,
+                "text": "Note"
+              },
+              {
+                "bbox": {
+                  "b": 126.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 356.611,
+                  "r": 440.0,
+                  "t": 116.402
+                },
+                "col_span": 1,
+                "column_header": true,
+                "end_col_offset_idx": 3,
+                "end_row_offset_idx": 1,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 2,
+                "start_row_offset_idx": 0,
+                "text": "31 March 2026"
+              },
+              {
+                "bbox": {
+                  "b": 126.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 449.611,
+                  "r": 533.0,
+                  "t": 116.402
+                },
+                "col_span": 1,
+                "column_header": true,
+                "end_col_offset_idx": 4,
+                "end_row_offset_idx": 1,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 3,
+                "start_row_offset_idx": 0,
+                "text": "31 March 2025"
+              }
+            ],
+            [
+              {
+                "bbox": {
+                  "b": 146.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 60.0,
+                  "r": 213.867,
+                  "t": 136.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 1,
+                "end_row_offset_idx": 2,
+                "fillable": false,
+                "row_header": true,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 0,
+                "start_row_offset_idx": 1,
+                "text": "Property, plant and equipment"
+              },
+              {
+                "bbox": {
+                  "b": 146.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 333.638,
+                  "r": 340.0,
+                  "t": 136.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 2,
+                "end_row_offset_idx": 2,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 1,
+                "start_row_offset_idx": 1,
+                "text": "1"
+              },
+              {
+                "bbox": {
+                  "b": 146.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 389.106,
+                  "r": 440.0,
+                  "t": 136.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 3,
+                "end_row_offset_idx": 2,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 2,
+                "start_row_offset_idx": 1,
+                "text": "56,789.01"
+              },
+              {
+                "bbox": {
+                  "b": 146.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 482.106,
+                  "r": 533.0,
+                  "t": 136.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 4,
+                "end_row_offset_idx": 2,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 3,
+                "start_row_offset_idx": 1,
+                "text": "52,345.67"
+              }
+            ],
+            [
+              {
+                "bbox": {
+                  "b": 166.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 60.0,
+                  "r": 115.986,
+                  "t": 156.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 1,
+                "end_row_offset_idx": 3,
+                "fillable": false,
+                "row_header": true,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 0,
+                "start_row_offset_idx": 2,
+                "text": "Inventories"
+              },
+              {
+                "bbox": {
+                  "b": 166.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 333.638,
+                  "r": 340.0,
+                  "t": 156.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 2,
+                "end_row_offset_idx": 3,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 1,
+                "start_row_offset_idx": 2,
+                "text": "2"
+              },
+              {
+                "bbox": {
+                  "b": 166.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 395.469,
+                  "r": 440.0,
+                  "t": 156.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 3,
+                "end_row_offset_idx": 3,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 2,
+                "start_row_offset_idx": 2,
+                "text": "8,765.43"
+              },
+              {
+                "bbox": {
+                  "b": 166.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 488.469,
+                  "r": 533.0,
+                  "t": 156.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 4,
+                "end_row_offset_idx": 3,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 3,
+                "start_row_offset_idx": 2,
+                "text": "7,654.32"
+              }
+            ],
+            [
+              {
+                "bbox": {
+                  "b": 186.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 60.0,
+                  "r": 149.253,
+                  "t": 176.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 1,
+                "end_row_offset_idx": 4,
+                "fillable": false,
+                "row_header": true,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 0,
+                "start_row_offset_idx": 3,
+                "text": "Trade receivables"
+              },
+              {
+                "bbox": {
+                  "b": 186.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 333.638,
+                  "r": 340.0,
+                  "t": 176.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 2,
+                "end_row_offset_idx": 4,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 1,
+                "start_row_offset_idx": 3,
+                "text": "3"
+              },
+              {
+                "bbox": {
+                  "b": 186.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 395.469,
+                  "r": 440.0,
+                  "t": 176.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 3,
+                "end_row_offset_idx": 4,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 2,
+                "start_row_offset_idx": 3,
+                "text": "6,543.21"
+              },
+              {
+                "bbox": {
+                  "b": 186.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 488.469,
+                  "r": 533.0,
+                  "t": 176.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 4,
+                "end_row_offset_idx": 4,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 3,
+                "start_row_offset_idx": 3,
+                "text": "5,432.10"
+              }
+            ],
+            [
+              {
+                "bbox": {
+                  "b": 206.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 60.0,
+                  "r": 120.063,
+                  "t": 196.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 1,
+                "end_row_offset_idx": 5,
+                "fillable": false,
+                "row_header": true,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 0,
+                "start_row_offset_idx": 4,
+                "text": "Total assets"
+              },
+              {
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 2,
+                "end_row_offset_idx": 5,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 1,
+                "start_row_offset_idx": 4,
+                "text": ""
+              },
+              {
+                "bbox": {
+                  "b": 206.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 389.106,
+                  "r": 440.0,
+                  "t": 196.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 3,
+                "end_row_offset_idx": 5,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 2,
+                "start_row_offset_idx": 4,
+                "text": "72,097.65"
+              },
+              {
+                "bbox": {
+                  "b": 206.402,
+                  "coord_origin": "TOPLEFT",
+                  "l": 482.106,
+                  "r": 533.0,
+                  "t": 196.402
+                },
+                "col_span": 1,
+                "column_header": false,
+                "end_col_offset_idx": 4,
+                "end_row_offset_idx": 5,
+                "fillable": false,
+                "row_header": false,
+                "row_section": false,
+                "row_span": 1,
+                "start_col_offset_idx": 3,
+                "start_row_offset_idx": 4,
+                "text": "65,432.09"
+              }
+            ]
+          ],
+          "num_cols": 4,
+          "num_rows": 5,
+          "orientation": "rot_0",
+          "table_cells": [
+            {
+              "bbox": {
+                "b": 126.402,
+                "coord_origin": "TOPLEFT",
+                "l": 60.0,
+                "r": 121.323,
+                "t": 116.402
+              },
+              "col_span": 1,
+              "column_header": true,
+              "end_col_offset_idx": 1,
+              "end_row_offset_idx": 1,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 0,
+              "start_row_offset_idx": 0,
+              "text": "Particulars"
+            },
+            {
+              "bbox": {
+                "b": 126.402,
+                "coord_origin": "TOPLEFT",
+                "l": 313.198,
+                "r": 340.0,
+                "t": 116.402
+              },
+              "col_span": 1,
+              "column_header": true,
+              "end_col_offset_idx": 2,
+              "end_row_offset_idx": 1,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 1,
+              "start_row_offset_idx": 0,
+              "text": "Note"
+            },
+            {
+              "bbox": {
+                "b": 126.402,
+                "coord_origin": "TOPLEFT",
+                "l": 356.611,
+                "r": 440.0,
+                "t": 116.402
+              },
+              "col_span": 1,
+              "column_header": true,
+              "end_col_offset_idx": 3,
+              "end_row_offset_idx": 1,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 2,
+              "start_row_offset_idx": 0,
+              "text": "31 March 2026"
+            },
+            {
+              "bbox": {
+                "b": 126.402,
+                "coord_origin": "TOPLEFT",
+                "l": 449.611,
+                "r": 533.0,
+                "t": 116.402
+              },
+              "col_span": 1,
+              "column_header": true,
+              "end_col_offset_idx": 4,
+              "end_row_offset_idx": 1,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 3,
+              "start_row_offset_idx": 0,
+              "text": "31 March 2025"
+            },
+            {
+              "bbox": {
+                "b": 146.402,
+                "coord_origin": "TOPLEFT",
+                "l": 60.0,
+                "r": 213.867,
+                "t": 136.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 1,
+              "end_row_offset_idx": 2,
+              "fillable": false,
+              "row_header": true,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 0,
+              "start_row_offset_idx": 1,
+              "text": "Property, plant and equipment"
+            },
+            {
+              "bbox": {
+                "b": 146.402,
+                "coord_origin": "TOPLEFT",
+                "l": 333.638,
+                "r": 340.0,
+                "t": 136.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 2,
+              "end_row_offset_idx": 2,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 1,
+              "start_row_offset_idx": 1,
+              "text": "1"
+            },
+            {
+              "bbox": {
+                "b": 146.402,
+                "coord_origin": "TOPLEFT",
+                "l": 389.106,
+                "r": 440.0,
+                "t": 136.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 3,
+              "end_row_offset_idx": 2,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 2,
+              "start_row_offset_idx": 1,
+              "text": "56,789.01"
+            },
+            {
+              "bbox": {
+                "b": 146.402,
+                "coord_origin": "TOPLEFT",
+                "l": 482.106,
+                "r": 533.0,
+                "t": 136.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 4,
+              "end_row_offset_idx": 2,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 3,
+              "start_row_offset_idx": 1,
+              "text": "52,345.67"
+            },
+            {
+              "bbox": {
+                "b": 166.402,
+                "coord_origin": "TOPLEFT",
+                "l": 60.0,
+                "r": 115.986,
+                "t": 156.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 1,
+              "end_row_offset_idx": 3,
+              "fillable": false,
+              "row_header": true,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 0,
+              "start_row_offset_idx": 2,
+              "text": "Inventories"
+            },
+            {
+              "bbox": {
+                "b": 166.402,
+                "coord_origin": "TOPLEFT",
+                "l": 333.638,
+                "r": 340.0,
+                "t": 156.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 2,
+              "end_row_offset_idx": 3,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 1,
+              "start_row_offset_idx": 2,
+              "text": "2"
+            },
+            {
+              "bbox": {
+                "b": 166.402,
+                "coord_origin": "TOPLEFT",
+                "l": 395.469,
+                "r": 440.0,
+                "t": 156.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 3,
+              "end_row_offset_idx": 3,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 2,
+              "start_row_offset_idx": 2,
+              "text": "8,765.43"
+            },
+            {
+              "bbox": {
+                "b": 166.402,
+                "coord_origin": "TOPLEFT",
+                "l": 488.469,
+                "r": 533.0,
+                "t": 156.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 4,
+              "end_row_offset_idx": 3,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 3,
+              "start_row_offset_idx": 2,
+              "text": "7,654.32"
+            },
+            {
+              "bbox": {
+                "b": 186.402,
+                "coord_origin": "TOPLEFT",
+                "l": 60.0,
+                "r": 149.253,
+                "t": 176.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 1,
+              "end_row_offset_idx": 4,
+              "fillable": false,
+              "row_header": true,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 0,
+              "start_row_offset_idx": 3,
+              "text": "Trade receivables"
+            },
+            {
+              "bbox": {
+                "b": 186.402,
+                "coord_origin": "TOPLEFT",
+                "l": 333.638,
+                "r": 340.0,
+                "t": 176.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 2,
+              "end_row_offset_idx": 4,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 1,
+              "start_row_offset_idx": 3,
+              "text": "3"
+            },
+            {
+              "bbox": {
+                "b": 186.402,
+                "coord_origin": "TOPLEFT",
+                "l": 395.469,
+                "r": 440.0,
+                "t": 176.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 3,
+              "end_row_offset_idx": 4,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 2,
+              "start_row_offset_idx": 3,
+              "text": "6,543.21"
+            },
+            {
+              "bbox": {
+                "b": 186.402,
+                "coord_origin": "TOPLEFT",
+                "l": 488.469,
+                "r": 533.0,
+                "t": 176.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 4,
+              "end_row_offset_idx": 4,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 3,
+              "start_row_offset_idx": 3,
+              "text": "5,432.10"
+            },
+            {
+              "bbox": {
+                "b": 206.402,
+                "coord_origin": "TOPLEFT",
+                "l": 60.0,
+                "r": 120.063,
+                "t": 196.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 1,
+              "end_row_offset_idx": 5,
+              "fillable": false,
+              "row_header": true,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 0,
+              "start_row_offset_idx": 4,
+              "text": "Total assets"
+            },
+            {
+              "bbox": {
+                "b": 206.402,
+                "coord_origin": "TOPLEFT",
+                "l": 389.106,
+                "r": 440.0,
+                "t": 196.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 3,
+              "end_row_offset_idx": 5,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 2,
+              "start_row_offset_idx": 4,
+              "text": "72,097.65"
+            },
+            {
+              "bbox": {
+                "b": 206.402,
+                "coord_origin": "TOPLEFT",
+                "l": 482.106,
+                "r": 533.0,
+                "t": 196.402
+              },
+              "col_span": 1,
+              "column_header": false,
+              "end_col_offset_idx": 4,
+              "end_row_offset_idx": 5,
+              "fillable": false,
+              "row_header": false,
+              "row_section": false,
+              "row_span": 1,
+              "start_col_offset_idx": 3,
+              "start_row_offset_idx": 4,
+              "text": "65,432.09"
+            }
+          ]
+        },
+        "footnotes": [],
+        "label": "table",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 631.495,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 54.834,
+              "r": 539.67,
+              "t": 733.253
+            },
+            "charspan": [
+              0,
+              0
+            ],
+            "page_no": 3
+          }
+        ],
+        "references": [],
+        "self_ref": "#/tables/1"
+      }
+    ],
+    "texts": [
+      {
+        "children": [],
+        "content_layer": "furniture",
+        "label": "page_header",
+        "orig": "Synthetic Cements Limited · Annual report 2025-26",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 803.728,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 56.0,
+              "r": 289.952,
+              "t": 812.728
+            },
+            "charspan": [
+              0,
+              49
+            ],
+            "page_no": 1
+          }
+        ],
+        "self_ref": "#/texts/0",
+        "text": "Synthetic Cements Limited · Annual report 2025-26"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "section_header",
+        "level": 1,
+        "orig": "Standalone balance sheet",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 742.046,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 56.0,
+              "r": 289.992,
+              "t": 758.046
+            },
+            "charspan": [
+              0,
+              24
+            ],
+            "page_no": 1
+          }
+        ],
+        "self_ref": "#/texts/1",
+        "text": "Standalone balance sheet"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "enumerated": false,
+        "label": "list_item",
+        "marker": "",
+        "orig": "Note 1. Property, plant and equipment are carried at cost less depreciation.",
+        "parent": {
+          "$ref": "#/groups/0"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 605.247,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 56.0,
+              "r": 474.027,
+              "t": 616.247
+            },
+            "charspan": [
+              0,
+              76
+            ],
+            "page_no": 1
+          }
+        ],
+        "self_ref": "#/texts/2",
+        "text": "Note 1. Property, plant and equipment are carried at cost less depreciation."
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "orig": "Note 2. Inventories are valued at the lower of cost and net realisable value.",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 589.247,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 56.0,
+              "r": 472.947,
+              "t": 600.247
+            },
+            "charspan": [
+              0,
+              77
+            ],
+            "page_no": 1
+          }
+        ],
+        "self_ref": "#/texts/3",
+        "text": "Note 2. Inventories are valued at the lower of cost and net realisable value."
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "orig": "Note 3. Trade receivables are shown net of the allowance for expected losses, which is worked out from the ageing of the receivables at the year end. Note 4. Borrowings are carried at amortised cost using the effective rate. Note 5. Provisions are made when an outflow of resources is probable.",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 573.247,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 56.0,
+              "r": 487.927,
+              "t": 584.247
+            },
+            "charspan": [
+              0,
+              77
+            ],
+            "page_no": 1
+          },
+          {
+            "bbox": {
+              "b": 711.247,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 56.0,
+              "r": 460.47,
+              "t": 754.247
+            },
+            "charspan": [
+              78,
+              294
+            ],
+            "page_no": 2
+          }
+        ],
+        "self_ref": "#/texts/4",
+        "text": "Note 3. Trade receivables are shown net of the allowance for expected losses, which is worked out from the ageing of the receivables at the year end. Note 4. Borrowings are carried at amortised cost using the effective rate. Note 5. Provisions are made when an outflow of resources is probable."
+      },
+      {
+        "children": [],
+        "content_layer": "furniture",
+        "label": "page_header",
+        "orig": "Synthetic Cements Limited · Annual report 2025-26",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 803.728,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 56.0,
+              "r": 289.952,
+              "t": 812.728
+            },
+            "charspan": [
+              0,
+              49
+            ],
+            "page_no": 2
+          }
+        ],
+        "self_ref": "#/texts/5",
+        "text": "Synthetic Cements Limited · Annual report 2025-26"
+      },
+      {
+        "children": [],
+        "content_layer": "furniture",
+        "label": "page_header",
+        "orig": "Synthetic Cements Limited · Annual report 2025-26",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 803.728,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 56.0,
+              "r": 289.952,
+              "t": 812.728
+            },
+            "charspan": [
+              0,
+              49
+            ],
+            "page_no": 3
+          }
+        ],
+        "self_ref": "#/texts/6",
+        "text": "Synthetic Cements Limited · Annual report 2025-26"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "section_header",
+        "level": 1,
+        "orig": "Consolidated balance sheet",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 742.046,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 56.0,
+              "r": 305.477,
+              "t": 758.046
+            },
+            "charspan": [
+              0,
+              26
+            ],
+            "page_no": 3
+          }
+        ],
+        "self_ref": "#/texts/7",
+        "text": "Consolidated balance sheet"
+      }
+    ],
+    "version": "1.10.0"
+  },
+  "firstPage": 1,
+  "itemSources": {
+    "#/tables/0": "text_layer",
+    "#/tables/1": "text_layer",
+    "#/texts/0": "text_layer",
+    "#/texts/1": "text_layer",
+    "#/texts/2": "text_layer",
+    "#/texts/3": "text_layer",
+    "#/texts/4": "text_layer",
+    "#/texts/5": "text_layer",
+    "#/texts/6": "text_layer",
+    "#/texts/7": "text_layer"
+  },
+  "lastPage": 3,
+  "ocrOn": true,
+  "pageCount": 3,
+  "pages": [
+    {
+      "itemsOcr": 0,
+      "itemsTextLayer": 6,
+      "noneReason": null,
+      "pageNumber": 1,
+      "text": "Synthetic Cements Limited · Annual report 2025-26\nStandalone balance sheet\nParticulars Note 31 March 2026 31 March 2025\nProperty, plant and equipment 1 56,789.01 52,345.67\nInventories 2 8,765.43 7,654.32\nTrade receivables 3 6,543.21 5,432.10\nTotal assets 72,097.65 65,432.09\nNote 1. Property, plant and equipment are carried at cost less depreciation.\nNote 2. Inventories are valued at the lower of cost and net realisable value.\nNote 3. Trade receivables are shown net of the allowance for expected losses,"
+    },
+    {
+      "itemsOcr": 0,
+      "itemsTextLayer": 2,
+      "noneReason": null,
+      "pageNumber": 2,
+      "text": "which is worked out from the ageing of the receivables at the year end. Note 4. Borrowings are carried at amortised cost using the effective rate. Note 5. Provisions are made when an outflow of resources is probable.\nSynthetic Cements Limited · Annual report 2025-26"
+    },
+    {
+      "itemsOcr": 0,
+      "itemsTextLayer": 3,
+      "noneReason": null,
+      "pageNumber": 3,
+      "text": "Synthetic Cements Limited · Annual report 2025-26\nConsolidated balance sheet\nParticulars Note 31 March 2026 31 March 2025\nProperty, plant and equipment 1 56,789.01 52,345.67\nInventories 2 8,765.43 7,654.32\nTrade receivables 3 6,543.21 5,432.10\nTotal assets 72,097.65 65,432.09"
+    }
+  ],
+  "versions": {
+    "chunkerVersion": "1",
+    "doclingVersion": "2.134.0",
+    "ocrEngine": "rapidocr-onnxruntime 3.9.2",
+    "readerOptions": "table=accurate;cell_matching=true;ocr=rapidocr",
+    "tokenizer": "Snowflake/snowflake-arctic-embed-l-v2.0"
+  }
+}

@@ -6,10 +6,8 @@ artifacts (`docling-tools models download layout tableformer rapidocr -o
 which of our assumptions still hold.
 """
 
-import logging
 import os
 import unittest
-import warnings
 from functools import lru_cache
 from pathlib import Path
 
@@ -26,10 +24,8 @@ from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
 from docling_core.types.doc import ContentLayer
 from docling_core.types.doc.page import TextCell
-from rapidocr.utils.log import logger as rapidocr_logger
-from transformers.utils.logging import disable_progress_bar
 
-from tests.helpers import whitespace_tokenizer
+from tests.helpers import quiet_docling, whitespace_tokenizer
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 MODELS = os.environ.get("MAESTER_DOCLING_MODELS", "")
@@ -60,21 +56,6 @@ def convert(path: Path, page_range: tuple[int, int] | None = None) -> Conversion
 def cells_of(res: ConversionResult, page_no: int) -> list[TextCell]:
     """The text cells Docling kept for a page; `Page.page_no` counts from 1, as `prov.page_no` does."""
     return [cell for page in res.pages if page.page_no == page_no for cell in page.cells]
-
-
-def quiet_docling() -> None:
-    """Keep the test output to the results: Docling reads its own deprecated fields,
-    RapidOCR logs each model it loads, and transformers draws a progress bar."""
-    for message in (
-        "`force_full_page_ocr` is deprecated",
-        "This field is deprecated. Use `generate_page_images=True`",
-        "deprecated",
-    ):
-        warnings.filterwarnings("ignore", message=message, category=DeprecationWarning, module=r"(docling|pydantic)\.")
-    # RapidOCR resets its logger's level each time it loads a model, so filter instead.
-    rapidocr_logger.addFilter(lambda record: record.levelno >= logging.WARNING)
-    logging.getLogger("torch.distributed.elastic.multiprocessing.redirects").setLevel(logging.ERROR)
-    disable_progress_bar()
 
 
 @unittest.skipUnless(MODELS and Path(MODELS).is_dir(), "MAESTER_DOCLING_MODELS does not name a folder of Docling artifacts")

@@ -1,0 +1,159 @@
+{
+  "document": {
+    "body": {
+      "children": [
+        {
+          "$ref": "#/texts/0"
+        },
+        {
+          "$ref": "#/texts/1"
+        },
+        {
+          "$ref": "#/texts/2"
+        }
+      ],
+      "content_layer": "body",
+      "label": "unspecified",
+      "name": "_root_",
+      "self_ref": "#/body"
+    },
+    "form_items": [],
+    "furniture": {
+      "children": [],
+      "content_layer": "furniture",
+      "label": "unspecified",
+      "name": "_root_",
+      "self_ref": "#/furniture"
+    },
+    "groups": [],
+    "key_value_items": [],
+    "name": "document",
+    "origin": {
+      "binary_hash": 16357752537517211749,
+      "filename": "document.pdf",
+      "mimetype": "application/pdf"
+    },
+    "pages": {
+      "1": {
+        "page_no": 1,
+        "size": {
+          "height": 841.89,
+          "width": 595.276
+        }
+      }
+    },
+    "pictures": [],
+    "schema_name": "DoclingDocument",
+    "tables": [],
+    "texts": [
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "section_header",
+        "level": 1,
+        "orig": "Report of the board",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 766.046,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 56.0,
+              "r": 234.297,
+              "t": 782.046
+            },
+            "charspan": [
+              0,
+              19
+            ],
+            "page_no": 1
+          }
+        ],
+        "self_ref": "#/texts/0",
+        "text": "Report of the board"
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "orig": "The board met six times during the year. Each meeting had a quorum.",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 739.247,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 56.0,
+              "r": 445.737,
+              "t": 750.247
+            },
+            "charspan": [
+              0,
+              67
+            ],
+            "page_no": 1
+          }
+        ],
+        "self_ref": "#/texts/1",
+        "text": "The board met six times during the year. Each meeting had a quorum."
+      },
+      {
+        "children": [],
+        "content_layer": "body",
+        "label": "text",
+        "orig": "The auditors were reappointed for a second term of five years at the last annual general meeting of the members.",
+        "parent": {
+          "$ref": "#/body"
+        },
+        "prov": [
+          {
+            "bbox": {
+              "b": 658.89,
+              "coord_origin": "BOTTOMLEFT",
+              "l": 60.667,
+              "r": 471.667,
+              "t": 700.223
+            },
+            "charspan": [
+              0,
+              112
+            ],
+            "page_no": 1
+          }
+        ],
+        "self_ref": "#/texts/2",
+        "text": "The auditors were reappointed for a second term of five years at the last annual general meeting of the members."
+      }
+    ],
+    "version": "1.10.0"
+  },
+  "firstPage": 1,
+  "itemSources": {
+    "#/texts/0": "text_layer",
+    "#/texts/1": "text_layer",
+    "#/texts/2": "ocr"
+  },
+  "lastPage": 1,
+  "ocrOn": true,
+  "pageCount": 1,
+  "pages": [
+    {
+      "itemsOcr": 1,
+      "itemsTextLayer": 2,
+      "noneReason": null,
+      "pageNumber": 1,
+      "text": "Report of the board\nThe board met six times during the year. Each meeting had a quorum.\nThe auditors were reappointed for a second term of five years at the last annual general meeting of the members."
+    }
+  ],
+  "versions": {
+    "chunkerVersion": "1",
+    "doclingVersion": "2.134.0",
+    "ocrEngine": "rapidocr-onnxruntime 3.9.2",
+    "readerOptions": "table=accurate;cell_matching=true;ocr=rapidocr",
+    "tokenizer": "Snowflake/snowflake-arctic-embed-l-v2.0"
+  }
+}

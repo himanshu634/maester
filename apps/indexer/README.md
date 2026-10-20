@@ -29,6 +29,8 @@ HF_HUB_OFFLINE=1 MAESTER_DOCLING_MODELS=$HOME/.cache/maester/docling uv run pyth
 
 The fixture PDFs in `tests/fixtures` are synthetic, made by `tests/fixtures/make_fixtures.py` (`uv run python tests/fixtures/make_fixtures.py`), and the same bytes come out each run.
 
+The chunker's tests run with no models on `tests/fixtures/<name>.read.json`, the reader's output on each fixture PDF (all pages, OCR on), written by `tests/fixtures/save_reads.py` (`HF_HUB_OFFLINE=1 DOCLING_ARTIFACTS_PATH=$HOME/.cache/maester/docling uv run python tests/fixtures/save_reads.py`). Regenerate them only when the Docling pin or the reader changes. Floats are rounded to three places there, because the layout model's boxes vary in about the fifth decimal place between runs.
+
 ## Docling interfaces this service relies on
 
 `tests/test_probe.py` checks each of these against the pinned version. When the pin changes, run it first.
