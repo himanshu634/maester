@@ -226,7 +226,7 @@ describe("a short HNSW answer", () => {
                 };
               },
             });
-            return fn(wrapped as Db);
+            return fn(wrapped as unknown as Db);
           });
       },
     }) as Db;
