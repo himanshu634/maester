@@ -54,7 +54,7 @@ describe("worker env: the queue", () => {
   it("builds the runner's options from the environment", () => {
     const env = loadWorkerEnv({ ...base, JOB_CONCURRENCY: "document.extract=3", JOB_POLL_MS: "250", JOB_SWEEP_MS: "5000" });
     const opts = buildQueueOptions(env, handlers, silentLogger);
-    expect(opts.concurrency).toEqual({ "document.verify": 4, "document.classify": 2, "document.extract": 3 });
+    expect(opts.concurrency).toEqual({ "document.verify": 4, "document.classify": 2, "document.extract": 3, "document.index": 1 });
     expect(opts).toMatchObject({ pollMs: 250, sweepMs: 5000 });
     expect(typeof opts.listen).toBe("function");
   });
