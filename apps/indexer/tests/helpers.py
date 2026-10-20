@@ -1,13 +1,18 @@
 """Helpers shared by the indexer's tests."""
 
+import json
 import logging
 import warnings
+from pathlib import Path
 
 from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
+from docling_core.types.doc import DoclingDocument
 from tokenizers import Tokenizer
 from tokenizers.models import WordLevel
 from tokenizers.pre_tokenizers import WhitespaceSplit
 from transformers import PreTrainedTokenizerFast
+
+from maester_indexer.contracts import RangeRead
 
 
 def whitespace_tokenizer(max_tokens: int) -> HuggingFaceTokenizer:
@@ -38,3 +43,34 @@ def quiet_docling() -> None:
     rapidocr_logger.addFilter(lambda record: record.levelno >= logging.WARNING)
     logging.getLogger("torch.distributed.elastic.multiprocessing.redirects").setLevel(logging.ERROR)
     disable_progress_bar()
+
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+
+def fixture_read(name: str, pages: tuple[int, int] | None = None) -> RangeRead:
+    """A saved range read (`tests/fixtures/<name>.read.json`), or a part of it as if only
+    pages first..last had been read: the document filtered to them, its item sources
+    renumbered with it, and only those pages' page reads."""
+    read = RangeRead.from_wire(json.loads((FIXTURES / f"{name}.read.json").read_text(encoding="utf-8")))
+    if pages is None:
+        return read
+    from maester_indexer.chunker import filter_document
+
+    first, last = pages
+    document, original_refs = filter_document(
+        DoclingDocument.model_validate(read.document), set(range(first, last + 1))
+    )
+    return read.model_copy(
+        update={
+            "first_page": first,
+            "last_page": last,
+            "document": document.export_to_dict(),
+            "item_sources": {
+                ref: read.item_sources[original]
+                for ref, original in original_refs.items()
+                if original in read.item_sources
+            },
+            "pages": [page for page in read.pages if first <= page.page_number <= last],
+        }
+    )
