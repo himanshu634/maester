@@ -26,7 +26,13 @@ const VERSIONS: IndexerVersions = {
 const sentence = (page: number, n: number) =>
   `The synthetic mill ran at full capacity, line ${n} of page ${page}.${n === 2 ? " Dispatches rose in the quarter." : ""}`;
 
-type FakeDoc = { pageCount: number; headings?: Record<number, string>; scanned?: boolean };
+type FakeDoc = {
+  pageCount: number;
+  headings?: Record<number, string>;
+  scanned?: boolean;
+  /** Pages read with no text, and why. */
+  empty?: Record<number, RangePage["noneReason"]>;
+};
 type Failure = { code: string; retryable: boolean; message: string; times: number };
 
 /**
@@ -68,7 +74,8 @@ class FakeIndexer implements IndexerClient {
     for (let p = input.firstPage; p <= last; p++) {
       const text = `${sentence(p, 1)}\n${sentence(p, 2)}`;
       if (this.doc.headings?.[p]) headings[String(p)] = this.doc.headings[p]!;
-      if (!this.doc.scanned) pages.push({ pageNumber: p, text, itemsTextLayer: 2, itemsOcr: 0, noneReason: null });
+      if (this.doc.empty?.[p]) pages.push({ pageNumber: p, text: "", itemsTextLayer: 0, itemsOcr: 0, noneReason: this.doc.empty[p]! });
+      else if (!this.doc.scanned) pages.push({ pageNumber: p, text, itemsTextLayer: 2, itemsOcr: 0, noneReason: null });
       else if (ocrOn) pages.push({ pageNumber: p, text, itemsTextLayer: 0, itemsOcr: 2, noneReason: null });
       else pages.push({ pageNumber: p, text: "", itemsTextLayer: 0, itemsOcr: 0, noneReason: "OCR_BUDGET" });
     }
@@ -370,6 +377,22 @@ describe("document.index", () => {
     expect(pages.filter((p) => p.noneReason === "OCR_BUDGET").map((p) => p.pageNumber)).toEqual([41, 42, 43, 44, 45]);
     expect(pages.filter((p) => p.noneReason === null)).toHaveLength(40);
     expect(job.result).toMatchObject({ state: "partial", pages: 45, chunks: 80, ocrPages: 40 });
+  });
+
+  it("a page Docling could not read makes the revision partial; a blank page does not", async () => {
+    const doc = await seedDocument();
+    const indexer = new FakeIndexer({ pageCount: 25, empty: { 4: "NO_TEXT", 22: "PAGE_UNREADABLE" } });
+    const job = await run(await seedIndexJob(doc), { indexer, embedder: new CountingEmbedder() });
+    expect(job.state).toBe("succeeded");
+    const [revision] = await revisionsOf(doc.id);
+    expect(revision).toMatchObject({ state: "partial", warnings: ["PAGE_UNREADABLE"], pagesRead: 25 });
+    const pages = await pagesOf(revision!.id);
+    expect(pages.filter((p) => p.noneReason !== null).map((p) => [p.pageNumber, p.noneReason])).toEqual([[4, "NO_TEXT"], [22, "PAGE_UNREADABLE"]]);
+    expect(job.result).toMatchObject({ state: "partial", pages: 25, chunks: 46 });
+
+    const blank = await seedDocument();
+    await run(await seedIndexJob(blank), { indexer: new FakeIndexer({ pageCount: 5, empty: { 2: "NO_TEXT" } }), embedder: new CountingEmbedder() });
+    expect((await revisionsOf(blank.id))[0]).toMatchObject({ state: "complete", warnings: [] });
   });
 
   it("a range read with OCR off for the budget is not cached, so a rebuild reads it again with OCR", async () => {
