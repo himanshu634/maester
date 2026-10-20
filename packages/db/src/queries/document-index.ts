@@ -59,7 +59,7 @@ export type RangeReadJson = Record<string, unknown>;
 /** Rows per insert statement, to stay under Postgres's bind parameter limit. */
 const INSERT_BATCH = 500;
 
-const PARTIAL_WARNINGS = ["OCR_FAILED", "OCR_BUDGET"];
+const PARTIAL_WARNINGS = ["OCR_FAILED", "OCR_BUDGET", "PAGE_UNREADABLE"];
 
 function versionsMatch(row: IndexRevisionRow, v: IndexVersions): boolean {
   return (
@@ -79,6 +79,16 @@ export async function startOrResumeRevision(
 ): Promise<IndexRevisionRow> {
   const { documentId, jobId, versions: v } = input;
   return db.transaction(async (tx) => {
+    const [doc] = await tx
+      .select({ id: document.id })
+      .from(document)
+      .where(and(eq(document.workspaceId, workspaceId), eq(document.id, documentId)));
+    if (!doc) throw new Error("DOCUMENT_NOT_FOUND");
+    const [jobRow] = await tx
+      .select({ subjectId: job.subjectId })
+      .from(job)
+      .where(and(eq(job.workspaceId, workspaceId), eq(job.id, jobId)));
+    if (!jobRow || jobRow.subjectId !== documentId) throw new Error("JOB_NOT_FOR_DOCUMENT");
     const [existing] = await tx
       .select()
       .from(documentIndexRevision)
@@ -129,6 +139,8 @@ export async function writeRange(
       .where(and(eq(documentIndexRevision.workspaceId, workspaceId), eq(documentIndexRevision.id, revisionId)))
       .for("update");
     if (!rev) throw new Error("INDEX_REVISION_NOT_FOUND");
+    if (rev.documentId !== documentId) throw new Error("REVISION_DOCUMENT_MISMATCH");
+    if (rev.state !== "building") throw new Error("REVISION_NOT_BUILDING");
 
     for (let i = 0; i < pages.length; i += INSERT_BATCH) {
       await tx

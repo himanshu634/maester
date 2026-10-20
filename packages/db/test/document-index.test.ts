@@ -188,7 +188,11 @@ describe("document index", () => {
     expect(done1.state).toBe("complete");
     const r2 = await newRevision(ws, documentId);
     await writeRange(db, ws, r2.id, documentId, [page(1)], [chunk(1, 0)], counts);
-    const [other] = [await newRevision(ws, documentId, { ...versions, embeddingModel: "other-model" })];
+    const other = await newRevision(ws, documentId, { ...versions, embeddingModel: "other-model" });
+    const stateOf = async () =>
+      Object.fromEntries((await db.execute(sql`select id, state from document_index_revision`)).rows.map((r) => [r.id, r.state]));
+    expect(await stateOf()).toEqual({ [r1.id]: "complete", [r2.id]: "building", [other.id]: "building" });
+    expect(await count("chunk_embedding")).toBe(2);
     const done2 = await completeRevision(db, ws, r2.id);
     expect(done2.state).toBe("complete");
     expect(done2.completedAt).not.toBeNull();
@@ -208,6 +212,12 @@ describe("document index", () => {
     const rev2 = await newRevision(ws, documentId);
     await writeRange(db, ws, rev2.id, documentId, [page(1)], [], { ...counts, warnings: ["OCR_FAILED"] });
     expect((await completeRevision(db, ws, rev2.id)).state).toBe("partial");
+    const rev3 = await newRevision(ws, documentId);
+    await writeRange(db, ws, rev3.id, documentId, [page(1)], [], { ...counts, warnings: ["PAGE_UNREADABLE"] });
+    expect((await completeRevision(db, ws, rev3.id)).state).toBe("partial");
+    const rev4 = await newRevision(ws, documentId);
+    await writeRange(db, ws, rev4.id, documentId, [page(1)], [], { ...counts, warnings: ["SOMETHING_ELSE"] });
+    expect((await completeRevision(db, ws, rev4.id)).state).toBe("complete");
   });
 
   it("a second complete revision for the same document and model is refused by document_index_current", async () => {
@@ -286,10 +296,49 @@ describe("document index", () => {
     await expect(writeRange(db, a.ws, rev.id, documentId, [page(9)], [], counts)).rejects.toThrow("INDEX_REVISION_NOT_FOUND");
     const chunkId = (await db.execute(sql`select id from document_chunk limit 1`)).rows[0]!.id as string;
     await expect(insertEmbeddings(db, a.ws, MODEL, [{ chunkId, embedding: unit(5) }])).rejects.toThrow("CHUNK_NOT_IN_WORKSPACE");
-    // Resuming a job from workspace A never touches B's revision.
-    const jobA = await seedJob(a.ws, await seedDocument(a.ws, a.userId));
-    const fresh = await startOrResumeRevision(db, a.ws, { documentId: (await db.execute(sql`select subject_id from job where id = ${jobA}`)).rows[0]!.subject_id as string, jobId: jobA, versions });
-    expect(fresh.workspaceId).toBe(a.ws);
+    // Workspace A cannot resume or replace B's revision through B's job.
+    const jobB = (await db.execute(sql`select job_id from document_index_revision where id = ${rev.id}`)).rows[0]!.job_id as string;
+    const docA = await seedDocument(a.ws, a.userId);
+    await expect(startOrResumeRevision(db, a.ws, { documentId: docA, jobId: jobB, versions })).rejects.toThrow();
+    await expect(
+      startOrResumeRevision(db, a.ws, { documentId: docA, jobId: jobB, versions: { ...versions, chunkerVersion: "chunker-2" } }),
+    ).rejects.toThrow();
+    const after = await db.execute(sql`select id, chunker_version, workspace_id from document_index_revision`);
+    expect(after.rows).toEqual([{ id: rev.id, chunker_version: versions.chunkerVersion, workspace_id: b.ws }]);
     expect(await count("document_chunk")).toBe(2);
+  });
+
+  it("writeRange refuses another document's id and a revision that is not building", async () => {
+    const { ws, userId } = await seedWorkspace("a");
+    const documentId = await seedDocument(ws, userId);
+    const rev = await newRevision(ws, documentId);
+    const otherDoc = await seedDocument(ws, userId);
+    await expect(writeRange(db, ws, rev.id, otherDoc, [page(1)], [chunk(1, 0)], counts)).rejects.toThrow("REVISION_DOCUMENT_MISMATCH");
+    expect(await count("document_chunk")).toBe(0);
+    await completeRevision(db, ws, rev.id);
+    await expect(writeRange(db, ws, rev.id, documentId, [page(1)], [chunk(1, 0)], counts)).rejects.toThrow("REVISION_NOT_BUILDING");
+    expect(await count("document_page")).toBe(0);
+  });
+
+  it("startOrResumeRevision refuses a document outside the workspace and a job for another document", async () => {
+    const a = await seedWorkspace("a");
+    const b = await seedWorkspace("b");
+    const docA = await seedDocument(a.ws, a.userId);
+    const docA2 = await seedDocument(a.ws, a.userId);
+    const docB = await seedDocument(b.ws, b.userId);
+    const jobA = await seedJob(a.ws, docA);
+    await expect(startOrResumeRevision(db, a.ws, { documentId: docB, jobId: jobA, versions })).rejects.toThrow("DOCUMENT_NOT_FOUND");
+    await expect(startOrResumeRevision(db, a.ws, { documentId: docA2, jobId: jobA, versions })).rejects.toThrow("JOB_NOT_FOR_DOCUMENT");
+    expect(await count("document_index_revision")).toBe(0);
+  });
+
+  it("a chunk with no page number is unique per revision and seq", async () => {
+    const { ws, userId } = await seedWorkspace("a");
+    const documentId = await seedDocument(ws, userId);
+    const rev = await newRevision(ws, documentId);
+    const xbrl = chunk(1, 0, { pageNumber: null, textSource: "xbrl" });
+    await writeRange(db, ws, rev.id, documentId, [], [xbrl], counts);
+    await writeRange(db, ws, rev.id, documentId, [], [xbrl], counts);
+    expect(await count("document_chunk")).toBe(1);
   });
 });

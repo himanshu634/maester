@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
-  customType, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, uniqueIndex, uuid, vector,
+  customType, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, unique, uniqueIndex, uuid, vector,
 } from "drizzle-orm/pg-core";
 import { document, job, ts, workspace } from "./platform.js";
 
@@ -83,7 +83,7 @@ export const documentChunk = pgTable(
     createdAt: ts("created_at").notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("document_chunk_revision_page_seq").on(t.revisionId, t.pageNumber, t.seq),
+    unique("document_chunk_revision_page_seq").on(t.revisionId, t.pageNumber, t.seq).nullsNotDistinct(),
     index("document_chunk_tsv").using("gin", t.tsv),
     index("document_chunk_workspace_document").on(t.workspaceId, t.documentId),
   ],

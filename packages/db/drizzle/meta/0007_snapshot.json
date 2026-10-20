@@ -1,5 +1,5 @@
 {
-  "id": "a9252895-d778-4fd3-b1f2-a9afcb8db73c",
+  "id": "6103fd7f-21d5-4555-bc11-4eb6d8e2e315",
   "prevId": "dfab8dc9-f809-4527-b57c-a64aeaa0b306",
   "version": "7",
   "dialect": "postgresql",
@@ -2698,33 +2698,6 @@
         }
       },
       "indexes": {
-        "document_chunk_revision_page_seq": {
-          "name": "document_chunk_revision_page_seq",
-          "columns": [
-            {
-              "expression": "revision_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "page_number",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "seq",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "document_chunk_tsv": {
           "name": "document_chunk_tsv",
           "columns": [
@@ -2804,7 +2777,17 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "document_chunk_revision_page_seq": {
+          "name": "document_chunk_revision_page_seq",
+          "nullsNotDistinct": true,
+          "columns": [
+            "revision_id",
+            "page_number",
+            "seq"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

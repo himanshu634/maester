@@ -27,7 +27,8 @@ CREATE TABLE "document_chunk" (
 	"text" text NOT NULL,
 	"token_count" integer NOT NULL,
 	"tsv" "tsvector" GENERATED ALWAYS AS (to_tsvector('simple'::regconfig, heading_text || ' ' || text)) STORED,
-	"created_at" timestamp (3) with time zone DEFAULT now() NOT NULL
+	"created_at" timestamp (3) with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "document_chunk_revision_page_seq" UNIQUE NULLS NOT DISTINCT("revision_id","page_number","seq")
 );
 --> statement-breakpoint
 CREATE TABLE "document_index_revision" (
@@ -89,7 +90,6 @@ ALTER TABLE "document_page" ADD CONSTRAINT "document_page_workspace_id_workspace
 ALTER TABLE "document_page" ADD CONSTRAINT "document_page_revision_id_document_index_revision_id_fk" FOREIGN KEY ("revision_id") REFERENCES "public"."document_index_revision"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "page_read" ADD CONSTRAINT "page_read_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "chunk_embedding_hnsw" ON "chunk_embedding" USING hnsw (("embedding"::halfvec(1024)) halfvec_cosine_ops);--> statement-breakpoint
-CREATE UNIQUE INDEX "document_chunk_revision_page_seq" ON "document_chunk" USING btree ("revision_id","page_number","seq");--> statement-breakpoint
 CREATE INDEX "document_chunk_tsv" ON "document_chunk" USING gin ("tsv");--> statement-breakpoint
 CREATE INDEX "document_chunk_workspace_document" ON "document_chunk" USING btree ("workspace_id","document_id");--> statement-breakpoint
 CREATE INDEX "document_index_revision_document" ON "document_index_revision" USING btree ("workspace_id","document_id","embedding_model","created_at");--> statement-breakpoint
