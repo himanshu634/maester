@@ -242,8 +242,12 @@ describe("the vector branch's plan", () => {
     await seedDocument(ws, userId, { companyId: co, chunks: Array.from({ length: 40 }, (_, i) => ({ text: `chunk number ${i}` })) });
     const [vector] = await embedder.embed(["chunk number 3"], "query");
     const stmt = vectorBranchSql({ workspaceId: ws, model: MODEL, vector: vector!, ...(over.companyId === "yes" ? { companyId: co } : {}) });
+    // With a few dozen rows a sort over any scan is cheaper than the HNSW index, so the planner's choice depends on
+    // the table's statistics. The question here is whether the statement can be served by the index at all: with
+    // sorting and sequential scans priced out, only an index that yields the order is left.
     const result = await db.transaction(async (tx) => {
       await tx.execute(sql`set local enable_seqscan = off`);
+      await tx.execute(sql`set local enable_sort = off`);
       return tx.execute(sql`explain ${stmt}`);
     });
     return JSON.stringify(result.rows);
