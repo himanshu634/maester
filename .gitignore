@@ -10,6 +10,7 @@ data/eval/runs/
 __pycache__/
 *.pyc
 .venv/
+apps/indexer/.venv/
 *.egg-info/
 .uv-cache/
 build/
