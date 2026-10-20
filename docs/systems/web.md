@@ -98,7 +98,7 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 2. `vite.config.ts` uses `adapter-static` with `strict: true` and `fallback: '404.html'`. The fallback file is the app shell without page content.
 3. The `Dockerfile` runs `pnpm build` in a `node:22-slim` stage. Then it copies `build/` into an `nginx:1.27-alpine` image.
 4. The `Dockerfile` makes the nginx configuration from `nginx.conf.template` with `envsubst`. Then it runs `nginx -t`. A bad configuration stops the image build.
-5. nginx listens on port 8080. For a request to `/api/auth/`, `/v1/` or `/dev/`, nginx sends the request to `API_PROXY_TARGET`.
+5. nginx listens on port 8080. For a request to `/api/auth/`, `/v1/` or `/dev/`, nginx sends the request to `API_PROXY_TARGET`. nginx writes no access log for these requests, because the query string can contain a search query or a sign-in code.
 6. For all other paths, nginx tries the file, then the file with `.html`, then `index.html` in the directory.
 7. If no file agrees with the path, nginx sends `404.html`. The script in that page then shows `+error.svelte`.
 8. If nginx itself gives a 5xx answer for a page path, it sends `static/50x.html`. This page has no script and no font download.
