@@ -3,6 +3,7 @@ MAESTER_DOCLING_MODELS names a folder of Docling's artifacts (see test_probe).""
 
 import json
 import os
+import shutil
 import unittest
 from functools import lru_cache
 from io import BytesIO
@@ -11,6 +12,7 @@ from threading import Event
 from types import SimpleNamespace
 
 from docling.datamodel.base_models import ConversionStatus, DoclingComponentType, ErrorItem, FailureCategory
+from docling.datamodel.pipeline_options import RapidOcrOptions, TesseractCliOcrOptions
 from docling_core.types.doc import DoclingDocument
 from docling_core.types.doc.page import BoundingRectangle
 from reportlab.lib.pagesizes import A4
@@ -18,9 +20,9 @@ from reportlab.pdfgen.canvas import Canvas
 
 from maester_indexer.contracts import RangePage, RangeRead
 from maester_indexer.errors import IndexingError
-from maester_indexer.reader import Reader, ReadCancelled
+from maester_indexer.reader import Reader, ReadCancelled, ocr_options
 from maester_indexer.settings import Settings
-from maester_indexer.versions import CHUNKER_VERSION, DOCLING_VERSION, OCR_ENGINE
+from maester_indexer.versions import CHUNKER_VERSION, DOCLING_VERSION, ocr_engine_version
 from tests.helpers import quiet_docling
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -43,6 +45,12 @@ def made_pdf(pages: int = 1, encrypt: str | None = None) -> bytes:
 @lru_cache(maxsize=1)
 def reader() -> Reader:
     return Reader(Settings.from_env({"DOCLING_ARTIFACTS_PATH": MODELS}))
+
+
+@lru_cache(maxsize=1)
+def tesseract_reader() -> Reader:
+    # Its own reader, so its converters never share a cache with the RapidOCR reader's.
+    return Reader(Settings.from_env({"DOCLING_ARTIFACTS_PATH": MODELS, "OCR_ENGINE": "tesseract"}))
 
 
 class BeforeReading(unittest.TestCase):
@@ -265,7 +273,7 @@ class ReadRange(unittest.TestCase):
             read.versions.model_dump(),
             {
                 "docling_version": DOCLING_VERSION,
-                "ocr_engine": OCR_ENGINE,
+                "ocr_engine": ocr_engine_version("rapidocr"),
                 "reader_options": "table=accurate;cell_matching=true;ocr=rapidocr",
                 "chunker_version": CHUNKER_VERSION,
                 "tokenizer": "Snowflake/snowflake-arctic-embed-l-v2.0",
@@ -275,6 +283,52 @@ class ReadRange(unittest.TestCase):
         document = DoclingDocument.model_validate(read.document)
         self.assertEqual(set(read.item_sources), {item.self_ref for item in [*document.texts, *document.tables]})
         self.assertIn("#/texts/0", read.item_sources)  # the running header on page 1
+
+
+@unittest.skipUnless(MODELS and Path(MODELS).is_dir(), "MAESTER_DOCLING_MODELS does not name a folder of Docling artifacts")
+@unittest.skipUnless(shutil.which("tesseract"), "the tesseract binary is not installed")
+class ReadRangeWithTesseract(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        quiet_docling()
+
+    def test_scanned_page_is_ocr_with_tesseract(self):
+        read = tesseract_reader().read_range(pdf("scanned.pdf"), 1, 1, 400, Event())
+        self.assertTrue(read.ocr_on)
+        self.assertEqual(set(read.item_sources.values()), {"ocr"})
+        self.assertGreater(read.pages[0].items_ocr, 0)
+        self.assertEqual(read.pages[0].items_text_layer, 0)
+
+    def test_mixed_page_has_both_sources_with_tesseract(self):
+        read = tesseract_reader().read_range(pdf("mixed.pdf"), 1, 1, 400, Event())
+        self.assertEqual(set(read.item_sources.values()), {"text_layer", "ocr"})
+
+    def test_tesseract_reader_records_its_engine(self):
+        versions = tesseract_reader().versions
+        self.assertTrue(versions.ocr_engine.startswith("tesseract-cli "), versions.ocr_engine)
+        self.assertEqual(versions.reader_options, "table=accurate;cell_matching=true;ocr=tesseract")
+
+
+class OcrOptionsForEngine(unittest.TestCase):
+    """The options the converter is built with; no model is loaded."""
+
+    def test_rapidocr_runs_on_onnxruntime(self):
+        options = ocr_options(Settings(ocr_engine="rapidocr"))
+        self.assertIsInstance(options, RapidOcrOptions)
+        self.assertEqual(options.backend, "onnxruntime")
+
+    def test_tesseract_runs_the_cli_in_english_only(self):
+        # Docling's default languages (eng, spa, fra, deu) fail at construction in an image
+        # that holds only eng.
+        options = ocr_options(Settings(ocr_engine="tesseract"))
+        self.assertIsInstance(options, TesseractCliOcrOptions)
+        self.assertEqual((options.lang, options.tesseract_cmd), (["eng"], "tesseract"))
+
+    def test_an_engine_that_is_not_built_never_reads_with_rapidocr(self):
+        with self.assertRaises(ValueError):
+            ocr_options(Settings(ocr_engine="claude"))
+        with self.assertRaises(ValueError):
+            Reader(Settings(ocr_engine="claude"))
 
 
 if __name__ == "__main__":

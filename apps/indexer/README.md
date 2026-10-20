@@ -1,6 +1,6 @@
 # Maester indexer
 
-Status: in progress (ingestion phase 2). A Python service that reads a filing's pages with [Docling](https://github.com/docling-project/docling) and RapidOCR, and cuts them into chunks for search. Design: [ingestion pipeline spec](../../docs/superpowers/specs/2026-10-19-ingestion-pipeline-design.md) §8.
+Status: in progress (ingestion phase 2). A Python service that reads a filing's pages with [Docling](https://github.com/docling-project/docling) and RapidOCR (or Tesseract, by `OCR_ENGINE`), and cuts them into chunks for search. Design: [ingestion pipeline spec](../../docs/superpowers/specs/2026-10-19-ingestion-pipeline-design.md) §8.
 
 The indexer is its own uv project, not a member of the root workspace: Docling needs torch, which would slow every other Python job. It has its own `pyproject.toml` and `uv.lock`, runs on Python 3.12, and takes torch from the PyTorch CPU index on Linux.
 
@@ -15,6 +15,15 @@ Docling, docling-core, RapidOCR and onnxruntime are pinned to exact versions in 
 | `rapidocr` | 3.9.2 | The newest release before Docling 2.134.0. 3.10.0 (8 Oct 2026) no longer exposes `PP_OCRV6_LANGS`, which Docling 2.134.0 imports, so OCR fails to start with it |
 | `onnxruntime` | 1.31.0 | What `uv lock` resolves |
 | `torch`, `torchvision` | 2.14.1, 0.29.1 (`+cpu` on Linux) | What `uv lock` resolves; CPU builds on Linux |
+
+**OCR engines.** `OCR_ENGINE` is `rapidocr` (the default) or `tesseract`. Each has its own engine string in a page read's key (`versions.ocr_engine_version`), so switching engine reads every page again, and the stored reads of the other engine stay valid:
+
+| Engine | Engine string | Comes from |
+| --- | --- | --- |
+| `rapidocr` | `rapidocr-onnxruntime 3.9.2` | The `rapidocr` package. The string is the same as before Tesseract was added, so the stored page reads still match |
+| `tesseract` | `tesseract-cli 5.5.0 eng:7d4322bd2a77` (the image's) | The first `x.y.z` of `tesseract --version`, and the first 12 hex characters of the sha256 of `eng.traineddata`, in the folder the header of `tesseract --list-langs` names. A different binary or different language data gives a different string. The command is run once, when the reader is built, and a missing command stops the service with "tesseract is not installed" |
+
+The image installs Tesseract from the Debian packages of its base, `python:3.12-slim` (versions below, under "Docling interfaces this service relies on"). A Mac needs `brew install tesseract`; a Linux CI runner needs `apt-get install tesseract-ocr tesseract-ocr-eng`. Without the binary the Tesseract tests are skipped.
 
 The models are recorded in `models.lock.json`: the embedding model at a commit, and the commit of each Docling artifact (Docling itself asks for the layout models at `main` and the TableFormer models at the `v2.3.0` tag). RapidOCR's models come from ModelScope at the `v3.9.2` tag, which follows the `rapidocr` version.
 
@@ -43,6 +52,8 @@ uv run docling-tools models download layout tableformer rapidocr -o "$HOME/.cach
 HF_HUB_OFFLINE=1 MAESTER_DOCLING_MODELS=$HOME/.cache/maester/docling uv run python -m unittest discover -s tests -t .
 ```
 
+The tests that read with Tesseract (`ReadRangeWithTesseract` in `test_reader.py` and `test_tesseract_cells_are_marked_ocr` in `test_probe.py`) also need the `tesseract` binary on `PATH`; they are skipped without it. CI installs it before the suite.
+
 The fixture PDFs in `tests/fixtures` are synthetic, made by `tests/fixtures/make_fixtures.py` (`uv run python tests/fixtures/make_fixtures.py`), and the same bytes come out each run.
 
 The chunker's tests run with no models on `tests/fixtures/<name>.read.json`, the reader's output on each fixture PDF (all pages, OCR on), written by `tests/fixtures/save_reads.py` (`HF_HUB_OFFLINE=1 DOCLING_ARTIFACTS_PATH=$HOME/.cache/maester/docling uv run python tests/fixtures/save_reads.py`). Regenerate them only when the Docling pin or the reader changes. Floats are rounded to three places there, because the layout model's boxes vary in about the fifth decimal place between runs.
@@ -52,6 +63,9 @@ The chunker's tests run with no models on `tests/fixtures/<name>.read.json`, the
 `tests/test_probe.py` checks each of these against the pinned version. When the pin changes, run it first.
 
 - `PdfPipelineOptions(do_ocr, ocr_options=RapidOcrOptions(backend="onnxruntime"), do_table_structure, table_structure_options=TableStructureOptions(mode=TableFormerMode.ACCURATE), artifacts_path, document_timeout=None, accelerator_options=AcceleratorOptions(device=AcceleratorDevice.CPU), generate_parsed_pages=True)`. Without `generate_parsed_pages=True` the pages' text cells are dropped after assembly.
+- For `OCR_ENGINE=tesseract`: `PdfPipelineOptions(ocr_options=TesseractCliOcrOptions(lang=["eng"], tesseract_cmd="tesseract"))`. This is the command-line class, not `TesseractOcrOptions` (`tesserocr`), which is a compiled binding with no confirmed linux-aarch64 wheel. Its `lang` default is `["eng", "spa", "fra", "deu"]`, and Docling raises when a language has no installed traineddata file, so `lang=["eng"]` is required in an image that holds only English. Its cells carry `from_ocr=True` (`tesseract_ocr_cli_model.py`), so a chunk's `text_source` is the same for both engines (`test_tesseract_cells_are_marked_ocr`).
+- The Debian packages in `python:3.12-slim` (Debian 13, trixie; checked 21 Oct 2026): `tesseract-ocr` 5.5.0-1+b1 and `tesseract-ocr-eng` 1:4.1.0-2. `tesseract-ocr` depends on `tesseract-ocr-osd` (1:4.1.0-2), so it is installed with `--no-install-recommends`; Docling's orientation check reads it. The image's engine string is `tesseract-cli 5.5.0 eng:7d4322bd2a77`.
+- Docling reads Tesseract's `--version` from stdout, or from stderr when stdout is empty (its comment says Linux builds print to stderr), and `--list-langs` from stdout only. The Debian 5.5.0 build in `python:3.12-slim` prints both to stdout and nothing to stderr; the Homebrew 5.5.3 build prints both to stdout. `versions._run` returns stdout, or stderr when stdout is empty, for both commands.
 - `DocumentConverter.convert(path, page_range=(first, last))` reads only those pages; `prov.page_no` stays the page number in the whole file.
 - `ConversionResult.pages[i].cells` (`parsed_page.textline_cells`) are `TextCell`s with `from_ocr`, true for a cell RapidOCR read. `Page.page_no` counts from 1, as `prov.page_no` does. A scanned page has OCR cells, a text-layer page none, and a page with a text-layer paragraph and an image of a paragraph has both.
 - A running header is a `page_header` item in `ContentLayer.FURNITURE`, found with `iterate_items(included_content_layers={ContentLayer.FURNITURE})`.

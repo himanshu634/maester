@@ -3,14 +3,17 @@ import tempfile
 import unittest
 from importlib.metadata import version
 from pathlib import Path
+from subprocess import CompletedProcess
 from types import SimpleNamespace
+from unittest import mock
 
 from maester_indexer.lockfile import shipped_lock
 from maester_indexer.versions import (
     CHUNKER_VERSION,
     DOCLING_VERSION,
-    OCR_ENGINE,
+    _run,
     models_hash,
+    ocr_engine_version,
     reader_options,
     reader_version,
 )
@@ -34,8 +37,11 @@ class Versions(unittest.TestCase):
             f"docling-ibm-models={version('docling-ibm-models')};docling-parse={version('docling-parse')};"
             f"models={models_hash(lock)}",
         )
-        self.assertEqual(OCR_ENGINE, f"rapidocr-onnxruntime {version('rapidocr')}")
         self.assertEqual(CHUNKER_VERSION, "1")
+
+    def test_rapidocr_string_is_unchanged(self):
+        # The live page_read keys depend on it, so a change here would read every page again.
+        self.assertEqual(ocr_engine_version("rapidocr"), f"rapidocr-onnxruntime {version('rapidocr')}")
 
     def test_the_shipped_lock_is_the_one_beside_pyproject(self):
         self.assertEqual(shipped_lock(), Path(__file__).resolve().parents[1] / "models.lock.json")
@@ -45,6 +51,70 @@ class Versions(unittest.TestCase):
         self.assertEqual(reader_options(settings), "table=accurate;cell_matching=true;ocr=rapidocr")
         settings.table_cell_matching = False
         self.assertEqual(reader_options(settings), "table=accurate;cell_matching=false;ocr=rapidocr")
+
+    def test_reader_options_name_the_engine(self):
+        # Passes before the Tesseract change: a guard that the page_read key keeps naming the engine.
+        self.assertEqual(
+            reader_options(SimpleNamespace(table_cell_matching=True, ocr_engine="tesseract")),
+            "table=accurate;cell_matching=true;ocr=tesseract",
+        )
+
+
+class OcrEngineVersion(unittest.TestCase):
+    def test_tesseract_string_from_the_binary_and_its_language_data(self):
+        with tempfile.TemporaryDirectory() as d:
+            Path(d, "eng.traineddata").write_bytes(b"eng")
+            out = {
+                "--version": "tesseract 5.5.0\n leptonica-1.84.1\n",
+                "--list-langs": f'List of available languages in "{d}/" (1):\neng\n',
+            }
+            self.assertEqual(
+                ocr_engine_version("tesseract", run=lambda a: out[a[1]]), "tesseract-cli 5.5.0 eng:82fe032bd933"
+            )
+
+    def test_the_language_data_changes_the_string(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = {
+                "--version": "tesseract 5.5.0\n",
+                "--list-langs": f'List of available languages in "{d}/" (1):\neng\n',
+            }
+            Path(d, "eng.traineddata").write_bytes(b"eng")
+            before = ocr_engine_version("tesseract", run=lambda a: out[a[1]])
+            Path(d, "eng.traineddata").write_bytes(b"eng v2")
+            self.assertNotEqual(ocr_engine_version("tesseract", run=lambda a: out[a[1]]), before)
+
+    def test_a_missing_command_is_named(self):
+        def missing(args):
+            raise FileNotFoundError(args[0])
+
+        with self.assertRaisesRegex(RuntimeError, "^tesseract is not installed$"):
+            ocr_engine_version("tesseract", run=missing)
+
+    def test_a_tesseract_with_no_readable_version_or_language_folder_is_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            cases = {
+                "no version": {"--version": "\n", "--list-langs": f'List of available languages in "{d}/" (1):\neng\n'},
+                "no folder in the header": {"--version": "tesseract 5.5.0\n", "--list-langs": "List of available languages (1):\neng\n"},
+                "no eng.traineddata there": {"--version": "tesseract 5.5.0\n", "--list-langs": f'List of available languages in "{d}/" (1):\nosd\n'},
+            }
+            for name, out in cases.items():
+                with self.subTest(name), self.assertRaises(RuntimeError):
+                    ocr_engine_version("tesseract", run=lambda a, out=out: out[a[1]])
+
+    def test_an_unknown_engine_is_refused(self):
+        with self.assertRaises(ValueError):
+            ocr_engine_version("claude")
+
+    def test_run_returns_stdout(self):
+        done = CompletedProcess([], 0, stdout="tesseract 5.5.0\n", stderr="noise\n")
+        with mock.patch("maester_indexer.versions.subprocess.run", return_value=done):
+            self.assertEqual(_run(["tesseract", "--version"]), "tesseract 5.5.0\n")
+
+    def test_run_falls_back_to_stderr(self):
+        # A Linux tesseract prints --version to stderr (Docling reads both for the same reason).
+        done = CompletedProcess([], 0, stdout="", stderr="tesseract 5.3.0\n")
+        with mock.patch("maester_indexer.versions.subprocess.run", return_value=done):
+            self.assertEqual(_run(["tesseract", "--version"]), "tesseract 5.3.0\n")
 
 
 class ModelsHash(unittest.TestCase):
