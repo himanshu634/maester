@@ -41,6 +41,59 @@ const xbrlRead = (over: Partial<PipelineInput> = {}) =>
 
 const numbers = (i: PipelineInput, plan: PdfNumbersPlan | null = null, covering: string[] = []) => computePipeline(i, plan, covering).numbers;
 
+describe("computePipeline: a verify that failed for good, and partial XBRL reads", () => {
+  const verifyJob = (state: JobRow["state"], type = "document.verify") => ({ type, state }) as JobRow;
+
+  it("a document whose verify job failed for good is stored failed, not now", () => {
+    // input: document state verifying; latest job of subject type document is document.verify, state failed
+    const failed = input({ document: docRow({ state: "verifying", intakeState: null }), latestJob: verifyJob("failed") });
+    expect(computePipeline(failed, null).stored).toBe("failed");
+    expect(computePipeline(input({ document: docRow({ state: "uploaded", intakeState: null }), latestJob: verifyJob("failed") }), null).stored).toBe("failed");
+  });
+
+  it("a verify that is queued, running or succeeded, or a failed job of another type, leaves stored as now", () => {
+    for (const latestJob of [verifyJob("queued"), verifyJob("running"), verifyJob("succeeded"), verifyJob("failed", "document.classify"), null]) {
+      expect(computePipeline(input({ document: docRow({ state: "verifying", intakeState: null }), latestJob }), null).stored).toBe("now");
+    }
+    // A pending upload has no verify job yet; a stored document is done whatever its latest job did.
+    expect(computePipeline(input({ document: docRow({ state: "pending_upload", intakeState: null }), latestJob: verifyJob("failed") }), null).stored).toBe("now");
+    expect(computePipeline(input({ latestJob: verifyJob("failed") }), null).stored).toBe("done");
+  });
+
+  it("a partial XBRL read says so, with its warnings in order", () => {
+    // input: an xbrl document, intake read; current revision source xbrl, state partial, warnings XBRL_ROUNDING_MISSING and XBRL_ELEMENT_UNMAPPED
+    const warnings = [
+      { code: "XBRL_ELEMENT_UNMAPPED", message: "m" },
+      { code: "XBRL_NIL", message: "m" },
+      { code: "XBRL_ROUNDING_MISSING", message: "m" },
+    ];
+    const i = xbrlRead({ revision: { id: ID(3), source: "xbrl", state: "partial", warnings } });
+    expect(computePipeline(i, null).numbers).toMatchObject({ source: "xbrl", state: "done", partial: true, warnings: ["XBRL_ROUNDING_MISSING", "XBRL_ELEMENT_UNMAPPED", "XBRL_NIL"] });
+    const two = xbrlRead({ revision: { id: ID(3), source: "xbrl", state: "partial", warnings: warnings.slice(0, 1).concat([{ code: "XBRL_ROUNDING_MISSING", message: "m" }]) } });
+    expect(computePipeline(two, null).numbers).toMatchObject({ partial: true, warnings: ["XBRL_ROUNDING_MISSING", "XBRL_ELEMENT_UNMAPPED"] });
+  });
+
+  it("lists each code once, ignores codes outside the four, and reports a complete read as not partial", () => {
+    const rev = (state: "complete" | "partial", codes: string[]) => ({ id: ID(3), source: "xbrl" as const, state, warnings: codes.map((code) => ({ code, message: "m" })) });
+    expect(computePipeline(xbrlRead({ revision: rev("partial", ["XBRL_NIL", "XBRL_NIL", "SOMETHING_ELSE"]) }), null).numbers).toMatchObject({ partial: true, warnings: ["XBRL_NIL"] });
+    expect(computePipeline(xbrlRead({ revision: rev("complete", []) }), null).numbers).toMatchObject({ partial: false, warnings: [] });
+    expect(computePipeline(xbrlRead({ revision: rev("complete", ["XBRL_ROUNDING_MISMATCH"]) }), null).numbers).toMatchObject({ partial: false, warnings: ["XBRL_ROUNDING_MISMATCH"] });
+  });
+
+  it("only a done XBRL read carries partial and warnings", () => {
+    const partial = { id: ID(3), source: "xbrl" as const, state: "partial" as const, warnings: [{ code: "XBRL_NIL", message: "m" }] };
+    expect(computePipeline(xbrlDoc("read_failed", { revision: partial }), null).numbers).toMatchObject({ state: "failed", partial: false, warnings: [] });
+    expect(computePipeline(xbrlDoc("read", { revision: partial, xbrlJob: job("running") }), null).numbers).toMatchObject({ state: "now", partial: false, warnings: [] });
+  });
+
+  it("a PDF never carries XBRL warnings", () => {
+    // input: a pdf document, intake read, a complete Gemini revision
+    expect(computePipeline(pdfRead(), { action: "read", coveredBy: [], uncovered: [] }).numbers).toMatchObject({ partial: false, warnings: [] });
+    const partialPdf = pdfRead({ revision: { id: ID(3), source: "pdf", state: "partial", warnings: [{ code: "XBRL_NIL", message: "m" }] } });
+    expect(computePipeline(partialPdf, null).numbers).toMatchObject({ partial: false, warnings: [] });
+  });
+});
+
 describe("computePipeline: stored and identified", () => {
   it("stored is done, rejected is failed, and anything else is now", () => {
     expect(computePipeline(input(), null, []).stored).toBe("done");
@@ -81,7 +134,7 @@ describe("computePipeline: stored and identified", () => {
 });
 
 describe("computePipeline: numbers of an XBRL document", () => {
-  const base = { source: "xbrl", coveredByXbrl: [], waitingOn: [], format: null };
+  const base = { source: "xbrl", coveredByXbrl: [], waitingOn: [], format: null, partial: false, warnings: [] };
 
   it("reading is now", () => {
     expect(numbers(xbrlDoc("reading"))).toEqual({ ...base, state: "now", reason: null });
@@ -149,7 +202,7 @@ describe("computePipeline: numbers of a PDF", () => {
   it("waiting_for_xbrl is waiting on the XBRL ids the plan names", () => {
     const i = input({ document: docRow({ intakeState: "waiting_for_xbrl" }) });
     expect(numbers(i, { action: "wait", waitingOn: [ID(7), ID(8)] })).toEqual({
-      source: null, state: "waiting", coveredByXbrl: [], waitingOn: [ID(7), ID(8)], reason: "waiting_for_xbrl", format: null,
+      source: null, state: "waiting", coveredByXbrl: [], waitingOn: [ID(7), ID(8)], reason: "waiting_for_xbrl", format: null, partial: false, warnings: [],
     });
   });
 
@@ -161,20 +214,20 @@ describe("computePipeline: numbers of a PDF", () => {
 
   it("a read PDF with no revision is not_needed, from XBRL, covered by the two XBRL documents", () => {
     expect(numbers(input(), { action: "skip", coveredBy: [ID(7), ID(8)] }, [ID(7), ID(8)])).toEqual({
-      source: "xbrl", state: "not_needed", coveredByXbrl: [ID(7), ID(8)], waitingOn: [], reason: null, format: null,
+      source: "xbrl", state: "not_needed", coveredByXbrl: [ID(7), ID(8)], waitingOn: [], reason: null, format: null, partial: false, warnings: [],
     });
   });
 
   it("a skipped PDF keeps its cover while an import runs: the plan waits on a new XBRL document, the cover is the two settled", () => {
     const wait: PdfNumbersPlan = { action: "wait", waitingOn: [ID(9)] };
     expect(numbers(input(), wait, [ID(7), ID(8)])).toEqual({
-      source: "xbrl", state: "not_needed", coveredByXbrl: [ID(7), ID(8)], waitingOn: [], reason: null, format: null,
+      source: "xbrl", state: "not_needed", coveredByXbrl: [ID(7), ID(8)], waitingOn: [], reason: null, format: null, partial: false, warnings: [],
     });
   });
 
   it("reading is now, from the PDF", () => {
     expect(numbers(input({ document: docRow({ intakeState: "reading" }) }))).toEqual({
-      source: "pdf", state: "now", coveredByXbrl: [], waitingOn: [], reason: null, format: null,
+      source: "pdf", state: "now", coveredByXbrl: [], waitingOn: [], reason: null, format: null, partial: false, warnings: [],
     });
   });
 
@@ -210,7 +263,7 @@ describe("computePipeline: numbers of a PDF", () => {
 
   it("a rejected file is not_needed with no reason", () => {
     expect(numbers(input({ document: docRow({ state: "rejected", intakeState: null }) }))).toEqual({
-      source: null, state: "not_needed", coveredByXbrl: [], waitingOn: [], reason: null, format: null,
+      source: null, state: "not_needed", coveredByXbrl: [], waitingOn: [], reason: null, format: null, partial: false, warnings: [],
     });
   });
 

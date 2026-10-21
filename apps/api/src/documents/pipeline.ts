@@ -1,4 +1,4 @@
-import { JobTypes, XbrlFormatKind, type DocumentPipeline } from "@maester/contracts";
+import { JobTypes, XbrlFormatKind, XbrlReadWarning, type DocumentPipeline } from "@maester/contracts";
 import { companyIdentities, loadPipelineInputs, loadWorkspaceXbrlDocs, type ClassificationRow, type Db, type PipelineInput } from "@maester/db";
 import { coveringXbrl, planPdfNumbers, type PdfNumbersPlan } from "@maester/financial-engine";
 import { pdfNumbersInput } from "@maester/jobs";
@@ -21,7 +21,13 @@ function formatKind(c: ClassificationRow | null) {
 }
 
 function numbers(source: Numbers["source"], state: Numbers["state"], more: Partial<Numbers> = {}): Numbers {
-  return { source, state, coveredByXbrl: [], waitingOn: [], reason: null, format: null, ...more };
+  return { source, state, coveredByXbrl: [], waitingOn: [], reason: null, format: null, partial: false, warnings: [], ...more };
+}
+
+/** The warnings of a read that the track names, each once, most serious first: the order of the contract's enum. */
+function readWarnings(revision: PipelineInput["revision"]): Numbers["warnings"] {
+  const codes = new Set((revision?.warnings ?? []).map((w) => w.code));
+  return XbrlReadWarning.options.filter((code) => codes.has(code));
 }
 
 /** An instance's numbers are its own read: the intake state, and whether a read job is running. */
@@ -39,7 +45,7 @@ function xbrlNumbers(i: PipelineInput): Numbers {
     case "read":
       return i.revision?.warnings.some((w) => w.code === "XBRL_FORMAT_UNMAPPED")
         ? numbers("xbrl", "not_read", { reason: "format_unmapped", format: formatKind(i.classification) })
-        : numbers("xbrl", "done");
+        : numbers("xbrl", "done", { partial: i.revision?.state === "partial", warnings: readWarnings(i.revision) });
     case "kept":
       return numbers("xbrl", "not_read", { reason: "not_a_read_kind" });
     case "identify_failed":
@@ -111,15 +117,24 @@ function textTrack(i: PipelineInput): DocumentPipeline["text"] {
  * Where a document stands on its three tracks, from what is stored. Pure. `plan` is `planPdfNumbers` and `covering` is
  * `coveringXbrl`, both over the same inputs, for a results PDF; pass null and `[]` for any other document.
  */
-export function computePipeline(i: PipelineInput, plan: PdfNumbersPlan | null, covering: string[]): DocumentPipeline {
-  const { document: d } = i;
-  const stored = d.state === "stored";
+export function computePipeline(i: PipelineInput, plan: PdfNumbersPlan | null, covering: string[] = []): DocumentPipeline {
   return {
-    stored: stored ? "done" : d.state === "rejected" ? "failed" : "now",
+    stored: storedTrack(i),
     identified: identifiedTrack(i),
-    numbers: d.format === "xbrl" ? xbrlNumbers(i) : pdfNumbers(i, plan, covering),
+    numbers: i.document.format === "xbrl" ? xbrlNumbers(i) : pdfNumbers(i, plan, covering),
     text: textTrack(i),
   };
+}
+
+/**
+ * `failed` for a rejected file, and for a document still `uploaded` or `verifying` whose latest job on the document is a
+ * `document.verify` that failed for good: nothing will move it on. Else `now`, until it is stored.
+ */
+function storedTrack({ document: d, latestJob }: PipelineInput): DocumentPipeline["stored"] {
+  if (d.state === "stored") return "done";
+  if (d.state === "rejected") return "failed";
+  const verifyFailed = latestJob?.type === JobTypes.DOCUMENT_VERIFY && latestJob.state === "failed";
+  return verifyFailed && (d.state === "uploaded" || d.state === "verifying") ? "failed" : "now";
 }
 
 function identifiedTrack(i: PipelineInput): DocumentPipeline["identified"] {

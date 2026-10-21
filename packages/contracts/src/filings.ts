@@ -2,7 +2,7 @@ import { z } from "zod";
 import { IsoTimestamp, Uuid } from "./common.js";
 import { BseCode, Cin, ClassificationKind, Isin, IntakeState, NseSymbol, OtherType, ResultsSpan } from "./classification.js";
 import { Company, CreateCompanyRequest } from "./company.js";
-import { DocumentFormat } from "./document.js";
+import { DocumentFormat, DocumentState, RejectionCode } from "./document.js";
 import { FactSpan, IsoDate, ReportingBasis, StatementKind } from "./extraction.js";
 import { DocumentPipeline } from "./pipeline.js";
 import { XbrlPdfNotChecked } from "./xbrl.js";
@@ -11,9 +11,20 @@ import { XbrlPdfNotChecked } from "./xbrl.js";
  * Why a statement's numbers do not come from XBRL, or from nowhere. `xbrl_lacks_statement`: an instance of the basis has
  * facts but none for this statement. `xbrl_format_unmapped`: the instance is a format Maester reads but has no map for.
  * `no_xbrl`: no instance of the basis. `not_in_filing`: neither source has the statement. `not_read_yet` and
- * `read_failed`: the PDF that prints it is not read, or its read failed.
+ * `read_failed`: the PDF that prints it is not read, or its read failed. `xbrl_read_failed` and `xbrl_not_read_yet`: the
+ * filing holds an instance of the basis, and its read failed or has not finished, so its statements are not known; they
+ * stand where `no_xbrl` or `not_in_filing` would.
  */
-export const StatementSourceReason = z.enum(["xbrl_lacks_statement", "xbrl_format_unmapped", "no_xbrl", "not_in_filing", "not_read_yet", "read_failed"]);
+export const StatementSourceReason = z.enum([
+  "xbrl_lacks_statement",
+  "xbrl_format_unmapped",
+  "no_xbrl",
+  "not_in_filing",
+  "not_read_yet",
+  "read_failed",
+  "xbrl_read_failed",
+  "xbrl_not_read_yet",
+]);
 export type StatementSourceReason = z.infer<typeof StatementSourceReason>;
 
 /** How many of an XBRL statement's facts were found on the filing's PDF. `notFound` are fact ids. */
@@ -43,7 +54,11 @@ export type StatementSource = z.infer<typeof StatementSource>;
 export const BasisSources = z.strictObject({ basis: ReportingBasis, statements: z.array(StatementSource) });
 export type BasisSources = z.infer<typeof BasisSources>;
 
-/** One stored file of a filing. A duplicate is not a file: its id sits under the original's `duplicates`. */
+/**
+ * One file of a filing, or an unsorted file, whatever its document `state`: a refused file (`rejected`, with its
+ * `rejectionCode`) and an upload not finished (`pending_upload`) are listed too. A duplicate is not a file: its id sits
+ * under the original's `duplicates`.
+ */
 export const FilingFile = z.strictObject({
   documentId: Uuid,
   originalName: z.string(),
@@ -51,7 +66,11 @@ export const FilingFile = z.strictObject({
   /** An XBRL instance's basis; null for a PDF. */
   basis: ReportingBasis.nullable(),
   createdAt: IsoTimestamp,
+  state: DocumentState,
+  rejectionCode: RejectionCode.nullable(),
   intakeState: IntakeState.nullable(),
+  /** The company name the current classification prints; null without a classification or when it prints none. */
+  companyNameAsPrinted: z.string().nullable(),
   duplicates: z.array(Uuid),
   pipeline: DocumentPipeline,
 });

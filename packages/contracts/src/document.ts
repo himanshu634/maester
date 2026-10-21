@@ -68,6 +68,10 @@ export type CreateUploadResponse = z.infer<typeof CreateUploadResponse>;
 export const FinalizeResponse = z.object({ document: Document, job: Job });
 export type FinalizeResponse = z.infer<typeof FinalizeResponse>;
 
+/** `POST …/documents/:id/index`: the document's `document.index` job, queued or running. */
+export const IndexResponse = z.object({ job: Job });
+export type IndexResponse = z.infer<typeof IndexResponse>;
+
 export const DownloadResponse = z.object({ url: z.string(), expiresAt: IsoTimestamp });
 export type DownloadResponse = z.infer<typeof DownloadResponse>;
 

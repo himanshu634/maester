@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import {
   CreateUploadRequest,
+  DOCUMENT_INDEX_SUBJECT,
   FactsQuery,
   JobTypes,
   ListQuery,
@@ -13,6 +14,7 @@ import {
   type DownloadResponse,
   type ExtractResponse,
   type FinalizeResponse,
+  type IndexResponse,
 } from "@maester/contracts";
 import {
   companyIdentity,
@@ -29,12 +31,13 @@ import {
   type Db,
   type DocumentRow,
 } from "@maester/db";
+import { indexPipelineVersion } from "@maester/document-index";
 import { planPdfNumbers } from "@maester/financial-engine";
 import { pdfNumbersInput } from "@maester/jobs";
 import type { AppDeps, AppEnv } from "../app.js";
 import { documentPipelines } from "../documents/pipeline.js";
 import { HttpError } from "../errors.js";
-import { createJob } from "../jobs/create.js";
+import { createJob, retryJob } from "../jobs/create.js";
 import { uuidParam } from "../middleware/params.js";
 import { toCheck, toDocument, toFact, toJob, toRevision } from "../serialize.js";
 import { validate } from "../validation.js";
@@ -193,6 +196,27 @@ export function documentRoutes(deps: AppDeps) {
       pipelineVersion: `manual-${crypto.randomUUID()}`,
     });
     const body: ExtractResponse = { job: toJob(job) };
+    return c.json(body, 202);
+  });
+
+  // Queues the text index of a stored document again: the job `verify` makes, found by its key. A failed one is
+  // retried with its attempts given back; one that is queued or running is answered as it is.
+  r.post("/:id/index", async (c) => {
+    const workspace = c.get("workspace");
+    const doc = await getDocument(deps.db, workspace.id, uuidParam(c, "id"));
+    if (!doc) throw new HttpError("NOT_FOUND", "document not found");
+    if (doc.state !== "stored") throw new HttpError("INVALID_STATE", `document is ${doc.state}; only stored documents are indexed`);
+    if (doc.intakeState === "duplicate" || doc.duplicateOfDocumentId !== null) throw new HttpError("INVALID_STATE", "a duplicate is not indexed");
+    const job = await createJob(deps.db, deps.dispatcher, {
+      workspaceId: workspace.id,
+      type: JobTypes.DOCUMENT_INDEX,
+      subjectType: DOCUMENT_INDEX_SUBJECT,
+      subjectId: doc.id,
+      pipelineVersion: indexPipelineVersion(deps.env.EMBEDDING_MODEL),
+    });
+    if (job.state === "succeeded") throw new HttpError("INVALID_STATE", "the index is built");
+    if (job.state === "cancelled") throw new HttpError("INVALID_STATE", "the index job was cancelled");
+    const body: IndexResponse = { job: toJob(job.state === "failed" ? await retryJob(deps.db, deps.dispatcher, workspace.id, job.id) : job) };
     return c.json(body, 202);
   });
 

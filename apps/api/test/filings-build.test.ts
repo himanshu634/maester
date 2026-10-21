@@ -20,7 +20,7 @@ function company(n: number, displayName: string, over: Partial<CompanyRow> = {})
 const PIPELINE: DocumentPipeline = {
   stored: "done",
   identified: "done",
-  numbers: { source: null, state: "done", coveredByXbrl: [], waitingOn: [], reason: null, format: null },
+  numbers: { source: null, state: "done", coveredByXbrl: [], waitingOn: [], reason: null, format: null, partial: false, warnings: [] },
   text: { state: "done", pages: 0, pagesRead: 0, pagesOcr: 0, chunks: 0, xbrlBlocks: 0, ahead: null },
 };
 const numbersState = (state: DocumentPipeline["numbers"]["state"]): DocumentPipeline => ({ ...PIPELINE, numbers: { ...PIPELINE.numbers, state } });
@@ -378,5 +378,93 @@ describe("buildFilings: held and unsorted", () => {
     const { files, facts: fs } = q2();
     expect(() => WorkspaceFilings.parse(build({ files, facts: fs }))).not.toThrow();
     expect(() => WorkspaceFilings.parse(build({ files: [] }))).not.toThrow();
+  });
+});
+
+describe("buildFilings: document state, keys and unread XBRL", () => {
+  it("an unsorted file carries its document state, rejection code and printed name", () => {
+    // input: document "r1", state rejected, rejection_code UNSUPPORTED_TYPE, no classification
+    const r = file(1, { cls: null, doc: { state: "rejected", rejectionCode: "UNSUPPORTED_TYPE", intakeState: null } });
+    expect(build({ files: [r] }).unsorted[0]).toMatchObject({ documentId: ID(1), state: "rejected", rejectionCode: "UNSUPPORTED_TYPE", companyNameAsPrinted: null });
+  });
+
+  it("a file carries the printed name of its current classification, and a stored file has no rejection code", () => {
+    const held = file(1, { companyId: null, doc: { intakeState: "needs_company" }, cls: { companyNameAsPrinted: "Synthetic Cements Limited" } });
+    const filed = file(2, { cls: { companyNameAsPrinted: "Synthetic Cements Ltd" } });
+    const result = build({ files: [held, filed] });
+    expect(onlyFiling(result).files[0]).toMatchObject({ documentId: ID(2), state: "stored", rejectionCode: null, companyNameAsPrinted: "Synthetic Cements Ltd" });
+    expect(build({ files: [file(1, { companyId: null, cls: { companyNameAsPrinted: "Printed Limited", kind: "other", otherType: "announcement" }, doc: { intakeState: "kept" } })] }).unsorted[0]).toMatchObject({ companyNameAsPrinted: "Printed Limited" });
+  });
+
+  it("a refused file and an abandoned upload are listed, in unsorted, with their state", () => {
+    const refused = file(1, { cls: null, doc: { state: "rejected", rejectionCode: "TOO_LARGE", intakeState: null } });
+    const abandoned = file(2, { cls: null, doc: { state: "pending_upload", intakeState: null, storedAt: null } });
+    expect(build({ files: [refused, abandoned] }).unsorted.map((f) => [f.documentId, f.state, f.rejectionCode])).toEqual([[ID(1), "rejected", "TOO_LARGE"], [ID(2), "pending_upload", null]]);
+  });
+
+  it("two other documents of one company and day, of different types, are two filings", () => {
+    // input: company co-1; "p1" other/investor_presentation and "p2" other/announcement, both period end 2026-08-14
+    const cls = { kind: "other" as const, periodEnd: "2026-08-14" };
+    const files = [
+      file(1, { cls: { ...cls, otherType: "investor_presentation" }, doc: { intakeState: "kept" } }),
+      file(2, { cls: { ...cls, otherType: "announcement" }, doc: { intakeState: "kept" } }),
+    ];
+    expect(build({ files }).companies[0]!.filings.map((f) => f.key).sort()).toEqual([`${COMPANY}:other:announcement:2026-08-14`, `${COMPANY}:other:investor_presentation:2026-08-14`]);
+  });
+
+  it("two not_sure instances with one period end are two filings, keyed by document", () => {
+    // input: company co-1; "x1" and "x2" not_sure (XBRL_MIXED_BASIS), both period end 2026-09-30
+    const x = (n: number) => file(n, { format: "xbrl", cls: { kind: "not_sure", periodEnd: "2026-09-30", warnings: [{ code: "XBRL_MIXED_BASIS", message: "m" }] as never }, doc: { intakeState: "needs_kind" } });
+    const filings = build({ files: [x(1), x(2)] }).companies[0]!.filings;
+    expect(filings.map((f) => f.key).sort()).toEqual([`${COMPANY}:not_sure:${ID(1)}`, `${COMPANY}:not_sure:${ID(2)}`]);
+    expect(filings.map((f) => f.files.length)).toEqual([1, 1]);
+  });
+
+  it("a financial_results or annual_report filing keeps phase 4's key", () => {
+    expect(onlyFiling(build({ files: [file(1), file(2, { format: "xbrl", cls: { basis: "consolidated" }, revision: xbrlRev(2) })] })).key).toBe(`${COMPANY}:financial_results:${Q2}`);
+  });
+});
+
+describe("buildFilings: a basis whose XBRL failed or is not read yet", () => {
+  const standaloneOf = (built: WorkspaceFilings) => built.companies[0]!.filings[0]!.sources.find((b) => b.basis === "standalone")!;
+  const reasons = (built: WorkspaceFilings) => [...new Set(standaloneOf(built).statements.map((s) => `${s.source}:${s.reason}`))];
+  /** "xc" consolidated instance read (P&L and balance sheet facts); a standalone instance in the intake state and numbers state given. */
+  function failedInput(standalone: { intakeState: DocumentRow["intakeState"]; numbers: DocumentPipeline["numbers"]["state"] }, extra: FilingFileInput[] = []) {
+    const xc = file(2, { format: "xbrl", cls: { resultsSpan: "quarter", basis: "consolidated" }, revision: xbrlRev(2) });
+    const xs = file(3, { format: "xbrl", cls: { resultsSpan: "quarter", basis: "standalone" }, doc: { intakeState: standalone.intakeState }, pipeline: numbersState(standalone.numbers) });
+    const fs = [...facts(xc.input.revision!, "income_statement", "consolidated", rep(3, "quarter")), ...facts(xc.input.revision!, "balance_sheet", "consolidated", rep(3, null))];
+    return { files: [xc, xs, ...extra], facts: fs };
+  }
+
+  it("a basis whose XBRL failed reads xbrl_read_failed, never not_in_filing", () => {
+    // input: company co-1, Q2 results; "xc" consolidated instance read; "xs" standalone instance read_failed; no PDF
+    expect(reasons(build(failedInput({ intakeState: "read_failed", numbers: "failed" })))).toEqual(["null:xbrl_read_failed"]);
+  });
+
+  it("with a PDF that prints the standalone statements, the failed basis is read from the PDF and still names the failed XBRL", () => {
+    const pdf = file(1, { cls: { resultsSpan: "half_year", statementsFound: ALL("standalone") as never }, pipeline: numbersState("done"), revision: pdfRev(1) });
+    const built = build(failedInput({ intakeState: "read_failed", numbers: "failed" }, [pdf]));
+    const income = standaloneOf(built).statements.find((s) => s.statement === "income_statement")!;
+    expect(income).toMatchObject({ source: "pdf", pdfDocumentId: ID(1), pdfPages: [3, 4], reason: "xbrl_read_failed" });
+  });
+
+  it("a basis whose XBRL is still being read reads xbrl_not_read_yet", () => {
+    // input: "xc" read; "xs" standalone, intake reading; no PDF
+    expect(reasons(build(failedInput({ intakeState: "reading", numbers: "now" })))).toEqual(["null:xbrl_not_read_yet"]);
+    expect(reasons(build(failedInput({ intakeState: "identifying", numbers: "waiting" })))).toEqual(["null:xbrl_not_read_yet"]);
+  });
+
+  it("an unread basis with a PDF that prints it names the unread XBRL, and a PDF that failed to read still says read_failed first", () => {
+    const pdf = (numbers: DocumentPipeline["numbers"]["state"]) => file(1, { cls: { statementsFound: ALL("standalone") as never }, pipeline: numbersState(numbers), revision: pdfRev(1) });
+    const income = (built: WorkspaceFilings) => standaloneOf(built).statements.find((s) => s.statement === "income_statement")!;
+    expect(income(build(failedInput({ intakeState: "reading", numbers: "now" }, [pdf("done")])))).toMatchObject({ source: "pdf", reason: "xbrl_not_read_yet" });
+    expect(income(build(failedInput({ intakeState: "reading", numbers: "now" }, [pdf("failed")])))).toMatchObject({ source: "pdf", reason: "read_failed" });
+  });
+
+  it("a basis with no instance, or a kept or unmapped one, keeps phase 4's reasons", () => {
+    const pdf = file(1, { cls: { statementsFound: ALL("standalone") as never }, pipeline: numbersState("done"), revision: pdfRev(1) });
+    const income = (built: WorkspaceFilings) => standaloneOf(built).statements.find((s) => s.statement === "income_statement")!;
+    expect(income(build({ files: [pdf] }))).toMatchObject({ source: "pdf", reason: "no_xbrl" });
+    expect(reasons(build(failedInput({ intakeState: "kept", numbers: "not_read" })))).toEqual(["null:not_in_filing"]);
   });
 });

@@ -131,6 +131,28 @@ describe("GET /filings", () => {
     expect(body.unsorted[0]!.pipeline.stored).toBe("now");
   });
 
+  it("a refused document and an abandoned upload both come back in unsorted", async () => {
+    // seed: "r" rejected UNSUPPORTED_TYPE and "u" pending_upload, neither classified
+    const a = await ctx.signUp("filings-unsorted-states@example.com");
+    const [r, u] = [crypto.randomUUID(), crypto.randomUUID()];
+    for (const [id, state, rejectionCode] of [[r, "rejected", "UNSUPPORTED_TYPE"], [u, "pending_upload", null]] as const) {
+      await ctx.db.insert(schema.document).values({
+        id, workspaceId: a.workspaceId, originalName: "x.pdf", declaredSize: 10, declaredMime: "application/pdf",
+        storageKey: `workspaces/${a.workspaceId}/documents/${id}/original.pdf`, state, rejectionCode, intakeState: null, createdByUserId: a.userId,
+      });
+    }
+    const body = WorkspaceFilings.parse(await (await ctx.app.request(url(a.workspaceId), { headers: { cookie: a.cookie } })).json());
+    expect(body.unsorted.map((f) => [f.documentId, f.state, f.rejectionCode]).sort()).toEqual([[r, "rejected", "UNSUPPORTED_TYPE"], [u, "pending_upload", null]].sort());
+    expect(body.unsorted.map((f) => f.companyNameAsPrinted)).toEqual([null, null]);
+  });
+
+  it("a stored file in a filing carries its state, and no rejection code", async () => {
+    const a = await ctx.signUp("filings-file-state@example.com");
+    await seedMix(a, 1);
+    const body = WorkspaceFilings.parse(await (await ctx.app.request(url(a.workspaceId), { headers: { cookie: a.cookie } })).json());
+    expect(body.companies[0]!.filings[0]!.files.every((f) => f.state === "stored" && f.rejectionCode === null && f.companyNameAsPrinted === null)).toBe(true);
+  });
+
   it("never shows another workspace's files", async () => {
     const a = await ctx.signUp("filings-iso-a@example.com");
     const b = await ctx.signUp("filings-iso-b@example.com");

@@ -5,12 +5,25 @@ import { normalizeCompanyName, type CompanyRow } from "@maester/db";
 export interface HeldRow {
   documentId: string;
   kind: string;
+  /** The type of an `other` document; null for any other kind, and for an `other` with no type listed. */
+  otherType: string | null;
   periodEnd: string | null;
   nameAsPrinted: string | null;
   cin: string | null;
   bseCode: string | null;
   isin: string | null;
   nseSymbol: string | null;
+}
+
+/**
+ * The part of a filing's key that does not name its company, so a held file is counted as the filing it will be once
+ * confirmed (`filingKey` in `filings.ts` puts the company in front): the kind; an `other` document also by its type; a
+ * `not_sure` file by itself; and the period end, or the file itself when it has none.
+ */
+export function filingIdentity(r: { documentId: string; kind: string; otherType: string | null; periodEnd: string | null }): string {
+  if (r.kind === "not_sure") return `not_sure:${r.documentId}`;
+  const period = r.periodEnd ?? r.documentId;
+  return r.kind === "other" ? `other:${r.otherType ?? "unlisted_type"}:${period}` : `${r.kind}:${period}`;
 }
 
 const TOKEN_PREFIX = { cin: "cin", bseCode: "bse", isin: "isin", nseSymbol: "nse" } as const;
@@ -55,7 +68,7 @@ function matchAmong(companies: CompanyRow[], group: HeldRow[], name: string | nu
  * Groups the documents held for a company by the identity they print. Documents that share any identifier value (CIN,
  * BSE code, ISIN or NSE symbol) are one group, however the sharing chains. A document that prints no identifier is
  * left out: it is unsorted. The key is the group's identifiers, sorted and joined (`bse:500999|isin:INE999Z01011`);
- * the name and each code shown are the ones printed most often. `filings` counts distinct kind and period end.
+ * the name and each code shown are the ones printed most often. `filings` counts distinct filings by `filingIdentity`.
  * Largest group first, then by key. Pure.
  */
 export function groupHeld(rows: HeldRow[], companies: CompanyRow[]): HeldIdentity[] {
@@ -100,7 +113,7 @@ export function groupHeld(rows: HeldRow[], companies: CompanyRow[]): HeldIdentit
         isin: mostCommon(group.map((r) => r.isin)),
         nseSymbol: mostCommon(group.map((r) => r.nseSymbol)),
         files: group.length,
-        filings: new Set(group.map((r) => `${r.kind}|${r.periodEnd}`)).size,
+        filings: new Set(group.map(filingIdentity)).size,
         documentIds: group.map((r) => r.documentId),
         matches: matchAmong(companies, group, nameAsPrinted),
       };

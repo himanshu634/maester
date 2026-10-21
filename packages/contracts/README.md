@@ -147,6 +147,7 @@ All routes below except `/healthz` and `/api/auth/*` are under `/v1` and require
 | GET | `/v1/workspaces/{ws}/documents/{id}` | Document detail, including its latest job |
 | GET | `/v1/workspaces/{ws}/documents/{id}/download` | Signed, time-limited read URL |
 | POST | `/v1/workspaces/{ws}/documents/{id}/extract` | Enqueue a new extraction of a stored document |
+| POST | `/v1/workspaces/{ws}/documents/{id}/index` | Queue the text index of a stored document again (`202`, `IndexResponse`) |
 | GET | `/v1/workspaces/{ws}/documents/{id}/extraction` | The current extraction revision (the one the current answers read under) and its checks |
 | GET | `/v1/workspaces/{ws}/documents/{id}/facts` | A revision's facts with page references (the current revision by default) |
 | GET | `/v1/workspaces/{ws}/documents/{id}/classification` | The current answers about what the document is (`DocumentClassification`: kind, company, period, with the evidence for each) |
@@ -251,7 +252,7 @@ Response (`201 Created`):
     "pipeline": {
       "stored": "now",
       "identified": "waiting",
-      "numbers": { "source": null, "state": "waiting", "coveredByXbrl": [], "waitingOn": [], "reason": "not_identified", "format": null },
+      "numbers": { "source": null, "state": "waiting", "coveredByXbrl": [], "waitingOn": [], "reason": "not_identified", "format": null, "partial": false, "warnings": [] },
       "text": { "state": "waiting", "pages": 0, "pagesRead": 0, "pagesOcr": 0, "chunks": 0, "xbrlBlocks": 0, "ahead": null }
     },
     "latestJob": null
@@ -292,7 +293,7 @@ No request body. Response:
     "pipeline": {
       "stored": "now",
       "identified": "waiting",
-      "numbers": { "source": null, "state": "waiting", "coveredByXbrl": [], "waitingOn": [], "reason": "not_identified", "format": null },
+      "numbers": { "source": null, "state": "waiting", "coveredByXbrl": [], "waitingOn": [], "reason": "not_identified", "format": null, "partial": false, "warnings": [] },
       "text": { "state": "waiting", "pages": 0, "pagesRead": 0, "pagesOcr": 0, "chunks": 0, "xbrlBlocks": 0, "ahead": null }
     },
     "latestJob": {
@@ -361,7 +362,7 @@ A document once verification has finished, with its terminal job attached:
   "pipeline": {
     "stored": "done",
     "identified": "done",
-    "numbers": { "source": null, "state": "waiting", "coveredByXbrl": [], "waitingOn": [], "reason": "not_identified", "format": null },
+    "numbers": { "source": null, "state": "waiting", "coveredByXbrl": [], "waitingOn": [], "reason": "not_identified", "format": null, "partial": false, "warnings": [] },
     "text": { "state": "waiting", "pages": 0, "pagesRead": 0, "pagesOcr": 0, "chunks": 0, "xbrlBlocks": 0, "ahead": null }
   },
   "latestJob": {
@@ -631,7 +632,7 @@ GET /v1/workspaces/3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f/documents?limit=25
       "pipeline": {
         "stored": "done",
         "identified": "done",
-        "numbers": { "source": null, "state": "waiting", "coveredByXbrl": [], "waitingOn": [], "reason": "not_identified", "format": null },
+        "numbers": { "source": null, "state": "waiting", "coveredByXbrl": [], "waitingOn": [], "reason": "not_identified", "format": null, "partial": false, "warnings": [] },
         "text": { "state": "waiting", "pages": 0, "pagesRead": 0, "pagesOcr": 0, "chunks": 0, "xbrlBlocks": 0, "ahead": null }
       },
       "latestJob": null

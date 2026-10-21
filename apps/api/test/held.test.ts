@@ -9,7 +9,7 @@ const NO_CODES = { nameAsPrinted: null, cin: null, bseCode: null, isin: null, ns
 const CIN = "L12345MH1990PLC123456";
 
 function held(n: number, over: Partial<HeldRow> = {}): HeldRow {
-  return { documentId: ID(n), kind: "financial_results", periodEnd: "2025-09-30", ...NO_CODES, ...over };
+  return { documentId: ID(n), kind: "financial_results", otherType: null, periodEnd: "2025-09-30", ...NO_CODES, ...over };
 }
 
 function company(n: number, over: Partial<CompanyRow> = {}): CompanyRow {
@@ -97,5 +97,22 @@ describe("groupHeld", () => {
 
   it("with no name matches no company by name", () => {
     expect(groupHeld([held(1, { bseCode: "500999" })], [company(1)])[0]!.matches).toEqual([]);
+  });
+
+  it("held files count their filings by the same key rule", () => {
+    // rows: "p1" other/investor_presentation and "p2" other/announcement, both 2026-08-14, both bse 532999
+    const rows = [
+      held(1, { kind: "other", otherType: "investor_presentation", periodEnd: "2026-08-14", bseCode: "532999" }),
+      held(2, { kind: "other", otherType: "announcement", periodEnd: "2026-08-14", bseCode: "532999" }),
+    ];
+    expect(groupHeld(rows, [])[0]).toMatchObject({ files: 2, filings: 2 });
+  });
+
+  it("two others of one type and day are one filing; a not_sure file, and a file with no period, each count alone", () => {
+    const bse = { bseCode: "532999" };
+    expect(groupHeld([held(1, { kind: "other", otherType: "announcement", ...bse }), held(2, { kind: "other", otherType: "announcement", ...bse })], [])[0]).toMatchObject({ files: 2, filings: 1 });
+    expect(groupHeld([held(1, { kind: "not_sure", ...bse }), held(2, { kind: "not_sure", ...bse })], [])[0]).toMatchObject({ files: 2, filings: 2 });
+    expect(groupHeld([held(1, { periodEnd: null, ...bse }), held(2, { periodEnd: null, ...bse })], [])[0]).toMatchObject({ files: 2, filings: 2 });
+    expect(groupHeld([held(1, { kind: "other", otherType: null, ...bse }), held(2, { kind: "other", otherType: "announcement", ...bse })], [])[0]).toMatchObject({ filings: 2 });
   });
 });

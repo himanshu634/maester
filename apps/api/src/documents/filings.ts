@@ -13,7 +13,7 @@ import type { ClassificationRow, CompanyRow, ExtractionCheckRow, PipelineInput, 
 import { slotOwner, type SlotCandidate } from "@maester/financial-engine";
 import { inPdfFor, type FilingPdf } from "../financials/in-pdf.js";
 import { toCompany } from "../serialize.js";
-import { groupHeld, type HeldRow } from "./held.js";
+import { filingIdentity, groupHeld, type HeldRow } from "./held.js";
 
 /** A stored document with what the pipeline view loaded for it and its pipeline. */
 export interface FilingFileInput {
@@ -87,6 +87,17 @@ function instanceOf(file: FilingFileInput, ctx: Context): Instance {
   };
 }
 
+/**
+ * Why an instance of `basis` that gives no statements stands in for "no XBRL": its read failed, or has not finished
+ * (running, or waiting for the store, the identification or the investor). A failed instance counts before one still
+ * being read. Null when no instance of the basis is failed or unread.
+ */
+function unreadReason(instances: Instance[], basis: Basis): "xbrl_read_failed" | "xbrl_not_read_yet" | null {
+  const states = instances.filter((i) => i.basis === basis).map((i) => i.file.pipeline.numbers.state);
+  if (states.includes("failed")) return "xbrl_read_failed";
+  return states.some((s) => s === "now" || s === "waiting") ? "xbrl_not_read_yet" : null;
+}
+
 const foundIn = (c: ClassificationRow | null, statement: Statement, basis: Basis) =>
   (c?.statementsFound ?? []).find((s) => s.statement === statement && s.basis === basis);
 
@@ -143,6 +154,9 @@ function candidate(file: FilingFileInput, revisionId: string, source: SlotCandid
  * - a PDF owns it: the reason XBRL does not, taken from the PDF's pipeline first (read failed, not read yet), then
  *   from the instances of that basis (has facts but not this statement, unmapped format, none);
  * - neither: `not_in_filing`.
+ * Where that reason would be `no_xbrl` or `not_in_filing` and the filing holds an instance of the basis whose read failed
+ * or has not finished, it is `xbrl_read_failed` or `xbrl_not_read_yet` instead: the instance's statements are not known,
+ * which is not the same as the filing having none.
  * `pdfDocumentId` and `pdfPages` name the PDF that prints the statement, whichever source owns it.
  */
 function sourcesOf(files: FilingFileInput[], ctx: Context): BasisSources[] {
@@ -178,7 +192,7 @@ function sourcesOf(files: FilingFileInput[], ctx: Context): BasisSources[] {
       ]);
 
       const empty = { xbrlDocumentId: null, xbrlSpans: [], pdfDocumentId: pdf?.input.document.id ?? null, pdfPages, inPdf: null };
-      if (!owner) return { statement, source: null, ...empty, reason: "not_in_filing" };
+      if (!owner) return { statement, source: null, ...empty, reason: unreadReason(instances, basis) ?? "not_in_filing" };
 
       if (owner.source === "xbrl") {
         const { facts } = withFacts.find(({ i }) => i.file.input.document.id === owner.documentId)!;
@@ -216,7 +230,7 @@ function sourcesOf(files: FilingFileInput[], ctx: Context): BasisSources[] {
               ? "xbrl_lacks_statement"
               : ofBasis.some((i) => i.unmapped)
                 ? "xbrl_format_unmapped"
-                : "no_xbrl";
+                : (unreadReason(instances, basis) ?? "no_xbrl");
       return { statement, source: "pdf", ...empty, reason };
     }),
   }));
@@ -235,16 +249,21 @@ function toFile(f: FilingFileInput, duplicates: Map<string, string[]>): FilingFi
     format: d.format,
     basis: d.format === "xbrl" ? (classification?.basis ?? null) : null,
     createdAt: d.createdAt.toISOString(),
+    state: d.state,
+    rejectionCode: (d.rejectionCode as FilingFile["rejectionCode"]) ?? null,
     intakeState: d.intakeState,
+    companyNameAsPrinted: classification?.companyNameAsPrinted ?? null,
     duplicates: duplicates.get(d.id) ?? [],
     pipeline: f.pipeline,
   };
 }
 
-/** The key of a filing: its company, kind and period end; a kept `other` document also by its type; a file with no period end by itself. */
+/**
+ * The key of a filing: its company, kind and period end; an `other` document also by its type; a `not_sure` file by
+ * itself, and so a file with no period end (`filingIdentity` holds the rule, which `groupHeld` counts by too).
+ */
 function filingKey(companyId: string, c: ClassificationRow): string {
-  const period = c.periodEnd ?? c.documentId;
-  return c.kind === "other" ? `${companyId}:other:${c.otherType ?? "unlisted_type"}:${period}` : `${companyId}:${c.kind}:${period}`;
+  return `${companyId}:${filingIdentity(c)}`;
 }
 
 /**
@@ -293,7 +312,7 @@ export function buildFilings(input: FilingsInput): WorkspaceFilings {
   const heldRows: HeldRow[] = loose.flatMap((f) => {
     const c = f.input.classification;
     return c && f.input.document.intakeState === "needs_company"
-      ? [{ documentId: c.documentId, kind: c.kind, periodEnd: c.periodEnd, nameAsPrinted: c.companyNameAsPrinted, cin: c.cin, bseCode: c.bseCode, isin: c.isin, nseSymbol: c.nseSymbol }]
+      ? [{ documentId: c.documentId, kind: c.kind, otherType: c.otherType, periodEnd: c.periodEnd, nameAsPrinted: c.companyNameAsPrinted, cin: c.cin, bseCode: c.bseCode, isin: c.isin, nseSymbol: c.nseSymbol }]
       : [];
   });
   const held = groupHeld(heldRows, input.companies);

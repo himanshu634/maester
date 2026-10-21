@@ -1,19 +1,20 @@
-import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "../client.js";
 import { extractionCheck, extractionRevision, financialFact, type ExtractionCheckRow } from "../schema/extraction.js";
 import { company, document, type CompanyRow } from "../schema/platform.js";
 import { XBRL_PDF_CHECK_VERSION_READ } from "./extraction.js";
 
 /**
- * What the filings route lists: the id of every document of the workspace that is a file (not an upload that was never
- * finalised), duplicates and rejected files included, and every company of the workspace, oldest first. Two queries.
- * A company with no file is listed too: a held identity may match it.
+ * What the filings route lists: the id of every document of the workspace, in every state (`pending_upload`, `uploaded`,
+ * `verifying`, `stored` and `rejected`), duplicates included, and every company of the workspace, oldest first. Two
+ * queries. No state is left out: a refused file or an abandoned upload would else vanish on the next read. A company with
+ * no file is listed too: a held identity may match it.
  */
 export async function listFilingRows(db: Db, workspaceId: string): Promise<{ documentIds: string[]; companies: CompanyRow[] }> {
   const docs = await db
     .select({ id: document.id })
     .from(document)
-    .where(and(eq(document.workspaceId, workspaceId), ne(document.state, "pending_upload")))
+    .where(eq(document.workspaceId, workspaceId))
     .orderBy(asc(document.createdAt), asc(document.id));
   const companies = await db.select().from(company).where(eq(company.workspaceId, workspaceId)).orderBy(asc(company.createdAt), asc(company.id));
   return { documentIds: docs.map((d) => d.id), companies };

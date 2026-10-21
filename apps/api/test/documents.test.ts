@@ -154,7 +154,7 @@ describe("documents", () => {
         Document.parse(await (await ctx.app.request(`/v1/workspaces/${a.workspaceId}/documents/${id}`, { headers: { cookie: a.cookie } })).json());
 
       expect((await get(pdfId)).pipeline.numbers).toEqual({
-        source: "xbrl", state: "not_needed", coveredByXbrl: [xbrlId], waitingOn: [], reason: null, format: null,
+        source: "xbrl", state: "not_needed", coveredByXbrl: [xbrlId], waitingOn: [], reason: null, format: null, partial: false, warnings: [],
       });
       expect((await get(xbrlId)).pipeline.numbers).toMatchObject({ source: "xbrl", state: "done", reason: null });
 

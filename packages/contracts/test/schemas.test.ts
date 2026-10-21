@@ -83,7 +83,7 @@ describe("common", () => {
 const IDLE_PIPELINE = {
   stored: "done" as const,
   identified: "done" as const,
-  numbers: { source: null, state: "waiting" as const, coveredByXbrl: [], waitingOn: [], reason: "not_identified" as const, format: null },
+  numbers: { source: null, state: "waiting" as const, coveredByXbrl: [], waitingOn: [], reason: "not_identified" as const, format: null, partial: false, warnings: [] },
   text: { state: "waiting" as const, pages: 0, pagesRead: 0, pagesOcr: 0, chunks: 0, xbrlBlocks: 0, ahead: null },
 };
 
@@ -97,6 +97,9 @@ describe("DocumentPipeline", () => {
     expect(() => DocumentPipeline.parse(bad({ reason: "because" }))).toThrow();
     expect(() => DocumentPipeline.parse(bad({ format: "pdf" }))).toThrow();
     expect(() => DocumentPipeline.parse(bad({ coveredByXbrl: ["not-a-uuid"] }))).toThrow();
+    expect(() => DocumentPipeline.parse(bad({ partial: "yes" }))).toThrow();
+    expect(() => DocumentPipeline.parse(bad({ warnings: ["XBRL_OTHER"] }))).toThrow();
+    expect(DocumentPipeline.parse(bad({ partial: true, warnings: ["XBRL_ROUNDING_MISSING", "XBRL_NIL"] })).numbers).toMatchObject({ partial: true, warnings: ["XBRL_ROUNDING_MISSING", "XBRL_NIL"] });
     expect(() => DocumentPipeline.parse({ ...IDLE_PIPELINE, text: { ...IDLE_PIPELINE.text, ahead: -1 } })).toThrow();
   });
 
@@ -112,9 +115,9 @@ describe("DocumentPipeline", () => {
 
   it("carries a covered PDF's ids and an unmapped instance's format", () => {
     const id = "6d5d1b0a-1e5e-4f6b-9f5d-2a4e1c9b7f10";
-    const covered = { ...IDLE_PIPELINE, numbers: { source: "xbrl", state: "not_needed", coveredByXbrl: [id], waitingOn: [], reason: null, format: null } };
+    const covered = { ...IDLE_PIPELINE, numbers: { source: "xbrl", state: "not_needed", coveredByXbrl: [id], waitingOn: [], reason: null, format: null, partial: false, warnings: [] } };
     expect(DocumentPipeline.parse(covered).numbers.coveredByXbrl).toEqual([id]);
-    const unmapped = { ...IDLE_PIPELINE, numbers: { source: "xbrl", state: "not_read", coveredByXbrl: [], waitingOn: [], reason: "format_unmapped", format: "banking" } };
+    const unmapped = { ...IDLE_PIPELINE, numbers: { source: "xbrl", state: "not_read", coveredByXbrl: [], waitingOn: [], reason: "format_unmapped", format: "banking", partial: false, warnings: [] } };
     expect(DocumentPipeline.parse(unmapped).numbers.format).toBe("banking");
   });
 });

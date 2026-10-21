@@ -43,6 +43,12 @@ This document describes the HTTP service in `apps/api`. For the full system, rea
 | band | The name of the range that the mood is in, for example `cautious`. |
 | filing | A document that has a company. `listCompanyFilings` gives the filings of a workspace or of one company. |
 | read annual report | A filing with the kind `annual_report` and the intake state `read`. Only these filings go into the statement tables. |
+| pipeline | The state of a document on four tracks: `stored`, `identified`, `numbers` and `text`. The API works it out on each read from the stored data. It keeps no pipeline state. |
+| track | One part of the pipeline, for example `numbers`. |
+| workspace filing | One entry in `companies[].filings` of `GET .../filings`: the documents of one company with one filing key. |
+| filing key | The value that groups documents into one workspace filing. |
+| unsorted document | A document in `unsorted` of `GET .../filings`: it has no company and no held identity. |
+| text index | The passages of a PDF for search. The job `document.index` builds it. |
 | statement table | One `StatementTable`: the statement lines of one statement on one basis, with one year column for each financial year. |
 | statement line | One line of a statement table, with a section and a printed label. The contract calls it a row. |
 | year column | One financial year of a statement table. Each year column comes from one filing. |
@@ -113,6 +119,7 @@ All routes under `/v1` need a session. All routes under `/v1/workspaces/:ws/` al
 | GET | `/v1/workspaces/:ws/companies/:id` | One company. |
 | GET | `/v1/workspaces/:ws/research/companies` | The companies for the Research list, with the annual reports that Maester read. |
 | GET | `/v1/workspaces/:ws/companies/:id/financials` | The statement tables of one company, and its filings. |
+| GET | `/v1/workspaces/:ws/filings` | The workspace filings of each company, the held identities and the unsorted documents. |
 | GET | `/v1/workspaces/:ws/companies/:id/stock` | The stock of one company. |
 | POST | `/v1/workspaces/:ws/documents/uploads` | Creates a document and a signed upload URL. Status 201. |
 | POST | `/v1/workspaces/:ws/documents/:id/finalize` | Checks the upload and creates a `document.verify` job. |
@@ -121,6 +128,7 @@ All routes under `/v1` need a session. All routes under `/v1/workspaces/:ws/` al
 | GET | `/v1/workspaces/:ws/documents/:id/download` | A signed download URL. |
 | GET | `/v1/workspaces/:ws/documents/:id/file` | A redirect to a signed download URL of the PDF. Status 302. The API does not cache the response. |
 | POST | `/v1/workspaces/:ws/documents/:id/extract` | Creates a new `document.extract` job. Status 202. |
+| POST | `/v1/workspaces/:ws/documents/:id/index` | Queues the `document.index` job of a stored document again. Status 202. |
 | GET | `/v1/workspaces/:ws/documents/:id/extraction` | The current revision and its checks. |
 | GET | `/v1/workspaces/:ws/documents/:id/facts` | The facts of a revision. The query `revisionId` is optional. |
 | GET | `/v1/workspaces/:ws/documents/:id/classification` | The current classification and its evidence. |
@@ -203,6 +211,66 @@ The limiter gets the client address from the `x-forwarded-for` header. It reads 
 10. If the state is `pending_upload` and the object is not in the object store, the result is `INVALID_STATE`. If the object is there, the API changes the state to `uploaded`.
 11. The API creates a `document.verify` job. A second `finalize` call gets the same job.
 12. The browser follows the job with `GET .../jobs/:id/events`.
+
+### Workspace filings
+
+1. `GET .../filings` calls `listFilingRows`. This gives each document of the workspace in each state: `pending_upload`, `uploaded`, `verifying`, `stored` and `rejected`. A refused document and an abandoned upload stay in the response after a reload.
+2. `documentPipelines` works out the pipeline of each document with a fixed number of queries.
+3. `buildFilings` puts each duplicate in the `duplicates` of its original. A duplicate whose original is not in the list does not show.
+4. `buildFilings` groups each other document that has a company and a classification by the filing key.
+5. A document with no company goes to `held` if its intake state is `needs_company` and it prints an identifier. Then `groupHeld` groups it by the identity that it prints.
+6. Each other document with no company goes to `unsorted`. This includes a document with no classification, a refused document and an abandoned upload.
+
+The filing key is the company ID, a colon, and the filing identity from `filingIdentity`:
+
+| Kind | Filing identity |
+| --- | --- |
+| `annual_report` or `financial_results` | The kind and the period end. |
+| `other` | `other`, the `otherType` and the period end. If the classification has no type, the type is `unlisted_type`. |
+| `not_sure` | `not_sure` and the document ID. Thus each `not_sure` document is a workspace filing. |
+
+If a document has no period end, the document ID replaces the period end. `groupHeld` counts the `filings` of a held identity with the same filing identity, but without the company ID. Thus the count does not change when the user confirms the company.
+
+Each document in `files` and in `unsorted` is a `FilingFile`. It has these fields in addition to the fields of its pipeline:
+
+- `state`: the state of the document, also `rejected` and `pending_upload`.
+- `rejectionCode`: the code of a refused document. For any other document it is `null`.
+- `companyNameAsPrinted`: the company name in the current classification. If the document has no classification, or the classification has no name, it is `null`.
+
+### Source of a statement
+
+For each basis and statement of a workspace filing, `sources` gives the source of its numbers and a `reason` if XBRL is not the source. These are the reasons:
+
+| Reason | Meaning |
+| --- | --- |
+| `xbrl_lacks_statement` | An XBRL instance of the basis has facts, but none for this statement. |
+| `xbrl_format_unmapped` | The instance has a format that Maester has no map for. |
+| `no_xbrl` | The workspace filing has no XBRL instance of the basis. |
+| `not_in_filing` | No source has the statement. |
+| `not_read_yet`, `read_failed` | The PDF that prints the statement is not read, or its read failed. |
+| `xbrl_read_failed` | The workspace filing has an XBRL instance of the basis, and its `numbers` track is `failed`. |
+| `xbrl_not_read_yet` | The workspace filing has an XBRL instance of the basis, and its `numbers` track is `now` or `waiting`. |
+
+`xbrl_read_failed` and `xbrl_not_read_yet` replace `no_xbrl` and `not_in_filing`. If the instance with the failed read and the instance with the unfinished read are of the same basis, `xbrl_read_failed` wins. Every other reason stays as it was. Thus an unread instance does not look like an instance that has no statement.
+
+### Tracks of a document
+
+- The `stored` track is `failed` for a refused document.
+- The `stored` track is also `failed` if two conditions are true. The document is in the state `uploaded` or `verifying`. The latest job of the document is a `document.verify` job in the state `failed`. Nothing moves such a document on.
+- The `numbers` track of an XBRL document that is `done` has `partial` and `warnings`. `partial` is true when the current revision has the state `partial`.
+- `warnings` has the codes of the revision that are in this list, each one time, in this order: `XBRL_ROUNDING_MISSING`, `XBRL_ROUNDING_MISMATCH`, `XBRL_ELEMENT_UNMAPPED`, `XBRL_NIL`.
+- For a PDF, and for each other state of an XBRL document, `partial` is false and `warnings` is `[]`.
+
+### Queue of a document index
+
+1. The browser sends `POST .../documents/:id/index`.
+2. If the document is not in the state `stored`, or it is a duplicate, the result is `INVALID_STATE`. The API creates no job.
+3. The API calls `createJob` with the type `document.index`, the subject type `document_index` and the pipeline version `indexPipelineVersion(EMBEDDING_MODEL)`. This gives the job that the verify step made, or a new job.
+4. If the job is `failed`, the API calls `retryJob`. The job goes to `queued` and gets its attempts again.
+5. If the job is `succeeded`, the result is `INVALID_STATE` with the message `the index is built`.
+6. If the job is `cancelled`, the result is `INVALID_STATE` with the message `the index job was cancelled`. `retryJob` does not start a cancelled job.
+7. If the job is `queued` or `running`, the API sends it as it is.
+8. The response has status 202 and the body `{ "job" }`.
 
 ### Change of a classification
 
@@ -334,7 +402,7 @@ Other rules for the statement tables:
 - A per-share line is a statement line with a section or label that matches `earnings per share`, `earning per share`, `earnings per equity share`, `earning per equity share` or the word `eps` after `normalise`. The pattern is `earnings? per (equity )?share|\beps\b`. The extractor uses the same pattern. The API sends the printed value of a per-share line and never moves its decimal point.
 - The `status` of a cell is `value`, `dash`, `unparsed` or `missing`. `missing` means that the filing of the year column does not print the statement line.
 - If an older filing prints a different value or status for the same statement line and period, the cell has `restated`. It holds the page and the printed text of the older filing.
-- Before `stitch` compares two values, it rounds them to the same precision. The precision of a value is the number of decimals of its `reportedValue`, minus the places that `stitch` moved its decimal point into the unit of the table. A per-share value does not move. The precision can be less than 0: then the value is known to tens or hundreds only. `stitch` uses the lower precision of the two values. `roundTo` rounds half away from zero, exactly, with strings and `BigInt`. Thus "12,10,543.21" in lakh and "12,105.43" in crore are the same value, and the cell has no `restated`.
+- Before `stitch` compares two values, it rounds them to the same precision. The precision of a value is the number of decimals of its `reportedValue`. From this number, `stitch` subtracts the places that it moved the decimal point into the unit of the table. A per-share value does not move. The precision can be less than 0: then the value is known to tens or hundreds only. `stitch` uses the lower precision of the two values. `roundTo` rounds half away from zero, exactly, with strings and `BigInt`. Thus "12,10,543.21" in lakh and "12,105.43" in crore are the same value, and the cell has no `restated`.
 - A cell has the check of the subtotal that it is, or the check of the subtotal that has the statement line as a component. If more than one check applies to a subtotal, the worst status wins: `failed`, then `not_checked`, then `passed`. If two checks have the same status, the check that names the section wins.
 - A component gets only the `subtotal` check of its subtotal. It never gets the `balance_identity` check. The balance identity compares total assets with equity and liabilities, thus only total assets has it.
 - `check.checkType` tells which check the cell has: `subtotal`, `balance_identity`, or `null` if the cell has no check. For the balance identity, `expected` is total assets as printed and `actual` is equity and liabilities.
