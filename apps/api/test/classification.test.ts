@@ -141,6 +141,22 @@ describe("classification", () => {
     expect(released!.intakeState).toBe("reading");
   });
 
+  it("refuses annual_report for an XBRL instance with 400 and writes nothing", async () => {
+    const a = await ctx.signUp("xbrl-annual@example.com");
+    const companyId = await ctx.createCompany(a.workspaceId, a.cookie, "Xbrl Annual Limited");
+    const xbrl = await seedDocument(a.workspaceId, a.userId, "read");
+    await ctx.db.update(schema.document).set({ format: "xbrl", companyId }).where(eq(schema.document.id, xbrl));
+    const xc = await seedClassification(a.workspaceId, xbrl, { kind: "financial_results", companyId, periodEnd: "2025-09-30", statementsFound: [] });
+    const res = await ctx.app.request(url(a.workspaceId, xbrl), send("POST", a.cookie, { basedOn: xc, kind: "annual_report" }));
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("VALIDATION_FAILED");
+    expect(await ctx.db.select().from(schema.documentClassification).where(eq(schema.documentClassification.documentId, xbrl))).toHaveLength(1);
+    expect((await ctx.db.select().from(schema.job).where(eq(schema.job.subjectId, xbrl)))).toHaveLength(0);
+    // Financial results and other stay open to an instance.
+    expect((await ctx.app.request(url(a.workspaceId, xbrl), send("POST", a.cookie, { basedOn: xc, kind: "other", otherType: "investor_presentation" }))).status).toBe(200);
+  });
+
   it("a PDF's classification has no isin, format or basis", async () => {
     const a = await ctx.signUp("pdf-null@example.com");
     const doc = await seedDocument(a.workspaceId, a.userId);

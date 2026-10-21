@@ -19,6 +19,7 @@
 		canReadAgain,
 		companyCandidates,
 		identifiers,
+		kindChoices,
 		kindSaveLabel,
 		ladder,
 		periodWords,
@@ -287,6 +288,7 @@
 				<p>{copy.needsKind.detail}</p>
 				<KindForm
 					initial={current}
+					kinds={kindChoices(doc.format)}
 					submitLabel={kindSaveLabel}
 					primary
 					{busy}
@@ -380,6 +382,7 @@
 								<div class="edit" id="{id}-kind-form">
 									<KindForm
 										initial={current}
+										kinds={kindChoices(doc.format)}
 										submitLabel={copy.kind.saveChange}
 										{busy}
 										onsubmit={kindFrom('kind')}

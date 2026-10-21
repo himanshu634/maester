@@ -6,6 +6,7 @@ import {
 	companyCandidates,
 	identifiers,
 	isLive,
+	kindChoices,
 	kindSaveLabel,
 	anyLive,
 	canReadAgain,
@@ -674,5 +675,15 @@ describe('mergeList', () => {
 			'other',
 			'sending'
 		]);
+	});
+});
+
+describe('kindChoices', () => {
+	it('offers every kind for a PDF', () => {
+		expect(kindChoices('pdf')).toEqual(['annual_report', 'financial_results', 'other']);
+	});
+
+	it('never offers an annual report for an XBRL instance', () => {
+		expect(kindChoices('xbrl')).toEqual(['financial_results', 'other']);
 	});
 });
