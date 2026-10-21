@@ -4,6 +4,8 @@
 NDJSON stream: ``started``, then ``progress`` and ``heartbeat`` lines, then
 exactly one ``result`` or ``error``. ``POST /v1/classify`` takes a PDF body and
 answers one JSON document: ``{"type":"result",...}`` or ``{"type":"error",...}``.
+``POST /v1/xbrl/pdf-check`` takes ``multipart/form-data`` (a ``pdf`` file and a ``request`` JSON part) and answers one JSON
+document: the check result, or ``{"type":"error",...}`` like ``/v1/classify``.
 ``POST /v1/xbrl`` takes an XBRL instance and answers ``200`` immediately with an NDJSON stream: ``started``,
 ``heartbeat`` lines while the parse runs, then exactly one ``classification``, ``read``, ``text`` or ``error``.
 The service stores nothing.
@@ -23,6 +25,9 @@ from urllib.parse import unquote
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import ValidationError
+from starlette.datastructures import UploadFile
+from starlette.formparsers import MultiPartException, MultiPartParser
 
 from maester_extractor.settings import Settings
 from pdf_financial_qa.classify import ClassificationModel, ClassifySettings, run_classification
@@ -36,6 +41,7 @@ from pdf_financial_qa.xbrl.contracts import (
     XbrlClassificationEvent,
     XbrlErrorEvent,
     XbrlHeartbeatEvent,
+    XbrlPdfCheckRequest,
     XbrlReadEvent,
     XbrlStartedEvent,
     XbrlTextEvent,
@@ -44,6 +50,7 @@ from pdf_financial_qa.xbrl.contracts import (
     to_xbrl_read_result,
 )
 from pdf_financial_qa.xbrl.parser import parse_instance
+from pdf_financial_qa.xbrl.pdf_check import check_xbrl_in_pdf
 from pdf_financial_qa.xbrl.read import read_instance
 from pdf_financial_qa.xbrl.text import text_blocks
 
@@ -53,6 +60,8 @@ ModelFactory = Callable[[], ExtractionModel]
 ClassifyModelFactory = Callable[[], ClassificationModel]
 T = TypeVar("T")
 XbrlMode = Literal["classify", "read", "text"]
+# The room the ``request`` part of the PDF check may take beside the PDF (a fact list is a few hundred bytes a fact).
+PDF_CHECK_REQUEST_ALLOWANCE = 16 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,6 +189,48 @@ def create_app(settings: Settings | None = None, model_factory: ModelFactory | N
         if not body:
             raise HTTPException(status_code=400, detail={"code": "EMPTY_BODY"})
         return bytes(body)
+
+    async def pdf_check_parts(request: Request) -> tuple[bytes, XbrlPdfCheckRequest]:
+        """The ``pdf`` file and the parsed ``request`` part. The body is cut off past ``max_bytes`` plus the request's
+        allowance, and the PDF itself may not pass ``max_bytes``."""
+        limit = settings.max_bytes + PDF_CHECK_REQUEST_ALLOWANCE
+        too_large = HTTPException(status_code=413, detail={"code": "TOO_LARGE_FOR_EXTRACTION"})
+        bad = HTTPException(status_code=400, detail={"code": "BAD_REQUEST"})
+        length = request.headers.get("content-length")
+        if length is not None and length.isdigit() and int(length) > limit:
+            raise too_large
+        if not request.headers.get("content-type", "").lower().startswith("multipart/form-data"):
+            raise bad
+
+        async def limited() -> AsyncIterator[bytes]:
+            total = 0
+            async for chunk in request.stream():
+                total += len(chunk)
+                if total > limit:
+                    raise too_large
+                yield chunk
+
+        parser = MultiPartParser(request.headers, limited(), max_files=1, max_fields=1,
+                                 max_part_size=PDF_CHECK_REQUEST_ALLOWANCE)
+        try:
+            form = await parser.parse()
+        except MultiPartException as exc:
+            raise bad from exc
+        try:
+            pdf, part = form.get("pdf"), form.get("request")
+            if not isinstance(pdf, UploadFile) or not isinstance(part, str):
+                raise bad
+            if pdf.size is not None and pdf.size > settings.max_bytes:
+                raise too_large
+            data = await pdf.read()
+        finally:
+            await form.close()
+        if not data:
+            raise HTTPException(status_code=400, detail={"code": "EMPTY_BODY"})
+        try:
+            return data, XbrlPdfCheckRequest.model_validate_json(part)
+        except ValidationError as exc:
+            raise bad from exc
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
@@ -310,6 +361,31 @@ def create_app(settings: Settings | None = None, model_factory: ModelFactory | N
         log.info("xbrl finished document=%s mode=%s format=%s facts=%d warnings=%d seconds=%.1f", x_document_id, mode,
                  outcome.format_id, outcome.facts, outcome.warnings, time.monotonic() - started)
         yield _line(outcome.event)
+
+    @app.post("/v1/xbrl/pdf-check", dependencies=[Depends(authenticate)])
+    async def xbrl_pdf_check(parts: Annotated[tuple[bytes, XbrlPdfCheckRequest], Depends(pdf_check_parts)],
+                             x_document_id: Annotated[str | None, Header()] = None) -> JSONResponse:
+        started = time.monotonic()
+        pdf, check = parts
+        run = asyncio.ensure_future(asyncio.to_thread(check_xbrl_in_pdf, pdf, check))
+        # If the client goes away nobody awaits this future. Retrieve its outcome anyway, so a later crash in the
+        # thread is not logged by asyncio with a traceback that may hold document text.
+        run.add_done_callback(lambda future: future.cancelled() or future.exception())
+        try:
+            result = await run
+        except ExtractionError as err:
+            log.info("xbrl pdf check failed document=%s code=%s", x_document_id, err.code)
+            return JSONResponse(ClassifyError(code=err.code, retryable=err.retryable, message=err.message).to_wire())
+        except Exception as exc:  # a bug, not a document problem; the job system retries
+            # The type only: an exception's message or traceback can carry the document's text.
+            log.error("xbrl pdf check crashed document=%s error=%s", x_document_id, type(exc).__name__)
+            return JSONResponse(ClassifyError(code="XBRL_PDF_CHECK_FAILED", retryable=True,
+                                              message=f"unexpected {type(exc).__name__}").to_wire())
+        counts = {status: sum(item.status == status for item in result.results) for status in ("passed", "failed", "not_checked")}
+        log.info("xbrl pdf check finished document=%s facts=%d passed=%d failed=%d not_checked=%d seconds=%.1f",
+                 x_document_id, len(result.results), counts["passed"], counts["failed"], counts["not_checked"],
+                 time.monotonic() - started)
+        return JSONResponse(result.to_wire())
 
     return app
 
