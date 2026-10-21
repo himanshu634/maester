@@ -139,7 +139,7 @@ Usage: `maester-eval freeze <filing id> [--run <run>] [--force]`.
     - The scale is `1` for a concept of the kind `per_share` or `count`. For another concept it is `gold_scale`, or else `scale_factor`. It is a whole number from 1 that does not start with a zero. A dash has no scale.
     - The page is `gold_page`, or else `page`. It is a whole number of 1 or more. The gold fact keeps it as a page index, counted from 0.
     - The period end is `gold_period_end`, or else `period_end`. It is empty or a real date in the form `YYYY-MM-DD`.
-    - The span is `gold_span`, or else `span`. It is empty or one of `quarter`, `half_year`, `nine_months`, `year` and `other`. A balance sheet row has no span. A row of a `financial_results` filing that is not on the balance sheet needs one, because a quarter and its year to date end on the same day.
+    - The span is `gold_span`, or else `span`. It is empty or one of `quarter`, `half_year`, `nine_months`, `year` and `other`. A balance sheet row has no span. A row of a `financial_results` filing that is not on the balance sheet needs one. A quarter and its year to date end on the same day.
 11. If two kept rows have the same concept, basis and period label, the harness stops and names both sheet rows.
 12. If no row has `yes` in `verified`, the harness stops and writes nothing.
 13. It writes `data/eval/gold/<filing id>.json`. If the file exists, it stops. With `--force`, it replaces the file. If it cannot write the file, it shows `cannot write <path>: <reason>` and stops. A gold file that exists stays as it was.
@@ -316,6 +316,8 @@ Without `--run`, `freeze` uses the cells as they are. A cell that it cannot read
 - A `scale_factor` or a `period_end` on a row without a `row` number: the same message.
 - A `page` or a `gold_page` that is not a whole number: a message of its own.
 - A `printed` or a `gold_text` that `parse_reported` cannot read: a message of its own.
+- A row of a `financial_results` filing that is not on the balance sheet and has no `span` and no `gold_span`: the message `no span; fill gold_span`. Write the span of the column in `gold_span`.
+- A row of the balance sheet that has a `span` or a `gold_span`: the message says that a balance sheet row has no span. Clear the cell.
 
 | Column | Written by | Meaning |
 | --- | --- | --- |
@@ -371,7 +373,9 @@ A gold file holds these fields:
 - `facts`, the gold facts.
 - `expected_checks`: one entry with `concept`, `basis`, `period_label` and `adds_up` for each kept row that has `yes` or `no` in `adds_up`.
 
-A gold fact holds `concept`, `statement`, `basis`, `section`, `label`, `period_label`, `period_end`, `printed`, `value_status`, `value`, `scale`, `normalized_value`, `page_index`, `span` and `dimensions`. `period_end` is the date that places the fact: the period end, or the as-at date of a row of the balance sheet. It can be empty. `value_status` is `value` or `dash`. `page_index` counts from 0. `span` is empty and `dimensions` has no entry in this version.
+A gold fact holds `concept`, `statement`, `basis`, `section`, `label`, `period_label`, `period_end`, `printed`, `value_status`, `value`, `scale`, `normalized_value`, `page_index`, `span`, `dimensions` and `origin`. `period_end` is the date that places the fact: the period end, or the as-at date of a row of the balance sheet. It can be empty. `value_status` is `value` or `dash`. `page_index` counts from 0.
+
+`span` is `gold_span`, or else the `span` of the sheet row. It is empty for a row of the balance sheet. `dimensions` has no entry in this version. `origin` is `sheet` or `settled`. The default is `sheet`: a person labelled the fact from a sheet. `freeze` writes `sheet` only.
 
 ### The report
 
@@ -469,6 +473,7 @@ WARNING: Read one filing first. `live` sends the PDFs to Google and can cause ch
    - `scale_factor`: if it is wrong or empty, write the scale in `gold_scale`. Use `10000000` for crore, `100000` for lakh, `1000` for thousand and `1` for whole units.
    - `page`: if it is wrong, write the PDF page in `gold_page`.
    - `period_end`: if it is wrong or empty, write the date in `gold_period_end`.
+   - `span`: if it is wrong or empty, write the span in `gold_span`. A row of a results filing needs a span, but not a row of the balance sheet. Without it, `freeze` gives the message `no span; fill gold_span`.
    - `statement`, `basis`, `section`, `label` and `period_label` have no `gold_` column. If one is wrong, leave that row unverified and add the corrected row by hand.
 8. For a subtotal that you checked by hand, write `yes` or `no` in `adds_up`.
 9. Write `yes` in `verified`.
@@ -545,7 +550,7 @@ CAUTION: Do not tune a prompt or a rule on the `heldout` set. Run it only to dec
 ## Limits
 
 - The harness finds a gold fact by its printed words: the statement, the basis, the section, the label and the period label. A read fact with another label is `missing`, also when its value is right. It does not use the concept or the date. Phase 1 adds a way to find a gold fact by its concept.
-- A gold fact has no `span` and no `dimensions` yet. The gold files hold facts of the three statements only.
+- A gold fact has a `span`, but it has no `dimensions` yet. The gold files hold facts of the three statements only.
 - `freeze` writes `adds_up` as an expected check. The report does not use the expected checks. It counts the checks that the workflow ran.
 - The harness has the `live` mode only. It has no `replay` mode, thus every run calls the model. Phase 1 adds `replay`.
 - The harness does not run classification. The kind of a filing comes from the manifest.
