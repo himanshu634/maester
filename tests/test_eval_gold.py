@@ -248,6 +248,21 @@ class SpanTests(unittest.TestCase):
         with self.assertRaisesRegex(FreezeError, "sheet row 2: span annual is not quarter"):
             gold_of(revenue_row(span="annual"))
 
+    def test_one_slot_and_concept_under_two_header_wordings_is_refused(self):
+        # Same concept, basis, span and period end, but the headers are worded apart: one cell, as `settle` keys it.
+        rows = [revenue_row(span="quarter", period_label="Quarter ended 30.09.2025"),
+                revenue_row(row="2", span="quarter", period_label="Three months ended 30 September 2025")]
+        with self.assertRaises(FreezeError) as caught:
+            freeze_sheet(rows, Q2, TAXONOMY, WHEN)
+        self.assertEqual(str(caught.exception),
+                         "sheet row 3: sheet row 2 already has revenue_from_operations for the same basis and period")
+
+    def test_a_quarter_and_its_half_year_ending_on_one_day_are_two_facts(self):
+        rows = [revenue_row(span="quarter", period_label="Quarter ended 30.09.2025"),
+                revenue_row(row="2", span="half_year", period_label="Half year ended 30.09.2025")]
+        facts = freeze_sheet(rows, Q2, TAXONOMY, WHEN).facts
+        self.assertEqual([(f.span, f.period_end) for f in facts], [("quarter", "2025-09-30"), ("half_year", "2025-09-30")])
+
     def test_a_word_is_read_without_its_case_or_spaces(self):
         self.assertEqual(gold_of(revenue_row(gold_span=" Half_Year")).facts[0].span, "half_year")
 

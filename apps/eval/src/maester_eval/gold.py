@@ -391,11 +391,13 @@ def freeze_sheet(rows: list[dict[str, str]], filing: Filing, taxonomy: Taxonomy,
         if settled_keys.intersection(fact_keys(fact)):
             raise FreezeError(f"sheet row {line}: gold already has {fact.concept} for {fact.basis} "
                               f"{fact.period_end or 'no date'} from a settled disagreement")
-        key = (fact.concept, fact.basis, fact.period_label, tuple(sorted(fact.dimensions.items())))
-        if key in seen:
+        # One cell by any of its keys, as `settle` keys it: two header wordings of one slot are one cell.
+        keys = fact_keys(fact)
+        taken = next((seen[key] for key in keys if key in seen), None)
+        if taken is not None:
             raise FreezeError(
-                f"sheet row {line}: sheet row {seen[key]} already has {fact.concept} for the same basis and period")
-        seen[key] = line
+                f"sheet row {line}: sheet row {taken} already has {fact.concept} for the same basis and period")
+        seen.update(dict.fromkeys(keys, line))
         facts.append(fact)
         if adds_up:
             checks.append(ExpectedCheck(
