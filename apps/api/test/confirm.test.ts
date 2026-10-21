@@ -158,7 +158,12 @@ describe("POST /companies/confirm", () => {
     });
     await isLocked;
     const pending = ctx.app.request(confirmUrl(a.workspaceId), send(a.cookie, { identity: { bseCode: "500992" }, company: { id: companyId } }));
-    await new Promise((r) => setTimeout(r, 200));
+    // Release only once the confirm waits on the document's lock, so it read the old answers before the lock.
+    for (let tries = 0; tries < 250; tries++) {
+      const { rows } = await ctx.db.execute<{ n: number }>(sql`select count(*)::int as n from pg_locks where not granted`);
+      if (rows[0]!.n > 0) break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
     release();
     await writer;
     const res = await pending;
