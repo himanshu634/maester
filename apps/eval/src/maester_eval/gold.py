@@ -113,6 +113,19 @@ class ExpectedCheck(BaseModel):
     adds_up: bool
 
 
+class SettledRecord(BaseModel):
+    """One `settle` run: where its facts came from. Versions only, and the count of facts it added."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pdf_run: str
+    xbrl_run: str
+    map_version: str | None
+    compare_rule: int
+    settled_at: str
+    facts: int
+
+
 class GoldFiling(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -129,6 +142,17 @@ class GoldFiling(BaseModel):
     exported_from: dict | None
     facts: list[GoldFact]
     expected_checks: list[ExpectedCheck]
+    # Each `settle` run that added facts of `origin "settled"` to this file, in order.
+    settled: list[SettledRecord] = Field(default_factory=list)
+
+
+def fact_keys(fact: GoldFact) -> tuple[tuple, ...]:
+    """The keys by which a gold fact is the same cell as another: its concept and basis with the period label and
+    dimensions, and with the span and period end. A fact with no period end has only the first."""
+    keys: tuple[tuple, ...] = ((fact.concept, fact.basis, fact.period_label, tuple(sorted(fact.dimensions.items()))),)
+    if fact.period_end is not None:
+        keys += ((fact.concept, fact.basis, fact.span, fact.period_end),)
+    return keys
 
 
 def read_sheet(path: Path) -> list[dict[str, str]]:
@@ -301,7 +325,8 @@ def count_unverified(rows: list[dict[str, str]]) -> int:
 
 
 def freeze_sheet(rows: list[dict[str, str]], filing: Filing, taxonomy: Taxonomy, frozen_at: datetime,
-                 exported_from: dict | None = None, artefact: Artefact | None = None) -> GoldFiling:
+                 exported_from: dict | None = None, artefact: Artefact | None = None,
+                 keep: GoldFiling | None = None) -> GoldFiling:
     """Keep the rows marked verified, each as a gold fact. A bad row is a `FreezeError` naming its sheet row.
 
     So is a sheet with no verified row: it would seal an empty gold file.
@@ -309,7 +334,13 @@ def freeze_sheet(rows: list[dict[str, str]], filing: Filing, taxonomy: Taxonomy,
     With the `artefact` the sheet was exported from, a row that has a `row` number takes the columns the
     pipeline wrote from that artefact's fact, whatever a spreadsheet made of them; the sheet supplies the
     concept, the `gold_*` columns, `adds_up` and `verified`. Without it, and for a row added by hand,
-    every column is the sheet's own."""
+    every column is the sheet's own.
+
+    With `keep`, the gold file this one replaces: its facts of `origin "settled"` and its settled records stay, after
+    the sheet's facts. A cell of the sheet that a settled fact holds already is a `FreezeError`, because a settled
+    cell is the investor's call and a sheet is never allowed to overwrite it."""
+    kept = [] if keep is None else [fact for fact in keep.facts if fact.origin == "settled"]
+    settled_keys = {key for fact in kept for key in fact_keys(fact)}
     exported = None if artefact is None else {r["row"]: r for r in sheet_rows(artefact) if r["row"]}
     facts: list[GoldFact] = []
     checks: list[ExpectedCheck] = []
@@ -357,6 +388,9 @@ def freeze_sheet(rows: list[dict[str, str]], filing: Filing, taxonomy: Taxonomy,
             problem = exc.errors()[0]
             column = ".".join(str(part) for part in problem["loc"])
             raise FreezeError(f"sheet row {line}: {column}: {problem['msg']}") from None
+        if settled_keys.intersection(fact_keys(fact)):
+            raise FreezeError(f"sheet row {line}: gold already has {fact.concept} for {fact.basis} "
+                              f"{fact.period_end or 'no date'} from a settled disagreement")
         key = (fact.concept, fact.basis, fact.period_label, tuple(sorted(fact.dimensions.items())))
         if key in seen:
             raise FreezeError(
@@ -372,7 +406,8 @@ def freeze_sheet(rows: list[dict[str, str]], filing: Filing, taxonomy: Taxonomy,
         filing_id=filing.id, file=filing.file, company=filing.company, kind=filing.kind, period_end=filing.period_end,
         set=filing.set, stratum=filing.stratum, printed_pages_per_page=filing.printed_pages_per_page,
         taxonomy_version=taxonomy.taxonomy_version, frozen_at=frozen_at.isoformat(),
-        exported_from=exported_from, facts=facts, expected_checks=checks,
+        exported_from=exported_from, facts=[*facts, *kept], expected_checks=checks,
+        settled=[] if keep is None else list(keep.settled),
     )
 
 
@@ -387,6 +422,12 @@ def write_gold(gold_dir: Path, gold: GoldFiling, force: bool = False) -> Path:
         raise GoldSealedError(f"{path} exists; gold is sealed, pass --force to replace it")
     write_text_atomically(path, json.dumps(gold.model_dump(mode="json"), ensure_ascii=False, indent=1) + "\n")
     return path
+
+
+def read_gold_filing(gold_dir: Path, filing_id: str) -> GoldFiling | None:
+    """The gold file of one filing, or None when there is none. One that cannot be read is a `GoldError`."""
+    path = gold_path(gold_dir, filing_id)
+    return read_model(path, GoldFiling, GoldError, "gold file") if path.is_file() else None
 
 
 def read_gold(gold_dir: Path) -> dict[str, GoldFiling]:

@@ -10,6 +10,7 @@ Every command stops the same way: an `EvalError` or an `OSError` becomes its tex
 from collections.abc import Callable
 from datetime import datetime, timezone
 import functools
+import json
 from pathlib import Path
 from typing import Annotated, NoReturn, Optional, ParamSpec, get_args
 
@@ -24,11 +25,14 @@ from maester_eval.compare import (
 from maester_eval.concepts import load_taxonomy
 from maester_eval.errors import EvalError
 from maester_eval.files import write_text_atomically
-from maester_eval.gold import count_unverified, freeze_sheet, gold_of_origin, read_gold, read_sheet, write_gold
+from maester_eval.gold import (
+    SettledRecord, count_unverified, freeze_sheet, gold_of_origin, read_gold, read_gold_filing, read_sheet, write_gold,
+)
 from maester_eval.manifest import SetChoice, load_manifest, missing_files, tag_values, write_manifest
 from maester_eval.paths import DEFAULT
 from maester_eval.report import score_run_dir, score_xbrl_run_dir, write_report
 from maester_eval.runner import gemini_model_factory, run_live, workflow_settings_from_env
+from maester_eval.settle import merge_gold
 from maester_eval.sheets import export_run, sheet_path, write_sheet
 from maester_eval.scoring import RunScore, score_shown
 from maester_eval.tags import gold_coverage, gold_units, pick_gold, propose_units, set_tags, unit_against_gold
@@ -198,11 +202,59 @@ def freeze(
         artefact = read_artefact(found)
         exported_from = {k: record.get(k) for k in ("run", "pipeline_version", "prompt_version", "model")}
     rows = read_sheet(path)
-    gold = freeze_sheet(rows, filing, load_taxonomy(), datetime.now(timezone.utc), exported_from, artefact)
+    # A gold file this replaces keeps the cells the investor settled: they are not on this sheet.
+    keep = read_gold_filing(DEFAULT.gold, filing_id) if force else None
+    gold = freeze_sheet(rows, filing, load_taxonomy(), datetime.now(timezone.utc), exported_from, artefact, keep)
     written = write_gold(DEFAULT.gold, gold, force)
     shown = written.relative_to(DEFAULT.base)
     console.print(f"froze {len(gold.facts)} fact(s), {len(gold.expected_checks)} expected check(s); "
                   f"{count_unverified(rows)} row(s) not verified → {shown}", markup=False)
+
+
+@app.command()
+@_reports_errors
+def settle(
+    filing_id: Annotated[str, typer.Argument(help="The filing id, `<company-folder>/<name>`.")],
+    run: Annotated[str, typer.Option(
+        help="The PDF run `compare` ran on: a run folder's name, a path, or `latest` (the latest PDF run).")] = "latest",
+) -> None:
+    """Add the cells the investor settled to the filing's gold file. Only rows of data/eval/settle marked verified count.
+
+    Each becomes a gold fact of origin `settled`. A cell gold holds already with the same figure is skipped; one with
+    another figure stops the command and nothing is written. Held-out gold is sealed."""
+    filing = load_manifest(DEFAULT.manifest).by_id().get(filing_id)
+    if filing is None:
+        _fail(f"{filing_id} is not in the manifest")
+    if filing.set == "heldout":
+        _fail("held-out gold is sealed")
+    run_dir = DEFAULT.resolve_run(run, "pdf")
+    compared = run_dir / "compare-xbrl.json"
+    if not compared.is_file():
+        _fail(f"{run_dir.name} has no compare-xbrl.json; run compare first")
+    now = datetime.now(timezone.utc)
+    try:
+        data = json.loads(compared.read_text(encoding="utf-8"))
+        xbrl_run, versions = data["xbrl_run"], data["versions"]
+        record = SettledRecord(pdf_run=run_dir.name, xbrl_run=xbrl_run, map_version=versions["map"],
+                               compare_rule=versions["compare_rule"], settled_at=now.isoformat(), facts=0)
+    except (ValueError, KeyError, TypeError):  # no text of the file: it holds figures
+        _fail(f"{compared} is not a readable compare-xbrl.json; run compare again")
+    path = sheet_path(DEFAULT.settle, filing_id)
+    if not path.is_file():
+        _fail(f"no settle sheet at {path}; run `maester-eval compare` first")
+    found = artefact_path(run_dir, filing_id)
+    if not found.is_file():
+        _fail(f"run {run_dir.name} has no artefact for {filing_id}")
+    artefact = read_artefact(found)
+    rows = read_sheet(path)
+    taken = read_run(run_dir)
+    exported_from = {k: taken.get(k) for k in ("run", "pipeline_version", "prompt_version", "model")}
+    frozen = freeze_sheet(rows, filing, load_taxonomy(), now, exported_from, artefact)
+    existing = read_gold_filing(DEFAULT.gold, filing_id)
+    merged, skipped = merge_gold(existing, frozen, record)
+    written = write_gold(DEFAULT.gold, merged, force=existing is not None)
+    console.print(f"settled {len(merged.facts) - (len(existing.facts) if existing else 0)} fact(s) into "
+                  f"{written.relative_to(DEFAULT.base)}; {skipped} already in gold", markup=False)
 
 
 def _resolve_runs(names: list[str]) -> dict[str, tuple[Path, dict]]:

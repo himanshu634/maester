@@ -19,7 +19,7 @@ from maester_eval import cli, files
 from maester_eval.artefacts import artefact_path, write_artefact, write_run
 from maester_eval.concepts import load_taxonomy
 from maester_eval.gold import (
-    ExpectedCheck, FreezeError, GoldFact, GoldFiling, GoldSealedError, count_unverified, freeze_sheet, gold_of_origin,
+    ExpectedCheck, FreezeError, GoldFact, GoldFiling, GoldSealedError, SettledRecord, count_unverified, freeze_sheet, gold_of_origin,
     gold_path, read_gold, read_sheet, write_gold,
 )
 from maester_eval.manifest import Filing
@@ -307,6 +307,45 @@ class SpanTests(unittest.TestCase):
         write_gold(Path(temp.name), gold)
         fact = read_gold(Path(temp.name))[Q2.id].facts[0]
         self.assertEqual((fact.span, fact.origin), ("half_year", "sheet"))
+
+
+def quarter_revenue(**values):
+    """`revenue_row` for the quarter, consolidated unless said, with the scale a lakh sheet gives."""
+    return revenue_row(**{"gold_span": "quarter", "scale_factor": "100000", **values})
+
+
+class KeepSettledTests(unittest.TestCase):
+    """`freeze_sheet(keep=...)`: a gold file that is replaced keeps the cells the investor settled."""
+
+    def setUp(self):
+        self.record = SettledRecord(pdf_run="p", xbrl_run="x", map_version=None, compare_rule=1, settled_at=WHEN.isoformat(), facts=1)
+        base = freeze_sheet([quarter_revenue(basis="standalone", row="2")], Q2, TAXONOMY, WHEN)
+        settled = base.facts[0].model_copy(update={"origin": "settled"})
+        self.old = base.model_copy(update={"facts": [settled], "settled": [self.record]})
+
+    def test_the_settled_facts_and_records_stay_after_the_sheets_facts(self):
+        gold = freeze_sheet([quarter_revenue()], Q2, TAXONOMY, WHEN, keep=self.old)
+        self.assertEqual([(f.basis, f.origin) for f in gold.facts], [("consolidated", "sheet"), ("standalone", "settled")])
+        self.assertEqual(gold.settled, [self.record])
+        self.assertEqual(self.old.settled, [self.record])  # not changed in place
+        self.assertEqual(freeze_sheet([quarter_revenue()], Q2, TAXONOMY, WHEN).settled, [])
+
+    def test_a_sheet_never_takes_a_settled_cell(self):
+        for change in ({"basis": "standalone"}, {"basis": "standalone", "period_label": "Three months ended 30 Sep 2025"}):
+            with self.subTest(change=change), self.assertRaises(FreezeError) as caught:
+                freeze_sheet([quarter_revenue(), quarter_revenue(row="2", **change)], Q2, TAXONOMY, WHEN, keep=self.old)
+            self.assertEqual(str(caught.exception), "sheet row 3: gold already has revenue_from_operations for standalone "
+                                                    "2025-09-30 from a settled disagreement")
+
+    def test_a_sheet_fact_of_the_old_file_is_not_kept(self):
+        old = self.old.model_copy(update={"facts": [*freeze_sheet([quarter_revenue()], Q2, TAXONOMY, WHEN).facts, *self.old.facts]})
+        gold = freeze_sheet([quarter_revenue(row="3", concept="other_income", label="Other income")], Q2, TAXONOMY, WHEN, keep=old)
+        self.assertEqual([(f.concept, f.origin) for f in gold.facts], [("other_income", "sheet"), ("revenue_from_operations", "settled")])
+
+    def test_a_gold_file_with_no_settled_key_still_reads(self):
+        data = freeze_sheet([quarter_revenue()], Q2, TAXONOMY, WHEN).model_dump(mode="json")
+        del data["settled"]
+        self.assertEqual(GoldFiling.model_validate(data).settled, [])
 
 
 class GoldOfOriginTests(unittest.TestCase):
