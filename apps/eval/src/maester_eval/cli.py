@@ -21,12 +21,13 @@ from maester_eval.artefacts import artefact_path, read_artefact, read_artefacts,
 from maester_eval.concepts import load_taxonomy
 from maester_eval.errors import EvalError
 from maester_eval.files import write_text_atomically
-from maester_eval.gold import count_unverified, freeze_sheet, read_gold, read_sheet, write_gold
-from maester_eval.manifest import SetChoice, load_manifest, missing_files, write_manifest
+from maester_eval.gold import count_unverified, freeze_sheet, gold_of_origin, read_gold, read_sheet, write_gold
+from maester_eval.manifest import SetChoice, load_manifest, missing_files, tag_values, write_manifest
 from maester_eval.paths import DEFAULT
 from maester_eval.report import score_run_dir, write_report
 from maester_eval.runner import gemini_model_factory, run_live, workflow_settings_from_env
 from maester_eval.sheets import export_run, sheet_path
+from maester_eval.tags import gold_coverage, pick_gold, propose_units, set_tags, unit_against_gold
 from maester_eval.xbrl_pair import apply_pairs, check_copies, plan_pairs, read_xbrl_manifest, summary_lines
 from maester_eval.xbrl_survey import find_instances, survey_instances, write_survey
 
@@ -38,6 +39,9 @@ app = typer.Typer(
 # soft_wrap: a path or an id stays on one line, also where no terminal gives a width (`live` in the background).
 console = Console(soft_wrap=True)
 Params = ParamSpec("Params")
+tags_app = typer.Typer(help="The format tags: how a filing prints its figures, and which filings to label first.",
+                       pretty_exceptions_enable=False, no_args_is_help=True)
+app.add_typer(tags_app, name="tags")
 
 
 @app.callback()
@@ -231,3 +235,108 @@ def xbrl_pair(
                       markup=False)
     else:
         console.print(f"copied {copied} instance(s) into the corpus; manifest written", markup=False)
+
+
+def _one_set(value: str) -> SetChoice:
+    """`--set` as dev or heldout. `all` is refused: a pick or a count over both sets would mix them."""
+    if value not in ("dev", "heldout"):
+        _fail("--set must be dev or heldout")
+    return value  # type: ignore[return-value]
+
+
+def _ids(ids: list[str]) -> str:
+    return f"{len(ids)} ({', '.join(ids)})" if ids else "0"
+
+
+@tags_app.command("propose")
+@_reports_errors
+def tags_propose(
+    eval_set: Annotated[str, typer.Option("--set", help="dev, heldout or all.")] = "all",
+) -> None:
+    """Set each results filing's unit from the rounding its XBRL instances declare. The investor's units stay."""
+    chosen = _set_choice(eval_set)
+    manifest = load_manifest(DEFAULT.manifest)
+    proposal = propose_units(manifest, chosen, DEFAULT.corpus)
+    if proposal.manifest != manifest:
+        write_manifest(DEFAULT.manifest, proposal.manifest)
+    console.print(f"unit from XBRL: {len(proposal.set)}", markup=False)
+    console.print(f"instances disagree: {_ids(proposal.disagree)}", markup=False)
+    console.print(f"no rounding: {_ids(proposal.no_rounding)}", markup=False)
+    console.print(f"no instance: {len(proposal.no_instance)}", markup=False)
+    console.print(f"unreadable: {len(proposal.unreadable)}", markup=False)
+
+
+@tags_app.command("set")
+@_reports_errors
+def tags_set(
+    filing_id: Annotated[str, typer.Argument(help="The filing id, `<company-folder>/<name>`.")],
+    unit: Annotated[Optional[str], typer.Option(help="crore, lakh, million, thousand or rupees.")] = None,
+    brackets: Annotated[Optional[str], typer.Option(help="yes or no: negatives are printed in brackets.")] = None,
+    restated: Annotated[Optional[str], typer.Option(help="yes or no: the filing restates earlier columns.")] = None,
+) -> None:
+    """Set a filing's tags as the investor reads them. A unit set here is never overwritten by `tags propose`."""
+    manifest = set_tags(load_manifest(DEFAULT.manifest), filing_id, unit, brackets, restated)
+    write_manifest(DEFAULT.manifest, manifest)
+    tags = manifest.by_id()[filing_id].tags
+    assert tags is not None
+    console.print(f"{filing_id}: " + ", ".join(
+        f"{name} {word}" for name, word in (
+            ("unit", tags.unit), ("brackets", None if tags.negatives_in_brackets is None
+                                  else "yes" if tags.negatives_in_brackets else "no"),
+            ("restated", None if tags.restated_columns is None else "yes" if tags.restated_columns else "no"))
+        if word is not None), markup=False)
+
+
+@tags_app.command("pick")
+@_reports_errors
+def tags_pick(
+    eval_set: Annotated[str, typer.Option("--set", help="dev or heldout.")] = "dev",
+    count: Annotated[int, typer.Option(help="How many filings, 10 to 15.")] = 12,
+    include: Annotated[Optional[list[str]], typer.Option("--include", help="A filing id to take first; repeatable.")] = None,
+    exclude: Annotated[Optional[list[str]], typer.Option("--exclude", help="A filing id never to take; repeatable.")] = None,
+) -> None:
+    """Pick the filings to label first, so that every tag value has one. Writes nothing."""
+    chosen = _one_set(eval_set)
+    if not 10 <= count <= 15:
+        _fail("--count must be 10 to 15")
+    manifest = load_manifest(DEFAULT.manifest)
+    result = pick_gold([f for f in manifest.filings if f.set == chosen], count, include=include or [],
+                       exclude=exclude or [])
+    for number, (filing_id, pairs) in enumerate(zip(result.picked, result.advanced), start=1):
+        console.print(f"{number}. {filing_id}  " + " ".join(f"{d}={v}" for d, v in pairs), markup=False)
+    if result.unmet:
+        console.print("unmet: " + ", ".join(f"{d}={v} short by {n}" for d, v, n in result.unmet), markup=False)
+    else:
+        console.print("every requirement met")
+
+
+@tags_app.command("coverage")
+@_reports_errors
+def tags_coverage(
+    eval_set: Annotated[str, typer.Option("--set", help="dev or heldout.")] = "dev",
+) -> None:
+    """Count the gold filings and gold facts by tag value, and check the unit tag against the gold's scales."""
+    chosen = _one_set(eval_set)
+    manifest = load_manifest(DEFAULT.manifest)
+    filings = manifest.select(chosen)
+    gold = gold_of_origin(read_gold(DEFAULT.gold), "sheet")
+    by_id = {f.id: f for f in filings}
+    for dimension, values in gold_coverage(filings, gold).items():
+        for value, (held, facts) in values.items():
+            console.print(f"{dimension} {value}: {held} gold filing(s), {facts} gold fact(s)", markup=False)
+    held = [by_id[i] for i in gold if i in by_id]
+    for dimension, name in (("unit", "unit"), ("brackets", "brackets"), ("restated", "restated")):
+        untagged = [f.id for f in held if tag_values(f)[dimension] == "not tagged"]
+        if untagged:
+            console.print(f"gold filings not tagged: {name} {_ids(untagged)}", markup=False)
+    taxonomy = load_taxonomy()
+    outcomes: dict[str, list[str]] = {}
+    for filing in held:
+        outcomes.setdefault(unit_against_gold(filing, gold[filing.id], taxonomy), []).append(filing.id)
+
+    def said(outcome: str, words: str, with_ids: bool = False) -> str:
+        ids = outcomes.get(outcome, [])
+        return f"{len(ids)} {words}" + (f" ({', '.join(ids)})" if with_ids and ids else "")
+    console.print("unit tag against gold: " + ", ".join((
+        said("agrees", "agree"), said("disagrees", "disagree", True), said("mixed", "mixed", True),
+        said("no_monetary_gold", "no monetary gold"), said("not_tagged", "not tagged"))), markup=False)
