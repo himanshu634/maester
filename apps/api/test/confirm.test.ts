@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ConfirmCompanyResponse, JobTypes } from "@maester/contracts";
 import { getCurrentClassification, schema } from "@maester/db";
@@ -118,6 +118,52 @@ describe("POST /companies/confirm", () => {
     expect(counts.reduce((n, c) => n + c, 0)).toBe(3);
     for (const id of ids) expect(await ctx.db.select().from(schema.documentClassification).where(eq(schema.documentClassification.documentId, id))).toHaveLength(2);
     expect(await jobsOf(a.workspaceId, ids[0]!)).toEqual([JobTypes.DOCUMENT_XBRL]);
+  });
+
+  it("two confirms of one identity to two companies at once: the first wins every file, the second answers 0", async () => {
+    const a = await ctx.signUp("confirm-race-two@example.com");
+    const ids = [await seedHeld(a, "xbrl", { bseCode: "500993", basis: "consolidated" }), await seedHeld(a, "pdf", { bseCode: "500993" })];
+    const first = await ctx.createCompany(a.workspaceId, a.cookie, "Race One Limited");
+    const second = await ctx.createCompany(a.workspaceId, a.cookie, "Race Two Limited");
+    const confirm = (companyId: string) => ctx.app.request(confirmUrl(a.workspaceId), send(a.cookie, { identity: { bseCode: "500993" }, company: { id: companyId } }));
+    const results = await Promise.all([confirm(first), confirm(second)]);
+    expect(results.map((r) => r.status)).toEqual([200, 200]);
+    const bodies = await Promise.all(results.map(async (r) => ConfirmCompanyResponse.parse(await r.json())));
+    expect(bodies.map((b) => b.confirmed).sort()).toEqual([0, 2]);
+    const winner = bodies.find((b) => b.confirmed === 2)!.companyId;
+    for (const id of ids) {
+      expect((await getCurrentClassification(ctx.db, a.workspaceId, id))!.companyId).toBe(winner);
+      expect((await docRow(id)).companyId).toBe(winner);
+      expect(await ctx.db.select().from(schema.documentClassification).where(eq(schema.documentClassification.documentId, id))).toHaveLength(2);
+    }
+  });
+
+  it("skips a held file whose answers changed to codes the identity does not name while the confirm waited for it", async () => {
+    const a = await ctx.signUp("confirm-moved@example.com");
+    const held = await seedHeld(a, "pdf", { bseCode: "500992" });
+    const companyId = await ctx.createCompany(a.workspaceId, a.cookie, "Moved Limited");
+    // Another writer holds the document's lock and writes new answers that print another code, still with no company.
+    let locked!: () => void;
+    const isLocked = new Promise<void>((r) => (locked = r));
+    let release!: () => void;
+    const released = new Promise<void>((r) => (release = r));
+    const writer = ctx.db.transaction(async (tx) => {
+      await tx.select().from(schema.document).where(eq(schema.document.id, held)).for("update");
+      await tx.insert(schema.documentClassification).values({
+        id: crypto.randomUUID(), workspaceId: a.workspaceId, documentId: held, kind: "financial_results", periodEnd: "2025-09-30", setBy: "investor",
+        bseCode: "500111", createdAt: sql`clock_timestamp()`,
+      });
+      locked();
+      await released;
+    });
+    await isLocked;
+    const pending = ctx.app.request(confirmUrl(a.workspaceId), send(a.cookie, { identity: { bseCode: "500992" }, company: { id: companyId } }));
+    await new Promise((r) => setTimeout(r, 200));
+    release();
+    await writer;
+    const res = await pending;
+    expect(ConfirmCompanyResponse.parse(await res.json())).toEqual({ companyId, confirmed: 0 });
+    expect((await getCurrentClassification(ctx.db, a.workspaceId, held))!).toMatchObject({ companyId: null, bseCode: "500111" });
   });
 
   it("does not take a duplicate of a held file", async () => {
