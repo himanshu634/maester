@@ -229,6 +229,7 @@ For a results PDF, `decideIntake` applies the source rule before it starts `docu
 3. If settled XBRL of the same company and period end covers each statement and basis that the PDF prints, the plan is `skip`. The intake state becomes `read`. No job starts, and the model never reads the PDF.
 4. In all other cases, the plan is `read`. The state is `reading` and `document.extract` starts.
 5. A PDF statement with the basis `unknown` is never covered.
+6. If `document.extract` stopped before a read (the result `not_read`), that job has the key of the read. When `decideIntake` sends the PDF to a read again, it puts that job back in the state `queued` and dispatches it.
 
 ### Company match
 
@@ -244,18 +245,23 @@ For a results PDF, `decideIntake` applies the source rule before it starts `docu
 1. If the worker has no extractor client, the handler throws `EXTRACTOR_NOT_CONFIGURED`.
 2. The handler reads the document. It throws `DOCUMENT_NOT_FOUND` or `INVALID_STATE` for the same causes as `document.classify`.
 3. If a revision for this job exists, the handler does not call the extractor. It sets the intake state to `read` if this job is the current read job, and returns the summary of the revision.
-4. If `size_bytes` is more than `EXTRACT_MAX_BYTES`, the handler throws `TOO_LARGE_FOR_EXTRACTION`.
-5. If the document has a company, the handler reads the company name from the `company` table.
-6. The handler reads the full PDF from the object store into memory. If the object does not exist, the handler throws `OBJECT_MISSING`.
-7. The handler sends the PDF to `POST /v1/extract` on the extractor. The headers include `x-document-id` and, if the document has a company, `x-company-name`.
-8. The extractor sends back an NDJSON stream. Each line is one JSON event.
-9. For each event, the handler calls `heartbeat`. For a `progress` event, the handler writes the stage and the percent to the job.
-10. An `error` event stops the job with a `JobFailure`. A `result` event gives the result of the extraction.
-11. The handler finds the classification ID from the end of the idempotency key. If the key has no classification ID, the handler uses `reads_under_id` of the current classification.
-12. `writeRevision` writes the revision and its rows in one transaction. It writes the rows in groups of 500.
-13. `writeRevision` writes the facts to `financial_fact`, the page of each fact to `source_reference` and the checks to `extraction_check`.
-14. If `reads_under_id` of the current classification is equal to the classification ID of this job, the handler sets the intake state to `read`.
-15. If a newer classification replaced the classification of this job, the handler does not change the document.
+4. If the idempotency key names a classification, the job is automatic. For an automatic job, `recheckPdfRead` applies the source rule again. It locks the document row and then takes the XBRL-wait lock, as `decideIntake` does:
+   - The rule applies only to a results PDF with a company, and only if `reads_under_id` of the current classification is the classification of the job.
+   - If the plan is `skip`, the intake state becomes `read`. If the plan is `wait`, the intake state becomes `waiting_for_xbrl`.
+   - For `skip` and `wait`, the handler returns `{ outcome: "not_read", plan }`. It does not call the extractor and writes no revision.
+   - A manual job (`manual-<UUID>`) does not get this check. The API refuses a manual read of a covered PDF.
+5. If `size_bytes` is more than `EXTRACT_MAX_BYTES`, the handler throws `TOO_LARGE_FOR_EXTRACTION`.
+6. If the document has a company of the workspace, the handler reads the company name from the `company` table.
+7. The handler reads the full PDF from the object store into memory. If the object does not exist, the handler throws `OBJECT_MISSING`.
+8. The handler sends the PDF to `POST /v1/extract` on the extractor. The headers include `x-document-id` and, if the document has a company, `x-company-name`.
+9. The extractor sends back an NDJSON stream. Each line is one JSON event.
+10. For each event, the handler calls `heartbeat`. For a `progress` event, the handler writes the stage and the percent to the job.
+11. An `error` event stops the job with a `JobFailure`. A `result` event gives the result of the extraction.
+12. The handler finds the classification ID from the end of the idempotency key. If the key has no classification ID, the handler uses `reads_under_id` of the current classification.
+13. `writeRevision` writes the revision and its rows in one transaction. It writes the rows in groups of 500.
+14. `writeRevision` writes the facts to `financial_fact`, the page of each fact to `source_reference` and the checks to `extraction_check`.
+15. If `reads_under_id` of the current classification is equal to the classification ID of this job, the handler sets the intake state to `read`.
+16. If a newer classification replaced the classification of this job, the handler does not change the document.
 
 ### `document.xbrl`
 

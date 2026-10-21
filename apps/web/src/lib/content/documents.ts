@@ -212,7 +212,7 @@ export const documentsContent = {
 		},
 		TOO_LARGE: {
 			title: 'This file is larger than 50 MB.',
-			detail: 'Maester takes PDFs up to 50 MB. Add a smaller copy.'
+			detail: 'Maester takes PDF and XBRL files up to 50 MB. Add a smaller copy.'
 		},
 		OBJECT_MISSING: {
 			title: 'The upload didn’t arrive.',

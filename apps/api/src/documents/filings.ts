@@ -90,7 +90,7 @@ function instanceOf(file: FilingFileInput, ctx: Context): Instance {
 const foundIn = (c: ClassificationRow | null, statement: Statement, basis: Basis) =>
   (c?.statementsFound ?? []).find((s) => s.statement === statement && s.basis === basis);
 
-/** The reason most facts were not checked, the earlier one in the contract's order on a tie; null when all were. */
+/** The reason most facts were not checked, the first one seen on a tie; null when all were. */
 function sharedReason(reasons: XbrlPdfNotChecked[]): XbrlPdfNotChecked | null {
   const counts = new Map<XbrlPdfNotChecked, number>();
   for (const r of reasons) counts.set(r, (counts.get(r) ?? 0) + 1);

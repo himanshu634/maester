@@ -188,7 +188,8 @@ Each query for a workspace record takes the workspace ID and gives only rows of 
 | `readVersion(id)`, `classificationIdOfReadJob(key)` | Make the version text `classification-<id>` for an extraction job, and get the ID back from an idempotency key. |
 | `pdfNumbersInput(classification, identity)` | Makes the input of the source rule from the classification of a results PDF. It gives `null` for a document that is not a results PDF or has no company. |
 | `enqueueXbrlPdfChecks(db, dispatcher, ws, by)` | Creates a `document.xbrl_check` job for each pair of an XBRL document and a results PDF of the same company and period end. `by` names the XBRL side or the PDF side. |
-| `redecidePdfsAfterXbrl(db, dispatcher, ws)` | Decides again each PDF of the workspace that waits for XBRL, and each PDF that XBRL covers. It runs after an XBRL document settles. |
+| `redecidePdfsAfterXbrl(db, dispatcher, ws)` | Decides again each PDF of the workspace that waits for XBRL, and each results PDF that XBRL covers. It runs after an XBRL document settles, and after a change to the answers of a results PDF. |
+| `recheckPdfRead(db, ws, documentId, classificationId)` | Applies the source rule again before `document.extract` reads a results PDF. It writes `read` for `skip` and `waiting_for_xbrl` for `wait`, and returns the plan. It returns null for a read. |
 | `xbrlCheckVersion(pdfClassificationId, xbrlRevisionId)`, `xbrlCheckKeyOf(key)` | Make the version text `v<check version>:pdf-<id>:xbrl-<id>` of a check job, and read the three values back from an idempotency key. |
 
 The package does not run jobs. The `worker` app runs them. See [worker](worker.md).

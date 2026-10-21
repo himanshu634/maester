@@ -216,13 +216,15 @@ The limiter gets the client address from the `x-forwarded-for` header. It reads 
 
 1. The browser sends `POST .../documents/:id/classification`. The body has `basedOn`, the ID of the classification that the user saw, and one or more new answers.
 2. The API starts a database transaction and locks the document row.
-3. If the document has no classification, the result is `INVALID_STATE`. If `basedOn` is not the current classification, the result is `CONFLICT`.
-4. If the body has `company.id`, the company must be in the workspace. If the body has `company.new`, the API creates the company.
-5. The API compares the new answers with the current answers. If nothing changed, the result is `VALIDATION_FAILED`.
-6. The API writes a new classification with `setBy` set to `investor`.
-7. The API copies the evidence for each answer that did not change. For each changed answer with a value, it adds evidence with the source `investor`.
-8. After the transaction, the API calls `decideIntake` from `@maester/jobs`. This sets the next intake state of the document. For a read, it also creates a `document.extract` job, or a `document.xbrl` job for an XBRL instance, and dispatches it after its own transaction. A results PDF can get the state `waiting_for_xbrl` or `read` instead. See the [worker description](worker.md).
-9. The response has the document, the new classification and its evidence.
+3. If the body has the kind `annual_report` and the document is an XBRL instance, the result is `VALIDATION_FAILED`. An instance holds the figures of results, so it must not fill the annual tables.
+4. If the document has no classification, the result is `INVALID_STATE`. If `basedOn` is not the current classification, the result is `CONFLICT`.
+5. If the body has `company.id`, the company must be in the workspace. If the body has `company.new`, the API creates the company.
+6. The API compares the new answers with the current answers. If nothing changed, the result is `VALIDATION_FAILED`.
+7. The API writes a new classification with `setBy` set to `investor`.
+8. The API copies the evidence for each answer that did not change. For each changed answer with a value, it adds evidence with the source `investor`.
+9. After the transaction, the API calls `decideIntake` from `@maester/jobs`. This sets the next intake state of the document. For a read, it also creates a `document.extract` job, or a `document.xbrl` job for an XBRL instance, and dispatches it after its own transaction. A results PDF can get the state `waiting_for_xbrl` or `read` instead. See the [worker description](worker.md).
+10. If the document is an XBRL instance, or the new kind is `financial_results`, the API then calls `redecidePdfsAfterXbrl`. Thus a new period end of a results PDF can release the PDF or send it to a read.
+11. The response has the document, the new classification and its evidence.
 
 A read starts only when all these conditions are true:
 
@@ -409,6 +411,8 @@ The `text` track has `pages`, `pagesRead`, `pagesOcr`, `chunks`, `xbrlBlocks` an
 6. For each filing, `sources` has one entry for each basis. Each entry has one `StatementSource` for each statement.
 7. A `StatementSource` has the `source` (`xbrl` or `pdf`), the XBRL document and the spans of its facts. It also has the PDF document and its pages for the statement, and `inPdf`. It has a `reason` when the numbers do not come from XBRL.
 8. `inPdf` counts how many XBRL facts of the statement the check found on the PDF. If the check is off, the reason is `disabled`.
+   - A pass does not verify a figure. The check does not compare the sign. A value one unit away from the true value passes by chance in 16% to 23% of tests in crore and lakh. A value of zero always passes.
+   - A fail is not evidence of a wrong figure. See the [evaluation report](../eval/2026-10-21-xbrl-map-v1.md).
 9. `settled` is true when no file of the filing has work left.
 10. `held` has each identity that files print and that no company has. `matches` lists the companies of the workspace that it can be.
 11. `unsorted` has the files that have no company and no held identity.
@@ -420,7 +424,7 @@ The `text` track has `pages`, `pagesRead`, `pagesOcr`, `chunks`, `xbrlBlocks` an
 1. The body has `identity` with at least one of `cin`, `bseCode`, `isin` and `nseSymbol`. It also has `company`: `{ id }` for a company of the workspace, or `{ new }` to make one.
 2. The route runs in one transaction. If `company.new` is in the body, it creates the company. The company takes the codes of the identity first, then the codes in `new`.
 3. `lockHeldDocuments` locks the held documents of the workspace that print any of the identifiers. The oldest document comes first.
-4. For each held document that has no company, `writeInvestorClassification` writes a classification with `setBy` `investor`.
+4. A held document gets a new classification only when it has no company and its current classification prints a code of the identity. `writeInvestorClassification` writes it with `setBy` `investor`. The route reads the classification after the lock. Thus a confirm that waits for a lock does not use answers that changed.
 5. The route sorts the written documents so that XBRL instances come before PDFs.
 6. After the commit, `decideIntake` runs for each document. A PDF decided after the instances sees them as not settled, and waits.
 7. `redecidePdfsAfterXbrl` then decides the waiting PDFs again.
