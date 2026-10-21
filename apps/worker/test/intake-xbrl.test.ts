@@ -269,7 +269,8 @@ describe("decideIntake with XBRL", () => {
       await holder.query("select pg_advisory_xact_lock(hashtext('xbrl-wait:' || $1::text))", [ws.workspaceId]);
       const deciding = decide(pdf.row);
       const waiters = async () =>
-        (await ctx.db.execute<{ n: number }>(sql`select count(*)::int as n from pg_locks where locktype = 'advisory' and not granted`)).rows[0]!.n;
+        (await ctx.db.execute<{ n: number }>(sql`select count(*)::int as n from pg_locks where locktype = 'advisory' and not granted
+          and database = (select oid from pg_database where datname = current_database())`)).rows[0]!.n;
       await waitFor(async () => (await waiters()) === 1, 5_000);
       await ctx.db.update(schema.document).set({ intakeState: "identify_failed" }).where(eq(schema.document.id, xbrl));
       const releasing = redecidePdfsAfterXbrl(ctx.db, ctx.dispatcher, ws.workspaceId);
