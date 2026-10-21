@@ -16,7 +16,10 @@ const Schema = z.object({
   MAX_UPLOAD_BYTES: z.coerce.number().int().default(52428800),
   // Bytes from the start of an XML upload that verify keeps, to tell an XBRL instance from anything else.
   XBRL_SNIFF_BYTES: z.coerce.number().int().positive().default(65536),
-  LEASE_SECONDS: z.coerce.number().int().default(600),
+  // Look for each XBRL value on its results PDF's statement pages (document.xbrl_check). "false": the jobs are still
+  // created, and each answers `disabled` and writes no row.
+  XBRL_PDF_CHECK: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
+  LEASE_SECONDS:z.coerce.number().int().default(600),
   // Milliseconds between timer renewals of a running job's lease.
   JOB_HEARTBEAT_MS: z.coerce.number().int().positive().default(15000),
   // Jobs of one type run at once, over the defaults in queue.ts: "document.extract=3,document.verify=8".

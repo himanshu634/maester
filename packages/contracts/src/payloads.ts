@@ -26,3 +26,25 @@ export const DocumentClassifyResult = z.object({
   intakeState: IntakeState.nullable(),
 });
 export type DocumentClassifyResult = z.infer<typeof DocumentClassifyResult>;
+
+/** What `document.xbrl` wrote: the revision, its facts, its own failed checks (never `xbrl_in_pdf`) and the format read. */
+export const DocumentXbrlResult = z.object({
+  outcome: z.literal("read"),
+  revisionId: Uuid,
+  state: ExtractionState,
+  factCount: z.number().int(),
+  failedChecks: z.number().int(),
+  format: z.string().nullable(),
+  mapped: z.boolean(),
+});
+export type DocumentXbrlResult = z.infer<typeof DocumentXbrlResult>;
+
+/**
+ * What `document.xbrl_check` did, with the rows it wrote. `stale`: the XBRL revision or the PDF classification in its
+ * key is no longer current. `disabled`: the worker's XBRL_PDF_CHECK is off. `not_mapped`: the revision has no facts.
+ */
+export const DocumentXbrlCheckResult = z.object({
+  outcome: z.enum(["checked", "stale", "disabled", "not_mapped"]),
+  rows: z.number().int(),
+});
+export type DocumentXbrlCheckResult = z.infer<typeof DocumentXbrlCheckResult>;

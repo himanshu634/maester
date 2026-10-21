@@ -40,6 +40,13 @@ describe("worker env: the queue", () => {
     expect(loadWorkerEnv({ ...base, LEASE_SECONDS: "10", JOB_HEARTBEAT_MS: "5000" }).JOB_HEARTBEAT_MS).toBe(5000);
   });
 
+  it("checks XBRL values in PDFs unless XBRL_PDF_CHECK is false", () => {
+    expect(loadWorkerEnv(base).XBRL_PDF_CHECK).toBe(true);
+    expect(loadWorkerEnv({ ...base, XBRL_PDF_CHECK: "true" }).XBRL_PDF_CHECK).toBe(true);
+    expect(loadWorkerEnv({ ...base, XBRL_PDF_CHECK: "false" }).XBRL_PDF_CHECK).toBe(false);
+    expect(() => loadWorkerEnv({ ...base, XBRL_PDF_CHECK: "no" })).toThrow(/XBRL_PDF_CHECK/);
+  });
+
   it("reads EXTRACT_TIMEOUT_SECONDS", () => {
     expect(loadWorkerEnv({ ...base, EXTRACT_TIMEOUT_SECONDS: "60" }).EXTRACT_TIMEOUT_SECONDS).toBe(60);
   });
@@ -54,7 +61,9 @@ describe("worker env: the queue", () => {
   it("builds the runner's options from the environment", () => {
     const env = loadWorkerEnv({ ...base, JOB_CONCURRENCY: "document.extract=3", JOB_POLL_MS: "250", JOB_SWEEP_MS: "5000" });
     const opts = buildQueueOptions(env, handlers, silentLogger);
-    expect(opts.concurrency).toEqual({ "document.verify": 4, "document.classify": 2, "document.extract": 3, "document.index": 1 });
+    expect(opts.concurrency).toEqual({
+      "document.verify": 4, "document.classify": 2, "document.extract": 3, "document.index": 1, "document.xbrl": 2, "document.xbrl_check": 2,
+    });
     expect(opts).toMatchObject({ pollMs: 250, sweepMs: 5000 });
     expect(typeof opts.listen).toBe("function");
   });

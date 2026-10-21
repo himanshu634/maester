@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import { JobTypes, type IntakeState } from "@maester/contracts";
+import { JobTypes, XBRL_CHECK_SUBJECT, XBRL_PDF_CHECK_VERSION, type IntakeState } from "@maester/contracts";
 import {
   companyIdentity, getCurrentClassification, loadWorkspaceXbrlDocs, schema, type ClassificationRow, type Db,
 } from "@maester/db";
@@ -126,16 +126,83 @@ export async function decideIntake(db: Db, dispatcher: Dispatcher, c: Classifica
 }
 
 /**
+ * The `document.xbrl_check` job's version: both sides of the pair, so a new PDF classification or a new XBRL
+ * revision (new fact ids) gets its own job, and a retry of the same pair gets the old one.
+ */
+export const xbrlCheckVersion = (pdfClassificationId: string, xbrlRevisionId: string): string =>
+  `v${XBRL_PDF_CHECK_VERSION}:pdf-${pdfClassificationId}:xbrl-${xbrlRevisionId}`;
+
+/** The check version, PDF classification and XBRL revision a `document.xbrl_check` job's key names; null for another key. */
+export function xbrlCheckKeyOf(idempotencyKey: string): { version: number; pdfClassificationId: string; xbrlRevisionId: string } | null {
+  const match = /:v(\d+):pdf-([0-9a-f-]{36}):xbrl-([0-9a-f-]{36})$/.exec(idempotencyKey);
+  return match ? { version: Number.parseInt(match[1]!, 10), pdfClassificationId: match[2]!, xbrlRevisionId: match[3]! } : null;
+}
+
+/**
  * Create the `document.xbrl_check` jobs that pair XBRL documents with results PDFs of the same company and
- * period, from one side. Returns how many it created. Task 13 writes the body; until then it creates none.
+ * period end, from one side. An XBRL document pairs when its current revision (the newest read under its current
+ * classification's `reads_under_id`) was read from XBRL and has at least one fact; a PDF pairs when it is stored,
+ * not a duplicate, and its current classification is `financial_results`. Company and period end are the current
+ * classifications', both known. It always enqueues: the job itself answers `disabled` when the worker's
+ * XBRL_PDF_CHECK is off. Returns how many jobs it created (an existing pair's job is not dispatched again).
  */
 export async function enqueueXbrlPdfChecks(
-  _db: Db,
-  _dispatcher: Dispatcher,
-  _workspaceId: string,
-  _by: { xbrlDocumentId: string } | { pdfDocumentId: string },
+  db: Db,
+  dispatcher: Dispatcher,
+  workspaceId: string,
+  by: { xbrlDocumentId: string } | { pdfDocumentId: string },
 ): Promise<number> {
-  return 0;
+  const side = "xbrlDocumentId" in by ? sql`x.id = ${by.xbrlDocumentId}` : sql`p.id = ${by.pdfDocumentId}`;
+  const { rows } = await db.execute<{ xbrl_document_id: string; xbrl_revision_id: string; pdf_classification_id: string }>(sql`
+    select x.id as xbrl_document_id, xr.id as xbrl_revision_id, pc.id as pdf_classification_id
+    from document x
+    join lateral (
+      select dc.company_id, dc.period_end, dc.reads_under_id from document_classification dc
+      where dc.workspace_id = x.workspace_id and dc.document_id = x.id
+      order by dc.created_at desc, dc.id desc
+      limit 1
+    ) xc on xc.reads_under_id is not null and xc.company_id is not null and xc.period_end is not null
+    join lateral (
+      select r.id, r.source from extraction_revision r
+      where r.workspace_id = x.workspace_id and r.classification_id = xc.reads_under_id
+      order by r.created_at desc, r.id desc
+      limit 1
+    ) xr on xr.source = 'xbrl'
+    join document p on p.workspace_id = x.workspace_id and p.format = 'pdf' and p.state = 'stored'
+      and p.duplicate_of_document_id is null and p.intake_state is distinct from 'duplicate'
+    join lateral (
+      select dc.id, dc.kind, dc.company_id, dc.period_end from document_classification dc
+      where dc.workspace_id = p.workspace_id and dc.document_id = p.id
+      order by dc.created_at desc, dc.id desc
+      limit 1
+    ) pc on pc.kind = 'financial_results' and pc.company_id = xc.company_id and pc.period_end = xc.period_end
+    where x.workspace_id = ${workspaceId}
+      and x.format = 'xbrl'
+      and x.state = 'stored'
+      and x.duplicate_of_document_id is null
+      and x.intake_state is distinct from 'duplicate'
+      and exists (select 1 from financial_fact f where f.workspace_id = x.workspace_id and f.revision_id = xr.id)
+      and ${side}
+    order by x.created_at, x.id, p.created_at, p.id`);
+
+  // createJob dispatches only the jobs it inserts, so counting dispatches counts the jobs created.
+  let created = 0;
+  const counting: Dispatcher = {
+    enqueue: async (job) => {
+      created++;
+      await dispatcher.enqueue(job);
+    },
+  };
+  for (const r of rows) {
+    await createJob(db, counting, {
+      workspaceId,
+      type: JobTypes.DOCUMENT_XBRL_CHECK,
+      subjectType: XBRL_CHECK_SUBJECT,
+      subjectId: r.xbrl_document_id,
+      pipelineVersion: xbrlCheckVersion(r.pdf_classification_id, r.xbrl_revision_id),
+    });
+  }
+  return created;
 }
 
 /**

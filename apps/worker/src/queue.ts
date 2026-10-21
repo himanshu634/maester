@@ -10,6 +10,8 @@ export const DEFAULT_CONCURRENCY: Readonly<Record<string, number>> = Object.free
   "document.classify": 2,
   "document.extract": 2,
   "document.index": 1,
+  "document.xbrl": 2,
+  "document.xbrl_check": 2,
 });
 
 /** Opens a wake-up source; calls onReady(type) when a job of that type may be ready. Resolves to its close function. */

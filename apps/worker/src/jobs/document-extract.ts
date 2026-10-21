@@ -128,7 +128,7 @@ export async function writeRevision(
 }
 
 /** Mark the document only when this read is the one its current answers point at. */
-async function setIntakeIfCurrent(db: Db, workspaceId: string, documentId: string, classificationId: string | null, state: "read" | "read_failed"): Promise<void> {
+export async function setIntakeIfCurrent(db: Db, workspaceId: string, documentId: string, classificationId: string | null, state: "read" | "read_failed"): Promise<void> {
   if (!classificationId) return;
   const current = await getCurrentClassification(db, workspaceId, documentId);
   if (current?.readsUnderId !== classificationId) return;

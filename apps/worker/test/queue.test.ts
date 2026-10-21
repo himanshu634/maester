@@ -276,8 +276,14 @@ describe("parseConcurrency", () => {
     expect(parseConcurrency(undefined, ["document.index"])).toEqual({ "document.index": 1 });
   });
 
+  it("runs two XBRL reads and two XBRL PDF checks at once by default", () => {
+    expect(parseConcurrency(undefined, ["document.xbrl", "document.xbrl_check"])).toEqual({ "document.xbrl": 2, "document.xbrl_check": 2 });
+  });
+
   it("uses the defaults when unset, reads several overrides, and refuses malformed entries", () => {
-    expect(DEFAULT_CONCURRENCY).toEqual({ "document.verify": 4, "document.classify": 2, "document.extract": 2, "document.index": 1 });
+    expect(DEFAULT_CONCURRENCY).toEqual({
+      "document.verify": 4, "document.classify": 2, "document.extract": 2, "document.index": 1, "document.xbrl": 2, "document.xbrl_check": 2,
+    });
     expect(parseConcurrency(undefined, ["document.classify", "test.x"])).toEqual({ "document.classify": 2, "test.x": 1 });
     expect(parseConcurrency(" document.extract=3 , document.verify=8 ", ["document.extract", "document.verify"])).toEqual({ "document.extract": 3, "document.verify": 8 });
     expect(() => parseConcurrency("document.extract=1.5", ["document.extract"])).toThrow();
