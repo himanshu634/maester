@@ -17,6 +17,7 @@ from xbrl_fixtures import (
     real_instances_with_token,
 )
 
+from pdf_financial_qa.classify.contracts import StatementFound
 from pdf_financial_qa.xbrl.classify import XbrlClassificationData, XbrlEvidenceData, classify_instance
 from pdf_financial_qa.xbrl.formats import XbrlFormat, detect_format, family_of
 from pdf_financial_qa.xbrl.identity import read_identity
@@ -298,7 +299,8 @@ class ClassifyTests(unittest.TestCase):
         c = self.classify(identity_facts() + IND_AS_MARKERS + [("WhetherResultsAreAuditedOrUnaudited", "OneD", None, None, "Unaudited")])
         self.assertEqual((c.company_name_as_printed, c.cin, c.audited), ("SYNTHETIC CEMENTS LIMITED", None, False))
         self.assertEqual(c.format, XbrlFormat("in-capmkt", "ind_as", "in-capmkt/ind_as", True))
-        self.assertEqual(c.statements_found, [])  # Task 4 fills it from the maps
+        # The two Ind AS marker lines are lines of the income statement in the format's map.
+        self.assertEqual(c.statements_found, [StatementFound(statement="income_statement", basis="consolidated", pages=[])])
         self.assertEqual(c.warnings, [])
 
     def test_every_answer_has_its_evidence(self):

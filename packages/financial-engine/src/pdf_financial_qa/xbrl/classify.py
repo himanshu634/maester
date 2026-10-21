@@ -8,7 +8,9 @@ text it said. The word the instance writes for its period (``ReportingQuarter``)
 A rejected answer has no evidence: a symbol that is ``NOTLISTED`` or the wrong shape, a code that is not six
 digits. The kind's evidence is the family; an instance in no known family has none, because there is no
 name to quote. ``cin`` is always None: no format on hand carries one. ``statements_found`` is filled from
-the format's element map, and is empty until a map is read.
+the format's element map: a statement is found when the instance has a figure for one of its lines, in a
+context without a dimension, and it has the instance's basis and no pages (an instance has none). A format
+with no map (banking, NBFC, an unknown family) finds none.
 """
 
 import re
@@ -21,13 +23,14 @@ from pdf_financial_qa.workflow.contracts import ExtractionWarning, ReportingBasi
 
 from .formats import XbrlFormat, detect_format
 from .identity import Identity, identity_facts, latest_period_end, parse_iso_date, read_identity
+from .maps import STATEMENTS, load_map
 from .parser import Instance, RawFact
 from .periods import period_label, span_of, to_results_span
 
 _QUOTE_MAX = 300
-_BSE_CODE = re.compile(r"\d{6}")
+_BSE_CODE = re.compile(r"[0-9]{6}")
 _NSE_SYMBOL = re.compile(r"[A-Z][A-Z0-9&-]{0,19}")
-_ISIN = re.compile(r"[A-Z]{2}[A-Z0-9]{9}\d")
+_ISIN = re.compile(r"[A-Z]{2}[A-Z0-9]{9}[0-9]")
 _NOT_LISTED = "NOTLISTED"
 
 _MIXED_BASIS = "The instance states both bases, or neither."
@@ -118,10 +121,27 @@ def classify_instance(instance: Instance) -> XbrlClassificationData:
         isin=isin,
         basis=identity.basis,
         audited=identity.audited,
-        statements_found=[],
+        statements_found=_statements_found(instance, fmt, identity.basis),
         evidence=proof,
         warnings=warnings,
     )
+
+
+def _statements_found(instance: Instance, fmt: XbrlFormat, basis: ReportingBasis) -> list[StatementFound]:
+    """The statements the map's lines show up in, in the order income statement, balance sheet, cash flow.
+    A nil fact, an empty one, one with no unit (text) and one with a member are not a figure of a line."""
+    element_map = load_map(fmt.id) if fmt.id is not None else None
+    if element_map is None:
+        return []
+    found = set()
+    for fact in instance.facts:
+        if fact.nil or fact.unit_id is None or not fact.text.strip():
+            continue
+        entry = element_map.entry(fact.element)
+        context = instance.contexts.get(fact.context_id)
+        if entry is not None and context is not None and not context.dimensional:
+            found.add(entry.statement)
+    return [StatementFound(statement=statement, basis=basis, pages=[]) for statement in STATEMENTS if statement in found]
 
 
 def _shaped(value: str | None, shape: re.Pattern[str]) -> str | None:

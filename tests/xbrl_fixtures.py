@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import NamedTuple
 from xml.sax.saxutils import escape, quoteattr
 
+from pdf_financial_qa.xbrl.formats import detect_format
 from pdf_financial_qa.xbrl.parser import Instance, parse_instance
 
 # (element, context, unit, decimals, text). A text of None writes xsi:nil="true".
@@ -236,3 +237,38 @@ def real_instances_with_period_token() -> Iterator[tuple[Path, str]]:
         if match is None:
             raise ValueError(f"no period token in the name of {path.name}")
         yield path, match.group(1)
+
+
+# The real instances the tests name, per mapped format: the file-name tokens that pick them. In-capmkt has every
+# period token, and MQ is the Q4 results case (a quarter's facts beside the year's). In-bse-fin has only SQ and
+# DQ, and only its SQ files hold a balance sheet and a cash flow.
+_NAMED = {
+    "in-capmkt/ind_as": ("Integrated_Finance_Ind_As", ("MC", "SH", "JQ", "MQ")),
+    "in-bse-fin/ind_as": ("Main_Ind_As", ("SQ", "SQ", "DQ")),
+}
+
+
+def named_real_instances() -> dict[str, list[Path]]:
+    """Real instances by format id, the same files on every run: for each wanted period token, in the order
+    above, the first file in path order that has the format's file-name token and the period token, is not taken
+    yet and whose elements give the format. A format with no match, or no ``MAESTER_XBRL_DIR``, has fewer
+    files, down to none."""
+    paths = list(real_instances())
+    named: dict[str, list[Path]] = {}
+    for format_id, (format_token, period_tokens) in _NAMED.items():
+        chosen: list[Path] = []
+        for period_token in period_tokens:
+            for path in paths:
+                format_match, period_match = _FORMAT_TOKEN.search(path.name), _PERIOD_TOKEN.search(path.name)
+                if (
+                    path not in chosen
+                    and format_match is not None
+                    and period_match is not None
+                    and format_match.group(1) == format_token
+                    and period_match.group(1) == period_token
+                    and detect_format(parse(path.read_bytes())).id == format_id
+                ):
+                    chosen.append(path)
+                    break
+        named[format_id] = chosen
+    return named

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from importlib.resources import files
 from typing import Literal
 
+from . import maps
 from .parser import Instance
 
 Family = Literal["in-capmkt", "in-bse-fin"]
@@ -55,8 +56,8 @@ def _load_rule(raw: dict) -> _Rule:
 
 _RULES: tuple[_Rule, ...] = tuple(_load_rule(raw) for raw in _DATA["rules"])
 
-# The formats an element map reads. The others are read, and write no facts.
-MAPPED_FORMATS = frozenset({"in-capmkt/ind_as", "in-bse-fin/ind_as"})
+# The formats an element map reads (the list is ``maps.MAPPED_FORMATS``). The others are read, and write no facts.
+MAPPED_FORMATS = frozenset(maps.MAPPED_FORMATS)
 
 
 @dataclass(frozen=True, slots=True)

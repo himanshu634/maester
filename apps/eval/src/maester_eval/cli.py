@@ -27,6 +27,7 @@ from maester_eval.paths import DEFAULT
 from maester_eval.report import score_run_dir, write_report
 from maester_eval.runner import gemini_model_factory, run_live, workflow_settings_from_env
 from maester_eval.sheets import export_run, sheet_path
+from maester_eval.xbrl_survey import find_instances, survey_instances, write_survey
 
 app = typer.Typer(
     help="Maester evaluation harness: run the extraction workflow over real filings and score it against the gold set.",
@@ -186,3 +187,22 @@ def report(
     if to is not None:
         write_text_atomically(to, md.read_text(encoding="utf-8"))
         console.print(f"published → {to}", markup=False)
+
+
+@app.command("xbrl-elements")
+@_reports_errors
+def xbrl_elements(
+    instances: Annotated[Path, typer.Option(help="A folder of XBRL instances; every .xml under it is read.")],
+    out: Annotated[Path, typer.Option(help="Where the CSVs go, e.g. data/eval/xbrl/ (ignored by version control).")],
+) -> None:
+    """List the numeric elements each XBRL format holds, as element names and counts only (never a value)."""
+    survey = survey_instances(find_instances(instances))
+    for format_id in sorted(survey.formats):
+        console.print(f"{format_id}: {survey.formats[format_id]}", markup=False)
+    console.print(f"no format: {survey.no_format}", markup=False)
+    console.print(f"unreadable: {sum(survey.unreadable.values())}", markup=False)
+    for reason in sorted(survey.unreadable):
+        console.print(f"  {reason}: {survey.unreadable[reason]}", markup=False)
+    for path in write_survey(survey, out):
+        console.print(f"wrote {path}", markup=False)
+    console.print(f"{survey.files} file(s) read", markup=False)
