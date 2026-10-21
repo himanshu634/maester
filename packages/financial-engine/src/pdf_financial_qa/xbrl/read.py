@@ -291,6 +291,8 @@ def _in_unit(value: Decimal, exponent: int, places: int) -> Decimal:
     number of digits, and nothing is rounded."""
     sign, digits, power = value.as_tuple()
     digits, power = list(digits), power + exponent
+    if not any(digits):  # zero, however it is written ("0.00", "-0"), is plain zero before it is padded
+        sign, digits, power = 0, [0], 0
     while len(digits) > 1 and digits[-1] == 0:
         digits.pop()
         power += 1

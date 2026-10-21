@@ -78,6 +78,18 @@ class ValueTests(unittest.TestCase):
         f = fact(r, "OtherIncome", "OneD")
         self.assertEqual((f.reported_text, f.normalized_value, f.reported_value), ("-120000000.00", "-120000000.00", "-12.00"))  # −120,000,000 / 10^7 = −12, 2 places
 
+    def test_zero_has_the_columns_places_whatever_its_text(self):
+        for text in ("0", "0.00", "-0", "-0.000"):
+            # finest −3 in lakh: 2 places
+            r = read(instance(rounding="Lakhs", facts=ind_as(revenue=("1000000", "-3"), other_income=(text, "-3"), income=("1000000", "-3"))))
+            self.assertEqual(fact(r, "OtherIncome", "OneD").reported_value, "0.00", text)
+            c = check(r, "Income", Q2)
+            self.assertEqual((c.status, c.expected, c.actual), ("passed", "10.00", "10.00"), text)  # 1,000,000 / 10^5 + 0
+            # every line at −5 in lakh: no places
+            r = read(instance(rounding="Lakhs", facts=ind_as(other_income=(text, "-5"))))
+            self.assertEqual(fact(r, "OtherIncome", "OneD").reported_value, "0", text)
+            self.assertEqual(check(r, "Income", Q2).actual, "12345", text)  # 1,234,500,000 / 10^5 + 0, against 12400: failed
+
     def test_eps_keeps_rupees_a_share(self):
         f = fact(read(instance(facts=ind_as(eps=("12.34", "INF")))), "BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations", "OneD")
         self.assertEqual((f.reported_value, f.normalized_value, f.unit_label, f.scale_factor, f.decimals), ("12.34", "12.34", "₹ a share", "1", "INF"))
