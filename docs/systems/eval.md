@@ -281,6 +281,7 @@ The harness shows an error in red and stops with exit code 1. A message names a 
 | Manifest without a column | A manifest has no `bse_code`, `file` or one of the other columns that the command needs. | The command stops with exit code 1. The message names the column. |
 | Report that is not JSON | `--against` names a file that is not a report. | The command stops before it writes anything. |
 | Instance that is refused | The parser refuses the file. The reasons are `DOCTYPE`, `TOO_LARGE`, `MALFORMED`, `NOT_AN_INSTANCE`, `TOO_MANY_FACTS` and `TIMED_OUT`. | The report counts the file under its reason and goes on. |
+| File that the command cannot open | The operating system refuses the read. | The report counts the file under `UNREADABLE_FILE` and goes on. |
 | Gold file exists | `freeze` finds a gold file for the filing. | The harness stops. `--force` replaces the file. |
 
 | Error | Cause | Result |
@@ -640,7 +641,7 @@ CAUTION: Do not tune a prompt or a rule on the `heldout` set. Run it only to dec
 - The harness does not run classification of PDFs. The kind of a filing comes from the manifest.
 - `xbrl-map` scores no element map against gold. It counts what the map and the sums do. Phase 5 scores the map against a gold set.
 - The `--pdfs` run uses the rules of the classifier only. The live check uses the statement pages of the full classification, which can find more pages.
-- The `--pdfs` run takes the PDF's unit to be the unit that the instance declares, as the check does. A PDF that prints another unit shows as a high rate of failures in one unit.
+- The `--pdfs` run takes the PDF's unit to be the unit that the instance declares, as the check does. The run looks for a PDF that prints a finer unit than the instance declares: it looks for the exact quotient. It cannot see a PDF that prints a coarser unit, because the printed number has fewer places. The run does not measure a coarser unit.
 - `xbrl-map` pairs an instance with a PDF by the BSE code and the day only. It does not check the company name.
 - `live` reads the filings one at a time.
 

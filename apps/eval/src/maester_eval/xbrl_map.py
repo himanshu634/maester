@@ -49,7 +49,9 @@ TOP_UNMAPPED = 30
 TOP_FAILING = 20
 MAX_NAMED = 25  # file names listed for one finding
 
-# The extractor's limits (see xbrl_survey): a file it would refuse is counted unreadable here.
+# The extractor's limits, copied from `apps/extractor/src/maester_extractor/settings.py` (`xbrl_max_bytes`,
+# `xbrl_max_facts`, `xbrl_deadline_seconds`; the eval package does not depend on the extractor, so it cannot import
+# them): a file the extractor would refuse is counted unreadable here. Same values as in `xbrl_survey`.
 _MAX_BYTES = 20971520
 _MAX_FACTS = 100000
 _DEADLINE_SECONDS = 30.0
@@ -363,7 +365,9 @@ def _count_file(tally: Tally, path: Path, instance: Instance, read: XbrlReadData
     if element_map is not None:
         _count_sums(tally, path.name, read, element_map)
         # The differences the map lists are facts with a member: count the files that hold the element with one.
-        with_member = {fact.element for fact in instance.facts if instance.contexts[fact.context_id].dimensional}
+        # (`read_instance` refuses a fact in an undefined context first; `.get` keeps the count from crashing.)
+        with_member = {fact.element for fact in instance.facts
+                       if (context := instance.contexts.get(fact.context_id)) is not None and context.dimensional}
         for difference in element_map.entry_point_differences:
             if difference.element in with_member:
                 key = (difference.element, difference.only_in, point)
@@ -565,6 +569,9 @@ def run_xbrl_map(instances: Path, manifest: Path | None = None, pdfs: Path | Non
             instance = parse_instance(path.read_bytes(), max_bytes=_MAX_BYTES, max_facts=_MAX_FACTS,
                                       deadline_seconds=_DEADLINE_SECONDS)
             read = read_instance(instance)
+        except OSError:
+            tally.unreadable["UNREADABLE_FILE"] += 1  # a file the run cannot open: counted, never the file's name
+            continue
         except ExtractionError as refused:
             tally.unreadable[refused.message] += 1  # the reason code and nothing else
             continue

@@ -13,10 +13,15 @@ from pdf_fixtures import make_pdf
 from typer.testing import CliRunner
 from xbrl_fixtures import BSE_FIN, IND_AS_MARKERS, f, identity_facts, ind_as, instance
 
+from pdf_financial_qa.xbrl.parser import parse_instance
+from pdf_financial_qa.xbrl.read import read_instance
+
 from maester_eval import cli
 from maester_eval.paths import EvalPaths
 from maester_eval.xbrl_map import (
+    Tally,
     XbrlMapError,
+    _count_file,
     deltas,
     flatten,
     read_instance_manifest,
@@ -27,7 +32,7 @@ from maester_eval.xbrl_map import (
 )
 
 # Figures of the synthetic instances and the company they are in: none may reach a file the command writes.
-FIGURES = ("1234500000", "5500000", "24690", "12345", "400000000")
+FIGURES = ("1234500000", "5500000", "24690", "12345", "400000000", "12,345.00")
 COMPANY = "SYNTHETIC CEMENTS"
 
 CAPMKT = "2025-11-12_SQ2025-2026_consolidated_Integrated_Finance_Ind_As_500001_1112025101010.xml"
@@ -99,6 +104,32 @@ class MapReportTests(Case):
         self.put(BSE, BSE_DATA)
         self.put(BANKING, BANKING_DATA)
         self.put(HOSTILE, HOSTILE_DATA)
+
+    def test_a_fact_in_a_context_the_instance_does_not_define_is_refused_by_the_read_and_counted(self):
+        self.put(LONE, instance(facts=[*ind_as(), f("Revenue", "NoSuchContext")], rounding="Lakhs"))
+        report = run_xbrl_map(self.instances.parent)
+        self.assertEqual(report["files"]["unreadable"]["MALFORMED"], 1)
+        self.assertEqual(report["files"]["read"], 3)
+
+    def test_counting_a_file_does_not_crash_on_a_fact_in_an_undefined_context(self):
+        dangling = parse_instance(instance(facts=[*ind_as(), f("Revenue", "NoSuchContext")], rounding="Lakhs"),
+                                  max_bytes=10**7, max_facts=10**5, deadline_seconds=30.0)
+        clean = read_instance(parse_instance(CAPMKT_DATA, max_bytes=10**7, max_facts=10**5, deadline_seconds=30.0))
+        _count_file(Tally(), Path(CAPMKT), dangling, clean)  # the read refuses such a file first: this guards the count
+
+    def test_a_file_that_cannot_be_read_is_counted_not_a_crash(self):
+        (self.instances / LONE).write_bytes(CAPMKT_DATA)
+        real = Path.read_bytes
+
+        def read_bytes(path):
+            if path.name == LONE:
+                raise PermissionError("denied")
+            return real(path)
+
+        with mock.patch.object(Path, "read_bytes", read_bytes):
+            report = run_xbrl_map(self.instances.parent)
+        self.assertEqual(report["files"]["unreadable"]["UNREADABLE_FILE"], 1)
+        self.assertEqual(report["files"]["read"], 3)
 
     def test_counts_of_files_formats_and_sums(self):
         response = self.command("--instances", str(self.instances.parent))
