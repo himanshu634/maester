@@ -130,7 +130,7 @@ async function extract(job: JobRow, ctx: JobContext): Promise<DocumentExtractRes
     return existingSummary(ctx.db, done);
   }
 
-  // An automatic read was decided before XBRL dropped with the PDF may have come in: ask the source rule again, so a
+  // XBRL dropped with the PDF may have come in after this automatic read was decided: ask the source rule again, so a
   // results PDF that XBRL covers, or may yet, is never given to a paid read. A manual re-read is checked by the API.
   const automatic = classificationIdOfReadJob(job.idempotencyKey);
   if (automatic) {
