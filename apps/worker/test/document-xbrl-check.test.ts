@@ -231,6 +231,26 @@ describe("document.xbrl_check", () => {
     expect(fake.checkRequests).toHaveLength(0);
   });
 
+  it("an extractor that leaves a sent fact unanswered fails the job for good, with a code-only message and no row", async () => {
+    const lines: string[] = [];
+    const logger = pino({ level: "debug" }, { write: (s: string) => void lines.push(s) });
+    const { pdf, checkJobId } = await setup();
+    const answered = fake.client.xbrlPdfCheck;
+    fake.client.xbrlPdfCheck = async (input) => {
+      const full = await answered(input);
+      return { ...full, results: full.results.slice(0, -1) };
+    };
+    try {
+      await runJob({ ...ctx, logger }, JobTypes.DOCUMENT_XBRL_CHECK, checkJobId!);
+    } finally {
+      fake.client.xbrlPdfCheck = answered;
+    }
+    expect(await jobRow(checkJobId!)).toMatchObject({ state: "failed", attempt: 1, lastErrorCode: "CHECK_INCOMPLETE" });
+    expect((await jobRow(checkJobId!)).lastErrorMessage).toBe("the extractor left 1 of 4 facts unanswered");
+    expect(await rowsFor(pdf.row.id)).toHaveLength(0);
+    expect(lines.join("\n")).toMatch(/"unanswered":1/);
+  });
+
   it("refuses for good a key it cannot read", async () => {
     const { ws, xbrlId } = await setup();
     const jobId = await seedJob(ctx.db, ws.workspaceId, { type: JobTypes.DOCUMENT_XBRL_CHECK, subjectType: XBRL_CHECK_SUBJECT, subjectId: xbrlId });

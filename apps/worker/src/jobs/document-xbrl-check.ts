@@ -32,7 +32,8 @@ export function unitOf(facts: FinancialFactRow[], warnings: { code: string }[]):
   const [scale] = [...scales];
   if (scales.size !== 1 || scale === null || scale === undefined) return { scale: null, places: null };
   const places = monetary.flatMap((f) => (f.reportedValue === null ? [] : [placesOf(f.reportedValue)]));
-  return { scale, places: places.length ? Math.min(...places) : null };
+  // A reduce, not Math.min(...places): a spread of every fact could pass the engine's argument limit.
+  return { scale, places: places.length ? places.reduce((fewest, n) => (n < fewest ? n : fewest)) : null };
 }
 
 async function check(job: JobRow, ctx: JobContext): Promise<DocumentXbrlCheckResult> {
@@ -106,6 +107,12 @@ async function check(job: JobRow, ctx: JobContext): Promise<DocumentXbrlCheckRes
       if (!sent.has(r.factId)) continue;
       sent.delete(r.factId);
       answers.push({ factId: r.factId, status: r.status, pageIndex: r.pageIndex, reason: r.reason, checkVersion: result.checkVersion });
+    }
+    // `sent` now holds the facts the extractor did not answer. A fact with no row would read as never checked while
+    // the job says it ran, so the job stops and writes nothing; ids and counts only in the log and the message.
+    if (sent.size > 0) {
+      ctx.logger.error({ xbrlDocumentId: job.subjectId, revisionId: key.xbrlRevisionId, sent: toSend.length, unanswered: sent.size }, "xbrl pdf check left facts unanswered");
+      throw new JobFailure("CHECK_INCOMPLETE", `the extractor left ${sent.size} of ${toSend.length} facts unanswered`, false);
     }
   }
 
