@@ -163,7 +163,7 @@ export function documentsApi(fetcher: Fetcher, workspaceId: string) {
 			const created = await postJson<CreateUploadResponse>(fetcher, `${base}/documents/uploads`, {
 				originalName: file.name,
 				size: file.size,
-				mimeType: 'application/pdf'
+				mimeType: /\.xml$/i.test(file.name) ? 'application/xml' : 'application/pdf'
 			});
 			hooks.onCreated?.(created.document);
 			// Content-Length is the browser's to set; passing it on is at best ignored.

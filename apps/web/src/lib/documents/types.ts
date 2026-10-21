@@ -8,6 +8,7 @@
  *   IntakeState, ChangeClassificationRequest, the kind and type enums)
  * - packages/contracts/src/company.ts (Company)
  * - packages/contracts/src/job.ts (Job)
+ * - packages/contracts/src/pipeline.ts (DocumentPipeline, the numbers track only)
  * - packages/contracts/src/common.ts and workspace.ts (ApiError, paginated lists, Me)
  *
  * Only the fields this page uses are copied. When a contract changes, change it here too.
@@ -25,7 +26,8 @@ export type IntakeState =
 	| 'reading'
 	| 'read'
 	| 'identify_failed'
-	| 'read_failed';
+	| 'read_failed'
+	| 'waiting_for_xbrl';
 
 export type ClassificationKind = 'annual_report' | 'financial_results' | 'other' | 'not_sure';
 /** The kinds an investor can give; "not sure" is Maester's answer only. */
@@ -86,6 +88,8 @@ export interface Classification extends ClassificationSummary {
 	cin: string | null;
 	bseCode: string | null;
 	nseSymbol: string | null;
+	/** From an XBRL instance's ISIN; null for a PDF. */
+	isin: string | null;
 	statementsFound: StatementFound[];
 }
 
@@ -97,6 +101,10 @@ export interface Evidence {
 	quote: string | null;
 	/** Whether the quote was found in the page's text layer; null when the page has none (a scan). */
 	textLayerMatch: boolean | null;
+	/** The XBRL element the answer was read from; null for a PDF. */
+	element: string | null;
+	/** The XBRL context that element was read in; null for a PDF. */
+	context: string | null;
 }
 
 export interface DocumentClassification {
@@ -104,11 +112,25 @@ export interface DocumentClassification {
 	evidence: Evidence[];
 }
 
+/** The values of `numbers.state` in packages/contracts/src/pipeline.ts, all of them. */
+export type NumbersState = 'done' | 'now' | 'not_needed' | 'failed' | 'waiting' | 'not_read';
+
+/** The part of the API's DocumentPipeline the page reads: where the document's numbers come from. */
+export interface DocumentPipeline {
+	numbers: {
+		state: NumbersState;
+		/** The XBRL documents that give a PDF its numbers (`not_needed`), or part of them (`done`). */
+		coveredByXbrl: string[];
+	};
+}
+
 export interface DocumentRecord {
 	id: string;
 	companyId: string | null;
 	originalName: string;
 	declaredSize: number;
+	/** What the stored file is: a PDF, or an XBRL instance (XML). */
+	format: 'pdf' | 'xbrl';
 	state: DocumentState;
 	rejectionCode: RejectionCode | null;
 	intakeState: IntakeState | null;
@@ -116,6 +138,7 @@ export interface DocumentRecord {
 	classification: ClassificationSummary | null;
 	createdAt: string;
 	latestJob: Job | null;
+	pipeline?: DocumentPipeline;
 }
 
 export interface Company {
@@ -125,6 +148,7 @@ export interface Company {
 	cin: string | null;
 	bseCode: string | null;
 	nseSymbol: string | null;
+	isin: string | null;
 }
 
 export interface Page<T> {

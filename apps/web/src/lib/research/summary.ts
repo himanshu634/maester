@@ -14,7 +14,7 @@ import type {
 	StatementTable,
 	TableUnit
 } from './types';
-import { fyWords, unitShort, unitWords } from './view';
+import { fyWords, unitShort, unitWords, whereWords } from './view';
 
 export interface SummaryFigure {
 	label: string;
@@ -296,7 +296,7 @@ export function summarize(input: {
 				two.format(ok.last!.value),
 				two.format(eps.now),
 				fy,
-				(cell.source?.pageIndex ?? 0) + 1,
+				whereWords(cell),
 				basicIndex >= 0
 			);
 		}

@@ -16,6 +16,7 @@
 	import { documentsContent as copy } from '$lib/content/documents';
 	import {
 		addedAt,
+		canReadAgain,
 		companyCandidates,
 		identifiers,
 		kindSaveLabel,
@@ -340,16 +341,19 @@
 					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the id is known only at runtime; the path is resolve()d -->
 					<a href={companyHref(companyId)}>{copy.slip.seeFigures}</a>
 				{/if}
-				<button
-					class="button outline"
-					type="button"
-					disabled={retryBusy}
-					aria-describedby={retryBusy ? `${id}-read-again-busy` : undefined}
-					onclick={() => retry(onextract)}
-				>
-					{copy.slip.readAgain}
-				</button>
-				{#if retrying}<p class="busy-note" id="{id}-read-again-busy">{retrying}</p>{/if}
+				<!-- A PDF whose numbers come from its XBRL files has nothing of its own to read again. -->
+				{#if canReadAgain(doc)}
+					<button
+						class="button outline"
+						type="button"
+						disabled={retryBusy}
+						aria-describedby={retryBusy ? `${id}-read-again-busy` : undefined}
+						onclick={() => retry(onextract)}
+					>
+						{copy.slip.readAgain}
+					</button>
+					{#if retrying}<p class="busy-note" id="{id}-read-again-busy">{retrying}</p>{/if}
+				{/if}
 			</div>
 		{/if}
 

@@ -166,8 +166,9 @@ export function documentRoutes(deps: AppDeps) {
     return c.json(body);
   });
 
-  // The PDF itself, for a plain link: "…/file#page=213" opens it at the page, since the browser
-  // keeps the fragment across this redirect. Signed for a short while and never cached.
+  // The stored file itself (a PDF or an XBRL instance), for a plain link. For a PDF, "…/file#page=213"
+  // opens it at the page, since the browser keeps the fragment across this redirect. Signed for a
+  // short while and never cached.
   r.get("/:id/file", async (c) => {
     const workspace = c.get("workspace");
     const doc = await getDocument(deps.db, workspace.id, uuidParam(c, "id"));

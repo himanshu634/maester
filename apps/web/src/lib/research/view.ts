@@ -7,6 +7,8 @@ import type { ReportingBasis } from '$lib/documents/types';
 import type {
 	CompanyFiling,
 	FinancialCell,
+	PageCellSource,
+	Restated,
 	ResearchCompany,
 	StatementTable,
 	TableUnit
@@ -102,20 +104,67 @@ export function cellText(cell: FinancialCell): string {
 
 /** Why a cell shows no figure, for the figure panel and for screen readers; null when it does. */
 export function cellReason(cell: FinancialCell, filing: string): string | null {
-	const page = cell.source ? cell.source.pageIndex + 1 : 0;
 	if (cell.status === 'missing') return copy.words.missing(filing);
+	const s = cell.source;
+	const unread = cell.status === 'dash' || cell.status === 'unparsed' || cell.value === null;
+	// An XBRL source has no page to name: it names the element, and says so when the fact is nil.
+	if (s?.kind === 'xbrl') {
+		if (!unread) return null;
+		return s.nil ? copy.words.nilXbrl(s.element) : copy.words.unparsedXbrl(s.element);
+	}
+	const page = s ? s.pageIndex + 1 : 0;
 	if (cell.status === 'dash') return copy.words.dash(page);
-	if (cell.status === 'unparsed' || cell.value === null) return copy.words.unparsed(page);
+	if (unread) return copy.words.unparsed(page);
 	return null;
 }
 
-export const pageWords = (cell: FinancialCell) =>
-	cell.source ? copy.words.page(cell.source.pageIndex + 1, cell.source.pageCount) : '—';
+/** The page source of a cell, or null for a cell with none or one read from an XBRL file. */
+export const pageSourceOf = (cell: FinancialCell): PageCellSource | null =>
+	cell.source && cell.source.kind !== 'xbrl' ? cell.source : null;
+
+export const pageWords = (cell: FinancialCell) => {
+	const s = cell.source;
+	if (!s) return '—';
+	return s.kind === 'xbrl' ? s.element : copy.words.page(s.pageIndex + 1, s.pageCount);
+};
+
+/** Where a figure was read from, for the price to earnings note: its page or its XBRL element. */
+export function whereWords(cell: FinancialCell): string {
+	const s = cell.source;
+	if (!s) return copy.words.whereUnknown;
+	return s.kind === 'xbrl'
+		? copy.words.whereXbrl(s.element)
+		: copy.words.wherePage(s.pageIndex + 1);
+}
+
+/** The panel's From row: the filing and the page (of how many) or the XBRL element; null with no source. */
+export function fromWords(cell: FinancialCell, filingPeriodEnd: string | null): string | null {
+	const s = cell.source;
+	if (!s) return null;
+	const filing = filingLong(filingPeriodEnd);
+	return s.kind === 'xbrl'
+		? copy.panel.fromXbrl(filing, s.element)
+		: copy.panel.from(filing, copy.words.page(s.pageIndex + 1, s.pageCount).toLowerCase());
+}
+
+/** The panel's Restated row: what the other filing printed, and the page or element it was on. */
+export function restatedWords(restated: Restated): string {
+	const filing = filingLong(restated.filingPeriodEnd);
+	return restated.kind === 'xbrl'
+		? copy.panel.restatedXbrl(filing, restated.printed, restated.element)
+		: copy.panel.restated(filing, restated.printed, restated.pageIndex + 1);
+}
+
+/** The PDF page the panel opens, or null when the figure is not on a page of a PDF. */
+export function pdfPageOf(cell: FinancialCell): { documentId: string; pageIndex: number } | null {
+	const s = pageSourceOf(cell);
+	return s ? { documentId: s.documentId, pageIndex: s.pageIndex } : null;
+}
 
 export type Words = { strong?: string; text: string };
 
 export function onPage(cell: FinancialCell): Words {
-	const s = cell.source;
+	const s = pageSourceOf(cell);
 	if (!s) return { text: '—' };
 	if (s.textLayerMatch === true) return { text: copy.words.found };
 	if (s.textLayerMatch === null) return { text: copy.words.scanned(s.pageIndex + 1) };
