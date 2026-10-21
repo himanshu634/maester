@@ -5,7 +5,7 @@ description = "Maester's document extraction service: an HTTP sidecar over the L
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-dependencies = ["maester-financial-engine==0.1.0", "fastapi>=0.120", "uvicorn>=0.30"]
+dependencies = ["maester-financial-engine==0.1.0", "fastapi>=0.120", "uvicorn>=0.30", "python-multipart==0.0.32"]
 
 [project.scripts]
 maester-extractor = "maester_extractor.__main__:main"
