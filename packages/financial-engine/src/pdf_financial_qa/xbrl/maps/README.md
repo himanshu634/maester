@@ -62,11 +62,42 @@ operating + investing + financing. A quick check on the 724 files (each sum over
 with a tolerance of n × ½ × 10^−finest decimals, n being the total and the parts present) passes for every sum in
 nearly every context; the exceptions are in the table below for Task 5's check to confirm.
 
+## Signs
+
+An XBRL fact keeps the sign the filer gave it; the read never changes a value or its sign. Cash-flow outflow
+elements are positive for an outflow: `IncomeTaxesPaid…`, `InterestPaid…`, `DividendsPaid…`,
+`PurchaseOfPropertyPlantAndEquipment…` and the other `Purchase…`, `Payments…` and `Repayments…` lines. So the sums
+take them off with sign −1, and a reader that shows these lines as a PDF prints them (in brackets, as a negative)
+has to say so itself (Tasks 14 and 20).
+
+`OtherComprehensiveIncome` (in-capmkt) is ignored because it equals `OtherComprehensiveIncomeNetOfTaxes` in all
+922 real contexts that hold both: it is the same figure printed twice, and the net-of-tax line is the one mapped.
+
 ## Known filer inconsistencies
 
-Task 5 fills this table from its run on the instances on hand: a filer's sum that does not hold in the
-instance itself is listed here, not hidden by a looser tolerance.
+A filer's sum that does not hold in the instance itself is listed here, with the PDF page that shows the filer got
+it wrong, not hidden by a looser tolerance. A row is added only with that page: a sum that fails because the map is
+wrong (a missing line, a wrong sign) is fixed in the map instead, with a version bump. The read's test over the
+named real instances fails on a failed sum that has no row here.
 
-| File | Sum id | Period |
-| --- | --- | --- |
-| (to be filled by the sums check) | | |
+| File | Sum id | Period | PDF page |
+| --- | --- | --- | --- |
+
+### Failing, not yet confirmed against the PDF
+
+Task 5's read over the 724 Ind AS instances on hand (21 October 2026): 20,257 subtotal checks and 369 balance
+identities pass, 16 subtotals are not checked (every part absent), and 5 subtotals fail, all
+`adjustments_to_reconcile_profit`, none in a named instance:
+
+| File | Period |
+| --- | --- |
+| `2025-06-12_MC2024-2025_standalone_Integrated_Finance_Ind_As_533273_1262025142556.xml` | Year ended 31 Mar 2025 |
+| `2024-11-12_SQ2024-2025_consolidated_Main_Ind_As_543358_12112024122644.xml` | Half year ended 30 Sep 2024 |
+| `2025-06-12_MH2024-2025_consolidated_Integrated_Finance_Ind_As_543358_1262025203126.xml` | Year ended 31 Mar 2025 |
+| `2025-06-24_MC2024-2025_consolidated_Integrated_Finance_Ind_As_543358_2462025185912.xml` | Year ended 31 Mar 2025 |
+| `2025-06-24_MC2024-2025_consolidated_Integrated_Finance_Ind_As_543358_246202519124.xml` | Year ended 31 Mar 2025 |
+
+Each passes with the sign of `AdjustmentsForUndistributedProfitsOfAssociates` turned round. That is not a map
+error a sign fixes: of the 9 contexts where the element is not zero, 4 pass with it as filed (2 positive, 2
+negative) and 5 fail (1 positive, 4 negative), so filers sign it both ways. Each moves to the table above once its
+PDF page shows the printed sign; Task 20's report counts them.

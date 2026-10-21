@@ -9,13 +9,18 @@ tests import ``pdf_fixtures``.
 
 import os
 import re
-from collections.abc import Iterator, Sequence
+import unittest
+from collections.abc import Iterable, Iterator, Sequence
+from decimal import Decimal
 from pathlib import Path
 from typing import NamedTuple
 from xml.sax.saxutils import escape, quoteattr
 
+from pdf_financial_qa.workflow.contracts import ExtractedCheck, ExtractionWarning
 from pdf_financial_qa.xbrl.formats import detect_format
+from pdf_financial_qa.xbrl.maps import load_map
 from pdf_financial_qa.xbrl.parser import Instance, parse_instance
+from pdf_financial_qa.xbrl.read import XbrlFactData, XbrlReadData, read_instance
 
 # (element, context, unit, decimals, text). A text of None writes xsi:nil="true".
 FactTuple = tuple[str, str, str | None, str | None, str | None]
@@ -272,3 +277,138 @@ def named_real_instances() -> dict[str, list[Path]]:
                     break
         named[format_id] = chosen
     return named
+
+
+# --- the read ------------------------------------------------------------------------------------
+
+# The lines ``ind_as()`` writes, by key: the element and its value in rupees in ``OneD`` (``FourD`` holds twice
+# it). The values add up: revenue + other income = income; the seven expense lines = expenses; income − expenses
+# = profit before exceptional items and tax. The two marker lines (comprehensive income, earnings per share) are
+# written in ``OneD`` only, as ``IND_AS_MARKERS`` writes them.
+_IND_AS_LINES: dict[str, tuple[str, str]] = {
+    "revenue": ("RevenueFromOperations", "1234500000"),
+    "other_income": ("OtherIncome", "5500000"),
+    "income": ("Income", "1240000000"),
+    "cost_of_materials": ("CostOfMaterialsConsumed", "400000000"),
+    "purchases": ("PurchasesOfStockInTrade", "100000000"),
+    "changes_in_inventories": ("ChangesInInventoriesOfFinishedGoodsWorkInProgressAndStockInTrade", "10000000"),
+    "employee_benefits": ("EmployeeBenefitExpense", "150000000"),
+    "finance_costs": ("FinanceCosts", "20000000"),
+    "depreciation": ("DepreciationDepletionAndAmortisationExpense", "60000000"),
+    "other_expenses": ("OtherExpenses", "200000000"),
+    "expenses": ("Expenses", "940000000"),
+    "profit_before_exceptional_items_and_tax": ("ProfitBeforeExceptionalItemsAndTax", "300000000"),
+}
+_MARKER_KEYS = {
+    "comprehensive_income": "ComprehensiveIncomeForThePeriod",
+    "eps": "BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations",
+}
+
+
+def ind_as(*, default_decimals: str = "-5", **lines: tuple[str | None, str]) -> list[FactTuple]:
+    """An Ind AS results instance's facts: the markers, the identity facts and the profit and loss lines from
+    revenue to profit before exceptional items and tax, in ``OneD`` and ``FourD``. A given line, as
+    ``(text, decimals)`` (a text of None is nil), replaces its ``OneD`` fact only. A line not given is written at
+    ``default_decimals``; earnings per share keeps ``INF``. No cash-flow line and no rounding fact."""
+    unknown = set(lines) - set(_IND_AS_LINES) - set(_MARKER_KEYS)
+    if unknown:
+        raise ValueError(f"no such line: {sorted(unknown)}")
+    facts: list[FactTuple] = []
+    for element, context, unit, decimals, text in IND_AS_MARKERS:
+        key = next(k for k, e in _MARKER_KEYS.items() if e == element)
+        if decimals != "INF":
+            decimals = default_decimals
+        if key in lines:
+            text, decimals = lines[key]
+        facts.append((element, context, unit, decimals, text))
+    facts += identity_facts()
+    for key, (element, rupees) in _IND_AS_LINES.items():
+        one_text, one_decimals = lines.get(key, (rupees, default_decimals))
+        facts.append((element, "OneD", "INR", one_decimals, one_text))
+        facts.append((element, "FourD", "INR", default_decimals, str(Decimal(rupees) * 2)))
+    return facts
+
+
+def read(data: bytes) -> XbrlReadData:
+    """Parse with the default limits, then read."""
+    return read_instance(parse(data))
+
+
+def fact(r: XbrlReadData, element: str, context_id: str) -> XbrlFactData:
+    """The one fact of ``element`` in ``context_id``; fails the test when there is not exactly one."""
+    found = [x for x in r.facts if x.element == element and x.context_id == context_id]
+    if len(found) != 1:
+        raise unittest.TestCase.failureException(f"{len(found)} facts of {element} in {context_id}")
+    return found[0]
+
+
+def check(r: XbrlReadData, total_element: str, period_label: str, check_type: str = "subtotal") -> ExtractedCheck:
+    """The check of the sum whose total is ``total_element`` (or, with ``check_type="balance_identity"``, the
+    balance identity whose left side it is) in the period ``period_label``."""
+    entry = load_map(r.format.id).entry(total_element)
+    found = [
+        c for c in r.checks
+        if c.check_type == check_type and c.statement == entry.statement
+        and c.subject_label == entry.label and c.period_label == period_label
+    ]
+    if len(found) != 1:
+        raise unittest.TestCase.failureException(f"{len(found)} {check_type} checks of {total_element} in {period_label}")
+    return found[0]
+
+
+def codes(r: XbrlReadData) -> list[str]:
+    return sorted(w.code for w in r.warnings)
+
+
+def warning(r: XbrlReadData, code: str) -> ExtractionWarning:
+    found = [w for w in r.warnings if w.code == code]
+    if len(found) != 1:
+        raise unittest.TestCase.failureException(f"{len(found)} warnings {code}")
+    return found[0]
+
+
+def cash_balances(r: XbrlReadData) -> list[XbrlFactData]:
+    return sorted((x for x in r.facts if x.element == "CashAndCashEquivalentsCashFlowStatement"), key=lambda x: x.line_order)
+
+
+def sum_outcomes(reads: Iterable[tuple[Path, XbrlReadData]]) -> dict[str, dict[str, list[str]]]:
+    """For each sum id of the maps (and ``balance``, the balance identity): the names of the files with a check of
+    that status, under ``passed``, ``failed`` and ``not_checked``. A file with several periods can be under more
+    than one status. A check is traced to its sum by its statement and subject label: a label is unique in its
+    statement."""
+    outcomes: dict[str, dict[str, list[str]]] = {}
+    for path, r in reads:
+        element_map = load_map(r.format.id) if r.format.id is not None else None
+        if element_map is None:
+            continue
+        sum_of = {}
+        for total in element_map.sums:
+            entry = element_map.entry(total.total)
+            sum_of[(entry.statement, entry.label)] = total.id
+        for c in r.checks:
+            sum_id = "balance" if c.check_type == "balance_identity" else sum_of[(c.statement, c.subject_label)]
+            names = outcomes.setdefault(sum_id, {"passed": [], "failed": [], "not_checked": []})[c.status]
+            if path.name not in names:
+                names.append(path.name)
+    return outcomes
+
+
+_MAPS_README = Path(__file__).resolve().parents[1] / "packages/financial-engine/src/pdf_financial_qa/xbrl/maps/README.md"
+
+
+def known_filer_inconsistencies() -> set[tuple[str, str, str]]:
+    """The rows of the "Known filer inconsistencies" table in the maps README (the section's first table), as
+    (file name, sum id, period). The failures not yet confirmed against a PDF, in the table after it, are not."""
+    rows: set[tuple[str, str, str]] = set()
+    text = _MAPS_README.read_text(encoding="utf-8")
+    lines = text.split("## Known filer inconsistencies", 1)[1].splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("|"))
+    table = []
+    for line in lines[start:]:
+        if not line.startswith("|"):
+            break
+        table.append(line)
+    for line in table[2:]:  # past the header and the separator
+        cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
+        rows.add((cells[0], cells[1], cells[2]))
+    return rows
