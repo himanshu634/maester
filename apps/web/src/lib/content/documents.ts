@@ -130,6 +130,39 @@ export const documentsContent = {
 		readAgain: 'Read it again'
 	},
 
+	/**
+	 * The opened filing (spec 2026-10-19 section 5). The Read as words are the slip's, copied; the
+	 * slip's group goes when its last reader does.
+	 */
+	filing: {
+		added: (when: string) => `added ${when}`,
+		readAs: 'Read as',
+		terms: {
+			kind: 'What it is',
+			company: 'Company',
+			period: 'Period',
+			statements: 'Statements'
+		},
+		youSaidSo: 'You said so',
+		scannedPage: (page: number) => `Page ${page} (scanned)`,
+		notConfirmed: 'Not confirmed yet',
+		noSource: 'No page given',
+		change: 'Change',
+		changeLabel: (term: string) => `Change ${term.toLowerCase()}`,
+		cancel: 'Cancel',
+		notYet: 'Maester hasn’t worked this out yet.',
+		seeFigures: 'See the figures',
+		readAgain: 'Read it again',
+		opensInNewTab: 'Files open in a new tab.',
+		tryAgain: 'Try again',
+		/** The entries' names: the two tracks and the files. */
+		numbers: 'Numbers',
+		text: 'Text',
+		files: 'Files',
+		/** The statement sources' column headers. */
+		columns: { statement: 'Statement', from: 'Numbers from', inPdf: 'In the PDF' }
+	},
+
 	kind: {
 		legend: 'What is it?',
 		missing: 'Choose what it is.',
