@@ -12,9 +12,11 @@
 		addsUp,
 		cellReason,
 		cellText,
-		filingLong,
 		filingShort,
+		fromWords,
 		onPage,
+		pdfPageOf,
+		restatedWords,
 		unitWords,
 		type Words
 	} from '$lib/research/view';
@@ -55,6 +57,8 @@
 	{:else}
 		{@const { row, col, cell } = picked}
 		{@const source = cell.source}
+		{@const from = fromWords(cell, col.filingPeriodEnd)}
+		{@const pdf = pdfPageOf(cell)}
 		{@const reason = cellReason(cell, filingShort(col.filingPeriodEnd))}
 		<div class="head">
 			<h3 id={headingId} tabindex="-1">{row.label}</h3>
@@ -76,11 +80,8 @@
 			<div class="entry">
 				<dt>{copy.terms.from}</dt>
 				<dd>
-					{#if source}
-						{copy.from(
-							filingLong(col.filingPeriodEnd),
-							researchContent.words.page(source.pageIndex + 1, source.pageCount).toLowerCase()
-						)}
+					{#if from}
+						{from}
 					{:else}
 						{reason ?? '—'}
 					{/if}
@@ -90,21 +91,19 @@
 				<div class="entry">
 					<dt>{copy.terms.restated}</dt>
 					<dd>
-						{copy.restated(
-							filingLong(cell.restated.filingPeriodEnd),
-							cell.restated.printed,
-							cell.restated.pageIndex + 1
-						)}
+						{restatedWords(cell.restated)}
 					</dd>
 				</div>
 			{/if}
-			{#if source}
+			{#if pdf}
 				<div class="entry">
 					<dt>{copy.terms.onPage}</dt>
 					<dd>
 						{#if reason}{reason}{:else}{@render words(onPage(cell))}{/if}
 					</dd>
 				</div>
+			{/if}
+			{#if source}
 				<div class="entry">
 					<dt>{copy.terms.addsUp}</dt>
 					<dd>{@render words(addsUp(cell))}</dd>
@@ -121,14 +120,14 @@
 				<dd>{copy.reviewed}</dd>
 			</div>
 		</dl>
-		{#if source}
-			{@const pdf = pageHref(source.documentId, source.pageIndex)}
+		{#if pdf}
+			{@const href = pageHref(pdf.documentId, pdf.pageIndex)}
 			<div class="open">
 				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- an API route that redirects to the stored PDF -->
-				<a class="button outline" href={pdf} target="_blank" rel="noopener"
-					>{copy.open(source.pageIndex + 1)}</a
+				<a class="button outline" {href} target="_blank" rel="noopener"
+					>{copy.open(pdf.pageIndex + 1)}</a
 				>
-				<p class="muted note">{copy.openNote(source.pageIndex + 1)}</p>
+				<p class="muted note">{copy.openNote(pdf.pageIndex + 1)}</p>
 			</div>
 		{/if}
 		<button type="button" class="button outline back" onclick={onback}>{copy.back}</button>

@@ -197,4 +197,19 @@ describe('upload', () => {
 		await expect(documentsApi(fetcher, WS).upload(file)).rejects.toMatchObject({ status: 403 });
 		expect(calls).toHaveLength(2);
 	});
+
+	it('declares an .xml file as application/xml', async () => {
+		const xml = new File(['<xbrl/>'], 'a.xml', { type: 'text/xml' });
+		const { fetcher, calls } = scripted(
+			json(201, { document: { id: DOC }, upload: target }),
+			new Response(null, { status: 200 }),
+			json(200, { document: { id: DOC, state: 'uploaded' }, job: { id: 'j' } })
+		);
+		await documentsApi(fetcher, WS).upload(xml);
+		expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+			originalName: 'a.xml',
+			size: 7,
+			mimeType: 'application/xml'
+		});
+	});
 });

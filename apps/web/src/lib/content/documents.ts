@@ -9,12 +9,12 @@ export const documentsContent = {
 	heading: 'Documents',
 	lede: 'Add a filing and Maester works out what it is, then reads it. Wrong guess? Change it and it’s read again.',
 	drop: {
-		title: 'Drop PDFs here',
+		title: 'Drop PDFs or XBRL files here',
 		or: 'or',
 		chooseFiles: 'Choose files',
 		chooseFolder: 'Choose a folder',
-		/** The limit, said before anything is chosen. PDF only until Maester reads XBRL. */
-		note: 'Annual reports, quarterly results or any other company document. PDF only for now, up to 50 MB a file. A whole folder works too.',
+		/** The limit, said before anything is chosen. */
+		note: 'PDF or XBRL (.xml), up to 50 MB a file. A whole folder works too.',
 		/** Before sending: each file's type and size, and its first bytes. */
 		checking: (count: number) => (count === 1 ? 'Checking the file…' : `Checking ${count} files…`),
 		sendingOne: (name: string) => `Sending ${name}…`,
@@ -44,10 +44,10 @@ export const documentsContent = {
 	},
 	/** Why a file wasn't added: after its name in the batch Notice, browser and API alike. */
 	refusals: {
-		xbrl: 'An XBRL file. Maester takes PDFs only for now.',
-		notPdf: 'Not a PDF.',
+		notPdf: 'Not a PDF or an XBRL file.',
 		notPdfKnown: (what: string) => `${what}, not a PDF.`,
 		notPdfInside: 'Named .pdf, but not a PDF inside.',
+		notXmlInside: 'Named .xml, but not XML inside.',
 		empty: 'The file is empty.',
 		tooLarge: (size: string) => `${size}, over the 50 MB limit.`,
 		unreadable: 'Your device wouldn’t let Maester read it.',
@@ -97,6 +97,9 @@ export const documentsContent = {
 		},
 		youSaidSo: 'You said so',
 		scannedPage: (page: number) => `Page ${page} (scanned)`,
+		/** An answer read from an XBRL file: the element and its value, in place of a page. */
+		fromElement: (element: string, value: string | null) =>
+			value ? `${element} ${value}` : element,
 		notConfirmed: 'Not confirmed yet',
 		noSource: 'No page given',
 		change: 'Change',
@@ -204,8 +207,8 @@ export const documentsContent = {
 	},
 	rejected: {
 		UNSUPPORTED_TYPE: {
-			title: 'This file isn’t a PDF.',
-			detail: 'Save it as a PDF and add it again.'
+			title: 'Not a PDF or an XBRL file.',
+			detail: 'Save it as a PDF, or add the XBRL instance (.xml), and add it again.'
 		},
 		TOO_LARGE: {
 			title: 'This file is larger than 50 MB.',
@@ -265,7 +268,7 @@ export const documentsContent = {
 		checking: 'Checking the file',
 		checkFailed: 'Couldn’t check the file',
 		rejected: {
-			UNSUPPORTED_TYPE: 'Not a PDF',
+			UNSUPPORTED_TYPE: 'Not a PDF or an XBRL file',
 			TOO_LARGE: 'Too large',
 			OBJECT_MISSING: 'Upload didn’t arrive'
 		},
@@ -277,7 +280,8 @@ export const documentsContent = {
 		needs_kind: 'Needs you: what is it?',
 		duplicate: 'Added before',
 		identify_failed: 'Couldn’t work out what it is',
-		read_failed: 'Couldn’t read the statements'
+		read_failed: 'Couldn’t read the statements',
+		waiting_for_xbrl: 'Waiting for its XBRL file.'
 	},
 
 	changeFailed: {

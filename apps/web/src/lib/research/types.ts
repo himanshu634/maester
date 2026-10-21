@@ -23,8 +23,8 @@ export interface CellCheck {
 	actual: string | null;
 }
 
-/** The page variant of the API's CellSource; the XBRL variant reaches the web with phase 6. */
-export interface CellSource {
+/** The page variant of the API's CellSource: a figure read from a page of a PDF. */
+export interface PageCellSource {
 	kind?: 'page';
 	documentId: string;
 	/** 0-based; pages are shown counted from 1. */
@@ -33,8 +33,29 @@ export interface CellSource {
 	textLayerMatch: boolean | null;
 }
 
-/** The page variant of the API's Restated; the XBRL variant reaches the web with phase 6. */
-export interface Restated {
+/**
+ * The XBRL variant of the API's CellSource: a figure read from an element of an XBRL file, which
+ * has no pages. Only the fields the page reads are copied (`inPdf` is left out).
+ */
+export interface XbrlCellSource {
+	kind: 'xbrl';
+	documentId: string;
+	/** The XBRL file's name. */
+	originalName: string;
+	element: string;
+	contextId: string;
+	/** The fact's `decimals` as written: "INF" or an integer. */
+	decimals: string | null;
+	/** True when the fact is `xsi:nil`: the cell is unparsed, never zero. */
+	nil: boolean;
+	periodStart: string | null;
+	span: string | null;
+}
+
+export type CellSource = PageCellSource | XbrlCellSource;
+
+/** The page variant of the API's Restated: what another filing printed, on a page. */
+export interface PageRestated {
 	kind?: 'page';
 	documentId: string;
 	filingPeriodEnd: string | null;
@@ -42,6 +63,18 @@ export interface Restated {
 	value: string | null;
 	printed: string;
 }
+
+/** The XBRL variant of the API's Restated: what another filing's XBRL element held. */
+export interface XbrlRestated {
+	kind: 'xbrl';
+	documentId: string;
+	filingPeriodEnd: string | null;
+	element: string;
+	value: string | null;
+	printed: string;
+}
+
+export type Restated = PageRestated | XbrlRestated;
 
 export interface FinancialCell {
 	status: CellStatus;

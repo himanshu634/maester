@@ -145,7 +145,7 @@
 			class="visually-hidden"
 			type="file"
 			multiple
-			accept="application/pdf,.pdf"
+			accept="application/pdf,.pdf,.xml,application/xml,text/xml"
 			tabindex="-1"
 			aria-hidden="true"
 			onchange={chosen}
