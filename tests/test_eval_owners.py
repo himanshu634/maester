@@ -49,6 +49,7 @@ class StampTests(unittest.TestCase):
 
     def test_a_name_with_no_stamp_has_no_reading(self):
         self.assertEqual(stamp_readings("synthetic-cements/xbrl/mq.xml"), [])     # no "_" at all
+        self.assertEqual(stamp_readings("29052026075158.xml"), [])                 # digits only, no "_": not a stamp
         self.assertEqual(stamp_readings("x_12345.xml"), [])                        # too short for a date and a time
         self.assertEqual(stamp_readings("x_3122026250000.xml"), [])                # 31 Dec 2026, hour 25: no real time
         self.assertEqual(stamp_readings("x_1511999101010.xml"), [])                # 1999 is before 2000

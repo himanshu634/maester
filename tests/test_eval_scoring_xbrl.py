@@ -153,6 +153,11 @@ class XbrlRunTests(Fixture):
         unreadable = xbrl_artefact(RESULTS_Q2, [], instances=[unused(A, "XBRL_UNREADABLE:DOCTYPE"), unused(C, "XBRL_FORMAT_UNMAPPED")])
         self.assertEqual(xbrl_run([unreadable], self.gold_set).unusable, {Q2: "unreadable"})
 
+    def test_an_unknown_or_missing_reason_raises_never_reads_as_unreadable(self):
+        for reason in (None, "XBRL_SOMETHING_NEW"):
+            with self.subTest(reason=reason), self.assertRaises(ValueError):
+                xbrl_run([xbrl_artefact(RESULTS_Q2, [], instances=[unused(A, reason)])], self.gold_set)
+
     def test_the_run_scores_its_filings_and_counts_pooled_slots(self):
         score = xbrl_run([self.xbrl], self.gold_set)
         self.assertEqual((score.source, score.run, score.unusable, score.pooled), ("xbrl", "x", {}, {}))

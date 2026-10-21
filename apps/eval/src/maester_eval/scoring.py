@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 from maester_eval.artefacts import Artefact
 from maester_eval.cells import gold_slot, printed_exponent, same_figure, xbrl_exponent, xbrl_slot
 from maester_eval.gold import GoldFact, GoldFiling
-from maester_eval.owners import SlotOwner, differing_cells, owned_facts, slot_owners
+from maester_eval.owners import SlotOwner, differing_cells, fact_figure, owned_facts, pooled_instances, slot_owners
 from maester_eval.source_rule import CompanyIdentity, StatementBasis, XbrlDocInput, plan_pdf_numbers
 from maester_eval.text import normalise
 
@@ -335,11 +335,6 @@ def _company_id(file: str) -> str:
     return file.split("/", 1)[0]
 
 
-def _xbrl_figure(fact: dict) -> tuple[str, Decimal | None]:
-    value = fact["normalizedValue"]
-    return fact["valueStatus"], None if value is None else Decimal(value)
-
-
 def _holds_gold_figure(g: GoldFact, fact: dict) -> bool:
     """The XBRL fact holds the gold figure, exactly or at the coarser precision. A dash or nil holds no figure."""
     if g.value_status != "value" or fact["valueStatus"] != "value" or fact["normalizedValue"] is None:
@@ -356,15 +351,11 @@ def _read_printed(fact: dict) -> str | None:
     return f"{value} {unit}" if unit else value
 
 
-def _slot_format(artefact: Artefact, owner: SlotOwner) -> str | None:
-    """The format id of the slot's owner; for a pooled slot, those of the instances it was pooled from (the ones
-    sharing the latest filed date), joined by "+" when they differ."""
+def _slot_format(artefact: Artefact, owner: SlotOwner, pooled: dict[str, list[str]]) -> str | None:
+    """The format id of the slot's owner; for a pooled slot, those of the instances it was pooled from
+    (`owners.pooled_instances`), joined by "+" when they differ."""
     read = {i.file: i for i in artefact.instances}
-    if owner.owner is not None:
-        chosen = [owner.owner]
-    else:
-        latest = max(read[file].filed for file in owner.instances)
-        chosen = [file for file in owner.instances if read[file].filed == latest]
+    chosen = [owner.owner] if owner.owner is not None else pooled[owner.slot]
     return "+".join(sorted({read[file].format for file in chosen if read[file].format is not None})) or None
 
 
@@ -392,6 +383,7 @@ def score_xbrl_filing(artefact: Artefact, gold: GoldFiling) -> FilingScore:
     slot's elements of another concept, or none, that hold the gold figure (`map_suspect:`)."""
     company = _company_id(artefact.file)
     owners = slot_owners(artefact)
+    pooled = pooled_instances(artefact)
     in_slot: dict[str, list[dict]] = {}
     for fact in owned_facts(artefact):
         in_slot.setdefault(xbrl_slot(company, artefact.kind, fact), []).append(fact)
@@ -410,7 +402,7 @@ def score_xbrl_filing(artefact: Artefact, gold: GoldFiling) -> FilingScore:
             continue
         base = dict(concept=g.concept, statement=g.statement, basis=g.basis, label=g.label, period_label=g.period_label,
                     gold_printed=g.printed, gold_normalized=g.normalized_value, page_match=None, source="xbrl",
-                    gold_index=index, format=_slot_format(artefact, owner))
+                    gold_index=index, format=_slot_format(artefact, owner, pooled))
         if (placed.key, g.concept) in pooled_differ:
             scores.append(FactScore(**base, outcome="ambiguous", read_printed=None, read_normalized=None,
                                     detail="instances_differ"))
@@ -420,7 +412,7 @@ def score_xbrl_filing(artefact: Artefact, gold: GoldFiling) -> FilingScore:
         fact: dict | None = None
         if not found:
             outcome: Outcome = "missing"
-        elif len({_xbrl_figure(f) for f in found}) > 1:
+        elif len({fact_figure(f) for f in found}) > 1:
             outcome = "ambiguous"
         else:
             fact = found[0]
@@ -446,12 +438,14 @@ def _unusable(artefact: Artefact) -> Unusable | None:
         return None
     if not artefact.instances:
         raise ValueError(f"{artefact.filing_id}: an XBRL artefact with no instance")  # `xbrl-read` never writes one
-    reason = artefact.instances[0].reason or ""
+    reason = artefact.instances[0].reason
     if reason == "XBRL_FORMAT_UNMAPPED":
         return "format_unmapped"
-    if reason.startswith("XBRL_PAIR_"):
+    if reason is not None and reason.startswith("XBRL_PAIR_"):
         return "pair_mismatch"
-    return "unreadable"  # `XBRL_UNREADABLE:<reason code>`, the reader's one other reason
+    if reason is not None and reason.startswith("XBRL_UNREADABLE:"):
+        return "unreadable"
+    raise ValueError(f"{artefact.filing_id}: an unused instance with an unknown reason")  # a reason is a code, never echoed
 
 
 def score_xbrl_run(run_name: str, artefacts: list[Artefact], gold: dict[str, GoldFiling], manifest_ids: list[str],

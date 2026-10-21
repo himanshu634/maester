@@ -25,7 +25,10 @@ from maester_eval.artefacts import Artefact
 from maester_eval.cells import xbrl_slot
 from maester_eval.source_rule import SlotCandidate, rank_slot_candidates
 
-__all__ = ["OWNER_RULE_VERSION", "DifferingCell", "SlotOwner", "differing_cells", "owned_facts", "slot_owners", "stamp_readings"]
+__all__ = [
+    "OWNER_RULE_VERSION", "DifferingCell", "SlotOwner", "differing_cells", "fact_figure", "owned_facts", "pooled_instances",
+    "slot_owners", "stamp_readings",
+]
 
 OWNER_RULE_VERSION = 1
 
@@ -67,9 +70,11 @@ def _splits(digits: str, sizes: tuple[tuple[int, ...], ...]) -> Iterator[tuple[i
 def stamp_readings(file_name: str) -> list[datetime]:
     """Every date and time the stamp of a name can be: the digits after the name's last `_` and before `.xml`, as
     day, month (1 or 2 digits each), year (4 digits, 2000 to 2099), hour, minute and second (1 or 2 digits each).
-    Distinct and sorted; `[]` for a stamp that is not all digits or has no reading."""
+    Distinct and sorted; `[]` for a name with no `_`, a stamp that is not all digits, or one with no reading."""
     name = PurePosixPath(file_name).name
-    stamp = name.rsplit("_", 1)[1] if "_" in name else name
+    if "_" not in name:
+        return []  # a name with no `_` has no stamp: its digits, if any, are not a date
+    stamp = name.rsplit("_", 1)[1]
     stamp = stamp[:-len(".xml")] if stamp.endswith(".xml") else stamp
     if not (stamp.isascii() and stamp.isdigit()):
         return []
@@ -85,7 +90,7 @@ def stamp_readings(file_name: str) -> list[datetime]:
     return sorted(readings)
 
 
-def _figure(fact: dict) -> tuple[str, Decimal | None]:
+def fact_figure(fact: dict) -> tuple[str, Decimal | None]:
     """What a fact holds, for exact equality: its status and its normalised value as a decimal (`2000` is `2000.0`)."""
     value = fact["normalizedValue"]
     return fact["valueStatus"], None if value is None else Decimal(value)
@@ -139,6 +144,11 @@ def slot_owners(artefact: Artefact) -> dict[str, SlotOwner]:
     return {key: slot.owner for key, slot in _slots(artefact).items()}
 
 
+def pooled_instances(artefact: Artefact) -> dict[str, list[str]]:
+    """Each pooled slot (no owner) to the instances it was pooled from: the tied ones, in pair order."""
+    return {key: slot.pooled for key, slot in _slots(artefact).items() if slot.owner.owner is None}
+
+
 def _by_element(facts: list[dict]) -> dict[str, list[dict]]:
     out: dict[str, list[dict]] = {}
     for fact in facts:
@@ -151,7 +161,7 @@ def _agreed(slot: _Slot) -> dict[str, list[dict]]:
     held = [_by_element(slot.facts[file]) for file in slot.pooled]
     out: dict[str, list[dict]] = {}
     for element, facts in held[0].items():
-        if all(element in other for other in held[1:]) and len({_figure(f) for h in held for f in h[element]}) == 1:
+        if all(element in other for other in held[1:]) and len({fact_figure(f) for h in held for f in h[element]}) == 1:
             out[element] = facts
     return out
 
@@ -185,7 +195,7 @@ def differing_cells(artefact: Artefact) -> list[DifferingCell]:
                 if file == owner:
                     continue
                 for element, facts in _by_element(slot.facts[file]).items():
-                    if {_figure(f) for f in facts} != {_figure(f) for f in mine.get(element, [])}:
+                    if {fact_figure(f) for f in facts} != {fact_figure(f) for f in mine.get(element, [])}:
                         elements.setdefault(element, []).append(file)
                         concepts.setdefault(element, (mine.get(element) or facts)[0]["concept"])
             out += [DifferingCell(key, element, concepts[element], owner, files) for element, files in elements.items()]

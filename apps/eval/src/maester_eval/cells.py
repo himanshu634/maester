@@ -6,7 +6,8 @@ meets the half year that ends on the same day. A Gemini or gold fact takes its s
 (`periods.span_of_label`); an XBRL fact carries its own. A Gemini or gold fact with no date or, off the balance sheet,
 no span is not placed (`no_period`, `no_span`): it is never keyed as an instant, and never counted outside a slot. An
 XBRL fact with no date has no slot; one with a null span is keyed as `instant` whatever its statement, as the source
-rule's `slot_key` keys it.
+rule's `slot_key` keys it. A null span is not an unknown span: phase 4's reader gives every duration a span
+(`span_of` returns "other", never None), so an XBRL fact with a null span is one in an instant context.
 
 Two figures agree exactly, or at the coarser of their two precisions (rule `COMPARE_RULE_VERSION`), which is stitch's
 `sameFigure`: both values are rounded half away from zero to the coarser power of ten and compared. Decimal only.
