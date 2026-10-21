@@ -128,6 +128,50 @@ describe('the Numbers track', () => {
 		);
 	});
 
+	describe('an XBRL read with no rounding declared and no unit to check the PDF by (row 17)', () => {
+		const noUnit = {
+			found: 0,
+			checked: 0,
+			notFound: [],
+			notChecked: 'no_unit' as const
+		};
+		const roundingMissing = (id: string, basis: ReportingBasis = 'consolidated') =>
+			fileOf({
+				documentId: id,
+				format: 'xbrl',
+				basis,
+				pipeline: {
+					numbers: {
+						source: 'xbrl',
+						state: 'done',
+						partial: true,
+						warnings: ['XBRL_ROUNDING_MISSING']
+					}
+				}
+			});
+
+		it('one basis: the check line and the caveat each say it once', () => {
+			expect(
+				numbersTrack([roundingMissing('x1')], one([stmt({ inPdf: noUnit })]), ctx).second
+			).toBe(
+				'With no unit known, its figures weren’t looked for in the PDF. The XBRL file doesn’t declare its rounding, so its unit isn’t known.'
+			);
+		});
+
+		it('two bases: the clause names the basis and says its unit isn’t known', () => {
+			const sources = [
+				basisOf('consolidated', [stmt({ inPdf: found(107, 107) })]),
+				basisOf('standalone', [stmt({ xbrlDocumentId: 'xs', inPdf: noUnit })])
+			];
+			expect(
+				numbersTrack([roundingMissing('xc'), roundingMissing('xs', 'standalone')], sources, ctx)
+					.second
+			).toBe(
+				'In the PDF: consolidated 107 of 107 found, standalone not checked: its unit isn’t known. The XBRL file doesn’t declare its rounding, so its unit isn’t known.'
+			);
+		});
+	});
+
 	it('a partial read with no warning still says part was not read', () => {
 		const x = fileOf({
 			documentId: 'x1',

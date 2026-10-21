@@ -325,7 +325,7 @@ export const documentsContent = {
 				disabled: 'The check against the PDF is turned off.',
 				not_yet: 'Checking against the PDF.',
 				no_value: 'The XBRL file gives no value to look for in the PDF.',
-				no_unit: 'The XBRL file declares no rounding, so there is no unit to look for in the PDF.'
+				no_unit: 'With no unit known, its figures weren’t looked for in the PDF.'
 			} satisfies Record<XbrlPdfNotChecked, string>,
 			notCheckedUnknown: 'Not checked against the PDF.'
 		},
@@ -343,7 +343,7 @@ export const documentsContent = {
 				no_statement_pages: 'no statement pages found',
 				disabled: 'the check is turned off',
 				no_value: 'no value to look for',
-				no_unit: 'the XBRL file declares no rounding'
+				no_unit: 'its unit isn’t known'
 			} satisfies Partial<Record<XbrlPdfNotChecked, string>>
 		},
 		text: {
@@ -424,8 +424,8 @@ export const documentsContent = {
 			no_statement_pages: 'Not checked: Maester didn’t find the statement pages in the PDF.',
 			disabled: 'Not checked: the check is turned off.',
 			no_value: 'Not checked: the XBRL file gives no value to look for.',
-			/** The XBRL file declares no rounding, so the check had no unit to look for. */
-			no_unit: 'Not checked: the XBRL file declares no rounding, so there is no unit to look for.',
+			/** The XBRL file gives no unit Maester can name, so the check had no unit to look for. */
+			no_unit: 'Not checked: its unit isn’t known.',
 			not_yet: 'Not checked yet.'
 		} satisfies Record<XbrlPdfNotChecked, string>,
 		page: (page: number) => `page ${page}`,

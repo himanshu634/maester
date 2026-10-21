@@ -292,6 +292,15 @@ describe('sourceRows', () => {
 		expect(rows[0].inPdf).toMatchObject({ strong: false, missed: null, open: null });
 	});
 
+	it('a statement with no unit to check by says its unit isn’t known', () => {
+		const rows = sourceRows(
+			one([stmt({ inPdf: { found: 0, checked: 0, notFound: [], notChecked: 'no_unit' } })])[0],
+			q2Filing,
+			null
+		);
+		expect(rows[0].inPdf.text).toBe('Not checked: its unit isn’t known.');
+	});
+
 	it('an XBRL statement with no count and no reason is "—"', () => {
 		const rows = sourceRows(
 			one([stmt({ inPdf: { found: 0, checked: 0, notFound: [], notChecked: null } })])[0],
