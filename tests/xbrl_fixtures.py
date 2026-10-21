@@ -222,3 +222,17 @@ def real_instances_with_token() -> Iterator[tuple[Path, str]]:
         if match is None:
             raise ValueError(f"no format token in the name of {path.name}")
         yield path, match.group(1)
+
+
+# The period token of a real file's name, which follows the date: 2025-06-10_MC2024-2025_consolidated_...
+_PERIOD_TOKEN = re.compile(r"_(MC|MQ|MH|JQ|SQ|SH|DQ|DN)\d{4}")
+
+
+def real_instances_with_period_token() -> Iterator[tuple[Path, str]]:
+    """Each real instance with the period token of its file name (``MC``, ``MQ``, ``MH``, ``JQ``, ``SQ``,
+    ``SH``, ``DQ``, ``DN``). A name with no token is a defect in the collection and raises."""
+    for path in real_instances():
+        match = _PERIOD_TOKEN.search(path.name)
+        if match is None:
+            raise ValueError(f"no period token in the name of {path.name}")
+        yield path, match.group(1)
