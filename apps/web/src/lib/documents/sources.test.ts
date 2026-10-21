@@ -5,7 +5,7 @@ import {
 	pagesWords,
 	readAgainIds,
 	retryIds,
-	sourceRows
+	sourceRows as sourceRowsOf
 } from './sources';
 import {
 	basisOf,
@@ -17,8 +17,18 @@ import {
 	xbrlDone,
 	xbrlFailed
 } from './testing';
-import type { ResultsSpan, StatementSource } from './types';
+import { IN_PDF_RESULT_SHOWN } from './in-pdf';
+import type {
+	BasisSources,
+	ResultsSpan,
+	StatementSource,
+	StatementFound,
+	WorkspaceFiling
+} from './types';
 
+/** The ledger with the check's found and missed words on: the old words stay pinned. */
+const sourceRows = (basis: BasisSources, filing: WorkspaceFiling, pdf: StatementFound[] | null) =>
+	sourceRowsOf(basis, filing, pdf, true);
 const PARTIAL = 'Part of the XBRL file wasn’t read.';
 const XBRL_UNMAPPED_UNKNOWN = 'The XBRL is in a format Maester doesn’t know yet, not mapped yet.';
 const one = (statements: StatementSource[]) => [basisOf('consolidated', statements)];
@@ -698,5 +708,43 @@ describe('words', () => {
 		);
 		expect(notCheckedWords('not_yet')).toBe('Not checked yet.');
 		expect(notCheckedWords('no_unit')).toBe('Not checked: its unit isn’t known.');
+	});
+});
+
+describe('sourceRows while the XBRL-in-PDF result is not shown', () => {
+	it('the switch is off', () => {
+		expect(IN_PDF_RESULT_SHOWN).toBe(false);
+	});
+
+	it('says "Not checked" for a checked statement: not bold, no miss, no link', () => {
+		const rows = sourceRowsOf(q2Consolidated, q2Filing, [
+			{ statement: 'balance_sheet', basis: 'consolidated', pages: [3, 4, 5] }
+		]);
+		expect(rows.map((r) => r.inPdf.text)).toEqual(['Not checked', 'Not checked', '—']);
+		for (const row of rows.slice(0, 2)) {
+			expect(row.inPdf).toEqual({
+				text: 'Not checked',
+				why: null,
+				strong: false,
+				missed: null,
+				open: null
+			});
+		}
+	});
+
+	it('keeps the words of a statement not checked for its own reason', () => {
+		const rows = sourceRowsOf(
+			basisOf('consolidated', [
+				stmt({
+					xbrlDocumentId: 'x-q2c',
+					inPdf: { found: 0, checked: 0, notFound: [], notChecked: 'scanned' }
+				})
+			]),
+			q2Filing,
+			null
+		);
+		expect(rows[0].inPdf.text).toBe(
+			'Not checked: the PDF’s statement pages are scanned, so their text can’t be searched.'
+		);
 	});
 });

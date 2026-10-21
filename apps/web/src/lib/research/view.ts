@@ -3,6 +3,7 @@
  * Indian grouping and a real minus; pages are counted from 1; unknown is "—" with its reason.
  */
 import { researchContent as copy } from '$lib/content/research';
+import { IN_PDF_RESULT_SHOWN } from '$lib/documents/in-pdf';
 import { notCheckedWords, pagesWords } from '$lib/documents/sources';
 import type { ReportingBasis, StatementKind } from '$lib/documents/types';
 import type {
@@ -298,8 +299,10 @@ export function addsUp(cell: FinancialCell): Words {
 const bareLabel = (pages: number[]) => pagesWords(pages).replace(/^pages? /, '');
 
 /** The `xbrl_in_pdf` outcome of an XBRL figure, in words. */
-export function inPdfWords(inPdf: XbrlInPdf): Words {
+export function inPdfWords(inPdf: XbrlInPdf, shown: boolean = IN_PDF_RESULT_SHOWN): Words {
 	const words = copy.panel.inPdf;
+	// `IN_PDF_RESULT_SHOWN` is off: a figure that was looked for reads as not checked.
+	if (!shown && inPdf.status !== 'not_checked') return { text: words.resultNotShown };
 	if (inPdf.status === 'passed') {
 		return {
 			text:
@@ -323,13 +326,16 @@ export function inPdfWords(inPdf: XbrlInPdf): Words {
  * `pageIndex` is 0-based.
  */
 export function xbrlOpen(
-	source: XbrlSource
+	source: XbrlSource,
+	shown: boolean = IN_PDF_RESULT_SHOWN
 ): { documentId: string; pageIndex: number | null; label: string; note: string } | null {
 	const { inPdf } = source;
 	const words = copy.panel.xbrlOpen;
 	if (inPdf.pdfDocumentId === null) return null;
 	const documentId = inPdf.pdfDocumentId;
-	if (inPdf.status === 'passed' && inPdf.pageIndex !== null) {
+	// With the result off, the page the check found is not used: the link falls back to the
+	// statement pages.
+	if (shown && inPdf.status === 'passed' && inPdf.pageIndex !== null) {
 		return {
 			documentId,
 			pageIndex: inPdf.pageIndex,

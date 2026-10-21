@@ -14,6 +14,7 @@
  * never the sources, so an XBRL file read since the last filings read leaves its coverage unknown.
  */
 import { documentsContent } from '$lib/content/documents';
+import { IN_PDF_RESULT_SHOWN } from './in-pdf';
 import { fileCaveat, formatWords, pdfWorthReading } from './tracks';
 import type {
 	BasisSources,
@@ -160,7 +161,8 @@ function inPdfOf(
 	statement: StatementSource,
 	basis: ReportingBasis,
 	filing: WorkspaceFiling,
-	pdfStatements: StatementFound[] | null
+	pdfStatements: StatementFound[] | null,
+	shown: boolean
 ): SourceRow['inPdf'] {
 	const count = statement.inPdf;
 	const dash = (why: string) => ({
@@ -185,6 +187,10 @@ function inPdfOf(
 			missed: null,
 			open: null
 		};
+	}
+	if (!shown) {
+		// `IN_PDF_RESULT_SHOWN` is off: no found count, no miss, no link from a miss.
+		return { text: words.resultNotShown, why: null, strong: false, missed: null, open: null };
 	}
 	const text = words.found(count.found, count.checked);
 	if (count.notFound.length === 0)
@@ -220,7 +226,8 @@ function inPdfOf(
 export function sourceRows(
 	basis: BasisSources,
 	filing: WorkspaceFiling,
-	pdfStatements: StatementFound[] | null
+	pdfStatements: StatementFound[] | null,
+	shown: boolean = IN_PDF_RESULT_SHOWN
 ): SourceRow[] {
 	return STATEMENT_ORDER.flatMap((kind) =>
 		basis.statements
@@ -229,7 +236,7 @@ export function sourceRows(
 				statement: kind,
 				label: documentsContent.statements[kind],
 				from: fromOf(s, basis.basis, filing),
-				inPdf: inPdfOf(s, basis.basis, filing, pdfStatements)
+				inPdf: inPdfOf(s, basis.basis, filing, pdfStatements, shown)
 			}))
 	);
 }

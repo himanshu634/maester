@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	abandonedUpload,
 	formatWords,
-	numbersTrack,
+	numbersTrack as numbersTrackOf,
 	pdfNeeded,
 	textTrack,
 	warningWords,
@@ -19,12 +19,16 @@ import {
 	xbrlDone,
 	xbrlFailed
 } from './testing';
-import type { ReportingBasis, StatementSource } from './types';
+import { IN_PDF_RESULT_SHOWN } from './in-pdf';
+import type { BasisSources, FilingFile, ReportingBasis, StatementSource } from './types';
 
 const ctx: TrackContext = {
 	uploading: (id) => id === 'up-1',
 	nameOf: (id) => (id === 'x-q2' ? '500999_Q2_FY27_Consolidated.xml' : null)
 };
+/** The track with the check's found and missed words on: the old words stay pinned. */
+const numbersTrack = (files: FilingFile[], sources: BasisSources[], c: TrackContext) =>
+	numbersTrackOf(files, sources, c, true);
 const one = (statements: StatementSource[]) => [basisOf('consolidated', statements)];
 const found = (f: number, n: number, notFound: string[] = []) => ({
 	found: f,
@@ -755,5 +759,63 @@ describe('the Text track', () => {
 			first: '—',
 			second: null
 		});
+	});
+});
+
+describe('the Numbers track while the XBRL-in-PDF result is not shown', () => {
+	const x1 = [xbrlDone('x1'), pdfNotNeeded('p1', ['x1'])];
+	const second = (sources: BasisSources[], files: FilingFile[] = x1) =>
+		numbersTrackOf(files, sources, ctx).second;
+	const noUnit = { found: 0, checked: 0, notFound: [], notChecked: 'no_unit' as const };
+
+	it('the switch is off', () => {
+		expect(IN_PDF_RESULT_SHOWN).toBe(false);
+	});
+
+	it('one basis, found: not checked, never a count', () => {
+		expect(second(one([stmt({ inPdf: found(214, 214) })]))).toBe(
+			'Not checked against the PDF yet.'
+		);
+	});
+
+	it('one basis, with a miss: not checked, never a count of misses', () => {
+		expect(second(one([stmt({ inPdf: found(213, 214, ['f9']) })]))).toBe(
+			'Not checked against the PDF yet.'
+		);
+	});
+
+	it('two bases, both looked for in the PDF: one sentence for both', () => {
+		expect(
+			second([
+				basisOf('consolidated', [stmt({ inPdf: found(107, 107) })]),
+				basisOf('standalone', [stmt({ xbrlDocumentId: 'xs', inPdf: found(106, 107, ['f1']) })])
+			])
+		).toBe('Not checked against the PDF yet.');
+	});
+
+	it('two bases, one looked for and one not checked for a reason: each clause says not checked', () => {
+		expect(
+			second([
+				basisOf('consolidated', [stmt({ inPdf: found(107, 107) })]),
+				basisOf('standalone', [stmt({ xbrlDocumentId: 'xs', inPdf: noUnit })])
+			])
+		).toBe('In the PDF: consolidated not checked, standalone not checked: its unit isn’t known.');
+		expect(
+			second([
+				basisOf('consolidated', [stmt({ inPdf: found(107, 107) })]),
+				basisOf('standalone', [
+					stmt({
+						xbrlDocumentId: 'xs',
+						inPdf: { found: 0, checked: 0, notFound: [], notChecked: 'not_yet' }
+					})
+				])
+			])
+		).toBe('In the PDF: consolidated not checked, standalone not checked yet.');
+	});
+
+	it('a basis already not checked for its own reason keeps its words', () => {
+		expect(second(one([stmt({ inPdf: noUnit })]))).toBe(
+			'With no unit known, its figures weren’t looked for in the PDF.'
+		);
 	});
 });

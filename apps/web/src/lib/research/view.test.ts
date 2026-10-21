@@ -8,6 +8,7 @@ import type {
 	TableUnit,
 	XbrlSource
 } from './types';
+import { IN_PDF_RESULT_SHOWN } from '$lib/documents/in-pdf';
 import type { StatementKind } from '$lib/documents/types';
 import {
 	addsUp,
@@ -196,22 +197,34 @@ describe('an XBRL figure has an element and a file, never a page', () => {
 		).toBe('USD million');
 	});
 
-	it('In the PDF, each outcome', () => {
-		expect(inPdfWords(x.inPdf)).toEqual({ text: 'Found on page 5 of the results PDF.' });
-		expect(inPdfWords({ ...x.inPdf, pageIndex: null })).toEqual({
+	it('In the PDF, each outcome, with the result shown', () => {
+		expect(inPdfWords(x.inPdf, true)).toEqual({ text: 'Found on page 5 of the results PDF.' });
+		expect(inPdfWords({ ...x.inPdf, pageIndex: null }, true)).toEqual({
 			text: 'Found on the results PDF’s statement pages (4–6).'
 		});
-		expect(inPdfWords({ ...x.inPdf, status: 'failed', pageIndex: null })).toEqual({
+		expect(inPdfWords({ ...x.inPdf, status: 'failed', pageIndex: null }, true)).toEqual({
 			strong: 'Not found on the PDF’s statement pages (4–6).',
 			text: ' The figure stays as filed in XBRL. Check the PDF yourself.'
 		});
+		expect(inPdfWords({ ...x.inPdf, status: 'not_checked', reason: 'disabled' }, true).text).toBe(
+			'Not checked: the check is turned off.'
+		);
+	});
+
+	it('In the PDF reads "Not checked" while the result is not shown', () => {
+		expect(IN_PDF_RESULT_SHOWN).toBe(false);
+		expect(inPdfWords(x.inPdf)).toEqual({ text: 'Not checked' });
+		expect(inPdfWords({ ...x.inPdf, status: 'failed', pageIndex: null })).toEqual({
+			text: 'Not checked'
+		});
+		// A figure not checked for its own reason keeps that reason.
 		expect(inPdfWords({ ...x.inPdf, status: 'not_checked', reason: 'disabled' }).text).toBe(
 			'Not checked: the check is turned off.'
 		);
 	});
 
 	it('the button: the match page, else where the statement pages start, else none', () => {
-		expect(xbrlOpen(x)).toEqual({
+		expect(xbrlOpen(x, true)).toEqual({
 			documentId: 'p4',
 			pageIndex: 4,
 			label: 'Open the results PDF at page 5',
@@ -235,6 +248,15 @@ describe('an XBRL figure has an element and a file, never a page', () => {
 			note: 'The XBRL file has no pages.'
 		});
 		expect(xbrlOpen({ ...x, inPdf: { ...x.inPdf, pdfDocumentId: null } })).toBeNull();
+	});
+
+	it('the button does not use the found page while the result is not shown', () => {
+		expect(xbrlOpen(x)).toEqual({
+			documentId: 'p4',
+			pageIndex: 3,
+			label: 'Open the results PDF at page 4',
+			note: 'Where the statement pages start. The XBRL file has no pages.'
+		});
 	});
 
 	it('an XBRL cell with no figure has a reason of its own, never a page sentence', () => {

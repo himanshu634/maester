@@ -72,7 +72,7 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 | Documents client | `src/lib/documents/client.ts` | Typed calls to the document routes of the API. |
 | Intake logic | `src/lib/documents/intake.ts` | Functions without Svelte: the answers in words, the printed identifiers, the company candidates, the poll intervals and the error messages. |
 | Batch logic | `src/lib/documents/batch.ts` | Functions without Svelte: the files of a drop or a folder, the file checks, sending four files at a time and the words of the drop strip. |
-| Filing logic | `src/lib/documents/tracks.ts`, `sources.ts`, `filings.ts`, `confirm.ts` | Functions without Svelte: the words of the tracks, the source of each statement, the sections and the open filing, and the companies to confirm. |
+| Filing logic | `src/lib/documents/tracks.ts`, `sources.ts`, `in-pdf.ts`, `filings.ts`, `confirm.ts` | Functions without Svelte: the words of the tracks, the source of each statement, the sections and the open filing, and the companies to confirm. `in-pdf.ts` holds the switch `IN_PDF_RESULT_SHOWN`. |
 | API types | `src/lib/documents/types.ts` | A copy of a subset of the types in `packages/contracts`. |
 | Research pages | `src/routes/terminal/research/+page.svelte`, `src/routes/terminal/research/company/+page.svelte`, `src/lib/components/research/` | List the companies. Show the stock summary, the statement tables and the figure panel of one company. |
 | Research client | `src/lib/research/client.ts` | Typed calls to the Research routes of the API. `pageHref` makes the link to a page of a PDF. |
@@ -237,6 +237,7 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
     - A PDF that XBRL covers is never in the list, even if Gemini read it before its XBRL came.
 12. If the filing has a company and the state of its Numbers track is `done`, `Filing` shows "See the figures". This link goes to the company page, with `companyHref`.
 13. `Filing` shows "Read it again" only if `readAgainIds` has a file and no track works. The link and the button are both secondary actions.
+    - While `IN_PDF_RESULT_SHOWN` is `false`, `checkLine` and `sourceRows` say "Not checked" and not a count of figures found. The ledger shows no miss and no link from a miss.
 14. If the opened file becomes a held file or a file with no company, `waitingAbove` finds it. The filing column then shows "{name} waits for you above." and "Go to it".
 15. "Go to it" moves the focus to the row in "Not in your workspace yet", or to the `Notice` of the file. If the focus was in the filing, the page moves it there when the read arrives. While the companies load, the row does not show. The focus then goes to the heading "Not in your workspace yet".
 16. `Filing` has the key `openCount`. `openCount` increases in three cases:
@@ -361,8 +362,8 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 30. `FigurePanel` shows "Used in" only if the selected figure is the earnings per share that the price to earnings uses.
 31. If the browser is 1024 px wide or wider, the figure panel is beside the statement table. If not, a click moves the focus to the panel, and "Back to the table" moves it back to the figure.
 32. "Open the PDF at page N" is a link that opens in a new tab. It goes to `pageHref`: `.../documents/<id>/file#page=N`. The API redirects to the PDF, and the browser keeps the page.
-33. For an XBRL figure, `xbrlOpen` makes the link "Open the results PDF at page N". N is the page where the check found the figure, or the first statement page. If the PDF is stored but no page is known, the link has no page. If no PDF is stored, there is no link.
-34. For an XBRL figure, `xbrlFrom` names the filing and the file, and the muted line gives the file name and the element. `xbrlUnit` names the unit. It names the rounding only if the rounding agrees with the two places that the table shows. `inPdfWords` tells the result of the check against the PDF.
+33. For an XBRL figure, `xbrlOpen` makes the link "Open the results PDF at page N". N is the page where the check found the figure, or the first statement page. While `IN_PDF_RESULT_SHOWN` is `false`, `xbrlOpen` does not use the page where the check found the figure. If the PDF is stored but no page is known, the link has no page. If no PDF is stored, there is no link.
+34. For an XBRL figure, `xbrlFrom` names the filing and the file, and the muted line gives the file name and the element. `xbrlUnit` names the unit. It names the rounding only if the rounding agrees with the two places that the table shows. `inPdfWords` tells the result of the check against the PDF. While `IN_PDF_RESULT_SHOWN` is `false`, it says "Not checked" for each figure that the check looked for.
 35. An XBRL figure has no page. Thus the panel shows "In the PDF" and not "On the page". If an XBRL total does not add up, `addsUp` says that "the XBRL file gives" the total.
 36. Under the statement table, a note tells that each year comes whole from one filing. An XBRL filing comes first, then the newest filing that prints the year. The note also tells how many figures have no date and which filings the API left out.
 37. `columnFrom` tells if the figures of a column come from an XBRL file. The column head then shows "Results, XBRL" under the year.
@@ -596,6 +597,8 @@ CAUTION: When a type in `packages/contracts` changes, change its copy in the web
 
 - Only the Documents, Research, Market mood and Settings pages use real data. Each other terminal page is a coming-soon page: overview, holdings, watchlist, analyst and activity.
 - After a failed poll, the Market mood page does not poll again until the person hides the tab and shows it again. The page shows no message for a failed poll.
+- The screen shows "Not checked" for the check of the XBRL figures against the PDF (`IN_PDF_RESULT_SHOWN` in `src/lib/documents/in-pdf.ts`). The check is too weak to show as a result. The report `docs/eval/2026-10-21-xbrl-map-v1.md` gives the reason. The check does not find 46.7 percent of the facts that it checks. It passes a figure that is one unit wrong 16 to 23 percent of the time.
+- To show the result again, set `IN_PDF_RESULT_SHOWN` to `true`. Do this only when a version of the check has a decoy pass rate under the gate of the report.
 - The reading pages do not poll.
 - The Research pages do not poll. They read the companies, the statements and the prices one time for each visit.
 - The Research list reads up to 100 companies. The company page shows annual reports only.

@@ -212,6 +212,8 @@ export const researchContent = {
 		},
 		/** The `xbrl_in_pdf` outcome, in words. */
 		inPdf: {
+			/** The check ran, but its result is not shown (`IN_PDF_RESULT_SHOWN`). */
+			resultNotShown: 'Not checked',
 			foundOnPage: (page: number) => `Found on page ${page} of the results PDF.`,
 			foundOnStatements: (pages: string) =>
 				`Found on the results PDF’s statement pages${pages ? ` (${pages})` : ''}.`,

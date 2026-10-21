@@ -292,7 +292,9 @@ export const documentsContent = {
 				no_value: 'The XBRL file gives no value to look for in the PDF.',
 				no_unit: 'With no unit known, its figures weren’t looked for in the PDF.'
 			} satisfies Record<XbrlPdfNotChecked, string>,
-			notCheckedUnknown: 'Not checked against the PDF.'
+			notCheckedUnknown: 'Not checked against the PDF.',
+			/** The check ran, but its result is not shown (`IN_PDF_RESULT_SHOWN`). */
+			resultNotShown: 'Not checked against the PDF yet.'
 		},
 		/** Two or more XBRL bases: each named, counted apart, never summed. */
 		checkBases: {
@@ -389,6 +391,8 @@ export const documentsContent = {
 			unknown: 'Not known whether the PDF shows these figures.'
 		},
 		found: (found: number, checked: number) => `Found: ${found} of ${checked}`,
+		/** The check ran, but its result is not shown (`IN_PDF_RESULT_SHOWN`). */
+		resultNotShown: 'Not checked',
 		missed: (count: number) => `${count} not found.`,
 		openPdf: (page: number) => `Open the results PDF at page ${page}`,
 		notChecked: {

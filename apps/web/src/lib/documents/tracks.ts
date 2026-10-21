@@ -6,6 +6,7 @@
  * figure value is read or computed.
  */
 import { documentsContent } from '$lib/content/documents';
+import { IN_PDF_RESULT_SHOWN } from './in-pdf';
 import type {
 	BasisSources,
 	FilingFile,
@@ -232,9 +233,15 @@ function basisChecks(sources: BasisSources[]): BasisCheck[] {
  * on how many XBRL bases there are, never on how many were checked, so an unchecked basis never
  * reads as passed (spec section 3).
  */
-export function checkLine(sources: BasisSources[]): string | null {
+export function checkLine(
+	sources: BasisSources[],
+	shown: boolean = IN_PDF_RESULT_SHOWN
+): string | null {
 	const bases = basisChecks(sources);
 	if (bases.length === 0) return null;
+	// While the result is not shown (`IN_PDF_RESULT_SHOWN`), a basis looked for in the PDF reads
+	// as not checked.
+	if (!shown && bases.every((b) => b.isChecked)) return words.check.resultNotShown;
 	if (bases.length === 1) {
 		const [only] = bases;
 		if (only.isChecked) {
@@ -248,7 +255,11 @@ export function checkLine(sources: BasisSources[]): string | null {
 	}
 	const parts = bases.map((b) => {
 		const name = basisName(b.basis);
-		if (b.isChecked) return words.checkBases.found(name, b.found, b.checked);
+		if (b.isChecked) {
+			return shown
+				? words.checkBases.found(name, b.found, b.checked)
+				: words.checkBases.notChecked(name);
+		}
 		if (b.notChecked === 'not_yet') return words.checkBases.notYet(name);
 		const why = b.notChecked ? words.checkBases.why[b.notChecked] : undefined;
 		return why ? words.checkBases.notCheckedWhy(name, why) : words.checkBases.notChecked(name);
@@ -304,7 +315,8 @@ function failedWords(file: FilingFile): string {
 export function numbersTrack(
 	files: FilingFile[],
 	sources: BasisSources[],
-	ctx: TrackContext
+	ctx: TrackContext,
+	shown: boolean = IN_PDF_RESULT_SHOWN
 ): TrackWords {
 	const say = (state: TrackState, first: string, second: string | null = null): TrackWords => ({
 		state,
@@ -389,7 +401,8 @@ export function numbersTrack(
 	if (xbrlDone && pdf.some((f) => numbers(f).state === 'done' && needed(f))) {
 		return say('done', words.fromXbrlAndPdfDone, joinLines(splitWords(sources), caveat(xbrl)));
 	}
-	if (xbrlDone) return say('done', words.fromXbrlDone, joinLines(checkLine(sources), caveat(xbrl)));
+	if (xbrlDone)
+		return say('done', words.fromXbrlDone, joinLines(checkLine(sources, shown), caveat(xbrl)));
 	if (pdf.some((f) => numbers(f).state === 'done')) {
 		return say('done', words.pdfDone, pdfReason(xbrl, sources));
 	}
