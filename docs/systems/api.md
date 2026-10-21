@@ -216,7 +216,7 @@ The limiter gets the client address from the `x-forwarded-for` header. It reads 
 
 1. `GET .../filings` calls `listFilingRows`. This gives each document of the workspace in each state: `pending_upload`, `uploaded`, `verifying`, `stored` and `rejected`. A refused document and an abandoned upload stay in the response after a reload.
 2. `documentPipelines` works out the pipeline of each document with a fixed number of queries.
-3. `buildFilings` puts each duplicate in the `duplicates` of its original. A duplicate whose original is not in the list does not show.
+3. `buildFilings` puts each duplicate in the `duplicates` of its original. A duplicate whose original is not in the list does not show. If the original goes to `held`, the duplicate goes in `documentIds` of its held identity.
 4. `buildFilings` groups each other document that has a company and a classification by the filing key.
 5. A document with no company goes to `held` if its intake state is `needs_company` and it prints an identifier. Then `groupHeld` groups it by the identity that it prints.
 6. Each other document with no company goes to `unsorted`. This includes a document with no classification, a refused document and an abandoned upload.
@@ -230,6 +230,8 @@ The filing key is the company ID, a colon, and the filing identity from `filingI
 | `not_sure` | `not_sure` and the document ID. Thus each `not_sure` document is a workspace filing. |
 
 If a document has no period end, the document ID replaces the period end. `groupHeld` counts the `filings` of a held identity with the same filing identity, but without the company ID. Thus the count does not change when the user confirms the company.
+
+`documentIds` of a held identity lists the held documents and the duplicates of the held originals. `files` and `filings` of the held identity count the originals only.
 
 Each document in `files` and in `unsorted` is a `FilingFile`. It has these fields in addition to the fields of its pipeline:
 

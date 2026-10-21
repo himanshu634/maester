@@ -18,9 +18,11 @@ This document tells how the code of the web app works. For the visual rules (col
 | workspace | A group of documents and companies in the API. The web app uses the first workspace that `/v1/me` returns. |
 | document | A file that an investor adds on the Documents page. The API keeps one record for each document. |
 | answers | What Maester found about a document: the kind, the company, the period and the statements. The API calls this the classification. |
-| slip | The part of the Documents page that shows one document. |
-| Earlier list | The part of the Documents page that shows the other documents of the workspace. |
-| live document | A document that the API still works on. The function `isLive` decides this. |
+| filing | The files of one company with the same kind and period on the Documents page. A filing can hold PDF files and XBRL files. A file with no company is a filing of its own. |
+| filing list | A list of filings on the Documents page: "Working on" or "Done". `FilingList` draws it. |
+| track | One of the two lines of a filing: Numbers or Text. A track has a state and two lines of words. |
+| held company | A company that a file prints and that the workspace does not have. The API holds the files until the investor confirms the company. |
+| live filing | A filing with a track that Maester still works on. The function `filingLive` decides this. |
 | poll | A timed request that the web app sends again and again to read the latest state. |
 | reading | One of the 10 daily market values on the Market mood page, for example India VIX. `READING_KEYS` in `types.ts` lists them. |
 | reading key | The code name of one reading, for example `india_vix`. The path of a reading page ends with it. |
@@ -65,9 +67,12 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 | Page list | `src/lib/terminal/pages.ts` | The nine terminal pages, their paths, their groups and the `soon` flag. |
 | Coming-soon pages | `src/routes/terminal/*/+page.svelte`, `ComingSoon.svelte`, `components/terminal/sketches/` | Five pages that tell what each page will do. |
 | Demo | `src/routes/terminal/demo/`, `src/lib/terminal/` | The overview page with the synthetic data in `fixture.ts`. |
-| Documents page | `src/routes/terminal/documents/+page.svelte`, `src/lib/components/documents/` | Adds a PDF file, shows the progress and lets the investor correct the answers. |
+| Documents page | `src/routes/terminal/documents/+page.svelte`, `src/lib/components/documents/DocumentsPage.svelte` | Adds PDF and XBRL files, shows the filings by company and lets the investor confirm companies and correct the answers. |
+| Documents components | `src/lib/components/documents/` | `DropStrip`, `FilingList`, `Filing`, `Track`, `ConfirmCompanies`, `KindForm` and `CompanyForm`. |
 | Documents client | `src/lib/documents/client.ts` | Typed calls to the document routes of the API. |
-| Intake logic | `src/lib/documents/intake.ts` | Functions without Svelte for the Documents page: file checks, slip choice, ladder steps, error messages. |
+| Intake logic | `src/lib/documents/intake.ts` | Functions without Svelte: the answers in words, the printed identifiers, the company candidates, the poll intervals and the error messages. |
+| Batch logic | `src/lib/documents/batch.ts` | Functions without Svelte: the files of a drop or a folder, the file checks, sending four files at a time and the words of the drop strip. |
+| Filing logic | `src/lib/documents/tracks.ts`, `sources.ts`, `filings.ts`, `confirm.ts` | Functions without Svelte: the words of the tracks, the source of each statement, the sections and the open filing, and the companies to confirm. |
 | API types | `src/lib/documents/types.ts` | A copy of a subset of the types in `packages/contracts`. |
 | Research pages | `src/routes/terminal/research/+page.svelte`, `src/routes/terminal/research/company/+page.svelte`, `src/lib/components/research/` | List the companies. Show the stock summary, the statement tables and the figure panel of one company. |
 | Research client | `src/lib/research/client.ts` | Typed calls to the Research routes of the API. `pageHref` makes the link to a page of a PDF. |
@@ -98,7 +103,7 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 2. `vite.config.ts` uses `adapter-static` with `strict: true` and `fallback: '404.html'`. The fallback file is the app shell without page content.
 3. The `Dockerfile` runs `pnpm build` in a `node:22-slim` stage. Then it copies `build/` into an `nginx:1.27-alpine` image.
 4. The `Dockerfile` makes the nginx configuration from `nginx.conf.template` with `envsubst`. Then it runs `nginx -t`. A bad configuration stops the image build.
-5. nginx listens on port 8080. For a request to `/api/auth/`, `/v1/` or `/dev/`, nginx sends the request to `API_PROXY_TARGET`. nginx writes no access log for these requests, because the query string can contain a search query or a sign-in code.
+5. nginx listens on port 8080. For a request to `/api/auth/`, `/v1/` or `/dev/`, nginx sends the request to `API_PROXY_TARGET`. nginx writes no access log for these requests. The query string can contain a search query or a sign-in code.
 6. For all other paths, nginx tries the file, then the file with `.html`, then `index.html` in the directory.
 7. If no file agrees with the path, nginx sends `404.html`. The script in that page then shows `+error.svelte`.
 8. If nginx itself gives a 5xx answer for a page path, it sends `static/50x.html`. This page has no script and no font download.
@@ -141,48 +146,119 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 
 1. `DocumentsPage` starts only after `SignedInPage` finds a user.
 2. On mount, `start()` calls `readMe` (`GET /v1/me`). It uses the first workspace in the answer.
-3. If the person has no workspace, the page shows a `SectionIssue` and stops.
-4. Then `start()` calls `listDocuments` and `listCompanies` at the same time. `listDocuments` reads the first 25 documents. `listCompanies` reads the first 100 companies.
-5. `pickSlip` selects the document for the slip. The order of choice is:
-   - The document that the investor opened, if the page has it.
-   - The newest document that Maester did not read, keep or reject.
-   - The newest document.
-6. If the slip document has answers, `start()` calls `getClassification` for it.
-7. While the first load runs, the page shows hatch boxes and one status line. If the load fails, it shows a `SectionIssue` with "Try again".
+3. If the person has no workspace, the page shows a `SectionIssue` and stops. The page does the same if the filings read gives `FORBIDDEN` or `NOT_FOUND`.
+4. Then `start()` calls `listFilings` and `listCompanies` at the same time. `listFilings` has no page limit. `listCompanies` reads the first 100 companies.
+5. `questionKeys` lists the questions in the first read. The page marks them as seen, thus it does not say them aloud.
+6. `buildView` makes the sections from the read. If a filing has a track that Maester does not settle yet, the filing goes to "Working on". If not, it goes to "Done".
+7. A file with no company is a filing of its own. Its title is the file name. It goes to the group "Company not known yet", the last group of its section.
+8. `unsortedSettled` decides the section of such a file. A refused file, an upload that did not finish and a file with a failed check go to "Done". Their track shows "Stopped" and the reason.
+9. If a file needs its company, it does not go to a filing. It goes to "Not in your workspace yet".
+10. `pickFiling` selects the filing to open. The order of choice is:
+    - The filing with the opened key, if the page has an opened filing.
+    - The filing that now holds the opened document.
+    - No filing, if the opened document waits under "Not in your workspace yet".
+    - The newest filing in "Working on". If there is none, the newest filing in "Done".
+11. The first open does not move focus. `answersWanted` lists the stored files of the opened filing that have no answers. `loadAnswers` calls `getClassification` for all of them at the same time.
+12. The page shows these parts in this order:
+    - The heading and the lede.
+    - The drop strip.
+    - "Not in your workspace yet", only if it has content.
+    - The opened filing beside "Working on".
+    - "Done".
+13. From 1024 px, the opened filing is in the first column and "Working on" in the second. The first column is about 1.3 times as wide. Below 1024 px, the parts stack and the opened filing comes first.
+14. If the workspace has no file, the page shows "Nothing added yet. Drop a filing above, or a whole folder of XBRL files." in place of the filings.
+15. While the first load runs, the page shows these parts:
+    - Hatch boxes with the size of one filing and of two company groups.
+    - One status line: "Loading your documents."
+    - The drop strip, which the person cannot use yet.
+16. If the load fails, the page shows a `SectionIssue` with "Try again".
 
 ### Documents page: upload
 
-1. `checkFile` refuses a file that does not end in `.pdf`. It also refuses a type that is not `application/pdf` or empty.
-2. `checkFile` refuses a file larger than `MAX_UPLOAD_BYTES` (52,428,800 bytes).
-3. The page accepts one file at a time. While an upload runs, the page disables `DropStrip`.
-4. `upload` sends `POST .../documents/uploads` with the name and the size. The API returns a document record and an upload target.
-5. The page then shows the new document in the slip and moves the focus to the slip heading.
-6. `upload` sends the file bytes with `PUT` to the URL of the upload target. It removes the `Content-Length` header from the given headers.
-7. `upload` sends `POST .../documents/<id>/finalize`. The API then starts its checks.
-8. While the upload runs, the page asks the browser to confirm before the tab closes or reloads (`beforeunload`).
+1. The drop strip gives the page a list of `Picked` files. They come from the file picker, the folder picker or a drop. `walkEntries` goes through each folder of a drop to the last level. `pickedFrom` and `walkEntries` leave out the system files of a folder, for example `.DS_Store`.
+2. `checkFile` refuses a file that is not a PDF or an XBRL file. A PDF ends in `.pdf` and has the type `application/pdf` or no type. An XBRL file ends in `.xml` and has the type `application/xml`, `text/xml` or no type.
+3. `checkFile` also refuses an empty file and a file larger than `MAX_UPLOAD_BYTES` (52,428,800 bytes).
+4. `screen` reads the first bytes of each other file. `looksLikePdf` looks for `%PDF-`. `looksLikeXml` looks for a `<` after an optional byte order mark and white space.
+5. A refused file never goes to the API. One `Notice` names each refused file of the batch and the reason.
+6. The page accepts one batch at a time. While a batch runs, `DropStrip` is not active and shows the line "Sending 3 of 12 files from bse-xbrl…" with the ruler.
+7. `sendAll` sends the accepted files four at a time (`SEND_AT_ONCE`). For each file, `upload` sends `POST .../documents/uploads` with the name, the size and the type. The type is `application/xml` for an `.xml` file and `application/pdf` for all other files.
+8. When the API makes the document, `withUpload` adds the file to the page and the page adds its ID to `uploadingIds`. Thus the page does not show the file as an upload that did not finish.
+9. If the batch has one file, `openNew` opens the filing of the file and moves the focus to its heading. If the batch has more files, the opened filing stays on the first file and the focus does not move.
+10. `upload` sends the file bytes with `PUT` to the URL of the upload target. It removes the `Content-Length` header from the given headers.
+11. `upload` sends `POST .../documents/<id>/finalize`. The API then starts its checks.
+12. The page says "Sending 12 files." one time at the start. It does not say the progress of each file.
+13. If the API gives `UNAUTHENTICATED`, `sendAll` starts no new file and the page shows the signed-out `Notice`.
+14. If the connection fails (`NETWORK`), `sendAll` starts no new file. The `Notice` says "The upload didn’t finish." and tells how many files went, for example 214 of 806. It shows the button "Send the rest".
+15. "Send the rest" calls `addFiles` with `rest`. `rest` holds the files that failed because of the connection, then the files that `sendAll` did not try, in the order that the investor chose.
+16. A file that arrived before the connection failed comes back as a duplicate, because the API checks the hash.
+17. `carryOver` joins the two batches into one record. The files that went in the first batch stay in the count.
+18. A file that failed after the API made its document stays under "Company not known yet" as an upload that did not finish. The API cannot remove a document yet.
+19. At the end of a batch, the page reads the filings one time. Then it says `endAloud`, for example "806 files sent." If `identifying` is false, the page adds the new questions to this text. If not, it says them later in one line.
+20. While `sending` is true, the page asks the browser to confirm before the tab closes or reloads (`beforeunload`). A move to another page does not stop the upload.
 
 ### Documents page: polls
 
-1. While the slip document is live, the page reads it again with `getDocument`. The interval is `POLL_MS` (2 seconds).
-2. While the Earlier list has a live document other than the slip document, the page reads the list again. The interval is `LIST_POLL_MS` (5 seconds).
-3. Each failed poll makes the next interval longer. The interval is the base interval multiplied by the number of failures plus one. The maximum multiplier is 5.
-4. A successful poll sets the count of failures back to zero.
-5. When the person hides the tab, both polls stop. The `visibilitychange` event starts them again.
-6. When the person leaves the page, the effect cleanup stops both timers.
-7. When the slip document changes from live to not live, the page reads the list one more time.
-8. The page keeps a write counter for each document. A list poll does not replace a document that the page changed after the poll started.
+1. While a track of the opened filing is live, the page reads each file of the filing with `getDocument`. The interval is `POLL_MS` (2 seconds). The poll does not run while the page sends a file of the filing.
+2. `filingLive` decides if a filing is live. A filing is live if a track works or waits in a queue.
+3. `applyDocument` writes the state, the intake state, the pipeline and the printed name of each file in place. It does not move a file to a different filing.
+4. If `shapeChanged` finds that a file changed its state, its intake state or its identification, the page reads the filings again immediately. The file can then be in a different filing.
+5. When the opened filing is no longer live, the page reads the filings one time.
+6. While another filing in "Working on" is live, `listWatched` is true. The page then reads the filings. The interval is `LIST_POLL_MS` (5 seconds).
+7. `readLedger` counts the writes of the polls, the changes and the uploads. The page drops a read that started before the last applied read.
+8. `keepFresher` keeps the polled fields of a file that the page wrote after a read started. Thus a late read does not put a file back to an older state. The read also does not lose a file that the page added.
+9. Each failed poll makes the next interval longer. The interval is the base interval multiplied by the number of failures plus one. The maximum multiplier is 5. The two polls have their own counts of failures.
+10. A successful poll sets its count of failures back to zero.
+11. When the person hides the tab, both polls stop. The `visibilitychange` event starts them again.
+12. When the person leaves the page, the effect cleanup stops both timers.
+13. After a read, `newQuestions` says each new question one time. It says nothing while a batch runs or while `identifying` is true. Several new questions come as one line, for example "31 companies need you."
+14. If a read or a call returns `UNAUTHENTICATED`, `signedOut` sets the state to `signed-out`. Both polls stop. A `Notice` with a link to sign in shows above the drop strip. The filings that were on the page stay on it.
+15. A failed poll shows no message.
 
 ### Documents page: answers
 
-1. If the API needs the company, the slip shows `CompanyForm`. `companyCandidates` lists the workspace companies that agree with the printed identifiers.
-2. `companyCandidates` compares the CIN first, then the exchange code, then the normalized name.
-3. If the API needs the kind of document, the slip shows `KindForm`.
-4. The "Change" action opens the same forms for an answer that the investor wants to correct.
-5. Each form calls `changeClassification` with `basedOn` set to the ID of the current answers.
-6. If the API returns `CONFLICT` for `basedOn`, the slip shows the latest answers and a message. It then reads the slip again with `reloadSlip`.
-7. "Try again" on a failed step calls `classify` or `extract`. Then the page reads the document again.
-8. If the intake state is `read` and no job runs, the slip shows the button "Read it again". It calls `extract`, as "Try again" does. While the new read runs, the ladder shows "Reading the statements" as "Now".
-9. If the document also has a company, the slip shows "See the figures" before the button. This link goes to the company page, with `companyHref`. The link and the button are both secondary actions.
+1. `Filing` shows the answers of each stored file under "Read as", with one `h4` for each file. A duplicate has no answers. It shows as "Added twice" on the first copy.
+2. `loadAnswers` loads the answers when the opened filing changes, after each read, and for each file that moved. If `getClassification` fails, the page keeps the ID in `answersFailed`. `Filing` then shows a `SectionIssue` with "Try again".
+3. If a file needs the kind of document, `Filing` shows a `Notice` with `KindForm`. The button says "Save and read it" for a kind that Maester reads, and "Save" for all other kinds.
+4. The "Change" action opens `KindForm` or `CompanyForm` in place for the answer that the investor wants to correct. `companyCandidates` lists the workspace companies that agree with the printed identifiers.
+5. `companyCandidates` compares the CIN first, then the exchange codes and the ISIN, then the normalized name.
+6. Each form calls `changeClassification` with `basedOn` set to the ID of the current answers.
+7. If the API returns `CONFLICT` for `basedOn`, `changeFailure` gives the message that the answers changed. The page reads the file again (`refreshFiles`) and the form shows the latest answers.
+8. After a change saves, `applyDocument` writes the document that the API returns. The page then stores the new answers and reads the filings again.
+9. `follow` finds the filing that holds the changed file. If this is a different filing, `openNew` opens it and moves the focus to its heading. If not, the focus goes back to the "Change" that opened the form.
+10. "Try again" on a stopped track calls `retryIds`. For the identification, the page calls `classify`. For the numbers, it calls `extract`. For the text, it calls `index`. Then the page reads the files and the filings again.
+11. "Read it again" calls `extract` for each file in `readAgainIds`. The list has the XBRL files that the API read or failed to read. It does not index the text again.
+    A PDF is in the list only if `pdfNeeded` is true and `pdfWorthReading` is true. The two functions follow these rules:
+    - A PDF is never in the list while an XBRL file of the filing is `now` or `waiting`.
+    - A PDF is in the list if a statement in `sources` takes its numbers from this PDF.
+    - A PDF is in the list if no statement of the filing comes from XBRL.
+    - A PDF is not in the list if its only claim is `xbrl_read_failed` and an XBRL file of that basis failed. The free XBRL read goes alone.
+    - A PDF that XBRL covers is never in the list, even if Gemini read it before its XBRL came.
+12. If the filing has a company and the state of its Numbers track is `done`, `Filing` shows "See the figures". This link goes to the company page, with `companyHref`.
+13. `Filing` shows "Read it again" only if `readAgainIds` has a file and no track works. The link and the button are both secondary actions.
+14. If the opened file becomes a held file or a file with no company, `waitingAbove` finds it. The filing column then shows "{name} waits for you above." and "Go to it".
+15. "Go to it" moves the focus to the row in "Not in your workspace yet", or to the `Notice` of the file. If the focus was in the filing, the page moves it there when the read arrives.
+16. `Filing` has the key `openCount`. `openCount` increases in three cases:
+    - The investor opens a filing.
+    - A single upload opens its filing.
+    - A change moves the file to a different filing.
+
+    A read never changes `openCount`. Thus a read does not move the focus.
+
+### Documents page: confirm a company
+
+1. `confirmRows` makes one row for each held identity. It shows the first four rows. "Show all" shows the other rows.
+2. The row shows the printed name, the codes and the count of filings and files. The API gives the ids of the workspace companies that the identity can match (`matches`).
+3. Until `listCompanies` settles, `rowsToDraw` returns no row. A row cannot know before this if it matches a company.
+4. If a row matches a company, it shows "Which of your companies is this?", the matches first and chosen, and the button "Use this company". The button "Add …" is then an outline.
+5. If a row matches no company, it shows the button "Add {name}". If the file prints no name, the row asks for the name. "It’s one of mine" opens the list of the workspace companies.
+6. Only the first row has a filled button. If there is no row, the first file with no company has the filled button "Say which company".
+7. A click calls `onconfirm`. `confirmRequest` builds the request. It has only the identifiers that pass the checks of the API.
+8. `confirmCompany` sends `POST .../companies/confirm`. The API confirms each held file that prints the identity.
+9. The page then reads the filings and the companies again. It says `confirmedAloud` one time, for example "Coastline Bank added. Its 214 files carry on."
+10. If the opened filing waited for this company, the focus goes to the heading of the filing. If not, it goes to the heading of the company in "Working on", then in "Done", then to the "Working on" heading.
+11. If the API returns `CONFLICT`, `confirmFailure` says that the company exists and that the investor must pick it. The page reads the filings and the companies again, so that the row shows the company. All other failures show a message under the row.
+12. A file with no company printed has no row. `unnamedNotice` makes its `Notice`: "{file}: which company is this?" Or, if the file prints a name, "{file}: is this {name}?"
+13. "Say which company" loads the answers of the file and opens `CompanyForm`. `onanswer` calls `changeClassification`. Then `follow` opens the filing of the file.
 
 ### Market mood page
 
@@ -248,10 +324,14 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 9. `summarize` uses the income statement of the company that has year columns. It takes the consolidated one, or the standalone one if the consolidated one has no year columns, or the one with an unknown basis.
 10. Revenue, profit and earnings per share come from the newest column of this statement table only. A change compares the newest column with the column before it.
 11. If a line has no value in the newest column, `summarize` writes nothing for that line. An older column never stands in.
-12. `bareLabel` removes a list marker ("I.", "(a)", "1.") from the start of a line name, and references in brackets ("(Note 25)", "(XI + XIV)", "(PAT)") from its end. `summarize` then compares the name with the revenue and profit names. The profit names include "Profit (loss) for the period", "Profit after tax" and "Net profit after tax".
+12. `bareLabel` removes a list marker ("I.", "(a)", "1.") from the start of a line name. It also removes references in brackets ("(Note 25)", "(XI + XIV)", "(PAT)") from the end. `summarize` then compares the name with the revenue and profit names. The profit names include "Profit (loss) for the period", "Profit after tax" and "Net profit after tax".
 13. `summarize` takes the first line with a name that agrees and with a cell that is not `missing` in the newest column. Thus a line that only an older filing prints cannot hide the line of the newest year.
-14. If there is no income statement with year columns, the reason for the business figures is one of these: "The statements didn’t load." if `financials()` failed, "The profit and loss has no figures Maester could place by year." if a read annual report is counted, or "No annual report read yet.".
-15. In a sentence, `fyWords` names a year that does not end on 31 March as "the year to 31 Dec 2025". If a loss is the first clause of the sentence and there is no price sentence before it, the clause starts with the company name, not "it".
+14. If there is no income statement with year columns, the business figures show one of these reasons:
+    - "The statements didn’t load." if `financials()` failed.
+    - "The profit and loss has no figures Maester could place by year." if the count of read annual reports is more than zero.
+    - "No annual report read yet." in all other cases.
+15. In a sentence, `fyWords` names a year that does not end on 31 March as "the year to 31 Dec 2025".
+    If a loss is the first clause and no price sentence comes before it, the clause starts with the company name, not "it".
 16. `summarize` shows no amount for a currency other than `INR`. It also shows no amount if the scale has no value or `unitShort` cannot name it. The reason is "The statement’s unit isn’t one Maester can name."
 17. If no line has a profit name, the reason for the profit is "Profit wasn’t found in the statement."
 18. The price to earnings is the last closing price divided by the basic earnings per share of the newest column. If no basic line has a cell in the newest column, `summarize` uses the first per-share line that has one. The note says "the basic earnings per share" only for a basic line, and "the earnings per share" for a different line.
@@ -259,19 +339,33 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 20. If the earnings per share is zero or less, there is no price to earnings. The reason says that the company made a loss.
 21. `StockSummary` shows the sentence and the four figures. A figure with no value shows "—". The reason is in the text for a screen reader or in the note.
 22. `RangeRuler` shows where the last closing price is between the low and the high of the last year.
-23. If the stock has a state other than `ok`, the page shows no chart. The reason is no NSE symbol, no Dhan connection (with a link to Settings), or no closing prices for the share: "Maester has no closes for this share yet. It keeps prices for Nifty 500 shares, from your Dhan data." This text is true for all causes of `not_tracked`: a share outside the Nifty 500, no market refresh yet, an expired token, or a symbol in a different form.
+23. If the stock has a state other than `ok`, the page shows no chart. The reason is one of these:
+    - No NSE symbol.
+    - No Dhan connection, with a link to Settings.
+    - No closing prices for the share. The text starts "Maester has no closes for this share yet." Then it says that Maester keeps prices for Nifty 500 shares.
+
+    The text is true for all causes of `not_tracked`:
+    - A share outside the Nifty 500.
+    - No market refresh yet.
+    - An expired token.
+    - A symbol in a different form.
 24. If the stock has more than one closing price, `MoodChart` draws the last year of closing prices. It marks the low and the high and uses a left gutter of 72 px for the rupee labels.
 25. The Statements section has two groups of toggle buttons: the statement and the basis. A basis shows only if a statement table has it. A toggle clears the selected figure. `defaultBasis` selects the first basis: the consolidated income statement if it has year columns, then a different income statement with year columns.
 26. `StatementTable` shows the selected statement table in a region that scrolls sideways. The region starts at the newest years. The names of the lines stay in place when the region scrolls.
 27. Each figure is a button with `aria-pressed`. Only one button has `tabindex="0"`. The arrow keys, Home and End call `move` in `grid.ts`.
-28. A click on a figure selects it. `FigurePanel` then shows the filing and the page of the figure.
-29. `onPage` tells if the text of the page has the printed figure. `addsUp` tells if the sum of the figure adds up. For a failed balance identity (`checkType` is `balance_identity`), `addsUp` says that total assets does not equal equity and liabilities, with the two values and the difference.
+28. A click on a figure selects it. `FigurePanel` then shows the filing and the page of the figure. For a figure that an XBRL file gives, it shows the filing, the file, the unit and the check against the PDF.
+29. `onPage` tells if the text of the page has the printed figure. `addsUp` tells if the sum of the figure adds up. If the balance identity fails (`checkType` is `balance_identity`), `addsUp` says that total assets does not equal equity and liabilities. It gives the two values and the difference.
 30. `FigurePanel` shows "Used in" only if the selected figure is the earnings per share that the price to earnings uses.
 31. If the browser is 1024 px wide or wider, the figure panel is beside the statement table. If not, a click moves the focus to the panel, and "Back to the table" moves it back to the figure.
 32. "Open the PDF at page N" is a link that opens in a new tab. It goes to `pageHref`: `.../documents/<id>/file#page=N`. The API redirects to the PDF, and the browser keeps the page.
-33. Under the statement table, notes tell that each year comes whole from the newest filing that prints it. They also tell how many figures have no date, and which filings the API left out.
-34. If the statement table has no year columns, the page shows the notes about the figures with no date and the filings left out. It does not show the statement table or "not read yet".
-35. A last note names the results for a quarter or a half year. These are not in the statement tables.
+33. For an XBRL figure, `xbrlOpen` makes the link "Open the results PDF at page N". N is the page where the check found the figure, or the first statement page. If the PDF is stored but no page is known, the link has no page. If no PDF is stored, there is no link.
+34. For an XBRL figure, `xbrlFrom` names the filing and the file, and the muted line gives the file name and the element. `xbrlUnit` names the unit. It names the rounding only if the rounding agrees with the two places that the table shows. `inPdfWords` tells the result of the check against the PDF.
+35. An XBRL figure has no page. Thus the panel shows "In the PDF" and not "On the page". If an XBRL total does not add up, `addsUp` says that "the XBRL file gives" the total.
+36. Under the statement table, a note tells that each year comes whole from one filing. An XBRL filing comes first, then the newest filing that prints the year. The note also tells how many figures have no date and which filings the API left out.
+37. `columnFrom` tells if the figures of a column come from an XBRL file. The column head then shows "Results, XBRL" under the year.
+38. `yearSources` finds the years with statements from more than one source. For each such year, a muted list under the note tells which statements come from the XBRL and which from the annual report.
+39. If the statement table has no year columns, the page shows the notes about the figures with no date and the filings left out. It does not show the statement table or "not read yet".
+40. A last note names the results for a quarter or a half year. These are not in the statement tables.
 
 ### Settings page
 
@@ -334,16 +428,16 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 | Sign-out fails | `signOut()` returns an error or the request fails. | The shell shows a failure line. The session stays. |
 | No workspace | `/v1/me` returns no workspace. | The Documents page shows a `SectionIssue`. |
 | First load fails | A request in `start()` fails. | The Documents page shows a `SectionIssue` with "Try again". |
-| File refused | `checkFile` finds a file that is not a PDF or that is too large. | A `Notice` tells what is wrong. No request goes to the API. |
+| File refused | `checkFile` or `screen` finds a file that is not a PDF or an XBRL file, is empty or is too large. | One `Notice` names the file and tells what is wrong. No request goes to the API. |
 | `UPLOAD_TOO_LARGE` | The API refuses the size. | The same message as the size check in the browser. |
-| `UNAUTHENTICATED` on upload | The session ended. | A `Notice` with a link to sign in again. |
-| `NETWORK` | The `fetch` call failed before an answer. | `ApiError` with status 0. On upload, the page shows the offline message. |
-| Poll fails | `getDocument` or `listDocuments` fails. | The page shows no message. The next interval is longer. |
-| `CONFLICT` for `basedOn` | The answers changed after the form opened. | The slip shows the latest answers and a message. |
+| `UNAUTHENTICATED` | The session ended, on an upload or in a read. | The polls stop. A `Notice` "You’re signed out." with a link to sign in shows above the drop strip. |
+| `NETWORK` | The `fetch` call failed before an answer. | `ApiError` with status 0. On upload, the `Notice` says "The upload didn’t finish." and offers "Send the rest". |
+| Poll fails | `getDocument` or `listFilings` fails. | The page shows no message. The next interval is longer. |
+| `CONFLICT` for `basedOn` | The answers changed after the form opened. | The opened filing shows the latest answers and a message. |
 | `CONFLICT` for `company.new` | A company with the same identifiers exists. | The form shows a clash message. The page reads the companies again. |
-| `identify_failed`, `read_failed` | A job of the API failed. | The ladder shows "Stopped". The slip shows "Try again". |
-| `needs_company`, `needs_kind`, `duplicate` | The API needs a decision from the investor. | The ladder shows "Needs you". The slip shows a `Notice`. |
-| Answers do not load | `getClassification` fails. | The slip shows a `SectionIssue` with "Try again". |
+| `identify_failed`, `read_failed` | A job of the API failed. | The track shows "Stopped". The opened filing shows "Try again". |
+| `needs_company`, `needs_kind`, `duplicate` | The API needs a decision from the investor. | The track shows "Needs you". A held company shows under "Not in your workspace yet". A duplicate shows as "Added twice" on its first copy. |
+| Answers do not load | `getClassification` fails. | The opened filing shows a `SectionIssue` with "Try again". |
 | Market mood does not load | `GET /v1/market-mood` fails, and no market mood is on the screen. | The page shows a `SectionIssue` with "Try again". |
 | Market mood poll fails | A later `GET /v1/market-mood` fails. | The old market mood stays. The page shows no message, and the poll stops. |
 | No market mood | Fewer than 5 scored readings have a score. | The head tells how many scored readings have a score, and why the others do not. `MoodRuler` shows no block. |
@@ -387,7 +481,7 @@ The web app calls these API paths:
 | --- | --- | --- |
 | `/api/auth/*` | Better Auth | The auth client: session, sign-in, sign-up, sign-out, email confirmation, password reset. |
 | `/v1/me` | `GET` | `readMe` |
-| `/v1/workspaces/<id>/documents?limit=25` | `GET` | `listDocuments` |
+| `/v1/workspaces/<id>/filings` | `GET` | `listFilings` |
 | `/v1/workspaces/<id>/documents/<id>` | `GET` | `getDocument` |
 | `/v1/workspaces/<id>/documents/uploads` | `POST` | `upload` |
 | The URL of the upload target | `PUT` | `upload`. In local development, this URL is under `/dev/`. |
@@ -395,12 +489,14 @@ The web app calls these API paths:
 | `/v1/workspaces/<id>/documents/<id>/classification` | `GET`, `POST` | `getClassification`, `changeClassification` |
 | `/v1/workspaces/<id>/documents/<id>/classify` | `POST` | `classify` |
 | `/v1/workspaces/<id>/documents/<id>/extract` | `POST` | `extract` |
+| `/v1/workspaces/<id>/documents/<id>/index` | `POST` | `index` |
+| `/v1/workspaces/<id>/companies/confirm` | `POST` | `confirmCompany` |
 | `/v1/workspaces/<id>/companies?limit=100` | `GET` | `listCompanies` |
 | `/v1/workspaces/<id>/companies/<id>` | `GET` | `getCompany` |
 | `/v1/workspaces/<id>/research/companies` | `GET` | `companies` in `research/client.ts` |
 | `/v1/workspaces/<id>/companies/<id>/financials` | `GET` | `financials` in `research/client.ts` |
 | `/v1/workspaces/<id>/companies/<id>/stock` | `GET` | `stock` in `research/client.ts` |
-| `/v1/workspaces/<id>/documents/<id>/file` | `GET` | The link "Open the PDF at page N". The browser opens it in a new tab. |
+| `/v1/workspaces/<id>/documents/<id>/file` | `GET` | The links "Open the PDF at page N" and "Open the results PDF at page N", and the name of a stored file in an opened filing. The browser opens each in a new tab. |
 | `/v1/market-mood` | `GET` | `mood` in `market-mood/client.ts` |
 | `/v1/market-mood/readings/<reading key>` | `GET` | `reading` in `market-mood/client.ts` |
 | `/v1/settings/connections` | `GET` | `list` in `settings/client.ts` |
@@ -504,9 +600,9 @@ CAUTION: When a type in `packages/contracts` changes, change its copy in the web
 - If the API has no `CONNECTIONS_KEY`, the whole Settings page does not load. Thus, the message `noServerKey` of `saveFailure` cannot show.
 - For a `failing` market connection, the notice tells that the source did not answer. But the only cause of this state is a refused FRED API key.
 - The web app uses only the first workspace of the person.
-- The Earlier list reads only the first 25 documents. The company form offers only the first 100 companies.
+- The filings read has no page limit. The company form offers only the first 100 companies.
 - The Documents page uses polls. The web client does not use Server-Sent Events, but `nginx.conf.template` has settings for them.
-- A failed poll shows no message. If the session ends while the Documents page is open, the polls fail and the page does not ask the person to sign in.
+- A failed poll shows no message. If the session ends while the Documents page is open, the polls stop and a `Notice` asks the person to sign in.
 - The static site returns no 401 or 403 status. Thus, the `signed-out` and `no-access` views do not show yet.
 - There are no tests for the Svelte components. The tests cover only the TypeScript modules in `src/lib`.
 - Sign-in needs script in the browser. `/login` and `/signup` tell this in a `<noscript>` note.
@@ -543,9 +639,17 @@ CAUTION: When a type in `packages/contracts` changes, change its copy in the web
 - [`apps/web/src/lib/terminal/fixture.ts`](../../apps/web/src/lib/terminal/fixture.ts)
 - [`apps/web/src/lib/components/documents/DocumentsPage.svelte`](../../apps/web/src/lib/components/documents/DocumentsPage.svelte)
 - [`apps/web/src/lib/components/documents/DropStrip.svelte`](../../apps/web/src/lib/components/documents/DropStrip.svelte)
-- [`apps/web/src/lib/components/documents/Slip.svelte`](../../apps/web/src/lib/components/documents/Slip.svelte)
+- [`apps/web/src/lib/components/documents/FilingList.svelte`](../../apps/web/src/lib/components/documents/FilingList.svelte)
+- [`apps/web/src/lib/components/documents/Filing.svelte`](../../apps/web/src/lib/components/documents/Filing.svelte)
+- [`apps/web/src/lib/components/documents/Track.svelte`](../../apps/web/src/lib/components/documents/Track.svelte)
+- [`apps/web/src/lib/components/documents/ConfirmCompanies.svelte`](../../apps/web/src/lib/components/documents/ConfirmCompanies.svelte)
 - [`apps/web/src/lib/documents/client.ts`](../../apps/web/src/lib/documents/client.ts)
 - [`apps/web/src/lib/documents/intake.ts`](../../apps/web/src/lib/documents/intake.ts)
+- [`apps/web/src/lib/documents/batch.ts`](../../apps/web/src/lib/documents/batch.ts)
+- [`apps/web/src/lib/documents/tracks.ts`](../../apps/web/src/lib/documents/tracks.ts)
+- [`apps/web/src/lib/documents/sources.ts`](../../apps/web/src/lib/documents/sources.ts)
+- [`apps/web/src/lib/documents/filings.ts`](../../apps/web/src/lib/documents/filings.ts)
+- [`apps/web/src/lib/documents/confirm.ts`](../../apps/web/src/lib/documents/confirm.ts)
 - [`apps/web/src/lib/documents/types.ts`](../../apps/web/src/lib/documents/types.ts)
 - [`apps/web/src/routes/terminal/research/+page.svelte`](../../apps/web/src/routes/terminal/research/+page.svelte)
 - [`apps/web/src/routes/terminal/research/company/+page.svelte`](../../apps/web/src/routes/terminal/research/company/+page.svelte)

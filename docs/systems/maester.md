@@ -26,7 +26,7 @@ This document gives the system level of Maester. Each app and each shared packag
 | revision | A row in the `extraction_revision` table. It holds the result of one extraction. |
 | fact | A row in the `financial_fact` table. It holds one figure from a statement. |
 | extraction check | A row in the `extraction_check` table. It holds the result of one arithmetic check of the facts. |
-| slip | The panel on the Documents page that shows one document. |
+| opened filing | The panel on the Documents page that shows one filing: the files of one company, one kind and one period. |
 | market point | A row in the `market_point` table. It holds the value of one daily market series on one day, with its source. |
 | market refresh | One run of the market refresher in the worker. It gets new market points from Dhan and FRED. Each market refresh that starts writes one row in the `market_fetch` table. |
 | market connection | A row in the `market_connection` table. It holds the encrypted secret for one market data source: Dhan or FRED. |
@@ -84,11 +84,11 @@ The repository has three package managers:
 
 ### Document intake
 
-1. The Documents page reads `GET /v1/me` and uses the first workspace in the answer (`apps/web/src/lib/components/documents/DocumentsPage.svelte:129-130`).
-2. The web client sends `POST /v1/workspaces/:ws/documents/uploads` with the name, the size and the type of the PDF (`apps/web/src/lib/documents/client.ts:162-167`).
+1. The Documents page reads `GET /v1/me` and uses the first workspace in the answer (`apps/web/src/lib/components/documents/DocumentsPage.svelte:383-384`).
+2. The web client sends `POST /v1/workspaces/:ws/documents/uploads` with the name, the size and the type of the file (`apps/web/src/lib/documents/client.ts:185-189`).
 3. The API writes a document with the state `pending_upload` and returns a signed upload URL (`apps/api/src/routes/documents.ts:47-82`).
-4. The browser sends the PDF with `PUT` to the signed URL (`apps/web/src/lib/documents/client.ts:175-179`). With the `gcs` driver, the URL goes to Cloud Storage. With the `disk` driver, the URL goes to `/dev/blobs/*` on the API (`apps/api/src/routes/dev.ts:117-125`).
-5. The web client sends `POST .../documents/:id/finalize` (`apps/web/src/lib/documents/client.ts:180`). The API makes sure that the PDF is in the object store. Then it sets the state to `uploaded` and creates a `document.verify` job (`apps/api/src/routes/documents.ts:84-111`).
+4. The browser sends the PDF with `PUT` to the signed URL (`apps/web/src/lib/documents/client.ts:197-201`). With the `gcs` driver, the URL goes to Cloud Storage. With the `disk` driver, the URL goes to `/dev/blobs/*` on the API (`apps/api/src/routes/dev.ts:117-125`).
+5. The web client sends `POST .../documents/:id/finalize` (`apps/web/src/lib/documents/client.ts:202`). The API makes sure that the PDF is in the object store. Then it sets the state to `uploaded` and creates a `document.verify` job (`apps/api/src/routes/documents.ts:84-111`).
 6. `createJob` writes a job with the state `queued` and a unique key, then dispatches it (`packages/jobs/src/create.ts:28-56`). A second call with the same key returns the first job and does not dispatch again.
 7. In the `queue` mode, the dispatcher runs `pg_notify('job_ready', <type>)` (`packages/jobs/src/dispatch.ts`). In the `cloud-tasks` mode, it creates a task with an OIDC token.
 8. In the `queue` mode, a claim loop of the worker claims the job and takes the lease (`apps/worker/src/queue.ts`, `apps/worker/src/lease.ts`). In the `cloud-tasks` mode, the worker checks the token, and `runJob` takes the lease. Then `executeJob` calls the handler for the job type (`apps/worker/src/run.ts`).
@@ -103,16 +103,16 @@ The repository has three package managers:
     - An annual report or financial results with a company gives `reading` and a new `document.extract` job.
 14. `document.extract` sends the PDF to `POST /v1/extract` (`apps/worker/src/jobs/document-extract.ts:141-187`). The extractor answers with an NDJSON stream: `started`, then `progress` and `heartbeat` lines, then one `result` or one `error` (`apps/extractor/src/maester_extractor/app.py:123-186`). For each line, the worker extends its lease (`apps/worker/src/jobs/document-extract.ts:175-178`).
 15. The worker writes the result in one transaction: one revision with its facts, its `source_reference` rows and its extraction checks (`apps/worker/src/jobs/document-extract.ts:36-128`). Then it sets the intake state to `read` (`apps/worker/src/jobs/document-extract.ts:131-139`).
-16. While Maester works on the document in the slip, the Documents page reads `GET .../documents/:id` again every 2 seconds (`apps/web/src/lib/documents/intake.ts:25`, `apps/web/src/lib/components/documents/DocumentsPage.svelte:236-243`). While any document in the list has work in progress, the page reads the list again every 5 seconds (`apps/web/src/lib/documents/intake.ts:28`).
-17. The page shows the intake state, the classification and its evidence. It does not show facts.
+16. While a track of the opened filing is live, the Documents page reads `GET .../documents/:id` for each file of the filing every 2 seconds (`apps/web/src/lib/documents/intake.ts:24`, `apps/web/src/lib/components/documents/DocumentsPage.svelte:354-378`). While another filing in the list "Working on" is live, the page reads `GET .../filings` every 5 seconds (`apps/web/src/lib/documents/intake.ts:27`, `apps/web/src/lib/components/documents/DocumentsPage.svelte:316`). The page also reads `GET .../filings` one time when a polled file changes its state, its intake state or its identification.
+17. The page shows the two tracks of each filing, the source of each statement, the classification and its evidence. It does not show facts.
 18. In parallel, `document.verify` creates a `document.index` job for each stored document that is not a duplicate. The job sends the PDF to the indexer one range at a time. It keeps the pages and the chunks. It sends the chunks to the embedder for their vectors. The API route `GET .../search` finds the chunks. Read the [worker description](worker.md) and the [indexer description](indexer.md).
 
 ### Change by the investor
 
-1. The investor can change the kind, the company or the period of a document in the slip. The web client sends `POST .../documents/:id/classification` (`apps/web/src/lib/documents/client.ts:133-138`). The body names the classification that the change starts from, in the field `basedOn`.
+1. The investor can change the kind, the company or the period of a document in the opened filing. The web client sends `POST .../documents/:id/classification` (`apps/web/src/lib/documents/client.ts:135-140`). The body names the classification that the change starts from, in the field `basedOn`.
 2. The API locks the document row and writes a new classification with `setBy` equal to `investor` (`apps/api/src/routes/classification.ts:34-157`). If `basedOn` is not the current classification, the API answers `CONFLICT`.
 3. The API then calls `decideIntake`, which can start a new `document.extract` job (`apps/api/src/routes/classification.ts:165`).
-4. The slip can also start the work again. The web client then sends `POST .../classify` or `POST .../extract` (`apps/web/src/lib/documents/client.ts:141-149`). Each call creates a new job (`apps/api/src/routes/classification.ts:177-195`, `apps/api/src/routes/documents.ts:147-162`).
+4. The opened filing can also start the work again. The web client then sends `POST .../classify`, `POST .../extract` or `POST .../index` (`apps/web/src/lib/documents/client.ts:143-165`). Each call creates a new job (`apps/api/src/routes/classification.ts:65-83`, `apps/api/src/routes/documents.ts:185-201`, `apps/api/src/routes/documents.ts:205-222`).
 
 ### Market connections
 
