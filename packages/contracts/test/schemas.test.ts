@@ -6,6 +6,7 @@ import {
   DecimalString,
   Document,
   DocumentFormat,
+  DocumentPipeline,
   DocumentVerifyResult,
   ExtractedCheck,
   ExtractionCheck,
@@ -70,11 +71,41 @@ describe("common", () => {
       createdAt: "2026-09-10T00:00:00.000Z",
       storedAt: "2026-09-10T01:00:00.000Z",
       latestJob: null,
+      pipeline: IDLE_PIPELINE,
     };
     const r = P.parse({ items: [validDoc], nextCursor: "cursor123" });
     expect(r.items[0]!.id).toBe("6d5d1b0a-1e5e-4f6b-9f5d-2a4e1c9b7f10");
     expect(r.nextCursor).toBe("cursor123");
     expect(() => P.parse({ items: [{ id: "not-a-uuid" }], nextCursor: null })).toThrow();
+  });
+});
+
+const IDLE_PIPELINE = {
+  stored: "done" as const,
+  identified: "done" as const,
+  numbers: { source: null, state: "waiting" as const, coveredByXbrl: [], waitingOn: [], reason: "not_identified" as const, format: null },
+  text: { state: "waiting" as const, pages: 0, pagesRead: 0, pagesOcr: 0, chunks: 0, xbrlBlocks: 0, ahead: null },
+};
+
+describe("DocumentPipeline", () => {
+  it("parses a pipeline and refuses an unknown key, state, reason or format", () => {
+    expect(DocumentPipeline.parse(IDLE_PIPELINE)).toEqual(IDLE_PIPELINE);
+    const bad = (over: object) => ({ ...IDLE_PIPELINE, numbers: { ...IDLE_PIPELINE.numbers, ...over } });
+    expect(() => DocumentPipeline.parse({ ...IDLE_PIPELINE, extra: 1 })).toThrow();
+    expect(() => DocumentPipeline.parse(bad({ extra: 1 }))).toThrow();
+    expect(() => DocumentPipeline.parse(bad({ state: "skipped" }))).toThrow();
+    expect(() => DocumentPipeline.parse(bad({ reason: "because" }))).toThrow();
+    expect(() => DocumentPipeline.parse(bad({ format: "pdf" }))).toThrow();
+    expect(() => DocumentPipeline.parse(bad({ coveredByXbrl: ["not-a-uuid"] }))).toThrow();
+    expect(() => DocumentPipeline.parse({ ...IDLE_PIPELINE, text: { ...IDLE_PIPELINE.text, ahead: -1 } })).toThrow();
+  });
+
+  it("carries a covered PDF's ids and an unmapped instance's format", () => {
+    const id = "6d5d1b0a-1e5e-4f6b-9f5d-2a4e1c9b7f10";
+    const covered = { ...IDLE_PIPELINE, numbers: { source: "xbrl", state: "not_needed", coveredByXbrl: [id], waitingOn: [], reason: null, format: null } };
+    expect(DocumentPipeline.parse(covered).numbers.coveredByXbrl).toEqual([id]);
+    const unmapped = { ...IDLE_PIPELINE, numbers: { source: "xbrl", state: "not_read", coveredByXbrl: [], waitingOn: [], reason: "format_unmapped", format: "banking" } };
+    expect(DocumentPipeline.parse(unmapped).numbers.format).toBe("banking");
   });
 });
 

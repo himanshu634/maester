@@ -8,9 +8,10 @@ import {
   type DocumentClassification,
   type EvidenceField,
 } from "@maester/contracts";
-import { getCurrentClassification, getDocument, getLatestJobForSubject, listEvidence, schema, type ClassificationRow, type Db } from "@maester/db";
+import { getCurrentClassification, getDocument, listEvidence, schema, type ClassificationRow, type Db } from "@maester/db";
 import { decideIntake, READ_KINDS, redecidePdfsAfterXbrl } from "@maester/jobs";
 import type { AppDeps, AppEnv } from "../app.js";
+import { documentPipelines } from "../documents/pipeline.js";
 import { HttpError, isUniqueViolation } from "../errors.js";
 import { createJob } from "../jobs/create.js";
 import { uuidParam } from "../middleware/params.js";
@@ -171,10 +172,10 @@ export function classificationRoutes(deps: AppDeps) {
     const doc = (await getDocument(deps.db, workspace.id, documentId))!;
     // An instance's new answers may release the PDFs that wait on XBRL, or send a covered one back to be read.
     if (doc.format === "xbrl") await redecidePdfsAfterXbrl(deps.db, deps.dispatcher, workspace.id);
-    const job = await getLatestJobForSubject(deps.db, workspace.id, "document", documentId);
+    const { input: loaded, pipeline } = (await documentPipelines(deps.db, workspace.id, [documentId], deps.env.EMBEDDING_MODEL)).get(documentId)!;
     const evidence = await listEvidence(deps.db, workspace.id, created.row.id);
     const body: ClassificationChanged = {
-      document: toDocument(doc, job, created.row),
+      document: toDocument(doc, loaded.latestJob, created.row, pipeline),
       classification: toClassification(created.row),
       evidence: evidence.map(toEvidence),
     };

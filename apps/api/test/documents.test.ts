@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { CreateUploadResponse, Document, ExtractResponse, FinalizeResponse, JobTypes, paginated } from "@maester/contracts";
+import { CreateUploadResponse, Document, DocumentPipeline, ExtractResponse, FinalizeResponse, JobTypes, paginated } from "@maester/contracts";
 import { schema } from "@maester/db";
 import { createTestContext, type TestContext } from "./context.js";
 
@@ -135,7 +135,7 @@ describe("documents", () => {
       const extract = () => ctx.app.request(`/v1/workspaces/${a.workspaceId}/documents/${pdfId}/extract`, { method: "POST", headers: { cookie: a.cookie, origin: "http://localhost" } });
       const extractJobs = async () =>
         (await ctx.db.select().from(schema.job).where(eq(schema.job.subjectId, pdfId))).filter((j) => j.type === JobTypes.DOCUMENT_EXTRACT);
-      return { extract, extractJobs };
+      return { extract, extractJobs, a, pdfId, xbrlId, companyId, userId: user!.id };
     }
 
     it("a skipped results PDF answers 409 INVALID_STATE and creates no document.extract job", async () => {
@@ -146,6 +146,36 @@ describe("documents", () => {
       expect(err.error.code).toBe("INVALID_STATE");
       expect(err.error.message).toContain("numbers come from XBRL");
       expect(await extractJobs()).toHaveLength(0);
+    });
+
+    it("the covered PDF's pipeline names the XBRL that covers it, and keeps it while another instance is still being identified", async () => {
+      const { a, pdfId, xbrlId, companyId, userId } = await seedCovered("d14@example.com", BOTH);
+      const get = async (id: string) =>
+        Document.parse(await (await ctx.app.request(`/v1/workspaces/${a.workspaceId}/documents/${id}`, { headers: { cookie: a.cookie } })).json());
+
+      expect((await get(pdfId)).pipeline.numbers).toEqual({
+        source: "xbrl", state: "not_needed", coveredByXbrl: [xbrlId], waitingOn: [], reason: null, format: null,
+      });
+      expect((await get(xbrlId)).pipeline.numbers).toMatchObject({ source: "xbrl", state: "done", reason: null });
+
+      // A folder import is running: a new instance is still being identified, so the plan for the PDF waits and names no cover.
+      const importing = crypto.randomUUID();
+      await ctx.db.insert(schema.document).values({
+        id: importing, workspaceId: a.workspaceId, companyId, originalName: "n.xml", declaredSize: 10, declaredMime: "text/xml", format: "xbrl",
+        storageKey: `workspaces/${a.workspaceId}/documents/${importing}/original.xml`, state: "stored", intakeState: "identifying", createdByUserId: userId,
+      });
+      expect((await get(pdfId)).pipeline.numbers).toMatchObject({ source: "xbrl", state: "not_needed", coveredByXbrl: [xbrlId], waitingOn: [] });
+      expect((await get(importing)).pipeline.numbers).toMatchObject({ state: "waiting", reason: "not_identified" });
+    });
+
+    it("a PDF waiting for XBRL names the instances it waits on", async () => {
+      const { a, pdfId, xbrlId } = await seedCovered("d15@example.com", BOTH);
+      await ctx.db.update(schema.document).set({ intakeState: "identifying" }).where(eq(schema.document.id, xbrlId));
+      await ctx.db.update(schema.document).set({ intakeState: "waiting_for_xbrl" }).where(eq(schema.document.id, pdfId));
+      const res = await ctx.app.request(`/v1/workspaces/${a.workspaceId}/documents/${pdfId}`, { headers: { cookie: a.cookie } });
+      expect(Document.parse(await res.json()).pipeline.numbers).toMatchObject({
+        source: null, state: "waiting", reason: "waiting_for_xbrl", waitingOn: [xbrlId], coveredByXbrl: [],
+      });
     });
 
     it("a results PDF the XBRL covers only in part gets a document.extract job, as today", async () => {
@@ -178,6 +208,19 @@ describe("documents", () => {
     const second = await ctx.app.request(`/v1/workspaces/${a.workspaceId}/documents/${docId}/finalize`, post(a.cookie, {}));
     expect(second.status).toBe(200);
     expect(FinalizeResponse.parse(await second.json()).job.id).toBe(f.job.id);
+  });
+
+  it("every item of the list carries a pipeline that parses as a DocumentPipeline", async () => {
+    const a = await ctx.signUp("d16@example.com");
+    for (let i = 0; i < 3; i++) await createUpload(a.workspaceId, a.cookie);
+    const res = await ctx.app.request(`/v1/workspaces/${a.workspaceId}/documents`, { headers: { cookie: a.cookie } });
+    const body = (await res.json()) as { items: { pipeline: unknown; state: string }[] };
+    expect(body.items).toHaveLength(3);
+    for (const item of body.items) {
+      expect(DocumentPipeline.parse(item.pipeline)).toMatchObject({
+        stored: "now", identified: "waiting", numbers: { state: "waiting", reason: "not_identified" }, text: { state: "waiting", ahead: null },
+      });
+    }
   });
 
   it("list is paginated and scoped; detail is 404 across workspaces", async () => {

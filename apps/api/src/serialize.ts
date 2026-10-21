@@ -1,5 +1,5 @@
 import { FetchStatus } from "@maester/contracts";
-import type { Classification, ClassificationSummary, Company, Document, Evidence, ExtractionCheck, ExtractionRevision, FinancialFact, Job, Workspace } from "@maester/contracts";
+import type { Classification, ClassificationSummary, Company, Document, DocumentPipeline, Evidence, ExtractionCheck, ExtractionRevision, FinancialFact, Job, Workspace } from "@maester/contracts";
 import type {
   ClassificationRow,
   CompanyRow,
@@ -40,7 +40,7 @@ export function toJob(row: JobRow): Job {
   };
 }
 
-export function toDocument(row: DocumentRow, latestJob: JobRow | null, classification: ClassificationRow | null = null): Document {
+export function toDocument(row: DocumentRow, latestJob: JobRow | null, classification: ClassificationRow | null, pipeline: DocumentPipeline): Document {
   return {
     id: row.id,
     workspaceId: row.workspaceId,
@@ -59,6 +59,7 @@ export function toDocument(row: DocumentRow, latestJob: JobRow | null, classific
     createdAt: row.createdAt.toISOString(),
     storedAt: iso(row.storedAt),
     latestJob: latestJob ? toJob(latestJob) : null,
+    pipeline,
   };
 }
 

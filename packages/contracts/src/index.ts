@@ -12,3 +12,4 @@ export * from "./research.js";
 export * from "./document-index.js";
 export * from "./search.js";
 export * from "./xbrl.js";
+export * from "./pipeline.js";

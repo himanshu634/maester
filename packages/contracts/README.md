@@ -245,6 +245,12 @@ Response (`201 Created`):
     "classification": null,
     "createdAt": "2026-09-10T08:15:30Z",
     "storedAt": null,
+    "pipeline": {
+      "stored": "now",
+      "identified": "waiting",
+      "numbers": { "source": null, "state": "waiting", "coveredByXbrl": [], "waitingOn": [], "reason": "not_identified", "format": null },
+      "text": { "state": "waiting", "pages": 0, "pagesRead": 0, "pagesOcr": 0, "chunks": 0, "xbrlBlocks": 0, "ahead": null }
+    },
     "latestJob": null
   },
   "upload": {
@@ -280,6 +286,12 @@ No request body. Response:
     "classification": null,
     "createdAt": "2026-09-10T08:15:30Z",
     "storedAt": null,
+    "pipeline": {
+      "stored": "now",
+      "identified": "waiting",
+      "numbers": { "source": null, "state": "waiting", "coveredByXbrl": [], "waitingOn": [], "reason": "not_identified", "format": null },
+      "text": { "state": "waiting", "pages": 0, "pagesRead": 0, "pagesOcr": 0, "chunks": 0, "xbrlBlocks": 0, "ahead": null }
+    },
     "latestJob": {
       "id": "9b2e2f0a-1d3c-4e5f-8a6b-7c8d9e0f1a2b",
       "workspaceId": "3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f",
@@ -343,6 +355,12 @@ A document once verification has finished, with its terminal job attached:
   "classification": null,
   "createdAt": "2026-09-10T08:15:30Z",
   "storedAt": "2026-09-10T08:16:05Z",
+  "pipeline": {
+    "stored": "done",
+    "identified": "done",
+    "numbers": { "source": null, "state": "waiting", "coveredByXbrl": [], "waitingOn": [], "reason": "not_identified", "format": null },
+    "text": { "state": "waiting", "pages": 0, "pagesRead": 0, "pagesOcr": 0, "chunks": 0, "xbrlBlocks": 0, "ahead": null }
+  },
   "latestJob": {
     "id": "9b2e2f0a-1d3c-4e5f-8a6b-7c8d9e0f1a2b",
     "workspaceId": "3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f",
@@ -574,6 +592,12 @@ GET /v1/workspaces/3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f/documents?limit=25
       "classification": null,
       "createdAt": "2026-09-10T08:15:30Z",
       "storedAt": "2026-09-10T08:16:05Z",
+      "pipeline": {
+        "stored": "done",
+        "identified": "done",
+        "numbers": { "source": null, "state": "waiting", "coveredByXbrl": [], "waitingOn": [], "reason": "not_identified", "format": null },
+        "text": { "state": "waiting", "pages": 0, "pagesRead": 0, "pagesOcr": 0, "chunks": 0, "xbrlBlocks": 0, "ahead": null }
+      },
       "latestJob": null
     }
   ],

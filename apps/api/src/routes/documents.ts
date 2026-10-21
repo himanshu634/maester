@@ -20,7 +20,6 @@ import {
   getCurrentClassification,
   getCurrentRevision,
   getDocument,
-  getLatestJobForSubject,
   getRevision,
   listChecks,
   listDocuments,
@@ -30,8 +29,9 @@ import {
   type Db,
   type DocumentRow,
 } from "@maester/db";
-import { planPdfNumbers, type Basis, type Statement } from "@maester/financial-engine";
+import { planPdfNumbers } from "@maester/financial-engine";
 import type { AppDeps, AppEnv } from "../app.js";
+import { documentPipelines, pdfNumbersInput } from "../documents/pipeline.js";
 import { HttpError } from "../errors.js";
 import { createJob } from "../jobs/create.js";
 import { uuidParam } from "../middleware/params.js";
@@ -55,22 +55,16 @@ async function refuseReadCoveredByXbrl(db: Db, doc: DocumentRow): Promise<void> 
   if (doc.format !== "pdf") return;
   const c = await getCurrentClassification(db, doc.workspaceId, doc.id);
   if (c?.kind !== "financial_results" || !c.companyId) return;
-  const plan = planPdfNumbers(
-    {
-      companyId: c.companyId,
-      companyIdentity: await companyIdentity(db, doc.workspaceId, c.companyId),
-      kind: "financial_results",
-      periodEnd: c.periodEnd,
-      statementsFound: c.statementsFound.map((s) => ({ statement: s.statement as Statement, basis: s.basis as Basis })),
-    },
-    await loadWorkspaceXbrlDocs(db, doc.workspaceId),
-  );
+  const pdf = pdfNumbersInput(c, await companyIdentity(db, doc.workspaceId, c.companyId))!;
+  const plan = planPdfNumbers(pdf, await loadWorkspaceXbrlDocs(db, doc.workspaceId));
   if (plan.action === "skip") throw new HttpError("INVALID_STATE", "this document's numbers come from XBRL");
   if (plan.action === "wait") throw new HttpError("INVALID_STATE", "this document is waiting for its XBRL file");
 }
 
 export function documentRoutes(deps: AppDeps) {
   const r = new Hono<AppEnv>();
+  const pipelineOf = async (workspaceId: string, documentId: string) =>
+    (await documentPipelines(deps.db, workspaceId, [documentId], deps.env.EMBEDDING_MODEL)).get(documentId)!.pipeline;
 
   r.post("/uploads", validate("json", CreateUploadRequest), async (c) => {
     const input = c.req.valid("json");
@@ -105,7 +99,7 @@ export function documentRoutes(deps: AppDeps) {
       expiresInSeconds: deps.env.UPLOAD_URL_TTL_SECONDS,
     });
     const body: CreateUploadResponse = {
-      document: toDocument(row!, null),
+      document: toDocument(row!, null, null, await pipelineOf(workspace.id, id)),
       upload: { method: "PUT", url: signed.url, headers: signed.headers, expiresAt: signed.expiresAt.toISOString() },
     };
     return c.json(body, 201);
@@ -136,7 +130,7 @@ export function documentRoutes(deps: AppDeps) {
       subjectType: "document",
       subjectId: current.id,
     });
-    const body: FinalizeResponse = { document: toDocument(current, job), job: toJob(job) };
+    const body: FinalizeResponse = { document: toDocument(current, job, null, await pipelineOf(workspace.id, current.id)), job: toJob(job) };
     return c.json(body);
   });
 
@@ -144,15 +138,11 @@ export function documentRoutes(deps: AppDeps) {
     const q = c.req.valid("query");
     const workspace = c.get("workspace");
     const page = await listDocuments(deps.db, workspace.id, { cursor: q.cursor, limit: q.limit });
-    const items = await Promise.all(
-      page.items.map(async (d) =>
-        toDocument(
-          d,
-          await getLatestJobForSubject(deps.db, workspace.id, "document", d.id),
-          await getCurrentClassification(deps.db, workspace.id, d.id),
-        ),
-      ),
-    );
+    const views = await documentPipelines(deps.db, workspace.id, page.items.map((d) => d.id), deps.env.EMBEDDING_MODEL);
+    const items = page.items.map((d) => {
+      const { input, pipeline } = views.get(d.id)!;
+      return toDocument(d, input.latestJob, input.classification, pipeline);
+    });
     return c.json({ items, nextCursor: page.nextCursor });
   });
 
@@ -160,8 +150,8 @@ export function documentRoutes(deps: AppDeps) {
     const workspace = c.get("workspace");
     const doc = await getDocument(deps.db, workspace.id, uuidParam(c, "id"));
     if (!doc) throw new HttpError("NOT_FOUND", "document not found");
-    const job = await getLatestJobForSubject(deps.db, workspace.id, "document", doc.id);
-    return c.json(toDocument(doc, job, await getCurrentClassification(deps.db, workspace.id, doc.id)));
+    const { input, pipeline } = (await documentPipelines(deps.db, workspace.id, [doc.id], deps.env.EMBEDDING_MODEL)).get(doc.id)!;
+    return c.json(toDocument(doc, input.latestJob, input.classification, pipeline));
   });
 
   r.get("/:id/download", async (c) => {

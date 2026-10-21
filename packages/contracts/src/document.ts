@@ -2,6 +2,7 @@ import { z } from "zod";
 import { Classification, ClassificationSummary, Evidence, IntakeState } from "./classification.js";
 import { IsoTimestamp, Uuid } from "./common.js";
 import { Job } from "./job.js";
+import { DocumentPipeline } from "./pipeline.js";
 
 export const DocumentState = z.enum(["pending_upload", "uploaded", "verifying", "stored", "rejected"]);
 export type DocumentState = z.infer<typeof DocumentState>;
@@ -41,6 +42,7 @@ export const Document = z.object({
   createdAt: IsoTimestamp,
   storedAt: IsoTimestamp.nullable(),
   latestJob: Job.nullable(),
+  pipeline: DocumentPipeline,
 });
 export type Document = z.infer<typeof Document>;
 

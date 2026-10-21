@@ -37,4 +37,5 @@ export {
   getPageRead, putPageRead, documentsNeedingIndex,
   type IndexVersions, type PageInput, type ChunkInput, type RangeCounts, type PageReadKey, type RangeReadJson,
 } from "./queries/document-index.js";
-export { loadWorkspaceXbrlDocs, companyIdentity } from "./queries/xbrl.js";
+export { loadWorkspaceXbrlDocs, companyIdentity, companyIdentities } from "./queries/xbrl.js";
+export { loadPipelineInputs, type PipelineInput, type PipelineRevision, type PipelineIndex } from "./queries/pipeline.js";

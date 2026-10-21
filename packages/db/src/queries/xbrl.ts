@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Basis, CompanyIdentity, Statement, XbrlDocInput } from "@maester/financial-engine";
 import type { Db } from "../client.js";
 import { company } from "../schema/platform.js";
@@ -13,6 +13,16 @@ export async function companyIdentity(db: Db, workspaceId: string, companyId: st
     .where(and(eq(company.workspaceId, workspaceId), eq(company.id, companyId)))
     .limit(1);
   return row ?? { ...NO_IDENTITY };
+}
+
+/** `companyIdentity` for several companies in one query; a company not in the workspace has no entry. */
+export async function companyIdentities(db: Db, workspaceId: string, companyIds: string[]): Promise<Map<string, CompanyIdentity>> {
+  if (companyIds.length === 0) return new Map();
+  const rows = await db
+    .select({ id: company.id, cin: company.cin, bseCode: company.bseCode, nseSymbol: company.nseSymbol, isin: company.isin })
+    .from(company)
+    .where(and(eq(company.workspaceId, workspaceId), inArray(company.id, companyIds)));
+  return new Map(rows.map(({ id, ...identity }) => [id, identity]));
 }
 
 type XbrlDocRow = {
