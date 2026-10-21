@@ -373,6 +373,66 @@ export const documentsContent = {
 		}
 	},
 
+	/**
+	 * The opened filing's statement sources, per basis (spec 2026-10-19 section 5, board C2): where
+	 * each statement's numbers come from and whether its XBRL figures are on the PDF.
+	 */
+	sources: {
+		basisTitle: {
+			consolidated: 'Consolidated',
+			standalone: 'Standalone',
+			unknown: 'Basis not stated'
+		},
+		xbrl: 'XBRL',
+		/** An XBRL statement with no span is an instant: "XBRL · at 30 Sep 2026". */
+		xbrlAt: (day: string) => `XBRL · at ${day}`,
+		xbrlSpans: (spans: string) => `XBRL · ${spans}`,
+		/** The spans of an XBRL statement, in this order. */
+		spans: {
+			quarter: 'quarter',
+			half_year: 'half year',
+			nine_months: 'nine months',
+			year: 'year',
+			other: 'other periods'
+		},
+		pdf: 'PDF, read by Gemini',
+		pdfPages: (pages: string) => `PDF, read by Gemini · ${pages}`,
+		notInFiling: 'Not in this filing',
+		notReadYet: 'Not read yet.',
+		readStopped: 'The read stopped.',
+		noXbrl: 'No XBRL for this filing.',
+		xbrlReadFailed: 'The XBRL file couldn’t be read.',
+		xbrlNotReadYet: 'The XBRL file isn’t read yet.',
+		/** "The quarter’s XBRL has no cash flow"; without a span, "The XBRL has no cash flow". */
+		lacks: (statement: string, span: string | null) =>
+			`The ${span === null ? '' : `${span} `}XBRL has no ${statement}`,
+		/** The shortest span of a filing, as a possessive. */
+		possessive: {
+			quarter: 'quarter’s',
+			half_year: 'half year’s',
+			nine_months: 'nine months’',
+			full_year: 'year’s'
+		},
+		none: '—',
+		found: (found: number, checked: number) => `Found: ${found} of ${checked}`,
+		missed: (count: number) => `${count} not found.`,
+		openPdf: (page: number) => `Open the results PDF at page ${page}`,
+		notChecked: {
+			no_pdf: 'Not checked: no PDF of these results is in your documents.',
+			scanned:
+				'Not checked: the PDF’s statement pages are scanned, so their text can’t be searched.',
+			no_statement_pages: 'Not checked: Maester didn’t find the statement pages in the PDF.',
+			disabled: 'Not checked: the check is turned off.',
+			no_value: 'Not checked: the XBRL file gives no value to look for.',
+			/** The XBRL file declares no rounding, so the check had no unit to look for. */
+			no_unit: 'Not checked: the XBRL file declares no rounding, so there is no unit to look for.',
+			not_yet: 'Not checked yet.'
+		} satisfies Record<XbrlPdfNotChecked, string>,
+		page: (page: number) => `page ${page}`,
+		pagesRun: (first: number, last: number) => `pages ${first}–${last}`,
+		pagesList: (list: string, last: number) => `pages ${list} and ${last}`
+	},
+
 	/** What it is, in plain words. */
 	kinds: {
 		annual_report: 'Annual report',
