@@ -18,6 +18,7 @@ import { connectionRoutes } from "./routes/connections.js";
 import { companyRoutes } from "./routes/companies.js";
 import { devRoutes } from "./routes/dev.js";
 import { documentRoutes } from "./routes/documents.js";
+import { filingRoutes } from "./routes/filings.js";
 import { DEFAULT_SSE, jobEventsRoute, type SseOptions } from "./routes/job-events.js";
 import { jobRoutes } from "./routes/jobs.js";
 import { marketMoodRoutes } from "./routes/market-mood.js";
@@ -96,6 +97,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}) {
   ws.route("/search", searchRoutes(deps));
   ws.route("/documents", documentRoutes(deps));
   ws.route("/documents", classificationRoutes(deps));
+  ws.route("/filings", filingRoutes(deps));
   v1.route("/workspaces/:ws", ws);
 
   app.route("/v1", v1);

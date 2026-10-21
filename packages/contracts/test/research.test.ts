@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CellCheck, CellSource, CompanyFinancials, CompanyStock, Restated, ResearchCompanies } from "../src/index.js";
 
 const ID = "3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
-const company = { id: ID, workspaceId: ID, displayName: "Synthetic Cements Limited", country: "IN", cin: null, bseCode: null, nseSymbol: "SYNCEM", createdAt: "2026-10-13T10:00:00.000Z" };
+const company = { id: ID, workspaceId: ID, displayName: "Synthetic Cements Limited", country: "IN", cin: null, bseCode: null, nseSymbol: "SYNCEM", isin: null, createdAt: "2026-10-13T10:00:00.000Z" };
 
 describe("research contracts", () => {
   it("parses a company's financials with one stitched cell", () => {

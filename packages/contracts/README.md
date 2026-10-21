@@ -139,6 +139,8 @@ All routes below except `/healthz` and `/api/auth/*` are under `/v1` and require
 | POST | `/v1/workspaces/{ws}/companies` | Create a company in the workspace |
 | GET | `/v1/workspaces/{ws}/companies` | List companies (cursor pagination) |
 | GET | `/v1/workspaces/{ws}/companies/{id}` | One company |
+| POST | `/v1/workspaces/{ws}/companies/confirm` | Confirm a printed identity once: every held file printing it goes to a company, new or existing (`ConfirmCompanyRequest` → `ConfirmCompanyResponse`) |
+| GET | `/v1/workspaces/{ws}/filings` | The workspace's files by company and filing, with where each statement's numbers come from (`WorkspaceFilings`) |
 | POST | `/v1/workspaces/{ws}/documents/uploads` | Create a pending document (the company is optional; it is identified from the PDF) and a signed upload URL |
 | POST | `/v1/workspaces/{ws}/documents/{id}/finalize` | Mark a document uploaded and enqueue verification |
 | GET | `/v1/workspaces/{ws}/documents` | List documents (cursor pagination) |
@@ -206,6 +208,7 @@ Response (`201 Created`), also the shape of `GET …/companies/{id}` and of each
   "cin": null,
   "bseCode": null,
   "nseSymbol": null,
+  "isin": null,
   "createdAt": "2026-09-10T08:14:00Z"
 }
 ```
@@ -493,6 +496,39 @@ When a document is verified and extraction is enabled, the worker runs a `docume
 ```
 
 A failed extract job carries a code in `lastErrorCode`: `EXTRACTOR_NOT_CONFIGURED`, `UNREADABLE_PDF`, `NO_STATEMENTS_FOUND`, `NO_STATEMENTS_EXTRACTED`, `TOO_LARGE_FOR_EXTRACTION`, `MODEL_REQUEST_REJECTED` and `MODEL_CALL_BUDGET_EXCEEDED` fail at once; `MODEL_UNAVAILABLE`, `EXTRACTION_FAILED`, `EXTRACTOR_UNAVAILABLE` and `EXTRACTOR_STREAM_INTERRUPTED` are retried first.
+
+### `GET /v1/workspaces/{ws}/filings`
+
+Answers `WorkspaceFilings`, read in a fixed number of queries whatever the number of documents:
+
+- `companies`: every company of the workspace by name, each with its `filings`, newest period end first. A filing is the files of one company, kind and period end (a kept `other` document also by its `otherType`; a file with no period end is its own filing). Its `key` is `<companyId>:<kind>:<periodEnd>`, `<companyId>:other:<otherType>:<periodEnd>`, or the document id in the period's place. `spans` are the results spans its files were classified as (`quarter`, `half_year`, `nine_months`, `full_year`); a half-year PDF and a quarter instance of one period end are one filing. `settled` is true once every file has stopped on all three tracks of its `pipeline`.
+- `files` of a filing are in the order they were added. A duplicate is not a file: its id is under the original's `duplicates`. A file's `basis` is an XBRL instance's basis, null for a PDF.
+- `sources` lists, for each basis the filing's instances state or its PDFs found statements for (`consolidated`, `standalone`, `unknown`), the three statements (`income_statement`, `balance_sheet`, `cash_flow`). A statement's `source` is `xbrl` when an instance of that basis has facts of it, `pdf` when only a PDF prints it (`reason` then says why not XBRL: `xbrl_lacks_statement`, `xbrl_format_unmapped`, `no_xbrl`, or `not_read_yet` and `read_failed` while the PDF has no numbers), and null with `not_in_filing` when neither has it. `xbrlSpans` are the spans of the XBRL facts in the order quarter, half year, nine months, year, other; a balance sheet is instants, so it has none (the screen words it from the filing's `periodEnd`). `inPdf` counts the XBRL facts found on the filing's PDF: `found`, `checked` (found or not found), `notFound` fact ids, and `notChecked`, the reason when facts were not looked for.
+- `held` groups the files that wait for a company by the identity they print (a CIN, BSE code, ISIN or NSE symbol shared by any two files joins them), largest group first; `matches` are the workspace's companies the identity could be. A file that waits for a company and prints no identifier is in `unsorted`, with every other file that has no company.
+
+<!-- schema: WorkspaceFilings -->
+```json
+{ "companies": [], "held": [], "unsorted": [] }
+```
+
+### `POST /v1/workspaces/{ws}/companies/confirm`
+
+Confirms what a group of held files print, once. `identity` names at least one printed identifier; `company` is an existing company (`{ "id": … }`) or a new one (`{ "new": … }`, which takes the identity's codes and fills the others from the request). Every held file of the workspace whose current classification has no company and prints any of the identifiers gets an investor classification with the company, and then its next step (an instance is read, a results PDF waits for the instances or is read). A company name or code already used answers `409 CONFLICT`; a company that is not in the workspace answers `400`.
+
+<!-- schema: ConfirmCompanyRequest -->
+```json
+{
+  "identity": { "bseCode": "500999" },
+  "company": { "new": { "displayName": "Synthetic Cements Limited", "country": "IN" } }
+}
+```
+
+Response, `confirmed` being how many files were released (0 when none was held):
+
+<!-- schema: ConfirmCompanyResponse -->
+```json
+{ "companyId": "c0a8012e-5b6f-4c3d-9e2a-1f0b2c3d4e5f", "confirmed": 3 }
+```
 
 ### `GET /v1/workspaces/{ws}/jobs/{id}` and `POST /v1/workspaces/{ws}/jobs/{id}/retry`
 

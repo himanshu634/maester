@@ -39,3 +39,4 @@ export {
 } from "./queries/document-index.js";
 export { loadWorkspaceXbrlDocs, companyIdentity, companyIdentities } from "./queries/xbrl.js";
 export { loadPipelineInputs, type PipelineInput, type PipelineRevision, type PipelineIndex } from "./queries/pipeline.js";
+export { listFilingRows, loadXbrlFilingData, lockHeldDocuments, type XbrlFilingFact, type XbrlFilingData, type PrintedIdentity } from "./queries/filings.js";

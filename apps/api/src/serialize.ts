@@ -72,6 +72,7 @@ export function toCompany(row: CompanyRow): Company {
     cin: row.cin,
     bseCode: row.bseCode,
     nseSymbol: row.nseSymbol,
+    isin: row.isin,
     createdAt: row.createdAt.toISOString(),
   };
 }
