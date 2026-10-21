@@ -60,6 +60,35 @@ class ChunkRequest(WireModel):
     embedding_model: str
 
 
+class ChunkTextBlock(WireModel):
+    element: str  # the XBRL element the text came from
+    heading: str
+    text: str
+
+
+class ChunkTextRequest(WireModel):
+    """XBRL text blocks to chunk with the embedding model's tokenizer (`POST /v1/chunk-text`)."""
+
+    blocks: list[ChunkTextBlock]
+    basis: Literal["consolidated", "standalone"] | None
+    embedding_model: str
+
+
+class TextChunk(WireModel):
+    element: str
+    seq: Count  # from 0 across all the request's blocks
+    kind: ChunkKind
+    section_path: list[str]
+    basis: Literal["consolidated", "standalone"] | None
+    text: str
+    token_count: Count
+
+
+class ChunkTextResponse(WireModel):
+    versions: IndexerVersions
+    chunks: list[TextChunk]
+
+
 class StartedEvent(WireModel):
     type: Literal["started"] = "started"
     versions: IndexerVersions

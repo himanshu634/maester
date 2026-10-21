@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { ChunkRequest, contextualize, DOCUMENT_INDEX_SUBJECT, IndexerEvent, JobTypes } from "../src/index.js";
+import { ChunkRequest, ChunkTextRequest, ChunkTextResponse, contextualize, DOCUMENT_INDEX_SUBJECT, IndexerEvent, JobTypes } from "../src/index.js";
 
 // The same files are read by the indexer's Pydantic models (apps/indexer/tests/test_contracts.py).
 const dir = new URL("../fixtures/index/", import.meta.url);
@@ -56,6 +56,31 @@ describe("indexer stream fixtures", () => {
 describe("ChunkRequest", () => {
   it("parses the fixture", () => {
     expect(ChunkRequest.parse(JSON.parse(text("chunk-request.json"))).read.pages).toHaveLength(3);
+  });
+});
+
+describe("ChunkTextRequest and ChunkTextResponse", () => {
+  const request = () => JSON.parse(text("chunk-text-request.json")) as Record<string, unknown>;
+  const response = () => JSON.parse(text("chunk-text-response.json")) as { chunks: Record<string, unknown>[] };
+
+  it("parse their fixtures, which cover a prose and a table chunk across two blocks", () => {
+    expect(ChunkTextRequest.parse(request()).blocks).toHaveLength(2);
+    const parsed = ChunkTextResponse.parse(response());
+    expect(parsed.chunks.map((c) => [c.seq, c.kind, c.basis])).toEqual([[0, "prose", "consolidated"], [1, "table", "consolidated"]]);
+    expect(parsed.versions.tokenizer).toBe(ChunkTextRequest.parse(request()).embeddingModel);
+  });
+
+  it("take no basis other than the two, and a null one", () => {
+    expect(ChunkTextRequest.safeParse({ ...request(), basis: null }).success).toBe(true);
+    expect(ChunkTextRequest.safeParse({ ...request(), basis: "unknown" }).success).toBe(false);
+  });
+
+  it("refuse an unknown field, a negative seq and a chunk with no element", () => {
+    const r = response();
+    expect(ChunkTextRequest.safeParse({ ...request(), unexpected: true }).success).toBe(false);
+    expect(ChunkTextResponse.safeParse({ ...r, unexpected: true }).success).toBe(false);
+    expect(ChunkTextResponse.safeParse({ ...r, chunks: [{ ...r.chunks[0], seq: -1 }] }).success).toBe(false);
+    expect(ChunkTextResponse.safeParse({ ...r, chunks: [{ ...r.chunks[0], element: undefined }] }).success).toBe(false);
   });
 });
 

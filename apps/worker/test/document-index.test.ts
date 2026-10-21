@@ -136,6 +136,10 @@ class FakeIndexer implements IndexerClient {
     return this.emit(request.read, request.sectionPathBefore, onEvent, null);
   }
 
+  async chunkText(): Promise<never> {
+    throw new Error("a PDF index chunks no text blocks");
+  }
+
   private async maybeFail(first: number, onEvent: (e: IndexerEvent) => Promise<void>): Promise<void> {
     const f = this.failures.get(first);
     if (!f || f.times <= 0) return;

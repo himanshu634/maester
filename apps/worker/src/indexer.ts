@@ -1,4 +1,6 @@
-import { IndexerEvent, IndexerVersions, type ChunkRequest, type RangeRead } from "@maester/contracts";
+import {
+  ChunkTextResponse, IndexerEvent, IndexerVersions, type ChunkRequest, type ChunkTextRequest, type RangeRead,
+} from "@maester/contracts";
 import { JobFailure } from "./jobs/types.js";
 
 type Started = Extract<IndexerEvent, { type: "started" }>;
@@ -31,6 +33,11 @@ export interface IndexerClient {
   index(input: IndexInput, onEvent: (event: IndexerEvent) => Promise<void>): Promise<IndexResult>;
   /** Chunk a cached range read again. */
   chunk(request: ChunkRequest, signal: AbortSignal, onEvent: (event: IndexerEvent) => Promise<void>): Promise<IndexResult>;
+  /**
+   * Chunk XBRL text blocks with the embedding model's tokenizer. A model the indexer's tokenizer is not for rejects
+   * with `INDEXER_MODEL_MISMATCH`, not retried. Rejects with a JobFailure.
+   */
+  chunkText(request: ChunkTextRequest, signal: AbortSignal): Promise<ChunkTextResponse>;
 }
 
 const VERSIONS_TIMEOUT_MS = 30_000;
@@ -47,7 +54,8 @@ export class HttpIndexerClient implements IndexerClient {
     return `${this.baseUrl.replace(/\/$/, "")}${path}`;
   }
 
-  private async request(path: string, init: RequestInit, signal: AbortSignal): Promise<Response> {
+  /** The response, whatever its status; an unreachable indexer, a timeout and a refusal (401, 403) are failures. */
+  private async send(path: string, init: RequestInit, signal: AbortSignal): Promise<Response> {
     let res: Response;
     try {
       res = await fetch(this.url(path), { ...init, headers: { ...(init.headers as Record<string, string>), "x-indexer-secret": this.secret }, signal });
@@ -59,6 +67,11 @@ export class HttpIndexerClient implements IndexerClient {
       await res.body?.cancel().catch(() => undefined);
       throw new JobFailure("INDEXER_UNAUTHORIZED", `indexer refused the request (${res.status})`, false);
     }
+    return res;
+  }
+
+  private async request(path: string, init: RequestInit, signal: AbortSignal): Promise<Response> {
+    const res = await this.send(path, init, signal);
     if (!res.ok || !res.body) {
       await res.body?.cancel().catch(() => undefined);
       throw new JobFailure(`INDEXER_HTTP_${res.status}`, `indexer answered ${res.status}`, res.status >= 500);
@@ -108,6 +121,42 @@ export class HttpIndexerClient implements IndexerClient {
       signal,
     );
     return this.readStream(res, signal, onEvent);
+  }
+
+  async chunkText(request: ChunkTextRequest, signal: AbortSignal): Promise<ChunkTextResponse> {
+    const res = await this.send(
+      "/v1/chunk-text",
+      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request) },
+      signal,
+    );
+    if (res.status === 409) {
+      // The indexer's answer to a model it has no tokenizer for. Its message is not kept.
+      let code: unknown;
+      try {
+        code = ((await res.json()) as { code?: unknown }).code;
+      } catch {
+        code = undefined;
+      }
+      if (code === "INDEXER_MODEL_MISMATCH") {
+        throw new JobFailure("INDEXER_MODEL_MISMATCH", "the indexer's tokenizer is not for the embedding model asked for", false);
+      }
+      throw new JobFailure("INDEXER_HTTP_409", "indexer answered 409", false);
+    }
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => undefined);
+      throw new JobFailure(`INDEXER_HTTP_${res.status}`, `indexer answered ${res.status}`, res.status >= 500);
+    }
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      // Not the parse error's message: it quotes the start of the body, which is document text.
+      if (signal.aborted) throw new JobFailure("INDEX_TIMEOUT", "the indexer call timed out or was cancelled", true);
+      throw new JobFailure("INDEXER_UNAVAILABLE", "the indexer's text chunks could not be read", true);
+    }
+    const parsed = ChunkTextResponse.safeParse(body);
+    if (!parsed.success) throw new JobFailure("INVALID_INDEXER_RESULT", `unreadable indexer text chunks: ${issuePaths(parsed.error)}`, false);
+    return parsed.data;
   }
 
   private async readStream(res: Response, signal: AbortSignal, onEvent: (event: IndexerEvent) => Promise<void>): Promise<IndexResult> {

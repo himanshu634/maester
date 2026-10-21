@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
-import { RangeRead, contextualize, type IndexerEvent, type IndexerVersions } from "@maester/contracts";
+import { RangeRead, contextualize, type ChunkTextResponse, type IndexerEvent, type IndexerVersions } from "@maester/contracts";
 import {
   chunksWithoutEmbedding, completeRevision, getPageRead, insertEmbeddings, lastStoredPage, putPageRead, schema, startOrResumeRevision,
   writeRange, type ChunkInput, type Db, type IndexRevisionRow, type IndexVersions, type PageInput, type PageReadKey,
@@ -146,6 +146,102 @@ async function embedPending(ctx: JobContext, embedder: Embedder, revision: Index
   }
 }
 
+/**
+ * An XBRL instance's text blocks as an index revision: the extractor's `text` mode gives the blocks, the indexer cuts
+ * them with the embedding model's tokenizer. There is no page and no reader, so the revision's reader versions are
+ * "none" and its reader options name the text version; its chunks have no page, their element and text_source
+ * 'xbrl'. A retry after an embedder failure finds the revision (same versions) and the chunks already stored, and
+ * writes none twice: a chunk's (revision, page, seq) is unique, and the cut is the same each time.
+ */
+async function indexXbrl(
+  job: { id: string; workspaceId: string },
+  ctx: JobContext,
+  doc: typeof schema.document.$inferSelect,
+  clock: { startedAt: number; signal: () => AbortSignal; checkTime: () => void },
+): Promise<DocumentIndexResult> {
+  const { extractor, indexer, embedder } = ctx;
+  if (!extractor) throw new JobFailure("EXTRACTOR_NOT_CONFIGURED", "EXTRACTOR_URL is not set on the worker", false);
+  if (!indexer || !embedder) throw new JobFailure("INDEXER_NOT_CONFIGURED", "INDEXER_URL or EMBEDDER_URL is not set on the worker", false);
+  const model = ctx.env.EMBEDDING_MODEL;
+  const ws = job.workspaceId;
+  if (embedder.model !== model) {
+    throw new JobFailure("INDEXER_MODEL_MISMATCH", "the embedder's model is not EMBEDDING_MODEL", false);
+  }
+
+  let instance: Uint8Array;
+  try {
+    instance = await readAll(ctx.store, doc.storageKey);
+  } catch (err) {
+    if (err instanceof ObjectNotFoundError) throw new JobFailure("OBJECT_MISSING", "the stored instance is missing", false);
+    throw err;
+  }
+
+  await ctx.progress({ stage: "reading", percent: 0 });
+  clock.checkTime();
+  const text = await extractor.xbrl({ instance, documentId: doc.id, mode: "text" }, async () => {
+    await ctx.heartbeat();
+  });
+  await ctx.heartbeat();
+  let chunked: ChunkTextResponse;
+  try {
+    chunked = await indexer.chunkText(
+      {
+        blocks: text.blocks.map(({ element, heading, text: body }) => ({ element, heading, text: body })),
+        basis: text.basis === "unknown" ? null : text.basis,
+        embeddingModel: model,
+      },
+      clock.signal(),
+    );
+  } catch (err) {
+    throw indexerFailure(err, "on text chunks");
+  }
+  const versions = chunked.versions;
+  if (versions.tokenizer !== model) {
+    throw new JobFailure("INDEXER_MODEL_MISMATCH", "the indexer's tokenizer is not EMBEDDING_MODEL", false);
+  }
+  const indexVersions: IndexVersions = {
+    doclingVersion: "none",
+    ocrEngine: "none",
+    readerOptions: `xbrl-text=${text.textVersion}`,
+    chunkerVersion: versions.chunkerVersion,
+    tokenizer: versions.tokenizer,
+    indexVersion: INDEX_PIPELINE_VERSION,
+    embeddingModel: model,
+  };
+
+  let revision: IndexRevisionRow;
+  try {
+    revision = await startOrResumeRevision(ctx.db, ws, { documentId: doc.id, jobId: job.id, versions: indexVersions });
+  } catch (err) {
+    const code = (err as Error).message;
+    if (code === "DOCUMENT_NOT_FOUND" || code === "JOB_NOT_FOR_DOCUMENT") throw new JobFailure("INVALID_STATE", code, false);
+    throw err;
+  }
+  if (revision.state !== "building") return summary(ctx.db, revision);
+  const log = ctx.logger.child({ documentId: doc.id, revisionId: revision.id });
+
+  const chunkRows: ChunkInput[] = chunked.chunks.map((c) => ({
+    pageNumber: null, element: clean(c.element), seq: c.seq, sectionPath: cleanPath(c.sectionPath), kind: c.kind, textSource: "xbrl",
+    basis: c.basis, text: clean(c.text), tokenCount: c.tokenCount,
+  }));
+  try {
+    await writeRange(ctx.db, ws, revision.id, doc.id, [], chunkRows, { pageCount: 0, pagesRead: 0, pagesOcr: 0, warnings: [] });
+  } catch (err) {
+    throw writeFailure(err, "storing the text chunks");
+  }
+  await ctx.heartbeat();
+  await ctx.progress({ stage: "reading", percent: 50 });
+  const embedded = await embedPending(ctx, embedder, revision, clock.checkTime);
+  const completed = await completeRevision(ctx.db, ws, revision.id);
+  await ctx.progress({ stage: "indexed", percent: 100 });
+  const result = await summary(ctx.db, completed);
+  log.info(
+    { state: result.state, blocks: text.blocks.length, chunks: result.chunks, embedded, seconds: (Date.now() - clock.startedAt) / 1000 },
+    "xbrl text indexed",
+  );
+  return result;
+}
+
 async function index(job: { id: string; workspaceId: string; subjectId: string }, ctx: JobContext): Promise<DocumentIndexResult> {
   const { indexer, embedder } = ctx;
   if (!indexer || !embedder) throw new JobFailure("INDEXER_NOT_CONFIGURED", "INDEXER_URL or EMBEDDER_URL is not set on the worker", false);
@@ -177,6 +273,8 @@ async function index(job: { id: string; workspaceId: string; subjectId: string }
     .from(schema.documentIndexRevision)
     .where(and(eq(schema.documentIndexRevision.workspaceId, ws), eq(schema.documentIndexRevision.jobId, job.id)));
   if (done && done.state !== "building") return summary(ctx.db, done);
+
+  if (doc.format === "xbrl") return indexXbrl(job, ctx, doc, { startedAt, signal, checkTime });
 
   let pdf: Uint8Array;
   try {

@@ -1,0 +1,16 @@
+{
+  "blocks": [
+    {
+      "element": "DisclosureOfNotesOnFinancialResultsExplanatoryTextBlock",
+      "heading": "Disclosure of notes on financial results",
+      "text": "The results were reviewed by the audit committee."
+    },
+    {
+      "element": "DisclosureOfNotesOnSegmentsExplanatoryTextBlock",
+      "heading": "Segment information",
+      "text": "Segment | Plants\nCement | Two\nSteel | One"
+    }
+  ],
+  "basis": "consolidated",
+  "embeddingModel": "Snowflake/snowflake-arctic-embed-l-v2.0"
+}

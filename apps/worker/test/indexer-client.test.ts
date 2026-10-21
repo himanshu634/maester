@@ -169,3 +169,55 @@ describe("HttpIndexerClient", () => {
     expect(await fails(pending)).toMatchObject({ code: "INDEX_TIMEOUT", retryable: true });
   });
 });
+
+describe("HttpIndexerClient.chunkText", () => {
+  const textRequest = JSON.parse(fixture("chunk-text-request.json"));
+  const textResponse = JSON.parse(fixture("chunk-text-response.json"));
+  const signal = () => new AbortController().signal;
+  const json = (status: number, body: unknown) => (_: IncomingMessage, res: ServerResponse) => {
+    res.writeHead(status, { "content-type": "application/json" });
+    res.end(typeof body === "string" ? body : JSON.stringify(body));
+  };
+
+  it("posts the request as JSON with the secret and reads the response", async () => {
+    seen = [];
+    respond = json(200, textResponse);
+    expect(await client().chunkText(textRequest, signal())).toEqual(textResponse);
+    expect(seen[0]).toMatchObject({ method: "POST", url: "/v1/chunk-text" });
+    expect(seen[0]!.headers["x-indexer-secret"]).toBe("s3cret");
+    expect(seen[0]!.headers["content-type"]).toBe("application/json");
+    expect(JSON.parse(seen[0]!.body.toString())).toEqual(textRequest);
+  });
+
+  it("turns a 409 INDEXER_MODEL_MISMATCH into that code, not retried", async () => {
+    respond = json(409, { code: "INDEXER_MODEL_MISMATCH", message: "The indexer's tokenizer is for another embedding model." });
+    expect(await fails(client().chunkText(textRequest, signal()))).toMatchObject({ code: "INDEXER_MODEL_MISMATCH", retryable: false });
+  });
+
+  it("keeps today's mapping for any other 409, for a 503 and for a 401", async () => {
+    respond = json(409, { code: "SOMETHING_ELSE", message: "x" });
+    expect(await fails(client().chunkText(textRequest, signal()))).toMatchObject({ code: "INDEXER_HTTP_409", retryable: false });
+    respond = json(409, "<html>not json");
+    expect(await fails(client().chunkText(textRequest, signal()))).toMatchObject({ code: "INDEXER_HTTP_409", retryable: false });
+    respond = json(503, { code: "INDEXER_MODEL_MISMATCH" });
+    expect(await fails(client().chunkText(textRequest, signal()))).toMatchObject({ code: "INDEXER_HTTP_503", retryable: true });
+    respond = (_, res) => { res.writeHead(401); res.end(); };
+    expect(await fails(client().chunkText(textRequest, signal()))).toMatchObject({ code: "INDEXER_UNAUTHORIZED", retryable: false });
+  });
+
+  it("fails INVALID_INDEXER_RESULT, not retried and without quoting the body, when the answer has the wrong shape", async () => {
+    respond = json(200, { versions: textResponse.versions, chunks: [{ ...textResponse.chunks[0], text: "SECRET TEXT", seq: -1 }] });
+    const err = await fails(client().chunkText(textRequest, signal()));
+    expect(err).toMatchObject({ code: "INVALID_INDEXER_RESULT", retryable: false });
+    expect(err.message).not.toContain("SECRET TEXT");
+    respond = json(200, "<html>SECRET TEXT");
+    const notJson = await fails(client().chunkText(textRequest, signal()));
+    expect(notJson).toMatchObject({ code: "INDEXER_UNAVAILABLE", retryable: true });
+    expect(notJson.message).not.toContain("SECRET TEXT");
+  });
+
+  it("fails INDEX_TIMEOUT, retried, when the signal aborts", async () => {
+    respond = json(200, textResponse);
+    expect(await fails(client().chunkText(textRequest, AbortSignal.abort()))).toMatchObject({ code: "INDEX_TIMEOUT", retryable: true });
+  });
+});

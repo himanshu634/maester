@@ -1,0 +1,29 @@
+{
+  "versions": {
+    "doclingVersion": "2.134.0",
+    "ocrEngine": "rapidocr-onnxruntime 3.9.2",
+    "readerOptions": "table=accurate;cell_matching=true;ocr=rapidocr",
+    "chunkerVersion": "1",
+    "tokenizer": "Snowflake/snowflake-arctic-embed-l-v2.0"
+  },
+  "chunks": [
+    {
+      "element": "DisclosureOfNotesOnFinancialResultsExplanatoryTextBlock",
+      "seq": 0,
+      "kind": "prose",
+      "sectionPath": ["Disclosure of notes on financial results"],
+      "basis": "consolidated",
+      "text": "The results were reviewed by the audit committee.",
+      "tokenCount": 14
+    },
+    {
+      "element": "DisclosureOfNotesOnSegmentsExplanatoryTextBlock",
+      "seq": 1,
+      "kind": "table",
+      "sectionPath": ["Segment information"],
+      "basis": "consolidated",
+      "text": "Segment | Plants\nCement | Two\nSteel | One",
+      "tokenCount": 11
+    }
+  ]
+}
