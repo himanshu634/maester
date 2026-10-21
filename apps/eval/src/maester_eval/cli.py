@@ -29,6 +29,7 @@ from maester_eval.runner import gemini_model_factory, run_live, workflow_setting
 from maester_eval.sheets import export_run, sheet_path
 from maester_eval.tags import gold_coverage, pick_gold, propose_units, set_tags, unit_against_gold
 from maester_eval.xbrl_pair import apply_pairs, check_copies, plan_pairs, read_xbrl_manifest, summary_lines
+from maester_eval.xbrl_read import run_xbrl
 from maester_eval.xbrl_survey import find_instances, survey_instances, write_survey
 
 app = typer.Typer(
@@ -69,6 +70,18 @@ def _reports_errors(command: Callable[Params, None]) -> Callable[Params, None]:
     return wrapper
 
 
+def _refuse_xbrl_run(run_dir: Path) -> None:
+    """Stops a command that turns a run into labelling sheets or gold: only a PDF run has a PDF's lines to label."""
+    if (run_dir / "run.json").is_file() and read_run(run_dir).get("source") == "xbrl":
+        _fail(f"{run_dir.name} is an XBRL run; label the PDF run")
+
+
+def _gate(eval_set: str, gate: bool) -> None:
+    """The held-out set is read only to decide whether a change lands. `heldout` and `all` hold it."""
+    if eval_set in ("heldout", "all") and not gate:
+        _fail("held-out is read only to decide whether a change lands; pass --gate")
+
+
 def _set_choice(value: str) -> SetChoice:
     """`--set` as the set it names. Any other value stops the command."""
     if value not in get_args(SetChoice):
@@ -106,6 +119,28 @@ def live(
     console.print(f"done: {read} read, {len(artefacts) - read} failed → {run_dir}", markup=False)
 
 
+@app.command("xbrl-read")
+@_reports_errors
+def xbrl_read(
+    eval_set: Annotated[str, typer.Option("--set", help="dev, heldout or all. The held-out set needs --gate.")] = "dev",
+    only: Annotated[Optional[list[str]], typer.Option("--only", help="A filing id; repeatable.")] = None,
+    label: Annotated[str, typer.Option(help="A word for the run folder's name: letters, digits, dot, dash or underscore.")] = "xbrl",
+    gate: Annotated[bool, typer.Option(help="Read the held-out set: only to decide whether a change lands.")] = False,
+) -> None:
+    """Read the XBRL instances paired with each selected results filing into an XBRL run. No model, no cost."""
+    chosen = _set_choice(eval_set)
+    _gate(chosen, gate)
+    filings = [f for f in load_manifest(DEFAULT.manifest).select(chosen, only) if f.xbrl]
+    if not filings:
+        _fail("nothing to read: no selected filing has XBRL instances")
+    absent = [pair.file for f in filings for pair in f.xbrl if not (DEFAULT.corpus / pair.file).is_file()]
+    if absent:
+        _fail("missing under data/eval/corpus: " + ", ".join(absent))
+    run_dir = DEFAULT.new_run(label)
+    artefacts = run_xbrl(filings, DEFAULT.corpus, run_dir, chosen, log=lambda line: console.print(line, markup=False))
+    console.print(f"done: {len(artefacts)} filing(s) → {run_dir}", markup=False)
+
+
 @app.command()
 @_reports_errors
 def export(
@@ -114,7 +149,9 @@ def export(
     force: Annotated[bool, typer.Option(help="Overwrite a sheet that exists.")] = False,
 ) -> None:
     """Write a labelling sheet per filing of a run to data/eval/sheets. Never overwrites without --force."""
-    artefacts = read_artefacts(DEFAULT.resolve_run(run))
+    run_dir = DEFAULT.resolve_run(run)
+    _refuse_xbrl_run(run_dir)
+    artefacts = read_artefacts(run_dir)
     if not artefacts:
         _fail("no artefacts in this run")
     missing = set(only or []) - {artefact.filing_id for artefact in artefacts}
@@ -141,12 +178,14 @@ def freeze(
     filing = load_manifest(DEFAULT.manifest).by_id().get(filing_id)
     if filing is None:
         _fail(f"{filing_id} is not in the manifest")
+    run_dir = None if run is None else DEFAULT.resolve_run(run)
+    if run_dir is not None:
+        _refuse_xbrl_run(run_dir)
     path = sheet_path(DEFAULT.sheets, filing_id)
     if not path.is_file():
         _fail(f"no sheet at {path}; run `maester-eval export` first")
     exported_from = artefact = None
-    if run is not None:
-        run_dir = DEFAULT.resolve_run(run)
+    if run_dir is not None:
         record = read_run(run_dir)
         # The filing's own artefact only: one that cannot be read, of another filing of the run, does not stop this one.
         found = artefact_path(run_dir, filing_id)
@@ -175,11 +214,11 @@ def report(
     manifest = load_manifest(DEFAULT.manifest)
     ids = [f.id for f in manifest.filings]
     out_of_scope = {f.id: f.out_of_scope or "" for f in manifest.out_of_scope(chosen)}
-    run_dir = DEFAULT.resolve_run(run)
+    run_dir = DEFAULT.resolve_run(run, "pdf")
     gold = read_gold(DEFAULT.gold)
     score = score_run_dir(run_dir, gold, ids, chosen, out_of_scope)
     # The earlier run is read and scored before anything is written, and against the gold set as it is now.
-    earlier = None if against is None else score_run_dir(DEFAULT.resolve_run(against), gold, ids, chosen, out_of_scope)
+    earlier = None if against is None else score_run_dir(DEFAULT.resolve_run(against, "pdf"), gold, ids, chosen, out_of_scope)
     md, _ = write_report(run_dir, score, earlier, out_of_scope_reasons=out_of_scope)
     s = score.summary()
     console.print(f"{run_dir.name} ({chosen}): {s.filings} filing(s), {s.gold_facts} gold fact(s), "

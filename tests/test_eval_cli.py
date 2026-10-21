@@ -34,9 +34,9 @@ class HelpTests(unittest.TestCase):
         self.assertEqual(response.exit_code, 0, response.output)
         self.assertIn("evaluation harness", response.output)
 
-    def test_help_lists_the_four_commands(self):
+    def test_help_lists_the_commands(self):
         response = CliRunner().invoke(app, ["--help"])
-        for command in ("live", "export", "freeze", "report"):
+        for command in ("live", "export", "freeze", "report", "xbrl-read"):
             self.assertIn(command, response.output)
 
 
