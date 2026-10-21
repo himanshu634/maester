@@ -4,8 +4,19 @@ import * as schema from "./schema/index.js";
 
 export type Db = ReturnType<typeof createDb>;
 
-export function createDb(connectionString: string) {
-  const pool = new pg.Pool({ connectionString, max: 10 });
+export type CreateDbOptions = {
+  /** Every transaction on the pool is read-only: a write fails with Postgres code 25006. For a reader that must never write. */
+  readOnly?: boolean;
+  /** Most connections the pool holds; 10 when not given. */
+  max?: number;
+};
+
+export function createDb(connectionString: string, opts: CreateDbOptions = {}) {
+  const pool = new pg.Pool({
+    connectionString,
+    max: opts.max ?? 10,
+    ...(opts.readOnly ? { options: "-c default_transaction_read_only=on" } : {}),
+  });
   return drizzle(pool, { schema });
 }
 

@@ -1,4 +1,4 @@
-export { createDb, closeDb, type Db } from "./client.js";
+export { createDb, closeDb, type Db, type CreateDbOptions } from "./client.js";
 export * as schema from "./schema/index.js";
 export type { WorkspaceRow, MembershipRow, CompanyRow, DocumentRow, JobRow, JobProgressJson } from "./schema/platform.js";
 export type {
@@ -19,7 +19,8 @@ export { getDocument, listDocuments } from "./queries/documents.js";
 export { getJob, getLatestJobForSubject } from "./queries/jobs.js";
 export { getCompany, listCompanies } from "./queries/companies.js";
 export {
-  getLatestRevision, getRevision, listChecks, listFactsWithSources, listXbrlPdfChecks, XBRL_PDF_CHECK_VERSION_READ, type FactWithSource,
+  getLatestRevision, getRevision, listChecks, listFactsWithSources, listXbrlPdfChecks, getFactWithSource, XBRL_PDF_CHECK_VERSION_READ,
+  type FactWithSource, type FactLookup,
 } from "./queries/extraction.js";
 export { listCompanyFilings, listFactsWithSourcesForRevisions, listChecksForRevisions, type CompanyFilingRow } from "./queries/research.js";
 export { admitOrWaitlist, approveWaitlistEmail, normalizeEmail, type WaitlistSource } from "./queries/waitlist.js";
