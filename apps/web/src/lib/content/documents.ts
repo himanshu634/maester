@@ -437,6 +437,69 @@ export const documentsContent = {
 		pagesList: (list: string, last: number) => `pages ${list} and ${last}`
 	},
 
+	/** The page's sections (spec 2026-10-19 section 2). */
+	sections: {
+		working: 'Working on',
+		done: 'Done',
+		confirm: 'Not in your workspace yet',
+		unknownCompany: 'Company not known yet'
+	},
+
+	/** A filing's title, heading, meta line and file lines, and the sections' counts. */
+	titles: {
+		/** "Results, quarter to 30 Sep 2026". */
+		results: (span: string, day: string) => `Results, ${span} to ${day}`,
+		resultsNoSpan: (day: string) => `Results to ${day}`,
+		resultsNoPeriod: 'Results, period not stated',
+		/** "Annual report 2025–26". */
+		annualReport: (year: string) => `Annual report ${year}`,
+		annualReportYearTo: (day: string) => `Annual report, year to ${day}`,
+		annualReportNoPeriod: 'Annual report, period not stated',
+		/** "Investor presentation, 14 Aug 2026". */
+		other: (type: string, day: string) => `${type}, ${day}`,
+		/** "Synthetic Cements · results, quarter to 30 Sep 2026". */
+		heading: (company: string, title: string) => `${company} · ${title}`,
+		/** The bases a filing holds: "Consolidated and standalone". */
+		bases: (names: string[]) =>
+			names.length <= 1
+				? (names[0] ?? '')
+				: `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`,
+		files: (count: number) => (count === 1 ? '1 file' : `${count} files`),
+		filings: (count: number) => (count === 1 ? '1 filing' : `${count} filings`),
+		added: (when: string) => `added ${when}`,
+		separator: ' · ',
+		/** A file of a filing: "XBRL · 500999_Q2_FY27_Consolidated.xml". */
+		format: { pdf: 'PDF', xbrl: 'XBRL' },
+		/** A file added more than once: its copies count with it. */
+		addedTimes: (times: number) => (times === 2 ? 'Added twice' : `Added ${times} times`),
+		/** Done's button for a company with more than three filings. */
+		showAll: (count: number, company: string) => `Show all ${count} filings of ${company}`,
+		hiddenStopped: (count: number) => ` · ${count} stopped`,
+		showNewest: (count: number) => `Show the newest ${count}`
+	},
+
+	/** A question that arrives, said once (Decision 10). */
+	questions: {
+		confirmCompany: (who: string) => `${who} needs you: confirm the company.`,
+		isThis: (file: string, company: string) => `${file} needs you: is this ${company}?`,
+		whichCompany: (file: string) => `${file} needs you: which company is this?`,
+		whatIsIt: (file: string) => `${file} needs you: what is it?`,
+		/** A held company that prints neither a name nor a code; the API always gives one of them. */
+		someCompany: 'A company',
+		companies: (count: number) => (count === 1 ? '1 company' : `${count} companies`),
+		files: (count: number) => (count === 1 ? '1 file' : `${count} files`),
+		/** "31 companies and 2 files need you." */
+		many: (parts: string[]) => `${parts.join(' and ')} need you.`
+	},
+
+	/** The opened filing's file now waits under "Not in your workspace yet" (Decision 17). */
+	waiting: {
+		title: (name: string) => `${name} waits for you above.`,
+		held: 'Confirm its company under “Not in your workspace yet”. It carries on from there.',
+		unnamed: 'Say which company it is under “Not in your workspace yet”.',
+		action: 'Go to it'
+	},
+
 	/** What it is, in plain words. */
 	kinds: {
 		annual_report: 'Annual report',

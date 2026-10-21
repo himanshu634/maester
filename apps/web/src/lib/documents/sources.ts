@@ -75,7 +75,7 @@ function joinList(items: string[]): string {
 }
 
 /** An ISO date as "30 Sep 2026"; null when it is not one. */
-function dayWords(iso: string | null): string | null {
+export function dayWords(iso: string | null): string | null {
 	const match = iso === null ? null : /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
 	if (!match) return null;
 	const month = MONTHS[parseInt(match[2], 10) - 1];
