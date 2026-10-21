@@ -12,13 +12,17 @@ import {
 	identifying,
 	keepFresher,
 	listWatched,
+	matchesChanged,
 	newQuestions,
 	pickFiling,
 	pin,
 	questionKeys,
+	readLedger,
 	shapeChanged,
+	shapeChangedIds,
 	showAllLabel,
 	shownFilings,
+	trackContext,
 	unsortedSettled,
 	waitingAbove,
 	withUpload,
@@ -1070,5 +1074,92 @@ describe('questions', () => {
 		});
 		expect(newQuestions(new Set(), oneEach).aloud).toBe('1 company and 1 file need you.');
 		expect(newQuestions(new Set(['held:a']), oneEach).aloud).toBe('m2.pdf needs you: what is it?');
+	});
+});
+
+describe('the page’s bookkeeping (Task 10)', () => {
+	it('trackContext: a file is uploading while this page sends it, and is named from the read', () => {
+		const read = readWith({
+			companies: [
+				{
+					company: co,
+					filings: [filingOf({ files: [fileOf({ documentId: 'x-1', originalName: 'q2.xml' })] })]
+				}
+			],
+			unsorted: [fileOf({ documentId: 'u-1', originalName: 'loose.pdf' })]
+		});
+		const at = trackContext(read, ['u-1']);
+		expect(at.uploading('u-1')).toBe(true);
+		expect(at.uploading('x-1')).toBe(false);
+		expect(at.nameOf('x-1')).toBe('q2.xml');
+		expect(at.nameOf('u-1')).toBe('loose.pdf');
+		expect(at.nameOf('gone')).toBeNull();
+	});
+
+	it('shapeChangedIds: the files whose state, intake state or identification moved between reads', () => {
+		const before = readWith({
+			unsorted: [
+				fileOf({ documentId: 'a', intakeState: 'identifying', pipeline: { identified: 'now' } }),
+				fileOf({ documentId: 'b', intakeState: 'read' }),
+				fileOf({ documentId: 'c', state: 'verifying', intakeState: null })
+			]
+		});
+		const after = readWith({
+			companies: [
+				{
+					company: co,
+					filings: [filingOf({ files: [fileOf({ documentId: 'a', intakeState: 'reading' })] })]
+				}
+			],
+			unsorted: [
+				fileOf({ documentId: 'b', intakeState: 'read' }),
+				fileOf({ documentId: 'c', state: 'stored', intakeState: 'identifying' }),
+				fileOf({ documentId: 'new' })
+			]
+		});
+		expect([...shapeChangedIds(before, after)].sort()).toEqual(['a', 'c']);
+		expect(shapeChangedIds(after, after).size).toBe(0);
+	});
+
+	it('matchesChanged: a held identity’s matches changed, or a new one arrives with matches', () => {
+		const one = heldOf({ key: 'h-1', matches: ['co-1'] });
+		expect(matchesChanged([one], [heldOf({ key: 'h-1', matches: ['co-1'] })])).toBe(false);
+		expect(matchesChanged([one], [heldOf({ key: 'h-1', matches: ['co-1', 'co-2'] })])).toBe(true);
+		expect(matchesChanged([], [heldOf({ key: 'h-2', matches: [] })])).toBe(false);
+		expect(matchesChanged([], [heldOf({ key: 'h-2', matches: ['co-9'] })])).toBe(true);
+		// An identity confirmed and gone needs no new companies read.
+		expect(matchesChanged([one], [])).toBe(false);
+	});
+
+	describe('readLedger', () => {
+		it('names the files written since a read began, once: the next read starts afresh', () => {
+			const ledger = readLedger();
+			ledger.wrote('before');
+			const first = ledger.begin();
+			ledger.wrote('poll');
+			ledger.wrote('upload');
+			ledger.wrote('poll');
+			expect([...(ledger.land(first) ?? [])].sort()).toEqual(['poll', 'upload']);
+			expect(ledger.land(ledger.begin())).toEqual([]);
+		});
+
+		it('drops a read that began before the last one applied', () => {
+			const ledger = readLedger();
+			const early = ledger.begin();
+			const late = ledger.begin();
+			expect(ledger.land(late)).toEqual([]);
+			expect(ledger.land(early)).toBeNull();
+			// One that began after still lands.
+			expect(ledger.land(ledger.begin())).toEqual([]);
+		});
+
+		it('lands two reads in the order they began, each with its own writes', () => {
+			const ledger = readLedger();
+			const a = ledger.begin();
+			ledger.wrote('x');
+			const b = ledger.begin();
+			expect(ledger.land(a)).toEqual(['x']);
+			expect(ledger.land(b)).toEqual([]);
+		});
 	});
 });

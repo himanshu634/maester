@@ -24,7 +24,7 @@
 		collapse: boolean;
 		openedKey: string | null;
 		onopen: (view: FilingView) => void;
-		/** Makes the company headings' ids unique per list. */
+		/** Makes the headings' ids unique per list: `{idPrefix}-heading`, `{idPrefix}-co-{companyId}`. */
 		idPrefix: string;
 	}
 
@@ -60,8 +60,8 @@
 	}
 </script>
 
-<section class="filings" aria-labelledby="{id}-heading">
-	<h2 id="{id}-heading">
+<section class="filings" aria-labelledby="{idPrefix}-heading">
+	<h2 id="{idPrefix}-heading" tabindex="-1">
 		{heading}
 		<span class="count muted">{count}</span>
 	</h2>

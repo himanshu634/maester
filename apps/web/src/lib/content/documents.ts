@@ -18,7 +18,7 @@ const xbrlUnreadableWords = 'The XBRL file couldn’t be read.';
 
 export const documentsContent = {
 	heading: 'Documents',
-	lede: 'Add a filing and Maester works out what it is, then reads it. Wrong guess? Change it and it’s read again.',
+	lede: 'Your filings, by company. A filing’s PDF and XBRL sit together: numbers come from XBRL when there is one, and every page’s text is indexed.',
 	drop: {
 		title: 'Drop PDFs or XBRL files here',
 		or: 'or',
@@ -80,6 +80,14 @@ export const documentsContent = {
 		}
 	},
 	loading: 'Loading your documents.',
+	/** With nothing in the workspace, in place of Working on and Done. */
+	empty: 'Nothing added yet. Drop a filing above, or a whole folder of XBRL files.',
+	/** The session ended: polls stop, and what is on the page stays under this. */
+	signedOut: {
+		title: 'You’re signed out.',
+		detail: 'Sign in to see where your filings stand. Nothing you added is lost.',
+		action: 'Sign in'
+	},
 	loadFailed: {
 		title: 'Your documents didn’t load.',
 		detail: 'Nothing you added is lost. Check your connection and try again.',
@@ -89,22 +97,12 @@ export const documentsContent = {
 		title: 'There is no workspace to add documents to.',
 		detail: 'Sign out and in again. If it stays like this, tell us.'
 	},
-	leaving: 'Leaving this page doesn’t stop anything. The slip is here when you come back.',
+	/** Under the drop strip while a batch sends: the one thing that would stop it. */
 	leavingWhileSending:
 		'Files are still being sent. Moving to another page doesn’t stop them, but closing or reloading this tab does.',
 
-	slip: {
-		/** "Uploaded" step and the rest, in order. */
-		steps: ['Uploaded', 'Worked out what it is', 'Reading the statements', 'Ready'],
-		stepsLabel: 'Where this file stands',
-		step: {
-			done: 'Done',
-			now: 'Now',
-			next: 'Next',
-			'needs-you': 'Needs you',
-			stopped: 'Stopped',
-			'not-read': 'Not read'
-		},
+	/** The opened filing (spec 2026-10-19 section 5), and each file's Read as. */
+	filing: {
 		added: (when: string) => `added ${when}`,
 		readAs: 'Read as',
 		terms: {
@@ -118,33 +116,6 @@ export const documentsContent = {
 		/** An answer read from an XBRL file: the element and its value, in place of a page. */
 		fromElement: (element: string, value: string | null) =>
 			value ? `${element} ${value}` : element,
-		notConfirmed: 'Not confirmed yet',
-		noSource: 'No page given',
-		change: 'Change',
-		changeLabel: (term: string) => `Change ${term.toLowerCase()}`,
-		cancel: 'Cancel',
-		notYet: 'Maester hasn’t worked this out yet.',
-		/** Once a document is read and its company confirmed: a link to the company's figures. */
-		seeFigures: 'See the figures',
-		/** Beside it, once a document is read: read the filing again (say, one read before earnings per share were asked for). */
-		readAgain: 'Read it again'
-	},
-
-	/**
-	 * The opened filing (spec 2026-10-19 section 5). The Read as words are the slip's, copied; the
-	 * slip's group goes when its last reader does.
-	 */
-	filing: {
-		added: (when: string) => `added ${when}`,
-		readAs: 'Read as',
-		terms: {
-			kind: 'What it is',
-			company: 'Company',
-			period: 'Period',
-			statements: 'Statements'
-		},
-		youSaidSo: 'You said so',
-		scannedPage: (page: number) => `Page ${page} (scanned)`,
 		notConfirmed: 'Not confirmed yet',
 		noSource: 'No page given',
 		change: 'Change',
@@ -216,21 +187,6 @@ export const documentsContent = {
 		title: 'Maester couldn’t tell what this is.',
 		detail: 'The first pages have no title it could read. Say what it is and it carries on.'
 	},
-	/**
-	 * Names the company only once it is confirmed and read; a printed name alone is not enough,
-	 * and a confirmed company whose name has not loaded yet is not called unconfirmed.
-	 */
-	kept: (company: string | null, confirmed: boolean) =>
-		company
-			? `Kept with ${company}. Maester reads annual reports and financial results for now.`
-			: confirmed
-				? 'Kept, not read. Maester reads annual reports and financial results for now.'
-				: 'Kept. Company not confirmed yet.',
-	duplicate: {
-		title: 'Not worked out: you added this file before.',
-		open: 'Open the first copy',
-		again: 'Read it again'
-	},
 	answersFailed: {
 		title: 'What Maester worked out didn’t load.',
 		detail: 'The file and the answers are safe. Try loading them again.',
@@ -238,44 +194,6 @@ export const documentsContent = {
 		again: 'Still didn’t load. Try again in a moment.'
 	},
 	retrying: 'Asking Maester to try again…',
-	identifyFailed: {
-		title: 'Maester couldn’t work out what this is.',
-		detail: 'The file is safe. Try again, and if it stops again, tell us which file it was.',
-		retry: 'Try again'
-	},
-	readFailed: {
-		title: 'Maester couldn’t read the statements.',
-		detail: 'The file and what Maester worked out about it are safe. Try reading it again.',
-		retry: 'Try again'
-	},
-	uploadUnfinished: {
-		title: 'The upload didn’t finish.',
-		detail: 'Maester never received the whole file. Add it again.'
-	},
-	checkFailed: {
-		title: 'Maester couldn’t check this file.',
-		detail: 'The file is kept as it arrived. Add it again, and if it stops again, tell us.'
-	},
-	rejected: {
-		UNSUPPORTED_TYPE: {
-			title: 'Not a PDF or an XBRL file.',
-			detail: 'Save it as a PDF, or add the XBRL instance (.xml), and add it again.'
-		},
-		TOO_LARGE: {
-			title: 'This file is larger than 50 MB.',
-			detail: 'Maester takes PDFs up to 50 MB. Add a smaller copy.'
-		},
-		OBJECT_MISSING: {
-			title: 'The upload didn’t arrive.',
-			detail: 'Maester never received the file. Add it again.'
-		}
-	},
-
-	earlier: {
-		heading: 'Earlier',
-		empty: 'Nothing added yet.',
-		more: (count: number) => `Showing the ${count} most recent.`
-	},
 
 	/**
 	 * A filing's two tracks in words (spec 2026-10-19 sections 4 and 5, board S1). Only "Needs you" and
@@ -614,29 +532,6 @@ export const documentsContent = {
 		unknown: 'basis not stated'
 	},
 
-	/** Where a document stands, in plain words. */
-	states: {
-		uploading: 'Uploading',
-		uploadUnfinished: 'Upload didn’t finish',
-		checking: 'Checking the file',
-		checkFailed: 'Couldn’t check the file',
-		rejected: {
-			UNSUPPORTED_TYPE: 'Not a PDF or an XBRL file',
-			TOO_LARGE: 'Too large',
-			OBJECT_MISSING: 'Upload didn’t arrive'
-		},
-		identifying: 'Working out what it is',
-		reading: 'Reading the statements',
-		read: 'Ready',
-		kept: 'Kept, not read',
-		needs_company: 'Needs you: confirm the company',
-		needs_kind: 'Needs you: what is it?',
-		duplicate: 'Added before',
-		identify_failed: 'Couldn’t work out what it is',
-		read_failed: 'Couldn’t read the statements',
-		waiting_for_xbrl: 'Waiting for its XBRL file.'
-	},
-
 	changeFailed: {
 		changed: 'These answers changed since you opened them. Here is the latest.',
 		moved: 'This document has moved on since you opened it. Here is the latest.',
@@ -647,7 +542,5 @@ export const documentsContent = {
 		signedOut: 'You’re signed out. Sign in and try again.',
 		offline: 'That didn’t reach Maester. Check your connection and try again.',
 		other: 'That didn’t save. Try again.'
-	},
-	/** Announced once, politely, when the open slip's document moves on. */
-	announce: (name: string, state: string) => `${name}: ${state}${/[.?!]$/.test(state) ? '' : '.'}`
+	}
 } as const;

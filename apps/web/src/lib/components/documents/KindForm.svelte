@@ -112,7 +112,7 @@
 			{label}
 		</button>
 		{#if oncancel}
-			<button class="button outline" type="button" onclick={oncancel}>{copy.slip.cancel}</button>
+			<button class="button outline" type="button" onclick={oncancel}>{copy.filing.cancel}</button>
 		{/if}
 	</div>
 </form>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	carryOver,
 	checkFile,
 	endAloud,
 	folderOf,
@@ -505,5 +506,69 @@ describe('what the strip says', () => {
 		expect(endAloud(outcome({ total: 2, sent: 0, refused: [...one, ...one] }))).toBe(
 			'None of the 2 files were added.'
 		);
+	});
+});
+
+describe('carryOver', () => {
+	const inFolder = (n: number) => pick(`bse-xbrl/f${n}.xml`);
+	const first = outcome({
+		total: 806,
+		folder: 'bse-xbrl',
+		sent: 214,
+		refused: [
+			{ name: 'notes.docx', reason: 'A Word document, not a PDF.' },
+			{ name: 'f214.xml', reason: 'Not sent: the connection dropped.' }
+		],
+		unsent: 590,
+		stopped: 'offline',
+		rest: Array.from({ length: 591 }, (_, i) => inFolder(214 + i))
+	});
+
+	it('keeps the first batch’s record: what went, and the files refused for themselves', () => {
+		const second = outcome({
+			total: 591,
+			folder: 'bse-xbrl',
+			sent: 590,
+			refused: [{ name: 'f300.xml', reason: '61 MB, over the 50 MB limit.' }],
+			unsent: 0,
+			stopped: null,
+			rest: []
+		});
+		const both = carryOver(first, second);
+		expect(both).toEqual({
+			total: 806,
+			folder: 'bse-xbrl',
+			sent: 804,
+			refused: [
+				{ name: 'notes.docx', reason: 'A Word document, not a PDF.' },
+				{ name: 'f300.xml', reason: '61 MB, over the 50 MB limit.' }
+			],
+			unsent: 0,
+			stopped: null,
+			rest: []
+		});
+		expect(refusedTitle(both)).toBe('2 of the 806 files weren’t added.');
+	});
+
+	it('stops again offline with the counts of both batches, and only the new rest', () => {
+		const rest = first.rest.slice(100);
+		const second = outcome({
+			total: 591,
+			folder: 'bse-xbrl',
+			sent: 100,
+			refused: [],
+			unsent: 491,
+			stopped: 'offline',
+			rest
+		});
+		const both = carryOver(first, second);
+		expect(unfinishedTitle(both)).toBe('The upload didn’t finish. 314 of 806 files were sent.');
+		expect(both.rest).toBe(rest);
+		expect(both.refused).toEqual([{ name: 'notes.docx', reason: 'A Word document, not a PDF.' }]);
+	});
+
+	it('is the batch itself when nothing is carried', () => {
+		const alone = outcome();
+		expect(carryOver(null, alone)).toBe(alone);
 	});
 });

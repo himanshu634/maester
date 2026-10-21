@@ -44,11 +44,23 @@
 		 */
 		companiesLoaded: boolean;
 		onexpand: () => void;
-		/** Resolves true when the confirm was saved. `name` is the company's short name, for the page to say. */
-		onconfirm: (request: ConfirmCompanyRequest, name: string, isNew: boolean) => Promise<boolean>;
+		/**
+		 * Resolves null when the confirm was saved, else what to say under the row (a name clash
+		 * says to pick the company, and the page reads the companies again so it can be picked).
+		 * `name` is the company's short name, for the page to say.
+		 */
+		onconfirm: (
+			request: ConfirmCompanyRequest,
+			name: string,
+			isNew: boolean
+		) => Promise<string | null>;
 		classificationOf: (documentId: string) => Promise<DocumentClassification | null>;
-		/** Resolves true when the answer was saved. */
-		onanswer: (documentId: string, basedOn: string, company: CompanyAnswer) => Promise<boolean>;
+		/** Resolves null when the answer was saved, else what to say under the file's form. */
+		onanswer: (
+			documentId: string,
+			basedOn: string,
+			company: CompanyAnswer
+		) => Promise<string | null>;
 	}
 
 	let {
@@ -77,7 +89,8 @@
 	let nameErrors = $state<Record<string, string | null>>({});
 	let pickErrors = $state<Record<string, string | null>>({});
 	let busy = $state<Record<string, boolean>>({});
-	let failed = $state<Record<string, boolean>>({});
+	/** Why a row's or a file's last action did not save, in the page's words. */
+	let failed = $state<Record<string, string | null>>({});
 
 	// Each unnamed file's form, by its document id.
 	let open = $state<Record<string, boolean>>({});
@@ -97,14 +110,14 @@
 		document.getElementById(target)?.focus();
 	}
 
-	async function run(key: string, work: () => Promise<boolean>): Promise<boolean> {
+	async function run(key: string, work: () => Promise<string | null>): Promise<boolean> {
 		if (busy[key]) return false;
 		busy[key] = true;
-		failed[key] = false;
+		failed[key] = null;
 		try {
-			const saved = await work();
-			if (!saved) failed[key] = true;
-			return saved;
+			const failure = await work();
+			failed[key] = failure;
+			return failure === null;
 		} finally {
 			busy[key] = false;
 		}
@@ -168,7 +181,11 @@
 		if (saved) {
 			open[doc] = false;
 			await tick();
+			return;
 		}
+		// The answers may have moved on meanwhile: the form shows the latest.
+		const latest = await classificationOf(doc);
+		if (latest) answers = { ...answers, [doc]: latest };
 	}
 </script>
 
@@ -282,7 +299,7 @@
 						{/if}
 					{/if}
 					{#if busy[key]}<p class="muted" id="{id}-{index}-saving">{copy.confirm.saving}</p>{/if}
-					{#if failed[key]}<Notice title={copy.changeFailed.other} />{/if}
+					{#if failed[key]}<Notice title={failed[key]} />{/if}
 				</li>
 			{/each}
 		</ul>
@@ -341,7 +358,7 @@
 					{/if}
 				</div>
 				{#if busy[`doc:${doc}`]}<p class="muted">{copy.confirm.saving}</p>{/if}
-				{#if failed[`doc:${doc}`]}<Notice title={copy.changeFailed.other} />{/if}
+				{#if failed[`doc:${doc}`]}<Notice title={failed[`doc:${doc}`] ?? ''} />{/if}
 			</Notice>
 		</div>
 	{/each}

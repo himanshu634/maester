@@ -24,8 +24,6 @@ import type {
 
 export type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
 
-/** How many documents the Earlier list reads: the first page. */
-export const DOCUMENT_PAGE = 25;
 /** Companies offered in the company picker. The API's largest page. */
 export const COMPANY_PAGE = 100;
 
@@ -45,6 +43,11 @@ export class ApiError extends Error {
 	names(path: string): boolean {
 		return this.fields.some((field) => field.path === path);
 	}
+}
+
+/** The session has ended: the page stops asking and offers to sign in again. */
+export function isSignedOut(error: unknown): boolean {
+	return error instanceof ApiError && error.code === 'UNAUTHENTICATED';
 }
 
 const BY_STATUS: Record<number, ErrorCode> = {
@@ -115,10 +118,6 @@ export function documentsApi(fetcher: Fetcher, workspaceId: string) {
 	const doc = (id: string) => `${base}/documents/${encodeURIComponent(id)}`;
 
 	return {
-		listDocuments(): Promise<Page<DocumentRecord>> {
-			return getJson(fetcher, `${base}/documents?limit=${DOCUMENT_PAGE}`);
-		},
-
 		getDocument(id: string): Promise<DocumentRecord> {
 			return getJson(fetcher, doc(id));
 		},

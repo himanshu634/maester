@@ -5,45 +5,14 @@ import {
 	companyAnswer,
 	companyCandidates,
 	identifiers,
-	isLive,
 	kindSaveLabel,
-	anyLive,
-	canReadAgain,
-	mergeList,
 	normalizeCompanyName,
-	ladder,
-	pickSlip,
 	sourceOf,
-	stateLabel,
 	statementsWords,
 	whatItIs
 } from './intake';
 import { ApiError } from './client';
-import { pipe } from './testing';
-import type { Classification, Company, DocumentRecord, Evidence, Job, NumbersState } from './types';
-
-function job(type: string, state: Job['state']): Job {
-	return { id: `job-${type}-${state}`, type, state, lastErrorCode: null };
-}
-
-function doc(over: Partial<DocumentRecord> = {}): DocumentRecord {
-	return {
-		id: 'd-1',
-		companyId: null,
-		originalName: 'synthetic-cements-ar-2025-26.pdf',
-		format: 'pdf',
-		declaredSize: 1077,
-		state: 'stored',
-		rejectionCode: null,
-		intakeState: 'identifying',
-		duplicateOfDocumentId: null,
-		classification: null,
-		createdAt: '2026-10-05T08:32:00Z',
-		latestJob: null,
-		pipeline: pipe(),
-		...over
-	};
-}
+import type { Classification, Company, Evidence } from './types';
 
 /** The answers the local stack gave for a synthetic annual report (rules only, no model). */
 const annualReport: Classification = {
@@ -101,199 +70,6 @@ const annualEvidence: Evidence[] = [
 		context: null
 	}
 ];
-
-const words = (d: DocumentRecord, opts?: { uploading?: boolean }) =>
-	ladder(d, opts).map((step) => step.status);
-
-describe('ladder', () => {
-	it('names the four steps in order', () => {
-		expect(ladder(doc()).map((step) => step.label)).toEqual([
-			'Uploaded',
-			'Worked out what it is',
-			'Reading the statements',
-			'Ready'
-		]);
-	});
-
-	it('follows a file from upload to ready', () => {
-		expect(words(doc({ state: 'pending_upload', intakeState: null }), { uploading: true })).toEqual(
-			['now', 'next', 'next', 'next']
-		);
-		expect(words(doc({ state: 'verifying', intakeState: null }))).toEqual([
-			'now',
-			'next',
-			'next',
-			'next'
-		]);
-		expect(words(doc({ intakeState: null }))).toEqual(['done', 'now', 'next', 'next']);
-		expect(words(doc({ intakeState: 'identifying' }))).toEqual(['done', 'now', 'next', 'next']);
-		expect(words(doc({ intakeState: 'reading' }))).toEqual(['done', 'done', 'now', 'next']);
-		expect(words(doc({ intakeState: 'read' }))).toEqual(['done', 'done', 'done', 'done']);
-	});
-
-	it('shows a PDF waiting for its XBRL as Next on reading the statements', () => {
-		expect(words(doc({ intakeState: 'waiting_for_xbrl' }))).toEqual([
-			'done',
-			'done',
-			'next',
-			'next'
-		]);
-	});
-
-	it('shows a re-read of an XBRL document, which runs document.xbrl, as Now on reading', () => {
-		const again = doc({
-			format: 'xbrl',
-			intakeState: 'read',
-			latestJob: job('document.xbrl', 'running')
-		});
-		expect(words(again)).toEqual(['done', 'done', 'now', 'next']);
-		expect(stateLabel(again)).toBe('Reading the statements');
-		expect(isLive(again)).toBe(true);
-		const failedAgain = doc({
-			format: 'xbrl',
-			intakeState: 'read_failed',
-			latestJob: job('document.xbrl', 'queued')
-		});
-		expect(words(failedAgain)).toEqual(['done', 'done', 'now', 'next']);
-	});
-
-	it('stops at the step that needs the investor', () => {
-		for (const intakeState of ['needs_company', 'needs_kind', 'duplicate'] as const) {
-			expect(words(doc({ intakeState }))).toEqual(['done', 'needs-you', 'next', 'next']);
-		}
-	});
-
-	it('says which step stopped', () => {
-		expect(words(doc({ intakeState: 'identify_failed' }))).toEqual([
-			'done',
-			'stopped',
-			'next',
-			'next'
-		]);
-		expect(words(doc({ intakeState: 'read_failed' }))).toEqual(['done', 'done', 'stopped', 'next']);
-		expect(
-			words(doc({ state: 'rejected', rejectionCode: 'UNSUPPORTED_TYPE', intakeState: null }))
-		).toEqual(['stopped', 'next', 'next', 'next']);
-		expect(words(doc({ state: 'pending_upload', intakeState: null }))).toEqual([
-			'stopped',
-			'next',
-			'next',
-			'next'
-		]);
-	});
-
-	it('marks a kept document as not read', () => {
-		expect(words(doc({ intakeState: 'kept' }))).toEqual(['done', 'done', 'not-read', 'not-read']);
-	});
-
-	it('shows a read started again as reading, though the document still says it failed', () => {
-		const again = doc({
-			intakeState: 'read_failed',
-			latestJob: job('document.extract', 'running')
-		});
-		expect(words(again)).toEqual(['done', 'done', 'now', 'next']);
-		expect(stateLabel(again)).toBe('Reading the statements');
-		expect(isLive(again)).toBe(true);
-	});
-});
-
-describe('stateLabel', () => {
-	it('puts every intake state in plain words', () => {
-		const cases: [DocumentRecord['intakeState'], string][] = [
-			['identifying', 'Working out what it is'],
-			['reading', 'Reading the statements'],
-			['read', 'Ready'],
-			['kept', 'Kept, not read'],
-			['needs_company', 'Needs you: confirm the company'],
-			['needs_kind', 'Needs you: what is it?'],
-			['duplicate', 'Added before'],
-			['identify_failed', 'Couldn’t work out what it is'],
-			['read_failed', 'Couldn’t read the statements'],
-			['waiting_for_xbrl', 'Waiting for its XBRL file.']
-		];
-		for (const [intakeState, label] of cases) {
-			expect(stateLabel(doc({ intakeState }))).toBe(label);
-		}
-	});
-
-	it('names the upload steps and what went wrong with the file', () => {
-		const pending = doc({ state: 'pending_upload', intakeState: null });
-		expect(stateLabel(pending, { uploading: true })).toBe('Uploading');
-		expect(stateLabel(pending)).toBe('Upload didn’t finish');
-		expect(stateLabel(doc({ state: 'uploaded', intakeState: null }))).toBe('Checking the file');
-		expect(
-			stateLabel(
-				doc({
-					state: 'verifying',
-					intakeState: null,
-					latestJob: job('document.verify', 'failed')
-				})
-			)
-		).toBe('Couldn’t check the file');
-		expect(
-			stateLabel(doc({ state: 'rejected', rejectionCode: 'TOO_LARGE', intakeState: null }))
-		).toBe('Too large');
-	});
-});
-
-describe('isLive', () => {
-	it('keeps polling a PDF waiting for its XBRL, so its release shows without a reload', () => {
-		expect(isLive(doc({ intakeState: 'waiting_for_xbrl' }))).toBe(true);
-	});
-
-	it('polls only while work is running', () => {
-		expect(isLive(doc({ state: 'uploaded', intakeState: null }))).toBe(true);
-		expect(isLive(doc({ intakeState: 'identifying' }))).toBe(true);
-		expect(isLive(doc({ intakeState: 'reading' }))).toBe(true);
-		for (const intakeState of [
-			'needs_company',
-			'needs_kind',
-			'duplicate',
-			'kept',
-			'read',
-			'identify_failed',
-			'read_failed'
-		] as const) {
-			expect(isLive(doc({ intakeState }))).toBe(false);
-		}
-		expect(isLive(doc({ state: 'pending_upload', intakeState: null }))).toBe(false);
-		expect(isLive(doc({ state: 'rejected', intakeState: null }))).toBe(false);
-	});
-});
-
-describe('pickSlip', () => {
-	const read = doc({ id: 'read', intakeState: 'read', createdAt: '2026-10-05T10:00:00Z' });
-	const needs = doc({
-		id: 'needs',
-		intakeState: 'needs_company',
-		createdAt: '2026-10-05T09:00:00Z'
-	});
-	const failed = doc({
-		id: 'failed',
-		intakeState: 'read_failed',
-		createdAt: '2026-10-05T08:00:00Z'
-	});
-	const abandoned = doc({
-		id: 'abandoned',
-		state: 'pending_upload',
-		intakeState: null,
-		createdAt: '2026-10-05T11:00:00Z'
-	});
-
-	it('opens the newest document that is not settled', () => {
-		expect(pickSlip([failed, read, needs, abandoned])?.id).toBe('needs');
-	});
-
-	it('opens the one the investor asked for', () => {
-		expect(pickSlip([read, needs], 'read')?.id).toBe('read');
-	});
-
-	it('falls back to the newest document when everything is settled', () => {
-		const kept = doc({ id: 'kept', intakeState: 'kept', createdAt: '2026-10-05T09:30:00Z' });
-		expect(pickSlip([kept, read])?.id).toBe('read');
-		expect(pickSlip([])).toBeNull();
-	});
-});
 
 describe('whatItIs', () => {
 	it('names the kind, the type and the span in plain words', () => {
@@ -450,20 +226,6 @@ describe('sourceOf for XBRL evidence', () => {
 			)
 		).toBe('DateOfEndOfReportingPeriod');
 		expect(sourceOf(annualEvidence, 'kind')).toBe('Page 1: “Integrated Annual Report 2025-26”');
-	});
-});
-
-describe('canReadAgain', () => {
-	const pipeline = (state: NumbersState) => pipe({ numbers: { state } });
-
-	it('is false for a PDF whose numbers come from its XBRL files', () => {
-		expect(canReadAgain(doc({ intakeState: 'read', pipeline: pipeline('not_needed') }))).toBe(
-			false
-		);
-	});
-
-	it('is true for a read PDF whose numbers it read itself', () => {
-		expect(canReadAgain(doc({ intakeState: 'read', pipeline: pipeline('done') }))).toBe(true);
 	});
 });
 
@@ -649,40 +411,5 @@ describe('changeFailure', () => {
 			'That didn’t reach Maester. Check your connection and try again.'
 		);
 		expect(changeFailure(new Error('boom')).message).toBe('That didn’t save. Try again.');
-	});
-});
-
-describe('anyLive', () => {
-	it('is true while a document other than the ones left out is being worked on', () => {
-		const reading = doc({ id: 'reading', intakeState: 'reading' });
-		const kept = doc({ id: 'kept', intakeState: 'kept' });
-		expect(anyLive([kept, reading], [])).toBe(true);
-		expect(anyLive([kept, reading], ['reading'])).toBe(false);
-		expect(anyLive([kept], [null])).toBe(false);
-		expect(anyLive([], [])).toBe(false);
-	});
-});
-
-describe('mergeList', () => {
-	const older = doc({ id: 'slip', intakeState: 'needs_company' });
-	const newer = doc({ id: 'slip', intakeState: 'reading' });
-	const other = doc({ id: 'other', intakeState: 'identifying' });
-	const otherNow = doc({ id: 'other', intakeState: 'needs_kind' });
-	const sending = doc({ id: 'sending', state: 'pending_upload', intakeState: null });
-
-	it('takes the list’s copies, in the list’s order', () => {
-		expect(mergeList([other], [otherNow], [])).toEqual([otherNow]);
-	});
-
-	it('keeps the copies it is told to keep, which are fresher than the list', () => {
-		const merged = mergeList([newer, other], [older, otherNow], ['slip']);
-		expect(merged.map((d) => d.intakeState)).toEqual(['reading', 'needs_kind']);
-	});
-
-	it('keeps documents the list does not have, after it', () => {
-		expect(mergeList([sending, other], [otherNow], []).map((d) => d.id)).toEqual([
-			'other',
-			'sending'
-		]);
 	});
 });

@@ -1,8 +1,8 @@
 /**
- * What the Documents page says about a document, kept free of Svelte so it can be tested:
- * where it stands (the stage ladder and a plain-words state), whether it is still being worked
- * on, which one the slip opens, and what Maester read it as and the page each answer came from.
- * What is wrong with a file before it is sent is in `batch.ts`.
+ * What the Documents page says about one file's answers, kept free of Svelte so it can be tested:
+ * what Maester read it as and the page each answer came from, the company it could be, and what
+ * to say when a change is refused. Where a filing stands is in `tracks.ts` and `filings.ts`; what
+ * is wrong with a file before it is sent is in `batch.ts`.
  */
 import { documentsContent as copy } from '$lib/content/documents';
 import { ApiError } from './client';
@@ -12,7 +12,6 @@ import type {
 	ClassificationSummary,
 	Company,
 	CompanyAnswer,
-	DocumentRecord,
 	Evidence,
 	EvidenceField,
 	StatementFound
@@ -21,176 +20,11 @@ import type {
 /** The API's upload limit (MAX_UPLOAD_BYTES, 50 MiB) for each file, stated before any is chosen. */
 export const MAX_UPLOAD_BYTES = 52_428_800;
 
-/** How often an open slip asks again while Maester is working on its document. */
+/** How often the opened filing asks for its own documents while Maester works on it. */
 export const POLL_MS = 2_000;
 
-/** How often the Earlier list is read again while any document in it is being worked on. */
+/** How often the filings are read again while another filing in Working on is live. */
 export const LIST_POLL_MS = 5_000;
-
-export type StepStatus = 'done' | 'now' | 'next' | 'needs-you' | 'stopped' | 'not-read';
-
-export interface Step {
-	label: string;
-	status: StepStatus;
-	/** The status as a word: the ladder never shows state by colour. */
-	word: string;
-}
-
-export interface ViewOptions {
-	/** This page is sending the file's bytes right now. */
-	uploading?: boolean;
-}
-
-function running(doc: DocumentRecord, type: string): boolean {
-	const job = doc.latestJob;
-	return !!job && job.type === type && (job.state === 'queued' || job.state === 'running');
-}
-
-function verifyFailed(doc: DocumentRecord): boolean {
-	return doc.latestJob?.type === 'document.verify' && doc.latestJob.state === 'failed';
-}
-
-/** A read or identification started again, while the document still shows the last outcome. */
-const readingAgain = (doc: DocumentRecord) =>
-	(doc.intakeState === 'read' || doc.intakeState === 'read_failed') &&
-	(running(doc, 'document.extract') || running(doc, 'document.xbrl'));
-const identifyingAgain = (doc: DocumentRecord) =>
-	doc.intakeState === 'identify_failed' && running(doc, 'document.classify');
-
-function statuses(doc: DocumentRecord, opts: ViewOptions): StepStatus[] {
-	switch (doc.state) {
-		case 'pending_upload':
-			return [opts.uploading ? 'now' : 'stopped', 'next', 'next', 'next'];
-		case 'uploaded':
-		case 'verifying':
-			return [verifyFailed(doc) ? 'stopped' : 'now', 'next', 'next', 'next'];
-		case 'rejected':
-			return ['stopped', 'next', 'next', 'next'];
-	}
-	if (readingAgain(doc)) return ['done', 'done', 'now', 'next'];
-	if (identifyingAgain(doc)) return ['done', 'now', 'next', 'next'];
-	switch (doc.intakeState) {
-		case null:
-		case 'identifying':
-			return ['done', 'now', 'next', 'next'];
-		case 'duplicate':
-		case 'needs_company':
-		case 'needs_kind':
-			return ['done', 'needs-you', 'next', 'next'];
-		case 'identify_failed':
-			return ['done', 'stopped', 'next', 'next'];
-		case 'kept':
-			return ['done', 'done', 'not-read', 'not-read'];
-		case 'reading':
-			return ['done', 'done', 'now', 'next'];
-		case 'waiting_for_xbrl':
-			return ['done', 'done', 'next', 'next'];
-		case 'read':
-			return ['done', 'done', 'done', 'done'];
-		case 'read_failed':
-			return ['done', 'done', 'stopped', 'next'];
-	}
-}
-
-/** The stage ladder: Uploaded, Worked out what it is, Reading the statements, Ready. */
-export function ladder(doc: DocumentRecord, opts: ViewOptions = {}): Step[] {
-	return statuses(doc, opts).map((status, index) => ({
-		label: copy.slip.steps[index],
-		status,
-		word: copy.slip.step[status]
-	}));
-}
-
-/** Where a document stands, in plain words, for the Earlier list and the status line. */
-export function stateLabel(doc: DocumentRecord, opts: ViewOptions = {}): string {
-	const states = copy.states;
-	switch (doc.state) {
-		case 'pending_upload':
-			return opts.uploading ? states.uploading : states.uploadUnfinished;
-		case 'uploaded':
-		case 'verifying':
-			return verifyFailed(doc) ? states.checkFailed : states.checking;
-		case 'rejected':
-			return states.rejected[doc.rejectionCode ?? 'OBJECT_MISSING'];
-	}
-	if (readingAgain(doc)) return states.reading;
-	if (identifyingAgain(doc) || doc.intakeState === null) return states.identifying;
-	return states[doc.intakeState];
-}
-
-/** Maester is working on it, so an open slip asks again until it stops. */
-export function isLive(doc: DocumentRecord): boolean {
-	switch (doc.state) {
-		case 'pending_upload':
-		case 'rejected':
-			return false;
-		case 'uploaded':
-		case 'verifying':
-			return !verifyFailed(doc);
-	}
-	return (
-		doc.intakeState === null ||
-		doc.intakeState === 'identifying' ||
-		doc.intakeState === 'reading' ||
-		doc.intakeState === 'waiting_for_xbrl' ||
-		readingAgain(doc) ||
-		identifyingAgain(doc)
-	);
-}
-
-/**
- * Whether any document, apart from those left out (the slip's, which polls on its own, and the
- * file being sent), is being worked on, so the list is worth reading again.
- */
-export function anyLive(docs: DocumentRecord[], except: (string | null)[]): boolean {
-	return docs.some((doc) => !except.includes(doc.id) && isLive(doc));
-}
-
-/**
- * The list as the API now has it, merged into what the page holds. Copies named in `keep` are
- * fresher than the list (written while it was being fetched, or polled by the slip), so they
- * stay. Documents the list does not have (the file being sent, a first copy opened from a
- * duplicate) follow it.
- */
-export function mergeList(
-	current: DocumentRecord[],
-	page: DocumentRecord[],
-	keep: (string | null)[]
-): DocumentRecord[] {
-	const listed = new Set(page.map((doc) => doc.id));
-	const held = (id: string) => current.find((doc) => doc.id === id);
-	return [
-		...page.map((doc) => (keep.includes(doc.id) ? (held(doc.id) ?? doc) : doc)),
-		...current.filter((doc) => !listed.has(doc.id))
-	];
-}
-
-/**
- * A document the slip should open by itself: anything Maester is still working on or that
- * needs the investor. Read and kept documents are settled. An upload that never finished or a
- * refused file cannot be acted on from here, so it never takes the slip by itself either.
- */
-function wantsSlip(doc: DocumentRecord): boolean {
-	if (doc.state === 'pending_upload' || doc.state === 'rejected') return false;
-	if (verifyFailed(doc) && doc.state !== 'stored') return false;
-	return doc.intakeState !== 'read' && doc.intakeState !== 'kept';
-}
-
-const newestFirst = (a: DocumentRecord, b: DocumentRecord) =>
-	Date.parse(b.createdAt) - Date.parse(a.createdAt);
-
-/**
- * Which document the slip shows: the one the investor opened, else the newest that is not
- * settled, else the newest of all, else none.
- */
-export function pickSlip(docs: DocumentRecord[], opened?: string | null): DocumentRecord | null {
-	if (opened) {
-		const chosen = docs.find((doc) => doc.id === opened);
-		if (chosen) return chosen;
-	}
-	const sorted = [...docs].sort(newestFirst);
-	return sorted.find(wantsSlip) ?? sorted[0] ?? null;
-}
 
 /** What it is, in plain words: "Annual report", "Financial results, quarter", "Board meeting". */
 export function whatItIs(
@@ -217,24 +51,16 @@ export function whatItIs(
  */
 export function sourceOf(evidence: Evidence[], field: EvidenceField): string | null {
 	const forField = evidence.filter((e) => e.field === field);
-	if (forField.some((e) => e.source === 'investor')) return copy.slip.youSaidSo;
+	if (forField.some((e) => e.source === 'investor')) return copy.filing.youSaidSo;
 	const fromElement = forField.find((e) => e.element !== null);
-	if (fromElement?.element) return copy.slip.fromElement(fromElement.element, fromElement.quote);
+	if (fromElement?.element) return copy.filing.fromElement(fromElement.element, fromElement.quote);
 	const found = forField.find((e) => e.pageIndex !== null);
 	if (!found || found.pageIndex === null) return null;
 	const page =
 		found.textLayerMatch === null && found.source !== 'investor'
-			? copy.slip.scannedPage(found.pageIndex + 1)
+			? copy.filing.scannedPage(found.pageIndex + 1)
 			: `Page ${found.pageIndex + 1}`;
 	return found.quote ? `${page}: “${found.quote}”` : page;
-}
-
-/**
- * Whether the slip offers "Read it again". A PDF whose numbers come from its XBRL files has
- * nothing of its own to read, and the API refuses a read of it.
- */
-export function canReadAgain(doc: DocumentRecord): boolean {
-	return doc.pipeline.numbers.state !== 'not_needed';
 }
 
 /** "Balance sheet (standalone), Profit and loss (standalone)", or "—" when none was found. */

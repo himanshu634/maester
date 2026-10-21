@@ -587,6 +587,74 @@ export function keepFresher(
 	return carried.length === 0 ? merged : { ...merged, unsorted: [...carried, ...merged.unsorted] };
 }
 
+/** What the page knows that a read cannot say: the files it is sending, and each file's name. */
+export function trackContext(
+	read: WorkspaceFilings,
+	uploadingIds: readonly string[]
+): TrackContext {
+	const names = new Map(filesOf(read).map((f) => [f.documentId, f.originalName]));
+	return {
+		uploading: (documentId) => uploadingIds.includes(documentId),
+		nameOf: (documentId) => names.get(documentId) ?? null
+	};
+}
+
+/** The files a read moved (`shapeChanged`), so their answers are loaded again. */
+export function shapeChangedIds(before: WorkspaceFilings, after: WorkspaceFilings): Set<string> {
+	const was = new Map(filesOf(before).map((f) => [f.documentId, f]));
+	return new Set(
+		filesOf(after)
+			.filter((f) => {
+				const old = was.get(f.documentId);
+				return old !== undefined && shapeChanged(old, f);
+			})
+			.map((f) => f.documentId)
+	);
+}
+
+/**
+ * Whether a read changed which companies a held identity could be, so the companies are read
+ * again before its row is drawn: a company added elsewhere is not in the page's list yet.
+ */
+export function matchesChanged(before: HeldIdentity[], after: HeldIdentity[]): boolean {
+	const was = new Map(before.map((h) => [h.key, h.matches.join(',')]));
+	return after.some((h) => h.matches.join(',') !== (was.get(h.key) ?? ''));
+}
+
+/** A filings read under way: when it began, and how often each file had been written then. */
+export interface ReadTicket {
+	seq: number;
+	seen: ReadonlyMap<string, number>;
+}
+
+/**
+ * The page's count of writes from fresher sources than a filings read (the open filing's poll, a
+ * change, an upload), and the order reads land in. `land` names the files written since its read
+ * began, for `keepFresher`, each read afresh, so a carried file lives at most one read; it gives
+ * null for a read that began before the last one applied, which the page drops.
+ */
+export function readLedger() {
+	const writes = new Map<string, number>();
+	let started = 0;
+	let applied = 0;
+	return {
+		wrote(documentId: string) {
+			writes.set(documentId, (writes.get(documentId) ?? 0) + 1);
+		},
+		begin(): ReadTicket {
+			started += 1;
+			return { seq: started, seen: new Map(writes) };
+		},
+		land(ticket: ReadTicket): string[] | null {
+			if (ticket.seq < applied) return null;
+			applied = ticket.seq;
+			return [...writes]
+				.filter(([documentId, count]) => ticket.seen.get(documentId) !== count)
+				.map(([documentId]) => documentId);
+		}
+	};
+}
+
 /** Every question the read asks the investor, by a key that stays the same while it is asked. */
 export function questionKeys(read: WorkspaceFilings): Map<string, Question> {
 	const keys = new Map<string, Question>();

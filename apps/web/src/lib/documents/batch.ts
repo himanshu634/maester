@@ -286,6 +286,25 @@ export async function sendAll(
 	};
 }
 
+/**
+ * A "Send the rest" batch, `next`, as one record with the batch it carries on, `carried`: what
+ * went in both, the files refused for themselves in both, and only `next`'s files never tried.
+ * The files `carried` refused for the dropped connection were in its rest and were tried again,
+ * so they count once, in `next`. Null carries nothing.
+ */
+export function carryOver(carried: Outcome | null, next: Outcome): Outcome {
+	if (carried === null) return next;
+	const resent = new Set(carried.rest.map((item) => shownName(item, carried.folder)));
+	const kept = carried.refused.filter((refusal) => !resent.has(refusal.name));
+	return {
+		...next,
+		total: next.total + carried.sent + kept.length,
+		folder: carried.folder,
+		sent: carried.sent + next.sent,
+		refused: [...kept, ...next.refused]
+	};
+}
+
 // --- What the strip says --------------------------------------------------------------------
 
 /** The line in the box while files are sent: the file being sent counts as one of them. */

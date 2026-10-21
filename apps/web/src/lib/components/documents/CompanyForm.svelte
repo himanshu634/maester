@@ -3,7 +3,7 @@
 	investor: with companies in the workspace that match what is printed (`candidates`), using one
 	of them is the screen's one primary action and adding a new company is the other way; with no
 	match, adding it as printed is the primary action and picking one already added is the other.
-	As a change, from the slip's "Change": pick a company or add a new one.
+	As a change, from the opened filing's "Change": pick a company or add a new one.
 -->
 <script lang="ts">
 	import { untrack } from 'svelte';
@@ -175,7 +175,8 @@
 		<div class="actions">
 			<button class="button outline" type="submit" disabled={busy}>{copy.kind.saveChange}</button>
 			{#if oncancel}
-				<button class="button outline" type="button" onclick={oncancel}>{copy.slip.cancel}</button>
+				<button class="button outline" type="button" onclick={oncancel}>{copy.filing.cancel}</button
+				>
 			{/if}
 		</div>
 	</form>
