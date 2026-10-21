@@ -25,6 +25,22 @@ Docling, docling-core, RapidOCR and onnxruntime are pinned to exact versions in 
 
 The image installs Tesseract from the Debian packages of its base, `python:3.12-slim` (versions below, under "Docling interfaces this service relies on"). A Mac needs `brew install tesseract`; a Linux CI runner needs `apt-get install tesseract-ocr tesseract-ocr-eng`. Without the binary the Tesseract tests are skipped.
 
+**Candidate embedding models.** The registry (`packages/document-index/src/models.ts`, pinned by `packages/contracts/fixtures/index/embedding-models.json`) holds four models. The commits, pooling and prompts below were read from Hugging Face on 21 Oct 2026, at each model's current commit. Task 5 copies the commits into `models.lock.json`. The first is the live model; the other three are measured in ingestion phase 3.
+
+| Model | Commit | Pooling | Prompts (`config_sentence_transformers.json`) | Served, kept |
+| --- | --- | --- | --- | --- |
+| `Snowflake/snowflake-arctic-embed-l-v2.0` | `ac6544c8a46e00af67e330e85a9028c66b8cfd9a` | CLS, then Normalize | `query`: `"query: "`; no `document` prompt | 1024, 1024 |
+| `Qwen/Qwen3-Embedding-0.6B` | `97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3` | last token, then Normalize | `query`: `"Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:"`; `document`: `""` | 1024, 1024 |
+| `voyageai/voyage-4-nano` | `433ece5e27a1611e9360dd7134ecaaf79fb3681d` | mean, then Normalize | `query`: `"Represent the query for retrieving supporting documents: "`; `document`: `"Represent the document for retrieval: "` | 2048, 1024 |
+| `ibm-granite/granite-embedding-english-r2` | `47ea694b257b703fee9253d75c2b1f2985180498` | CLS, no Normalize module | none | 768, 768 |
+
+- Qwen's card gives the format `Instruct: {task}\nQuery:` with no space after the colon. The task sentence in the registry is ours (the card's is for web search), so its `promptsFrom` is `ours`. The format was read at the commit above.
+- voyage-4-nano keeps 1024 of 2048 values because its `config.json` lists `matryoshka_dimensions` 256, 512, 1024 and 2048. `toStored` cuts to the first 1024 values and renormalises.
+- granite has no Normalize module, so its vectors are unit length only when TEI normalises them, which it does by default. A 768-value vector is padded with zeros to the 1024-value column. Padding does not change cosine.
+- The only Python file in voyage-4-nano at that commit is `modeling_qwen3_bidirectional.py`. It was read in full before anything ran it. It builds a Qwen3 model with bidirectional attention (every layer has `is_causal = False`, and the mask is OR-ed with a padding-only mask), and adds one linear layer, `hidden_size` to `num_labels` (1024 to 2048), with no bias, on the last hidden state. It makes no network call and reads no file. Loading it needs `trust_remote_code`. The pooling is the mean over tokens, then Normalize, so TEI can load the weights only if it supports this head. Task 5 tests that before any run.
+
+**What TEI says it serves.** `GET /info` answers a JSON object whose `model_id` is the `--model-id` the server was started with (for Compose, the folder `/models/embed/<id>`). `TeiEmbedder.servedModel()` reads that field, and `servesModel` accepts the answer when it equals the model or ends with `/<model>`. The field is `model_id: String` of the `Info` struct in `router/src/lib.rs` of text-embeddings-inference, the same in `v1.9.0` and `v1.9.4`, the releases `cpu-arm64-1.9` is built from. `GET /info` is routed to `get_model_info` in `router/src/http/server.rs`. `Info` has a second field, `served_model_name`, which is not used.
+
 The models are recorded in `models.lock.json`: the embedding model at a commit, and the commit of each Docling artifact (Docling itself asks for the layout models at `main` and the TableFormer models at the `v2.3.0` tag). RapidOCR's models come from ModelScope at the `v3.9.2` tag, which follows the `rapidocr` version.
 
 ## Running

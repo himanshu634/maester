@@ -181,6 +181,10 @@ class CountingEmbedder implements Embedder {
   /** Runs at each call, with the call's number from 1. */
   onCall: ((n: number) => void) | null = null;
 
+  servedModel(): Promise<string> {
+    return this.inner.servedModel();
+  }
+
   async embed(texts: string[], kind: "query" | "document"): Promise<number[][]> {
     this.calls.push(texts);
     this.onCall?.(this.calls.length);

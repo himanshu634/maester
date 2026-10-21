@@ -1,8 +1,11 @@
-import { embeddingInput, embeddingModel } from "./models.js";
+import { STORED_DIMENSIONS, embeddingInput, embeddingModel } from "./models.js";
 
 export interface Embedder {
   model: string;
+  /** Vectors of `STORED_DIMENSIONS` values each: what `toStored` makes of the embedder's answer. */
   embed(texts: string[], kind: "query" | "document"): Promise<number[][]>;
+  /** The model the embedder itself says it serves (text-embeddings-inference: `model_id` of `GET /info`). */
+  servedModel(): Promise<string>;
 }
 
 export class EmbedderError extends Error {
@@ -14,6 +17,41 @@ export class EmbedderError extends Error {
     super(message);
     this.name = "EmbedderError";
   }
+}
+
+/**
+ * Whether the model an embedder says it serves is `model`. text-embeddings-inference reports the `--model-id` it was
+ * started with, and Compose starts it on a folder (`/models/embed/<id>`), so the folder's tail names the model too.
+ * The tail must start at a path separator: `XSnowflake/...` is another model than `Snowflake/...`.
+ */
+export function servesModel(served: string, model: string): boolean {
+  return served === model || served.endsWith(`/${model}`);
+}
+
+/**
+ * What an embedder's answer for one text becomes before it is stored or compared: the first `dimensions` values,
+ * renormalised to unit length when any were cut, then padded with zeros to `STORED_DIMENSIONS`. Padding adds nothing
+ * to a dot product or a norm, so cosine between two stored vectors equals cosine between the originals. This is the
+ * only place a vector is cut or padded. An answer whose length is not what the model serves is refused, not guessed at.
+ */
+export function toStored(model: string, served: number[]): number[] {
+  const m = embeddingModel(model);
+  if (served.length !== m.servedDimensions) {
+    throw new EmbedderError(
+      "EMBEDDING_FAILED",
+      false,
+      `The embedder answered ${served.length} values for ${model}, which serves ${m.servedDimensions}.`,
+    );
+  }
+  let kept = served.slice(0, m.dimensions);
+  if (m.dimensions < m.servedDimensions) {
+    const norm = Math.sqrt(kept.reduce((sum, x) => sum + x * x, 0));
+    if (!(norm > 0)) {
+      throw new EmbedderError("EMBEDDING_FAILED", false, `The first ${m.dimensions} values of the answer for ${model} have no length.`);
+    }
+    kept = kept.map((x) => x / norm);
+  }
+  return kept.concat(new Array<number>(STORED_DIMENSIONS - kept.length).fill(0));
 }
 
 export interface TeiOptions {
@@ -106,21 +144,40 @@ export class TeiEmbedder implements Embedder {
     }
   }
 
+  /**
+   * Which model the embedder serves, from `GET /info`: one request, with the timeout and no retry. Whatever goes
+   * wrong, the answer is the same: the embedder did not say, and the caller may try again later.
+   */
+  async servedModel(): Promise<string> {
+    const unsaid = () => new EmbedderError("EMBEDDER_UNAVAILABLE", true, "The embedder did not say which model it serves.");
+    let info: unknown;
+    try {
+      const res = await fetch(`${this.baseUrl.replace(/\/+$/, "")}/info`, { signal: AbortSignal.timeout(this.timeoutMs) });
+      if (!res.ok) throw unsaid();
+      info = await res.json();
+    } catch {
+      throw unsaid();
+    }
+    const modelId = typeof info === "object" && info !== null ? (info as Record<string, unknown>).model_id : undefined;
+    if (typeof modelId !== "string") throw unsaid();
+    return modelId;
+  }
+
   private check(data: unknown, count: number): number[][] {
-    const dims = embeddingModel(this.model).dimensions;
+    const served = embeddingModel(this.model).servedDimensions;
     const ok =
       Array.isArray(data) &&
       data.length === count &&
       data.every(
-        (v) => Array.isArray(v) && v.length === dims && v.every((n) => typeof n === "number"),
+        (v) => Array.isArray(v) && v.length === served && v.every((n) => typeof n === "number"),
       );
     if (!ok) {
       throw new EmbedderError(
         "EMBEDDING_FAILED",
         false,
-        `The embedder answer did not match ${count} vectors of ${dims} dimensions.`,
+        `The embedder answer did not match ${count} vectors of ${served} dimensions.`,
       );
     }
-    return data as number[][];
+    return (data as number[][]).map((v) => toStored(this.model, v));
   }
 }
