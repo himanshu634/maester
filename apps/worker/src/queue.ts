@@ -134,7 +134,7 @@ export function startQueueRunner(deps: WorkerDeps, opts: QueueRunnerOptions): Qu
       }
       for (const job of failed) {
         try {
-          await deps.handlers[job.type]?.onFinalFailure?.(job, deps.db);
+          await deps.handlers[job.type]?.onFinalFailure?.(job, { db: deps.db, dispatcher: deps.dispatcher });
         } catch (err) {
           log.error({ type: job.type, jobId: job.id, err: message(err) }, "final-failure hook failed");
         }

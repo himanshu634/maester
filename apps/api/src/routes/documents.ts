@@ -5,7 +5,9 @@ import {
   FactsQuery,
   JobTypes,
   ListQuery,
+  formatForMime,
   type CreateUploadResponse,
+  type DocumentFormat,
   type DocumentExtraction,
   type DocumentFacts,
   type DownloadResponse,
@@ -32,8 +34,8 @@ import { uuidParam } from "../middleware/params.js";
 import { toCheck, toDocument, toFact, toJob, toRevision } from "../serialize.js";
 import { validate } from "../validation.js";
 
-export function storageKeyFor(workspaceId: string, documentId: string): string {
-  return `workspaces/${workspaceId}/documents/${documentId}/original.pdf`;
+export function storageKeyFor(workspaceId: string, documentId: string, format: DocumentFormat): string {
+  return `workspaces/${workspaceId}/documents/${documentId}/original.${format === "xbrl" ? "xml" : "pdf"}`;
 }
 
 function sanitiseName(name: string): string {
@@ -54,7 +56,8 @@ export function documentRoutes(deps: AppDeps) {
       throw new HttpError("VALIDATION_FAILED", "company not found in this workspace", [{ path: "companyId", message: "unknown company" }]);
     }
     const id = crypto.randomUUID();
-    const storageKey = storageKeyFor(workspace.id, id);
+    const format = formatForMime(input.mimeType);
+    const storageKey = storageKeyFor(workspace.id, id, format);
     const [row] = await deps.db
       .insert(schema.document)
       .values({
@@ -64,6 +67,7 @@ export function documentRoutes(deps: AppDeps) {
         originalName: sanitiseName(input.originalName),
         declaredSize: input.size,
         declaredMime: input.mimeType,
+        format,
         storageKey,
         state: "pending_upload",
         createdByUserId: c.get("user").id,
@@ -163,7 +167,7 @@ export function documentRoutes(deps: AppDeps) {
     if (doc.state !== "stored") throw new HttpError("INVALID_STATE", `document is ${doc.state}; only stored documents can be extracted`);
     const job = await createJob(deps.db, deps.dispatcher, {
       workspaceId: workspace.id,
-      type: JobTypes.DOCUMENT_EXTRACT,
+      type: doc.format === "xbrl" ? JobTypes.DOCUMENT_XBRL : JobTypes.DOCUMENT_EXTRACT,
       subjectType: "document",
       subjectId: doc.id,
       // Every manual run is a new job and produces a new revision.

@@ -3,7 +3,7 @@ import type { DocumentExtractResult, ExtractionResult } from "@maester/contracts
 import { getCurrentClassification, schema, type Db, type ExtractionRevisionRow, type JobRow } from "@maester/db";
 import { classificationIdOfReadJob } from "@maester/jobs";
 import { ObjectNotFoundError, type ObjectStore } from "@maester/storage";
-import { JobFailure, type JobContext, type JobHandler } from "./types.js";
+import { JobFailure, type FinalFailureDeps, type JobContext, type JobHandler } from "./types.js";
 
 const INSERT_BATCH = 500;
 
@@ -187,7 +187,7 @@ async function extract(job: JobRow, ctx: JobContext): Promise<DocumentExtractRes
 }
 
 export const documentExtract: JobHandler = Object.assign(extract, {
-  async onFinalFailure(job: JobRow, db: Db): Promise<void> {
+  async onFinalFailure(job: JobRow, { db }: FinalFailureDeps): Promise<void> {
     const classificationId =
       classificationIdOfReadJob(job.idempotencyKey) ?? (await getCurrentClassification(db, job.workspaceId, job.subjectId))?.readsUnderId ?? null;
     await setIntakeIfCurrent(db, job.workspaceId, job.subjectId, classificationId, "read_failed");

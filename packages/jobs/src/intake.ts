@@ -69,3 +69,12 @@ export async function decideIntake(db: Db, dispatcher: Dispatcher, c: Classifica
   if (decided.job) await dispatcher.enqueue(decided.job);
   return state;
 }
+
+/**
+ * Decide again every PDF of the workspace that waits for XBRL, after an XBRL document has settled
+ * (stored, rejected, kept or failed). Returns how many were released. Task 12 writes the body;
+ * until then no PDF waits, so the answer is 0.
+ */
+export async function redecidePdfsAfterXbrl(_db: Db, _dispatcher: Dispatcher, _workspaceId: string): Promise<number> {
+  return 0;
+}

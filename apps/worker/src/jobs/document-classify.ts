@@ -4,7 +4,7 @@ import { getCurrentClassification, listEvidence, matchCompanies, schema, type Cl
 import { decideIntake, READ_KINDS } from "@maester/jobs";
 import { ObjectNotFoundError } from "@maester/storage";
 import { readAll } from "./document-extract.js";
-import { JobFailure, type JobContext, type JobHandler } from "./types.js";
+import { JobFailure, type FinalFailureDeps, type JobContext, type JobHandler } from "./types.js";
 
 /**
  * Store one classifier answer as an immutable classification with its evidence,
@@ -134,7 +134,7 @@ async function classify(job: JobRow, ctx: JobContext): Promise<DocumentClassifyR
 }
 
 export const documentClassify: JobHandler = Object.assign(classify, {
-  async onFinalFailure(job: JobRow, db: Db): Promise<void> {
+  async onFinalFailure(job: JobRow, { db }: FinalFailureDeps): Promise<void> {
     await db
       .update(schema.document)
       .set({ intakeState: "identify_failed", updatedAt: sql`now()` })

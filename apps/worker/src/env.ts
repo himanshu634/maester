@@ -14,6 +14,8 @@ const Schema = z.object({
   WORKER_URL: z.url(),
   API_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
   MAX_UPLOAD_BYTES: z.coerce.number().int().default(52428800),
+  // Bytes from the start of an XML upload that verify keeps, to tell an XBRL instance from anything else.
+  XBRL_SNIFF_BYTES: z.coerce.number().int().positive().default(65536),
   LEASE_SECONDS: z.coerce.number().int().default(600),
   // Milliseconds between timer renewals of a running job's lease.
   JOB_HEARTBEAT_MS: z.coerce.number().int().positive().default(15000),

@@ -3,13 +3,14 @@ import { indexPipelineVersion } from "@maester/document-index";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { DOCUMENT_INDEX_SUBJECT, JobTypes, type DocumentVerifyResult, type RejectionCode } from "@maester/contracts";
 import { findStoredDuplicate, schema, type JobRow } from "@maester/db";
-import { createJob } from "@maester/jobs";
+import { createJob, redecidePdfsAfterXbrl } from "@maester/jobs";
 import { ObjectNotFoundError } from "@maester/storage";
-import type { JobContext, JobHandler } from "./types.js";
+import { sniffXbrl } from "../sniff.js";
+import type { FinalFailureDeps, JobContext, JobHandler } from "./types.js";
 
 /**
  * Hand a stored document to intake: a second copy of a stored file is marked a
- * duplicate; anything else is classified, and every stored non-duplicate document also gets a document.index job. Keyed "auto", so a verify retry never
+ * duplicate (an XBRL duplicate settles the PDFs that wait on XBRL); anything else is classified, and every stored non-duplicate document also gets a document.index job. Keyed "auto", so a verify retry never
  * enqueues twice, and a classify job runs even without an extractor (it then
  * fails with CLASSIFIER_NOT_CONFIGURED, which the investor sees).
  */
@@ -19,7 +20,12 @@ async function chainIntake(job: JobRow, ctx: JobContext, sha256: string): Promis
     .from(schema.document)
     .where(and(eq(schema.document.id, job.subjectId), eq(schema.document.workspaceId, job.workspaceId)))
     .limit(1);
-  if (!doc || doc.intakeState === "duplicate") return;
+  if (!doc) return;
+  if (doc.intakeState === "duplicate") {
+    // A retry after the duplicate was marked: deciding the PDFs again is idempotent.
+    if (doc.format === "xbrl") await redecidePdfsAfterXbrl(ctx.db, ctx.dispatcher, job.workspaceId);
+    return;
+  }
   let intakeState = doc.intakeState;
   if (intakeState === null) {
     const untouched = and(eq(schema.document.id, doc.id), eq(schema.document.workspaceId, job.workspaceId), isNull(schema.document.intakeState));
@@ -30,6 +36,7 @@ async function chainIntake(job: JobRow, ctx: JobContext, sha256: string): Promis
         .set({ intakeState: "duplicate", duplicateOfDocumentId: duplicate.id, updatedAt: sql`now()` })
         .where(untouched);
       ctx.logger.info({ documentId: doc.id, duplicateOf: duplicate.id }, "duplicate document");
+      if (doc.format === "xbrl") await redecidePdfsAfterXbrl(ctx.db, ctx.dispatcher, job.workspaceId);
       return;
     }
     await ctx.db.update(schema.document).set({ intakeState: "identifying", updatedAt: sql`now()` }).where(untouched);
@@ -58,7 +65,7 @@ async function chainIntake(job: JobRow, ctx: JobContext, sha256: string): Promis
 
 const PDF_MAGIC = Buffer.from("%PDF-");
 
-export const documentVerify: JobHandler = async (job, ctx) => {
+async function verify(job: JobRow, ctx: JobContext): Promise<DocumentVerifyResult> {
   const [doc] = await ctx.db
     .select()
     .from(schema.document)
@@ -70,6 +77,8 @@ export const documentVerify: JobHandler = async (job, ctx) => {
     return { outcome: "stored", sha256: doc.contentSha256!, sizeBytes: doc.sizeBytes! } satisfies DocumentVerifyResult;
   }
   if (doc.state === "rejected") {
+    // A retry after the rejection was written: deciding the PDFs again is idempotent.
+    if (doc.format === "xbrl") await redecidePdfsAfterXbrl(ctx.db, ctx.dispatcher, job.workspaceId);
     return { outcome: "rejected", code: doc.rejectionCode as RejectionCode } satisfies DocumentVerifyResult;
   }
 
@@ -82,6 +91,8 @@ export const documentVerify: JobHandler = async (job, ctx) => {
       .set({ state: "rejected", rejectionCode: code, updatedAt: sql`now()` })
       .where(eq(schema.document.id, doc.id));
     ctx.logger.info({ documentId: doc.id, code }, "document rejected");
+    // A rejected instance settles: PDFs that waited on it are decided again.
+    if (doc.format === "xbrl") await redecidePdfsAfterXbrl(ctx.db, ctx.dispatcher, job.workspaceId);
     return { outcome: "rejected", code };
   };
 
@@ -95,7 +106,10 @@ export const documentVerify: JobHandler = async (job, ctx) => {
 
   const hash = createHash("sha256");
   let size = 0;
-  let head = Buffer.alloc(0);
+  // The start of the file, for the type check: the PDF magic, or the bytes the XML sniff reads.
+  const keep = doc.format === "xbrl" ? ctx.env.XBRL_SNIFF_BYTES : PDF_MAGIC.length;
+  const headChunks: Buffer[] = [];
+  let headLength = 0;
   for await (const chunk of stream) {
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
     size += buf.length;
@@ -103,10 +117,16 @@ export const documentVerify: JobHandler = async (job, ctx) => {
       stream.destroy();
       return reject("TOO_LARGE");
     }
-    if (head.length < PDF_MAGIC.length) head = Buffer.concat([head, buf]).subarray(0, PDF_MAGIC.length);
+    if (headLength < keep) {
+      const part = buf.subarray(0, keep - headLength);
+      headChunks.push(part);
+      headLength += part.length;
+    }
     hash.update(buf);
   }
-  if (!head.equals(PDF_MAGIC)) return reject("UNSUPPORTED_TYPE");
+  const head = Buffer.concat(headChunks);
+  const typeOk = doc.format === "xbrl" ? sniffXbrl(head) === "xbrl" : head.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC);
+  if (!typeOk) return reject("UNSUPPORTED_TYPE");
 
   const sha256 = hash.digest("hex");
   await ctx.db
@@ -117,4 +137,16 @@ export const documentVerify: JobHandler = async (job, ctx) => {
   ctx.logger.info({ documentId: doc.id, sizeBytes: size }, "document stored");
   await chainIntake(job, ctx, sha256);
   return { outcome: "stored", sha256, sizeBytes: size } satisfies DocumentVerifyResult;
-};
+}
+
+export const documentVerify: JobHandler = Object.assign(verify, {
+  /** A verify that failed for good leaves an instance unsettled: the PDFs that wait on XBRL are decided again, and this one counts as settled. */
+  async onFinalFailure(job: JobRow, { db, dispatcher }: FinalFailureDeps): Promise<void> {
+    const [doc] = await db
+      .select({ format: schema.document.format })
+      .from(schema.document)
+      .where(and(eq(schema.document.id, job.subjectId), eq(schema.document.workspaceId, job.workspaceId)))
+      .limit(1);
+    if (doc?.format === "xbrl") await redecidePdfsAfterXbrl(db, dispatcher, job.workspaceId);
+  },
+});

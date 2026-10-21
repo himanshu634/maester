@@ -96,7 +96,7 @@ export async function executeJob(deps: WorkerDeps, job: JobRow, opts: { heartbea
     await failAttempt(deps.db, job, leaseToken, { code, message }, final);
     if (final && handler.onFinalFailure) {
       try {
-        await handler.onFinalFailure(job, deps.db);
+        await handler.onFinalFailure(job, { db: deps.db, dispatcher: deps.dispatcher });
       } catch (hookErr) {
         log.error({ err: (hookErr as Error).message }, "final-failure hook failed");
       }

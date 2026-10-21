@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { CreateUploadResponse, Document, FinalizeResponse, JobTypes, paginated } from "@maester/contracts";
+import { CreateUploadResponse, Document, ExtractResponse, FinalizeResponse, JobTypes, paginated } from "@maester/contracts";
 import { schema } from "@maester/db";
 import { createTestContext, type TestContext } from "./context.js";
 
@@ -48,6 +48,48 @@ describe("documents", () => {
     const body = (await res.json()) as { error: { code: string; fields: { path: string; message: string }[] } };
     expect(body.error.code).toBe("VALIDATION_FAILED");
     expect(body.error.fields[0]!.path).toBe("mimeType");
+  });
+
+  it("accepts an XML upload: format xbrl and a key that ends original.xml", async () => {
+    const a = await ctx.signUp("d9@example.com");
+    for (const mimeType of ["text/xml", "application/xml"]) {
+      const res = await ctx.app.request(`/v1/workspaces/${a.workspaceId}/documents/uploads`, post(a.cookie, { originalName: "results.xml", size: 321, mimeType }));
+      expect(res.status).toBe(201);
+      const parsed = CreateUploadResponse.parse(await res.json());
+      expect(parsed.document).toMatchObject({ format: "xbrl", declaredMime: mimeType });
+      expect(parsed.upload.url).toBe(`memory://upload/workspaces/${a.workspaceId}/documents/${parsed.document.id}/original.xml`);
+      const [row] = await ctx.db.select().from(schema.document).where(eq(schema.document.id, parsed.document.id));
+      expect(row).toMatchObject({ format: "xbrl", storageKey: expect.stringMatching(/\/original\.xml$/) });
+    }
+  });
+
+  it("gives a PDF upload format pdf and refuses application/zip with VALIDATION_FAILED", async () => {
+    const a = await ctx.signUp("d10@example.com");
+    const { body } = await createUpload(a.workspaceId, a.cookie);
+    expect(CreateUploadResponse.parse(body).document.format).toBe("pdf");
+    const res = await ctx.app.request(`/v1/workspaces/${a.workspaceId}/documents/uploads`, post(a.cookie, { originalName: "x.zip", size: 5, mimeType: "application/zip" }));
+    expect(res.status).toBe(400);
+    const err = (await res.json()) as { error: { code: string; fields: { path: string }[] } };
+    expect(err.error.code).toBe("VALIDATION_FAILED");
+    expect(err.error.fields[0]!.path).toBe("mimeType");
+  });
+
+  it("extract on an xbrl document creates a document.xbrl job, not document.extract", async () => {
+    const a = await ctx.signUp("d11@example.com");
+    const res = await ctx.app.request(`/v1/workspaces/${a.workspaceId}/documents/uploads`, post(a.cookie, { originalName: "r.xml", size: 10, mimeType: "text/xml" }));
+    const docId = CreateUploadResponse.parse(await res.json()).document.id;
+    await ctx.db.update(schema.document).set({ state: "stored" }).where(eq(schema.document.id, docId));
+    const extract = () => ctx.app.request(`/v1/workspaces/${a.workspaceId}/documents/${docId}/extract`, { method: "POST", headers: { cookie: a.cookie, origin: "http://localhost" } });
+    const first = await extract();
+    expect(first.status).toBe(202);
+    const second = await extract();
+    const j1 = ExtractResponse.parse(await first.json()).job;
+    const j2 = ExtractResponse.parse(await second.json()).job;
+    expect(j1.type).toBe(JobTypes.DOCUMENT_XBRL);
+    expect(j1.id).not.toBe(j2.id);
+    const rows = await ctx.db.select().from(schema.job).where(eq(schema.job.subjectId, docId));
+    expect(rows.map((r) => r.type)).toEqual([JobTypes.DOCUMENT_XBRL, JobTypes.DOCUMENT_XBRL]);
+    expect(rows.every((r) => r.idempotencyKey.includes(":manual-"))).toBe(true);
   });
 
   it("finalize requires the object to exist, enqueues verify, and is idempotent", async () => {

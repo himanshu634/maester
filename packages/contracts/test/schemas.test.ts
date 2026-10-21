@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ApiError,
   CreateUploadRequest,
+  formatForMime,
   DecimalString,
   Document,
   DocumentFormat,
@@ -78,6 +79,15 @@ describe("common", () => {
 });
 
 describe("document", () => {
+  it("CreateUploadRequest takes PDF and XML, and formatForMime names the format", () => {
+    const base = { originalName: "a", size: 10 };
+    for (const mimeType of ["application/xml", "text/xml"] as const) {
+      expect(formatForMime(CreateUploadRequest.parse({ ...base, mimeType }).mimeType)).toBe("xbrl");
+    }
+    expect(formatForMime("application/pdf")).toBe("pdf");
+    expect(() => CreateUploadRequest.parse({ ...base, mimeType: "application/zip" })).toThrow();
+  });
+
   it("CreateUploadRequest takes an optional company and only allows PDF with a positive size", () => {
     const companyId = "6d5d1b0a-1e5e-4f6b-9f5d-2a4e1c9b7f12";
     expect(CreateUploadRequest.parse({ companyId, originalName: "a.pdf", size: 10, mimeType: "application/pdf" }).size).toBe(10);

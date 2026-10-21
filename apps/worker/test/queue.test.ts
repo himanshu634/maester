@@ -113,6 +113,24 @@ describe("queue runner", () => {
     }
   });
 
+  it("the sweeper gives the final-failure hook the worker's db and dispatcher", async () => {
+    const seen: { db: unknown; dispatcher: unknown }[] = [];
+    const handler: JobHandler = Object.assign(async () => {}, { onFinalFailure: async (_job: JobRow, deps: { db: unknown; dispatcher: unknown }) => void seen.push(deps) });
+    const c = await createWorkerContext({ "test.spent.deps": handler });
+    const runner = startQueueRunner(c, { concurrency: {}, pollMs: 20, sweepMs: 30, listen: noListen });
+    try {
+      const { workspaceId } = await seedWorkspace(c.db);
+      await seedJob(c.db, workspaceId, { type: "test.spent.deps", state: "running", attempt: 5, maxAttempts: 5, leaseToken: crypto.randomUUID(), leaseExpiresAt: new Date(Date.now() - 1_000) });
+      await waitFor(() => seen.length === 1, 5_000);
+      expect(Object.keys(seen[0]!).sort()).toEqual(["db", "dispatcher"]);
+      expect(seen[0]!.db).toBe(c.db);
+      expect(seen[0]!.dispatcher).toBe(c.dispatcher);
+    } finally {
+      await runner.stop(1_000);
+      await c.close();
+    }
+  });
+
   it("a claim that throws is logged and the loop carries on after the poll interval", async () => {
     const { logger, lines } = captureLogger();
     const c = await createWorkerContext({ "test.flaky": async () => {} }, { logger });

@@ -10,6 +10,15 @@ export type DocumentState = z.infer<typeof DocumentState>;
 export const DocumentFormat = z.enum(["pdf", "xbrl"]);
 export type DocumentFormat = z.infer<typeof DocumentFormat>;
 
+/** The types an upload may declare: a PDF, or an XBRL instance, which is XML. */
+export const UploadMimeType = z.enum(["application/pdf", "application/xml", "text/xml"]);
+export type UploadMimeType = z.infer<typeof UploadMimeType>;
+
+/** The format a declared type stands for. The worker still checks the bytes. */
+export function formatForMime(mime: UploadMimeType): DocumentFormat {
+  return mime === "application/pdf" ? "pdf" : "xbrl";
+}
+
 /** `UNSUPPORTED_TYPE`: the file is neither a PDF nor an XBRL instance Maester can read. */
 export const RejectionCode = z.enum(["UNSUPPORTED_TYPE", "TOO_LARGE", "OBJECT_MISSING"]);
 export type RejectionCode = z.infer<typeof RejectionCode>;
@@ -39,7 +48,7 @@ export const CreateUploadRequest = z.object({
   companyId: Uuid.optional(),
   originalName: z.string().min(1).max(255),
   size: z.number().int().positive(),
-  mimeType: z.literal("application/pdf"),
+  mimeType: UploadMimeType,
 });
 export type CreateUploadRequest = z.infer<typeof CreateUploadRequest>;
 
