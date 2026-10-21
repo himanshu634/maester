@@ -9,7 +9,7 @@ that a person edited, and not only a spreadsheet retyped, must still agree with 
 refused: the gold file never holds a value other than the one the person saw.
 
 The messages of a `FreezeError` reach the console. They name a sheet row and a column. They may echo a
-cell that is no text of the filing, such as a date, a scale, a page, a row number or a concept id, and
+cell that is no text of the filing, such as a date, a scale, a span, a page, a row number or a concept id, and
 never a figure, a label or a period label.
 
 A gold file that cannot be read is a `GoldError`, whose message names the file and nothing in it: the text
@@ -22,7 +22,7 @@ from decimal import Decimal, InvalidOperation
 import json
 from pathlib import Path
 import re
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -31,6 +31,7 @@ from maester_eval.concepts import Concept, Taxonomy
 from maester_eval.errors import EvalError
 from maester_eval.files import read_model, write_text_atomically
 from maester_eval.manifest import EvalSet, Filing, FilingKind, is_iso_date
+from maester_eval.periods import Span
 from maester_eval.sheets import sheet_rows
 from maester_eval.text import normalise
 from pdf_financial_qa.workflow.contracts import ReportingBasis, StatementKind
@@ -74,7 +75,9 @@ class GoldFact(BaseModel):
     period_label: str
     # Where the fact sits in time: the period end of a duration line, the as-at date of a balance sheet line.
     period_end: str | None
-    span: str | None = None
+    # How long the period is: from the column header (`periods.span_of_label`), or a person's `gold_span`. Null is
+    # unknown, never a guess, and a balance sheet line has none.
+    span: Span | None = None
     printed: str
     value_status: Literal["value", "dash"]
     value: str | None
@@ -82,6 +85,9 @@ class GoldFact(BaseModel):
     normalized_value: str | None
     page_index: int
     dimensions: dict[str, str] = Field(default_factory=dict)
+    # "sheet": a row a person labelled from a sheet of a run. "settled": a cell the investor settled where Gemini and
+    # XBRL disagreed. Headline rates count the first only, because the second was labelled with the XBRL value in view.
+    origin: Literal["sheet", "settled"] = "sheet"
 
     @model_validator(mode="after")
     def _figure_fits_its_status(self) -> "GoldFact":
@@ -205,7 +211,7 @@ def _same_number(sheet: str, original: str) -> bool:
 # label is not here: it is checked first, with a message of its own, because it says which fact the row is.
 _AGREEMENTS = {
     "statement": _same_words, "basis": _same_words, "section": _same_words,
-    "period_label": _same_period_label, "period_end": _same_date,
+    "period_label": _same_period_label, "period_end": _same_date, "span": _same_words,
     "printed": _same_figure, "scale_factor": _same_number, "page": _same_number,
 }
 # The columns the pipeline wrote that freeze reads again from the artefact.
@@ -258,6 +264,29 @@ def _period_end(row: dict[str, str], line: int, artefact: Artefact | None) -> st
     if text and not is_iso_date(text):
         raise _unreadable(line, column, text, "a date written YYYY-MM-DD", row, artefact)
     return text or None
+
+
+_SPANS: tuple[Span, ...] = get_args(Span)
+
+
+def _span(row: dict[str, str], line: int, filing: Filing) -> Span | None:
+    """The fact's span: `gold_span`, else the `span` the rule read. Another word is refused.
+
+    A balance sheet line is a point in time and has none. A results filing's fact that is not on the balance
+    sheet needs one, because a quarter and its year to date end on one day and cannot be told apart without it.
+    An annual report's line may have none: annual reports are never paired, so nothing needs to place it."""
+    column = "gold_span" if row.get("gold_span", "").strip() else "span"
+    word = row.get(column, "").strip()
+    span = next((known for known in _SPANS if known == word.lower()), None)
+    if word and span is None:
+        raise FreezeError(f"sheet row {line}: {column} {word} is not quarter, half_year, nine_months, year or other")
+    if row.get("statement") == "balance_sheet":
+        if span is not None:
+            raise FreezeError(f"sheet row {line}: a balance sheet line has no span")
+        return None
+    if span is None and filing.kind == "financial_results":
+        raise FreezeError(f"sheet row {line}: no span; fill gold_span")
+    return span
 
 
 def _verified(row: dict[str, str]) -> bool:
@@ -316,11 +345,12 @@ def freeze_sheet(rows: list[dict[str, str]], filing: Filing, taxonomy: Taxonomy,
         if page < 1:
             raise FreezeError(f"sheet row {line}: page {page_text!r} must be 1 or more (gold_page)")
         period_end = _period_end(row, line, artefact)
+        span = _span(row, line, filing)
         try:
             fact = GoldFact(
                 concept=concept.id, statement=row["statement"], basis=row["basis"], section=row.get("section", ""),
                 label=row["label"], period_label=row["period_label"], period_end=period_end,
-                printed=printed, value_status=status, value=value_text, scale=scale, normalized_value=normalized,
+                span=span, printed=printed, value_status=status, value=value_text, scale=scale, normalized_value=normalized,
                 page_index=page - 1,
             )
         except ValidationError as exc:  # a statement or basis outside the vocabulary
@@ -365,3 +395,17 @@ def read_gold(gold_dir: Path) -> dict[str, GoldFiling]:
         return {}
     loaded = [read_model(p, GoldFiling, GoldError, "gold file") for p in sorted(gold_dir.rglob("*.json"))]
     return {g.filing_id: g for g in loaded}
+
+
+def gold_of_origin(gold: dict[str, GoldFiling], origin: Literal["sheet", "settled"]) -> dict[str, GoldFiling]:
+    """Each filing with only the facts of `origin`, by filing id. A filing left with no fact is dropped.
+
+    The `sheet` view keeps a filing's expected checks and the `settled` view has none: the checks were read from
+    the sheet's rows. So a gold file made only of settled facts is not a gold filing of the `sheet` view."""
+    view: dict[str, GoldFiling] = {}
+    for filing_id, filing in gold.items():
+        facts = [fact for fact in filing.facts if fact.origin == origin]
+        if facts:
+            view[filing_id] = filing.model_copy(
+                update={"facts": facts, "expected_checks": filing.expected_checks if origin == "sheet" else []})
+    return view

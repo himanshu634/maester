@@ -139,6 +139,7 @@ Usage: `maester-eval freeze <filing id> [--run <run>] [--force]`.
     - The scale is `1` for a concept of the kind `per_share` or `count`. For another concept it is `gold_scale`, or else `scale_factor`. It is a whole number from 1 that does not start with a zero. A dash has no scale.
     - The page is `gold_page`, or else `page`. It is a whole number of 1 or more. The gold fact keeps it as a page index, counted from 0.
     - The period end is `gold_period_end`, or else `period_end`. It is empty or a real date in the form `YYYY-MM-DD`.
+    - The span is `gold_span`, or else `span`. It is empty or one of `quarter`, `half_year`, `nine_months`, `year` and `other`. A balance sheet row has no span. A row of a `financial_results` filing that is not on the balance sheet needs one, because a quarter and its year to date end on the same day.
 11. If two kept rows have the same concept, basis and period label, the harness stops and names both sheet rows.
 12. If no row has `yes` in `verified`, the harness stops and writes nothing.
 13. It writes `data/eval/gold/<filing id>.json`. If the file exists, it stops. With `--force`, it replaces the file. If it cannot write the file, it shows `cannot write <path>: <reason>` and stops. A gold file that exists stays as it was.
@@ -325,6 +326,7 @@ Without `--run`, `freeze` uses the cells as they are. A cell that it cannot read
 | `label` | Harness | The label. A machine column. |
 | `period_label` | Harness | The period label. A machine column. |
 | `period_end` | Harness | The one date of the fact: the period end, or the as-at date of a row of the balance sheet. Empty if the workflow could not read a date from the head of the column. A machine column. |
+| `span` | Harness | How long the period is: `quarter`, `half_year`, `nine_months` or `year`, read from the words of the column head by the span rule (version 1, `maester_eval.periods`). A "year to date" head takes its span from the month of `period_end`. Empty for a balance sheet row, and if the head does not say. A machine column. |
 | `printed` | Harness | The printed text. A machine column. |
 | `value` | Harness | The value. Empty if the text has no value. |
 | `unit_label` | Harness | The unit of the statement as the filing prints it. |
@@ -340,6 +342,7 @@ Without `--run`, `freeze` uses the cells as they are. A cell that it cannot read
 | `gold_scale` | Person | The scale, if `scale_factor` is wrong or empty. |
 | `gold_page` | Person | The PDF page, if `page` is wrong. |
 | `gold_period_end` | Person | The date in the form `YYYY-MM-DD`, if `period_end` is wrong or empty. |
+| `gold_span` | Person | `quarter`, `half_year`, `nine_months`, `year` or `other`, if `span` is wrong or empty. A balance sheet row has none. A row of a results filing needs a span from `span` or `gold_span`. |
 | `adds_up` | Person | `yes` or `no` for a subtotal that the person checked by hand. Else empty. |
 | `verified` | Person | `yes` for each row to keep. |
 | `note` | Both | Free text. The harness writes `extraction failed: <code>` for a filing that failed. |

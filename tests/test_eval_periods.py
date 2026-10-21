@@ -1,0 +1,53 @@
+"""The span rule: a column header says how long the period is. Offline."""
+
+import unittest
+
+from maester_eval.periods import SPAN_RULE_VERSION, span_of_label
+
+CASES = [
+    ("Quarter ended 30.09.2025", "quarter"), ("3 months ended 30/09/2025", "quarter"), ("Three Months Ended September 30, 2025", "quarter"),
+    ("Corresponding 3 months ended in the previous year 30.09.2024", "quarter"), ("Preceding quarter ended 30.06.2025", "quarter"),
+    ("Half year ended 30.09.2025", "half_year"), ("Six months ended 30.09.2025", "half_year"), ("Half-yearly 30.09.2025", "half_year"),
+    ("Nine months ended 31.12.2025", "nine_months"), ("9 months ended 31-Dec-25", "nine_months"),
+    ("Year ended 31.03.2026", "year"), ("For the year ended 31 March 2026", "year"), ("Twelve months ended 31.03.2026", "year"),
+    ("Previous year ended 31.03.2025", "year"), ("FY 2025-26", "year"), ("Q1 FY 2026-27", "quarter"),
+    ("As at 31 March 2026", None), ("Year to date figures for current period ended 30.09.2025", None),   # no date given
+    ("31.03.2026 (Audited)", None), ("Current period", None), ("2025-26", None), ("", None),
+]
+
+
+class SpanOfLabelTests(unittest.TestCase):
+    def test_the_rule_has_a_version(self):
+        self.assertEqual(SPAN_RULE_VERSION, 1)
+
+    def test_span_of_label(self):
+        for label, span in CASES:
+            self.assertEqual(span_of_label(label), span, label)
+
+    def test_year_to_date_takes_its_span_from_the_month(self):
+        ytd = "Year to date figures for current period ended"
+        self.assertEqual([span_of_label(f"{ytd} 30.06.2025", "2025-06-30"), span_of_label(f"{ytd} 30.09.2025", "2025-09-30"),
+                          span_of_label(f"{ytd} 31.12.2025", "2025-12-31"), span_of_label("Year to date figures for the previous year ended 31.03.2025", "2025-03-31"),
+                          span_of_label(f"{ytd} 31.08.2025", "2025-08-31")],
+                         ["quarter", "half_year", "nine_months", "year", None])
+        self.assertEqual(span_of_label("Half year ended 30.09.2025", "2025-12-31"), "half_year")   # the words win; the month is read for year to date only
+
+    def test_year_to_date_reads_a_date_or_its_text_and_never_guesses(self):
+        from datetime import date
+        self.assertEqual(span_of_label("YTD 30.09.2025", date(2025, 9, 30)), "half_year")
+        self.assertEqual(span_of_label("ytd", "2025-12-31"), "nine_months")
+        for end in (None, "", "September", "2025-13-45"):
+            self.assertIsNone(span_of_label("Year to date figures", end), end)
+
+    def test_the_first_rule_that_matches_wins(self):
+        # "as at" beats everything, and a quarter word beats a year word.
+        self.assertIsNone(span_of_label("As at 30 September 2025 (six months)"))
+        self.assertEqual(span_of_label("Quarter ended 31.03.2026 (year ended)"), "quarter")
+        self.assertEqual(span_of_label("Nine  months\tended  31.12.2025"), "nine_months")  # spaces collapse
+
+    def test_the_rule_never_gives_other(self):
+        self.assertNotIn("other", {span_of_label(label) for label, _ in CASES})
+
+
+if __name__ == "__main__":
+    unittest.main()
