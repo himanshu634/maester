@@ -141,7 +141,17 @@ export const researchContent = {
 		region: (kind: string) => `${kind} by year, scrolls sideways`,
 		restated: (fy: string) => `${fy} restated`,
 		newestWins:
-			'Each year comes whole from the newest filing that prints it, so a column never mixes filings.',
+			'Each year comes whole from one filing: an XBRL filing first, otherwise the newest filing that prints it, so a column never mixes filings or sources.',
+		/** The sub-label under a year whose column comes from an XBRL file. */
+		xbrlColumn: 'Results, XBRL',
+		/** Under the table: the years whose statements come from more than one source. */
+		yearSources: {
+			label: 'Where each year’s statements come from',
+			xbrl: 'the XBRL',
+			page: 'the annual report, read by Gemini',
+			/** "Profit and loss and balance sheet from the XBRL" */
+			from: (statements: string, source: string) => `${statements} from ${source}`
+		},
 		notRead: (basis: string, kind: string) =>
 			`No ${basis.toLowerCase()} ${kind.toLowerCase()} has been read yet.`,
 		unplaced: (n: number) =>
@@ -159,6 +169,8 @@ export const researchContent = {
 			`${kind} · ${basis.toLowerCase()} · ${period}`,
 		terms: {
 			from: 'From',
+			unit: 'Unit',
+			inPdf: 'In the PDF',
 			restated: 'Restated',
 			onPage: 'On the page',
 			addsUp: 'Adds up',
@@ -166,12 +178,71 @@ export const researchContent = {
 			reviewed: 'Reviewed'
 		},
 		from: (filing: string, page: string) => `${filing}, ${page}`,
-		/** A figure read from an XBRL file: its element, in place of a page. */
-		fromXbrl: (filing: string, element: string) => `${filing}, element ${element}`,
+		/** A figure read from an XBRL file: its span and period, the file and the element, never the context. */
+		xbrlFrom: {
+			/** "Results for the year to 31 Mar 2026" */
+			period: (span: string, day: string) => `Results for the ${span} to ${day}`,
+			/** A balance sheet figure is at a day, not over a span. */
+			instant: (day: string) => `Results at ${day}`,
+			withPdf: (period: string) => `${period}: the XBRL filed with the PDF`,
+			alone: (period: string) => `${period}: the XBRL file`,
+			note: (file: string, element: string) => `${file} · tagged ${element}`,
+			spans: {
+				quarter: 'quarter',
+				half_year: 'half year',
+				nine_months: 'nine months',
+				year: 'year'
+			}
+		},
+		/** The unit of an XBRL figure and, where it agrees with the places shown, its rounding. */
+		xbrlUnit: {
+			perShare: (currency: string) => `${currency} a share`,
+			declared: ', as the filing declares',
+			converted: (from: string) => `, converted from ${from} as the filing declares`,
+			rounded: (word: string) => `; rounded to the ${word}`,
+			/** By the `decimals` the XBRL file gives. */
+			roundedTo: {
+				'-7': 'crore',
+				'-5': 'lakh',
+				'-4': 'ten thousand',
+				'-3': 'thousand',
+				'-1': 'ten',
+				'2': 'paisa'
+			} as Record<string, string>
+		},
+		/** The `xbrl_in_pdf` outcome, in words. */
+		inPdf: {
+			foundOnPage: (page: number) => `Found on page ${page} of the results PDF.`,
+			foundOnStatements: (pages: string) =>
+				`Found on the results PDF’s statement pages${pages ? ` (${pages})` : ''}.`,
+			notFound: (pages: string) =>
+				`Not found on the PDF’s statement pages${pages ? ` (${pages})` : ''}.`,
+			notFoundDetail: ' The figure stays as filed in XBRL. Check the PDF yourself.'
+		},
+		/** The link to the results PDF, and what it opens. */
+		xbrlOpen: {
+			atPage: (page: number) => `Open the results PDF at page ${page}`,
+			plain: 'Open the results PDF',
+			foundNote: 'The page where the check found this figure. The XBRL file itself has no pages.',
+			statementsNote: 'Where the statement pages start. The XBRL file has no pages.',
+			plainNote: 'The XBRL file has no pages.'
+		},
+		/** What another filing printed or filed, and which figure the table shows. */
 		restated: (filing: string, printed: string, page: number) =>
-			`${filing} printed ${printed} for this year, on page ${page}. The newer filing’s figure is shown.`,
-		restatedXbrl: (filing: string, printed: string, element: string) =>
-			`${filing} printed ${printed} for this year, in the element ${element}. The newer filing’s figure is shown.`,
+			`${filing} printed ${printed} for this year, on page ${page}.`,
+		restatedXbrl: (filing: string, value: string, unit: string) =>
+			`${filing} filed ${value} ${unit} for this year in its XBRL file.`,
+		restatedShown: {
+			/** The page filing's figure was replaced by ... */
+			page: {
+				page: ' The newer filing’s figure is shown.',
+				xbrl: ' The XBRL filing’s figure is shown.'
+			},
+			xbrl: {
+				xbrl: ' The newer XBRL filing’s figure is shown.',
+				page: ' This filing’s figure is shown.'
+			}
+		},
 		usedIn: 'Price to earnings, in the summary above',
 		reviewed: 'Not yet',
 		open: (page: number) => `Open the PDF at page ${page}`,
@@ -197,6 +268,22 @@ export const researchContent = {
 		partOf: (subject: string, ok: boolean) =>
 			`Part of ${subject.toLowerCase()}, which ${ok ? 'adds up' : 'doesn’t add up'}`,
 		notChecked: 'Not checked',
+		failedXbrl: {
+			strong: 'No.',
+			text: (lines: string, total: string, difference: string | null, more: boolean) =>
+				`The lines add up to ${lines}; the XBRL file gives ${total}${difference ? `, ${difference} ${more ? 'more' : 'less'}` : ''}.`
+		},
+		identityFailedXbrl: {
+			strong: 'No.',
+			text: (
+				subject: string,
+				total: string,
+				sides: string,
+				difference: string | null,
+				more: boolean
+			) =>
+				`${subject} doesn’t equal equity and liabilities: the XBRL file gives ${total}; equity and liabilities come to ${sides}${difference ? `, ${difference} ${more ? 'more' : 'less'}` : ''}.`
+		},
 		failed: {
 			strong: 'No.',
 			/** `more`: the page prints more than the lines add up to. No difference when a number is unknown. */
@@ -219,9 +306,8 @@ export const researchContent = {
 		missing: (filing: string) => `Not printed under this name in ${filing}.`,
 		dash: (page: number) => `A dash printed on page ${page}. Maester doesn’t read it as zero.`,
 		unparsed: (page: number) => `Maester couldn’t read what page ${page} prints here.`,
-		nilXbrl: (element: string) =>
-			`The XBRL file marks ${element} as nil. Maester doesn’t read it as zero.`,
-		unparsedXbrl: (element: string) =>
-			`Maester couldn’t read the value of ${element} in the XBRL file.`
+		xbrlNil: 'The XBRL file gives no value for this line.',
+		xbrlUnparsed: 'Maester couldn’t read the value the XBRL file gives for this line.',
+		xbrlNoRounding: 'The XBRL file doesn’t declare its rounding, so the unit isn’t known.'
 	}
 } as const;

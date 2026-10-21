@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import type { CellCheck, CellSource, FinancialCell, StatementTable } from './types';
+import type {
+	CellCheck,
+	CellSource,
+	FinancialCell,
+	PageSource,
+	StatementTable,
+	TableUnit,
+	XbrlSource
+} from './types';
+import type { StatementKind } from '$lib/documents/types';
 import {
 	addsUp,
 	cellReason,
@@ -7,17 +16,24 @@ import {
 	defaultBasis,
 	figure,
 	filingShort,
+	columnFrom,
 	fyLabel,
 	fromWords,
 	fyWords,
+	inPdfWords,
 	onPage,
 	pageWords,
 	pdfPageOf,
 	restatedWords,
+	sourcePage,
 	standing,
 	unitShort,
 	unitWords,
 	whereWords,
+	xbrlFrom,
+	xbrlOpen,
+	xbrlUnit,
+	yearSources,
 	yearsRead
 } from './view';
 
@@ -35,7 +51,7 @@ const cell = (over: Partial<FinancialCell> = {}): FinancialCell => ({
 	printed: '12,105.40',
 	factId: 'f',
 	revisionId: 'r',
-	source: { documentId: 'd', pageIndex: 212, pageCount: 286, textLayerMatch: true },
+	source: { kind: 'page', documentId: 'd', pageIndex: 212, pageCount: 286, textLayerMatch: true },
 	check: NO_CHECK,
 	restated: null,
 	...over
@@ -97,69 +113,290 @@ describe('cells', () => {
 	});
 });
 
-const XBRL_SOURCE: CellSource = {
+const x: XbrlSource = {
 	kind: 'xbrl',
-	documentId: 'x',
-	originalName: '500999_Q2.xml',
+	documentId: 'x4',
+	originalName: '500999_Q4_FY26_Consolidated.xml',
 	element: 'RevenueFromOperations',
-	contextId: 'OneD',
+	contextId: 'FourD',
 	decimals: '-5',
 	nil: false,
-	periodStart: '2025-07-01',
-	span: 'quarter'
+	periodStart: '2025-04-01',
+	span: 'year',
+	inPdf: {
+		status: 'passed',
+		pdfDocumentId: 'p4',
+		pageIndex: 4,
+		statementPages: [3, 4, 5],
+		reason: null
+	}
 };
+const xbrlCell = (over: Partial<FinancialCell> = {}) => cell({ source: x, ...over });
+const crore: TableUnit = { label: 'crores', scale: '10000000', currency: 'INR' };
+const lakh: TableUnit = { label: 'lakhs', scale: '100000', currency: 'INR' };
 
-describe('an XBRL source has an element and no page', () => {
-	it('names the element, never a page, in the reasons and the page words', () => {
-		const nil = cell({ status: 'unparsed', value: null, source: { ...XBRL_SOURCE, nil: true } });
-		expect(cellReason(nil, 'Q2 2025–26')).toBe(
-			'The XBRL file marks RevenueFromOperations as nil. Maester doesn’t read it as zero.'
+describe('an XBRL figure has an element and a file, never a page', () => {
+	it('From names the filing and the file, never the context', () => {
+		expect(xbrlFrom(x, '2026-03-31')).toEqual({
+			text: 'Results for the year to 31 Mar 2026: the XBRL filed with the PDF',
+			note: '500999_Q4_FY26_Consolidated.xml · tagged RevenueFromOperations'
+		});
+		expect(JSON.stringify(xbrlFrom(x, '2026-03-31'))).not.toContain('FourD');
+	});
+
+	it('From names the span, and an instant reads "at"', () => {
+		const said = (span: XbrlSource['span']) => xbrlFrom({ ...x, span }, '2025-12-31').text;
+		expect(said('quarter')).toContain('Results for the quarter to 31 Dec 2025:');
+		expect(said('half_year')).toContain('Results for the half year to 31 Dec 2025:');
+		expect(said('nine_months')).toContain('Results for the nine months to 31 Dec 2025:');
+		expect(said(null)).toBe('Results at 31 Dec 2025: the XBRL filed with the PDF');
+	});
+
+	it('From with no PDF stored', () => {
+		expect(
+			xbrlFrom(
+				{
+					...x,
+					inPdf: { ...x.inPdf, status: 'not_checked', pdfDocumentId: null, reason: 'no_pdf' }
+				},
+				'2026-03-31'
+			).text
+		).toBe('Results for the year to 31 Mar 2026: the XBRL file');
+	});
+
+	it('Unit: the declaration only when the cell carries one; the precision only where the two places shown agree', () => {
+		expect(xbrlUnit({ shown: crore, perShare: false, decimals: '-5', declared: null })).toBe(
+			'₹ crore; rounded to the lakh'
 		);
-		const unread = cell({ status: 'unparsed', value: null, source: XBRL_SOURCE });
-		expect(cellReason(unread, 'Q2 2025–26')).toBe(
-			'Maester couldn’t read the value of RevenueFromOperations in the XBRL file.'
+		expect(xbrlUnit({ shown: crore, perShare: false, decimals: '-5', declared: crore })).toBe(
+			'₹ crore, as the filing declares; rounded to the lakh'
 		);
-		expect(cellReason(cell({ source: XBRL_SOURCE }), 'Q2 2025–26')).toBeNull();
-		expect(pageWords(cell({ source: XBRL_SOURCE }))).toBe('RevenueFromOperations');
-		for (const said of [cellReason(nil, 'x'), cellReason(unread, 'x'), pageWords(nil)]) {
+		expect(xbrlUnit({ shown: crore, perShare: false, decimals: '-5', declared: lakh })).toBe(
+			'₹ crore, converted from ₹ lakh as the filing declares; rounded to the lakh'
+		);
+		expect(xbrlUnit({ shown: crore, perShare: false, decimals: '-7', declared: null })).toBe(
+			'₹ crore'
+		);
+		expect(xbrlUnit({ shown: crore, perShare: true, decimals: '2', declared: null })).toBe(
+			'₹ a share; rounded to the paisa'
+		);
+		expect(xbrlUnit({ shown: crore, perShare: true, decimals: 'INF', declared: null })).toBe(
+			'₹ a share'
+		);
+		expect(xbrlUnit({ shown: crore, perShare: false, decimals: null, declared: null })).toBe(
+			'₹ crore'
+		);
+		expect(
+			xbrlUnit({
+				shown: { label: 'millions', scale: '1000000', currency: 'USD' },
+				perShare: false,
+				decimals: '-4',
+				declared: null
+			})
+		).toBe('USD million');
+	});
+
+	it('In the PDF, each outcome', () => {
+		expect(inPdfWords(x.inPdf)).toEqual({ text: 'Found on page 5 of the results PDF.' });
+		expect(inPdfWords({ ...x.inPdf, pageIndex: null })).toEqual({
+			text: 'Found on the results PDF’s statement pages (4–6).'
+		});
+		expect(inPdfWords({ ...x.inPdf, status: 'failed', pageIndex: null })).toEqual({
+			strong: 'Not found on the PDF’s statement pages (4–6).',
+			text: ' The figure stays as filed in XBRL. Check the PDF yourself.'
+		});
+		expect(inPdfWords({ ...x.inPdf, status: 'not_checked', reason: 'disabled' }).text).toBe(
+			'Not checked: the check is turned off.'
+		);
+	});
+
+	it('the button: the match page, else where the statement pages start, else none', () => {
+		expect(xbrlOpen(x)).toEqual({
+			documentId: 'p4',
+			pageIndex: 4,
+			label: 'Open the results PDF at page 5',
+			note: 'The page where the check found this figure. The XBRL file itself has no pages.'
+		});
+		expect(xbrlOpen({ ...x, inPdf: { ...x.inPdf, status: 'failed', pageIndex: null } })).toEqual({
+			documentId: 'p4',
+			pageIndex: 3,
+			label: 'Open the results PDF at page 4',
+			note: 'Where the statement pages start. The XBRL file has no pages.'
+		});
+		expect(
+			xbrlOpen({
+				...x,
+				inPdf: { ...x.inPdf, status: 'not_checked', pageIndex: null, statementPages: [] }
+			})
+		).toEqual({
+			documentId: 'p4',
+			pageIndex: null,
+			label: 'Open the results PDF',
+			note: 'The XBRL file has no pages.'
+		});
+		expect(xbrlOpen({ ...x, inPdf: { ...x.inPdf, pdfDocumentId: null } })).toBeNull();
+	});
+
+	it('an XBRL cell with no figure has a reason of its own, never a page sentence', () => {
+		const nil = xbrlCell({ status: 'unparsed', value: null, source: { ...x, nil: true } });
+		expect(cellText(nil)).toBe('—');
+		expect(cellReason(nil, 'Results, XBRL')).toBe('The XBRL file gives no value for this line.');
+		expect(cellReason(xbrlCell({ status: 'unparsed', value: null }), 'Results, XBRL')).toBe(
+			'Maester couldn’t read the value the XBRL file gives for this line.'
+		);
+		expect(cellReason(xbrlCell({ status: 'value', value: null }), 'Results, XBRL')).toBe(
+			'The XBRL file doesn’t declare its rounding, so the unit isn’t known.'
+		);
+		expect(
+			cellReason(xbrlCell({ status: 'missing', value: null, source: null }), 'AR 2023–24')
+		).toBe('Not printed under this name in AR 2023–24.');
+		expect(cellReason(xbrlCell(), 'Results, XBRL')).toBeNull();
+		expect(sourcePage(xbrlCell())).toBeNull();
+		expect(sourcePage(cell())).toBe(213);
+		for (const said of [cellReason(nil, 'x'), pageWords(nil)]) {
 			expect(said).not.toMatch(/NaN|page/i);
 		}
 	});
 
-	it('says what the panel’s From and Restated rows say, for a page and for an element', () => {
-		expect(fromWords(cell(), '2026-03-31')).toBe('Annual report 2025–26, page 213 of 286');
-		expect(fromWords(cell({ source: XBRL_SOURCE }), '2026-03-31')).toBe(
-			'Annual report 2025–26, element RevenueFromOperations'
-		);
-		expect(fromWords(cell({ source: null }), '2026-03-31')).toBeNull();
-		const restated = {
-			documentId: 'd',
-			filingPeriodEnd: '2025-03-31',
-			value: '1',
-			printed: '11,000'
-		};
-		expect(restatedWords({ ...restated, pageIndex: 100 })).toContain('on page 101');
-		const fromXbrl = restatedWords({ ...restated, kind: 'xbrl', element: 'RevenueFromOperations' });
-		expect(fromXbrl).toContain('in the element RevenueFromOperations');
-		expect(fromXbrl).not.toMatch(/NaN|page/i);
-	});
-
-	it('offers a PDF to open at a page only for a page source', () => {
+	it('has no page to open and no text layer to say anything about', () => {
 		expect(pdfPageOf(cell())).toEqual({ documentId: 'd', pageIndex: 212 });
-		expect(pdfPageOf(cell({ source: XBRL_SOURCE }))).toBeNull();
+		expect(pdfPageOf(xbrlCell())).toBeNull();
 		expect(pdfPageOf(cell({ source: null }))).toBeNull();
-	});
-
-	it('has no text layer to say anything about', () => {
-		expect(onPage(cell({ source: XBRL_SOURCE }))).toEqual({ text: '—' });
+		expect(onPage(xbrlCell())).toEqual({ text: '—' });
+		expect(fromWords(cell(), '2026-03-31')).toBe('Annual report 2025–26, page 213 of 286');
+		expect(fromWords(xbrlCell(), '2026-03-31')).toBeNull();
+		expect(fromWords(cell({ source: null }), '2026-03-31')).toBeNull();
 	});
 
 	it('words where a figure came from, for a page and for an element', () => {
 		expect(whereWords(cell())).toBe('annual report, page 213');
-		expect(whereWords(cell({ source: XBRL_SOURCE }))).toBe(
-			'XBRL file, element RevenueFromOperations'
-		);
+		expect(whereWords(xbrlCell())).toBe('XBRL file, element RevenueFromOperations');
 		expect(whereWords(cell({ source: null }))).toBe('annual report');
+	});
+
+	it('restated: worded by the source that owns the cell, the XBRL value in the table’s unit', () => {
+		const fromPage = {
+			kind: 'page',
+			documentId: 'ar',
+			filingPeriodEnd: '2026-03-31',
+			pageIndex: 212,
+			value: '12100.00',
+			printed: '12,100.00'
+		} as const;
+		expect(restatedWords(xbrlCell({ restated: fromPage }), crore, false)).toBe(
+			'Annual report 2025–26 printed 12,100.00 for this year, on page 213. The XBRL filing’s figure is shown.'
+		);
+		expect(restatedWords(cell({ restated: fromPage }), crore, false)).toBe(
+			'Annual report 2025–26 printed 12,100.00 for this year, on page 213. The newer filing’s figure is shown.'
+		);
+		const fromXbrl = {
+			kind: 'xbrl',
+			documentId: 'x3',
+			filingPeriodEnd: '2026-03-31',
+			element: 'RevenueFromOperations',
+			value: '12100.5',
+			printed: '121005000000'
+		} as const;
+		expect(restatedWords(xbrlCell({ restated: fromXbrl }), crore, false)).toBe(
+			'Annual report 2025–26 filed 12,100.50 ₹ crore for this year in its XBRL file. The newer XBRL filing’s figure is shown.'
+		);
+		expect(restatedWords(cell({ restated: fromXbrl }), crore, true)).toBe(
+			'Annual report 2025–26 filed 12,100.50 ₹ a share for this year in its XBRL file. This filing’s figure is shown.'
+		);
+		expect(restatedWords(cell(), crore, false)).toBeNull();
+	});
+
+	it('a sum that fails on an XBRL total says what the XBRL file gives, never a page', () => {
+		const failed: CellCheck = {
+			...NO_CHECK,
+			role: 'subject',
+			status: 'failed',
+			checkType: 'subtotal',
+			subjectLabel: 'Total income',
+			expected: '100.00',
+			actual: '99.00'
+		};
+		expect(addsUp(xbrlCell({ check: failed }))).toEqual({
+			strong: 'No.',
+			text: 'The lines add up to 99.00; the XBRL file gives 100.00, 1.00 more.'
+		});
+		const identity: CellCheck = {
+			...failed,
+			checkType: 'balance_identity',
+			subjectLabel: 'Total assets',
+			actual: '98.00'
+		};
+		expect(addsUp(xbrlCell({ check: identity }))).toEqual({
+			strong: 'No.',
+			text: 'Total assets doesn’t equal equity and liabilities: the XBRL file gives 100.00; equity and liabilities come to 98.00, 2.00 more.'
+		});
+	});
+});
+
+describe('a year from two sources is named; one source names nothing', () => {
+	const page: PageSource = {
+		kind: 'page',
+		documentId: 'ar',
+		pageIndex: 212,
+		pageCount: 286,
+		textLayerMatch: true
+	};
+	const tableOf = (statement: StatementKind, source: CellSource): StatementTable => ({
+		statement,
+		basis: 'consolidated',
+		unit: crore,
+		unplaced: 0,
+		leftOut: [],
+		columns: [
+			{
+				periodEnd: '2026-03-31',
+				periodLabel: '2025–26',
+				documentId: source.documentId,
+				filingPeriodEnd: '2026-03-31'
+			}
+		],
+		rows: [
+			{
+				key: 'r',
+				section: '',
+				label: 'Line',
+				isSubtotal: false,
+				perShare: false,
+				cells: [cell({ source })]
+			}
+		]
+	});
+
+	it('names the sources of a mixed year', () => {
+		expect(
+			yearSources(
+				[tableOf('income_statement', x), tableOf('balance_sheet', x), tableOf('cash_flow', page)],
+				'consolidated'
+			)
+		).toEqual([
+			{
+				year: '2025–26',
+				words:
+					'Profit and loss and balance sheet from the XBRL; cash flow from the annual report, read by Gemini.'
+			}
+		]);
+	});
+
+	it('names nothing when one source covers the year, or the basis has no table', () => {
+		expect(
+			yearSources([tableOf('income_statement', x), tableOf('cash_flow', x)], 'consolidated')
+		).toEqual([]);
+		expect(
+			yearSources([tableOf('income_statement', x), tableOf('cash_flow', page)], 'standalone')
+		).toEqual([]);
+	});
+
+	it('says where a column comes from', () => {
+		expect(columnFrom(tableOf('cash_flow', page), 0)).toBe('page');
+		expect(columnFrom(tableOf('cash_flow', x), 0)).toBe('xbrl');
+		const none = tableOf('cash_flow', page);
+		none.rows[0]!.cells = [cell({ status: 'missing', value: null, source: null })];
+		expect(columnFrom(none, 0)).toBeNull();
 	});
 });
 
@@ -169,7 +406,13 @@ describe('onPage', () => {
 		expect(
 			onPage(
 				cell({
-					source: { documentId: 'd', pageIndex: 212, pageCount: 286, textLayerMatch: null }
+					source: {
+						kind: 'page',
+						documentId: 'd',
+						pageIndex: 212,
+						pageCount: 286,
+						textLayerMatch: null
+					}
 				})
 			)
 		).toEqual({ text: 'Page 213 is scanned: not checked against its text' });
@@ -177,7 +420,13 @@ describe('onPage', () => {
 			onPage(
 				cell({
 					printed: '10,012.30',
-					source: { documentId: 'd', pageIndex: 148, pageCount: 286, textLayerMatch: false }
+					source: {
+						kind: 'page',
+						documentId: 'd',
+						pageIndex: 148,
+						pageCount: 286,
+						textLayerMatch: false
+					}
 				})
 			)
 		).toEqual({ strong: 'Not found.', text: 'The page’s text doesn’t contain 10,012.30.' });

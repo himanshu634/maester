@@ -6,9 +6,11 @@
 import type {
 	ClassificationKind,
 	Company,
+	FactSpan,
 	IntakeState,
 	ReportingBasis,
-	StatementKind
+	StatementKind,
+	XbrlPdfNotChecked
 } from '$lib/documents/types';
 
 export type CellStatus = 'value' | 'dash' | 'unparsed' | 'missing';
@@ -24,8 +26,8 @@ export interface CellCheck {
 }
 
 /** The page variant of the API's CellSource: a figure read from a page of a PDF. */
-export interface PageCellSource {
-	kind?: 'page';
+export interface PageSource {
+	kind: 'page';
 	documentId: string;
 	/** 0-based; pages are shown counted from 1. */
 	pageIndex: number;
@@ -34,29 +36,41 @@ export interface PageCellSource {
 }
 
 /**
- * The XBRL variant of the API's CellSource: a figure read from an element of an XBRL file, which
- * has no pages. Only the fields the page reads are copied (`inPdf` is left out).
+ * Whether an XBRL fact's value was found on its results PDF's statement pages (the API's
+ * `XbrlInPdf`). `pdfDocumentId` is null with no PDF stored; `pageIndex` is the 0-based page the
+ * value was found on; `statementPages` are the 0-based pages of the fact's statement and basis.
  */
-export interface XbrlCellSource {
+export interface XbrlInPdf {
+	status: 'passed' | 'failed' | 'not_checked';
+	pdfDocumentId: string | null;
+	pageIndex: number | null;
+	statementPages: number[];
+	reason: XbrlPdfNotChecked | null;
+}
+
+/** The XBRL variant of the API's CellSource: a figure read from an element of an XBRL file, which has no pages. */
+export interface XbrlSource {
 	kind: 'xbrl';
 	documentId: string;
 	/** The XBRL file's name. */
 	originalName: string;
 	element: string;
+	/** Carried by the API; never shown. */
 	contextId: string;
 	/** The fact's `decimals` as written: "INF" or an integer. */
 	decimals: string | null;
 	/** True when the fact is `xsi:nil`: the cell is unparsed, never zero. */
 	nil: boolean;
 	periodStart: string | null;
-	span: string | null;
+	span: FactSpan | null;
+	inPdf: XbrlInPdf;
 }
 
-export type CellSource = PageCellSource | XbrlCellSource;
+export type CellSource = PageSource | XbrlSource;
 
 /** The page variant of the API's Restated: what another filing printed, on a page. */
 export interface PageRestated {
-	kind?: 'page';
+	kind: 'page';
 	documentId: string;
 	filingPeriodEnd: string | null;
 	pageIndex: number;

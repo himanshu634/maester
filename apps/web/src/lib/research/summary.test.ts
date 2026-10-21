@@ -27,7 +27,13 @@ const v = (value: string | null, page = 213): FinancialCell => ({
 	source:
 		value === null
 			? null
-			: { documentId: 'd26', pageIndex: page - 1, pageCount: 286, textLayerMatch: true },
+			: {
+					kind: 'page',
+					documentId: 'd26',
+					pageIndex: page - 1,
+					pageCount: 286,
+					textLayerMatch: true
+				},
 	check: NO,
 	restated: null
 });
@@ -464,7 +470,14 @@ describe('the lines summarize reads', () => {
 							decimals: '2',
 							nil: false,
 							periodStart: '2025-04-01',
-							span: 'year' as const
+							span: 'year' as const,
+							inPdf: {
+								status: 'not_checked' as const,
+								pdfDocumentId: null,
+								pageIndex: null,
+								statementPages: [],
+								reason: 'no_pdf' as const
+							}
 						}
 					}
 				: c

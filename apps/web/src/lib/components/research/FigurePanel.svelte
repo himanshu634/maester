@@ -1,7 +1,9 @@
 <!--
 	The selected figure's evidence: the line and year, the figure, then where it came from, whether
 	the page's text contains it, whether its sum adds up, what uses it and whether it was reviewed,
-	and a link that opens the filing at its page. Beside the table from 1024px; under it below
+	and a link that opens the filing at its page. A figure read from an XBRL file has no page: it
+	names the filing and the file, the unit and its rounding, and whether the results PDF holds the
+	figure, and its link opens that PDF. Beside the table from 1024px; under it below
 	that, where "Back to the table" returns focus to the figure.
 -->
 <script lang="ts">
@@ -14,10 +16,14 @@
 		cellText,
 		filingShort,
 		fromWords,
+		inPdfWords,
 		onPage,
 		pdfPageOf,
 		restatedWords,
 		unitWords,
+		xbrlFrom,
+		xbrlOpen,
+		xbrlUnit,
 		type Words
 	} from '$lib/research/view';
 
@@ -25,13 +31,14 @@
 		table: StatementTable;
 		pos: Pos | null;
 		pageHref: (documentId: string, pageIndex: number) => string;
+		fileHref: (documentId: string) => string;
 		/** The figure is the earnings per share the summary's price to earnings divides by. */
 		usedInPe: boolean;
 		headingId: string;
 		onback: () => void;
 	}
 
-	let { table, pos, pageHref, usedInPe, headingId, onback }: Props = $props();
+	let { table, pos, pageHref, fileHref, usedInPe, headingId, onback }: Props = $props();
 
 	const copy = researchContent.panel;
 	const statements = researchContent.statements;
@@ -57,9 +64,11 @@
 	{:else}
 		{@const { row, col, cell } = picked}
 		{@const source = cell.source}
+		{@const xbrl = source?.kind === 'xbrl' ? source : null}
 		{@const from = fromWords(cell, col.filingPeriodEnd)}
 		{@const pdf = pdfPageOf(cell)}
 		{@const reason = cellReason(cell, filingShort(col.filingPeriodEnd))}
+		{@const restated = restatedWords(cell, table.unit, row.perShare)}
 		<div class="head">
 			<h3 id={headingId} tabindex="-1">{row.label}</h3>
 			<p class="muted context">
@@ -77,22 +86,47 @@
 			>
 		</p>
 		<dl class="spec">
-			<div class="entry">
-				<dt>{copy.terms.from}</dt>
-				<dd>
-					{#if from}
-						{from}
-					{:else}
-						{reason ?? '—'}
-					{/if}
-				</dd>
-			</div>
-			{#if cell.restated}
+			{#if xbrl}
+				{@const xbrlSaid = xbrlFrom(xbrl, col.periodEnd)}
+				<div class="entry">
+					<dt>{copy.terms.from}</dt>
+					<dd>
+						{xbrlSaid.text}
+						<span class="muted note">{xbrlSaid.note}</span>
+					</dd>
+				</div>
+				<div class="entry">
+					<dt>{copy.terms.unit}</dt>
+					<dd>
+						{reason ??
+							xbrlUnit({
+								shown: table.unit,
+								perShare: row.perShare,
+								decimals: xbrl.decimals,
+								declared: null
+							})}
+					</dd>
+				</div>
+				<div class="entry">
+					<dt>{copy.terms.inPdf}</dt>
+					<dd>{@render words(inPdfWords(xbrl.inPdf))}</dd>
+				</div>
+			{:else}
+				<div class="entry">
+					<dt>{copy.terms.from}</dt>
+					<dd>
+						{#if from}
+							{from}
+						{:else}
+							{reason ?? '—'}
+						{/if}
+					</dd>
+				</div>
+			{/if}
+			{#if restated}
 				<div class="entry">
 					<dt>{copy.terms.restated}</dt>
-					<dd>
-						{restatedWords(cell.restated)}
-					</dd>
+					<dd>{restated}</dd>
 				</div>
 			{/if}
 			{#if pdf}
@@ -120,7 +154,20 @@
 				<dd>{copy.reviewed}</dd>
 			</div>
 		</dl>
-		{#if pdf}
+		{#if xbrl}
+			{@const open = xbrlOpen(xbrl)}
+			{#if open}
+				{@const href =
+					open.pageIndex === null
+						? fileHref(open.documentId)
+						: pageHref(open.documentId, open.pageIndex)}
+				<div class="open">
+					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- an API route that redirects to the stored PDF -->
+					<a class="button outline" {href} target="_blank" rel="noopener">{open.label}</a>
+					<p class="muted note">{open.note}</p>
+				</div>
+			{/if}
+		{:else if pdf}
 			{@const href = pageHref(pdf.documentId, pdf.pageIndex)}
 			<div class="open">
 				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- an API route that redirects to the stored PDF -->
@@ -210,6 +257,10 @@
 	dd {
 		margin: 0;
 		min-width: 0;
+	}
+
+	dd .note {
+		display: block;
 	}
 
 	.open {
