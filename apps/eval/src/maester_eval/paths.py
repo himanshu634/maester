@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import re
 
+from maester_eval.artefacts import RunSource, read_run
 from maester_eval.errors import EvalError
 
 # apps/eval/src/maester_eval/paths.py → the repository root. `parents[4]` holds for a checkout
@@ -59,6 +60,20 @@ class EvalPaths:
     def runs(self) -> Path:
         return self.base / "runs"
 
+    @property
+    def settle(self) -> Path:
+        return self.base / "settle"
+
+    @property
+    def ocr(self) -> Path:
+        """The OCR spot check's folder. `EvalPaths(paths.ocr)` has its run folders in `ocr/runs`, apart from the extraction runs."""
+        return self.base / "ocr"
+
+    @property
+    def retrieval(self) -> Path:
+        """The retrieval set's folder: `corpus.json`, `questions.csv` and, in `EvalPaths(paths.retrieval).runs`, a request per run."""
+        return self.base / "retrieval"
+
     def new_run(self, label: str | None = None, now: datetime | None = None) -> Path:
         """A fresh run folder named by UTC time, `20261016T093005Z[-label]`. Never reuses one.
 
@@ -72,30 +87,52 @@ class EvalPaths:
         path.mkdir(parents=True, exist_ok=False)
         return path
 
-    def resolve_run(self, name_or_path: str) -> Path:
+    def resolve_run(self, name_or_path: str, source: RunSource | None = None) -> Path:
         """`latest`, the name of a run folder inside `runs/`, or a path to a run folder.
 
         A bare name is looked up under `runs/` only. A path is absolute or has a folder part
         (`archive/20261016T093005Z`), and may point anywhere. Anything else is a `RunNotFoundError`.
+
+        With a `source`, `latest` is the newest run folder whose `run.json` says that source (no `source` key
+        reads as `pdf`); a folder with no `run.json`, such as phase 4's `xbrl-map` report folder, is skipped.
+        A run named or given by path is read as named: one of the other source is a `RunNotFoundError`, and one
+        with no `run.json` is returned, for the command that reads it to say so. Without a `source`, `latest` is
+        the newest run-named folder, with or without a `run.json`.
         """
         if name_or_path == "latest":
             found = self.runs.glob("*") if self.runs.is_dir() else ()
             runs = sorted(p for p in found if _RUN_NAME.fullmatch(p.name) and p.is_dir())
+            if source is not None:
+                runs = [p for p in runs if _source_of(p) == source]
             if not runs:
-                raise RunNotFoundError(f"no runs under {self.runs}")
+                raise RunNotFoundError(f"no runs under {self.runs}" + ("" if source is None else f" with source {source}"))
             return runs[-1]
         if name_or_path:
             candidate = self.runs / name_or_path
             # Resolved before its parent is taken: `runs/..` is a folder whose parent, as written, is `runs`.
             if candidate.is_dir() and candidate.resolve().parent == self.runs.resolve():
-                return candidate
+                return _of_source(candidate, source)
             given = Path(name_or_path)
             # A folder of the same name in the current folder cannot answer for a bare name. A path must also
             # end in a real name: `archive/..` and `/` are folders, but not runs.
             is_path = given.is_absolute() or len(given.parts) > 1
             if is_path and given.name not in ("", "..") and given.is_dir():
-                return given
+                return _of_source(given, source)
         raise RunNotFoundError(f"no run {name_or_path!r} under {self.runs}")
+
+
+def _source_of(run_dir: Path) -> RunSource | None:
+    """What read a run, from its `run.json`: `pdf` when it names none. None when the folder has no `run.json`."""
+    if not (run_dir / "run.json").is_file():
+        return None
+    return read_run(run_dir).get("source") or "pdf"
+
+
+def _of_source(run_dir: Path, source: RunSource | None) -> Path:
+    found = None if source is None else _source_of(run_dir)
+    if found is not None and found != source:
+        raise RunNotFoundError(f"run {run_dir.name} is not a {source} run")
+    return run_dir
 
 
 DEFAULT = EvalPaths(ROOT / "data" / "eval")

@@ -3,7 +3,7 @@
  * a folder, or a drop of either), which files can go and why the rest cannot, sending the rest a
  * few at a time through the upload flow, and what the drop strip says about a batch.
  *
- * PDF only until XBRL lands (ingestion phase 4): an .xml file is refused in the browser.
+ * A file is a PDF (.pdf) or an XBRL instance (.xml); the server checks the XML is XBRL.
  */
 import { documentsContent as copy } from '$lib/content/documents';
 import { ApiError } from './client';
@@ -39,6 +39,12 @@ export interface Outcome {
 	/** Files never tried because the batch stopped. */
 	unsent: number;
 	stopped: Stop | null;
+	/**
+	 * What "Send the rest" sends: the files refused because the connection dropped, then the files
+	 * never tried, in the order chosen. Empty unless the batch stopped offline. A file the API or
+	 * the browser refused for itself, and a file that went, are never in it.
+	 */
+	rest: Picked[];
 }
 
 // --- What was chosen ------------------------------------------------------------------------
@@ -132,14 +138,16 @@ const FILE_KINDS: [RegExp, keyof typeof copy.refusals.kinds][] = [
 
 /**
  * Why a file cannot go, from its name, type and size, or null when it may. A PDF is a .pdf whose
- * type is PDF (or that the browser left untyped). Its first bytes are checked by `screen`.
+ * type is PDF (or that the browser left untyped); an XBRL instance is a .xml whose type is XML
+ * (or untyped). The first bytes are checked by `screen`.
  */
 export function checkFile(file: { name: string; size: number; type: string }): string | null {
 	const said = copy.refusals;
-	if (/\.xml$/i.test(file.name)) return said.xbrl;
 	const pdfName = /\.pdf$/i.test(file.name);
 	const pdfType = file.type === 'application/pdf' || file.type === '';
-	if (!pdfName || !pdfType) {
+	const xmlName = /\.xml$/i.test(file.name);
+	const xmlType = ['application/xml', 'text/xml', ''].includes(file.type);
+	if (!(pdfName && pdfType) && !(xmlName && xmlType)) {
 		const known = FILE_KINDS.find(([pattern]) => pattern.test(file.name));
 		return known ? said.notPdfKnown(said.kinds[known[1]]) : said.notPdf;
 	}
@@ -155,6 +163,16 @@ export const HEAD_BYTES = 1024;
 export function looksLikePdf(head: Uint8Array): boolean {
 	const text = String.fromCharCode(...head.subarray(0, HEAD_BYTES));
 	return text.includes('%PDF-');
+}
+
+/**
+ * True when the first bytes, after an optional byte order mark and whitespace, start with "<".
+ * Decoded as UTF-8, so a UTF-8 mark is skipped; a UTF-16 file has NULs between its characters,
+ * is not found here, and is refused.
+ */
+export function looksLikeXml(head: Uint8Array): boolean {
+	const text = new TextDecoder('utf-8').decode(head.subarray(0, HEAD_BYTES));
+	return /^\uFEFF?\s*</.test(text);
 }
 
 /** Reads a file's first bytes. */
@@ -175,7 +193,10 @@ export async function screen(
 		let reason = checkFile(item.file);
 		if (!reason) {
 			try {
-				if (!looksLikePdf(await read(item.file))) reason = copy.refusals.notPdfInside;
+				const head = await read(item.file);
+				if (/\.xml$/i.test(item.file.name)) {
+					if (!looksLikeXml(head)) reason = copy.refusals.notXmlInside;
+				} else if (!looksLikePdf(head)) reason = copy.refusals.notPdfInside;
 			} catch {
 				reason = copy.refusals.unreadable;
 			}
@@ -211,24 +232,32 @@ export function sendFailure(
 
 /**
  * Send the accepted files, `SEND_AT_ONCE` at a time, each through `send`, and say after each
- * one how many are settled. A refusal that would refuse the rest too (signed out, offline)
- * stops the batch: files already started finish, nothing new starts.
+ * one how many are settled. Every XBRL instance goes before any PDF, each kind in the order
+ * chosen, so a results PDF whose instances are already in is not given to a paid read. A
+ * refusal that would refuse the rest too (signed out, offline) stops the batch: files already
+ * started finish, nothing new starts.
  */
 export async function sendAll(
 	accepted: Picked[],
 	folder: string | null,
 	send: (item: Picked) => Promise<unknown>,
 	onSettled: (settled: number) => void = () => {}
-): Promise<Pick<Outcome, 'sent' | 'refused' | 'unsent' | 'stopped'>> {
+): Promise<Pick<Outcome, 'sent' | 'refused' | 'unsent' | 'stopped' | 'rest'>> {
 	let next = 0;
 	let settled = 0;
 	let sent = 0;
 	let stopped: Stop | null = null;
 	const refused: { at: number; refusal: Refusal }[] = [];
+	/** Indexes of the files that stopped the batch (offline or signed out); a resend meets them again. */
+	const droppedAt: number[] = [];
+	// The order sent, as positions in the order chosen: what is reported stays in the order chosen.
+	const positions = accepted.map((_, at) => at);
+	const isXml = (at: number) => /\.xml$/i.test(accepted[at].file.name);
+	const queue = [...positions.filter(isXml), ...positions.filter((at) => !isXml(at))];
 
 	async function lane() {
-		while (!stopped && next < accepted.length) {
-			const at = next++;
+		while (!stopped && next < queue.length) {
+			const at = queue[next++];
 			const item = accepted[at];
 			try {
 				await send(item);
@@ -236,6 +265,7 @@ export async function sendAll(
 			} catch (error) {
 				const failure = sendFailure(error, item.file);
 				refused.push({ at, refusal: { name: shownName(item, folder), reason: failure.reason } });
+				if (failure.stop) droppedAt.push(at);
 				stopped ??= failure.stop;
 			}
 			settled += 1;
@@ -244,12 +274,38 @@ export async function sendAll(
 	}
 
 	await Promise.all(Array.from({ length: Math.min(SEND_AT_ONCE, accepted.length) }, lane));
+	// Lanes take files in queue order, so every queue entry from `next` on was never tried. The
+	// rest is in the order chosen; a resend puts its XBRL first again.
+	const rest =
+		stopped === 'offline'
+			? [...droppedAt, ...queue.slice(next)].sort((a, b) => a - b).map((at) => accepted[at])
+			: [];
 	return {
 		sent,
 		// In the order the files were chosen, not the order they failed in.
 		refused: refused.sort((a, b) => a.at - b.at).map(({ refusal }) => refusal),
 		unsent: accepted.length - settled,
-		stopped
+		stopped,
+		rest
+	};
+}
+
+/**
+ * A "Send the rest" batch, `next`, as one record with the batch it carries on, `carried`: what
+ * went in both, the files refused for themselves in both, and only `next`'s files never tried.
+ * The files `carried` refused for the dropped connection were in its rest and were tried again,
+ * so they count once, in `next`. Null carries nothing.
+ */
+export function carryOver(carried: Outcome | null, next: Outcome): Outcome {
+	if (carried === null) return next;
+	const resent = new Set(carried.rest.map((item) => shownName(item, carried.folder)));
+	const kept = carried.refused.filter((refusal) => !resent.has(refusal.name));
+	return {
+		...next,
+		total: next.total + carried.sent + kept.length,
+		folder: carried.folder,
+		sent: carried.sent + next.sent,
+		refused: [...kept, ...next.refused]
 	};
 }
 
@@ -284,7 +340,16 @@ export function endAloud(outcome: Outcome): string {
 	return missed === 0 ? sent : `${sent} ${copy.drop.notAddedAloud(missed)}`;
 }
 
-/** The refusal Notice's first line: "3 of the 806 files weren’t added." */
+/** The first line when the connection dropped: "The upload didn’t finish. 214 of 806 files were sent." */
+export function unfinishedTitle(outcome: Outcome): string {
+	return copy.drop.unfinishedTitle(outcome.sent, outcome.total);
+}
+
+/**
+ * The refusal Notice's first line: "3 of the 806 files weren’t added.", or, when the connection
+ * dropped, how many went.
+ */
 export function refusedTitle(outcome: Outcome): string {
+	if (outcome.stopped === 'offline') return unfinishedTitle(outcome);
 	return copy.drop.refusedTitle(notAdded(outcome), outcome.total);
 }

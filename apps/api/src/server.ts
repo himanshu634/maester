@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import { createDb } from "@maester/db";
+import { TeiEmbedder } from "@maester/document-index";
 import { createApp } from "./app.js";
 import { createAuth } from "./auth.js";
 import { createDispatcher } from "./dispatch/index.js";
@@ -17,7 +18,9 @@ const store = createStore(env);
 const auth = createAuth({ db, env, mailer: createMailer(env, logger), logger });
 const dispatcher = createDispatcher(env, logger, db);
 
-const app = createApp({ env, logger, db, store, auth, dispatcher });
+const embedder = env.EMBEDDER_URL ? new TeiEmbedder(env.EMBEDDER_URL, env.EMBEDDING_MODEL, { timeoutMs: 30_000, retries: 1 }) : null;
+
+const app = createApp({ env, logger, db, store, auth, dispatcher, embedder });
 
 const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
   logger.info({ port: info.port }, "api listening");

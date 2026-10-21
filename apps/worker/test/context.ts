@@ -26,7 +26,7 @@ export async function createWorkerContext(handlers: Record<string, JobHandler> =
   await db.execute(sql`TRUNCATE TABLE "job", "document", "membership", "workspace", "session", "account", "verification", "user", "market_point", "market_fetch", "market_connection" CASCADE`);
   const store = new MemoryObjectStore();
   const dispatcher = new RecordingDispatcher();
-  const deps: WorkerDeps = { db, store, logger: silentLogger, env, handlers, dispatcher, extractor: null, ...overrides };
+  const deps: WorkerDeps = { db, store, logger: silentLogger, env, handlers, dispatcher, extractor: null, indexer: null, embedder: null, ...overrides };
   return { ...deps, dispatcher, close: () => closeDb(db) };
 }
 

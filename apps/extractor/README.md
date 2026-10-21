@@ -6,6 +6,8 @@ Status: implemented. A stateless Python HTTP service ([FastAPI](https://fastapi.
 
 - `GET /healthz` — liveness.
 - `POST /v1/extract` — PDF as the `application/pdf` body; optional `x-document-id` (logged) and `x-company-name` (URI-encoded, compared with the printed name). Answers `200` with an `application/x-ndjson` stream: `started`, then `progress` and `heartbeat` lines, then exactly one `result` or `error`. `401` for a wrong secret, `413` over `EXTRACT_MAX_BYTES`. The line formats are the `ExtractorEvent` schemas in `@maester/contracts`.
+- `POST /v1/xbrl` — an XBRL instance as the body; header `x-xbrl-mode` is `classify`, `read` or `text` (anything else is a `400 BAD_REQUEST`, an empty body a `400 EMPTY_BODY`); optional `x-document-id` (logged). Answers `200` with an `application/x-ndjson` stream: `started`, `heartbeat` lines while the parse runs, then exactly one `classification`, `read`, `text` or `error`. A document problem is `error XBRL_UNREADABLE` (not retryable); any other exception is `error XBRL_FAILED` (retryable, the exception type only). `401` for a wrong secret. The line formats are the `XbrlEvent` schemas in `@maester/contracts`.
+- `POST /v1/xbrl/pdf-check` — `multipart/form-data` with a `pdf` file and a `request` part (JSON `XbrlPdfCheckRequest`); optional `x-document-id` (logged). Looks for each XBRL fact on the PDF's statement pages in the PDF's own text layer (no model). Answers one JSON `XbrlPdfCheckResult`, or `{"type":"error",...}` like `/v1/classify` (`UNREADABLE_PDF`, not retryable). `400 BAD_REQUEST` for a body that is not multipart, a missing `pdf` or `request` part or a bad request, `413` over `EXTRACT_MAX_BYTES`, `401` for a wrong secret.
 - `POST /v1/classify` — PDF as the `application/pdf` body; optional `x-document-id` (logged). Answers `200` with one JSON document, `{"type":"result",...}` or `{"type":"error",...}`: what kind of filing it is, from rules first and a short model check for what the rules leave open. A missing or failing model still classifies, with a `MODEL_UNAVAILABLE` warning. `401` and `413` as for `/v1/extract`.
 
 ## Configuration
@@ -22,6 +24,9 @@ Status: implemented. A stateless Python HTTP service ([FastAPI](https://fastapi.
 | `EXTRACT_MAX_BYTES` | Largest accepted PDF, default 50 MiB |
 | `EXTRACT_HEARTBEAT_SECONDS` | Heartbeat interval while a model call runs, default `15` |
 | `EXTRACT_DEADLINE_SECONDS` | Time budget per request, default `840` |
+| `XBRL_MAX_BYTES` | Largest XBRL instance, default 20 MiB; over it the answer is a `200` with `error XBRL_UNREADABLE` (`TOO_LARGE`), never a `413` |
+| `XBRL_MAX_FACTS` | Most facts in one instance, default `100000` |
+| `XBRL_DEADLINE_SECONDS` | Parse time budget, default `30` |
 
 LangSmith tracing is forced off. Logs carry document IDs, stages, codes and timings, never document text.
 

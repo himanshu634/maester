@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+	carryOver,
 	checkFile,
 	endAloud,
 	folderOf,
 	looksLikePdf,
+	looksLikeXml,
 	pickedFrom,
 	refusedTitle,
 	screen,
@@ -14,6 +16,7 @@ import {
 	sentLine,
 	shownName,
 	startAloud,
+	unfinishedTitle,
 	walkEntries,
 	type DropEntry,
 	type Outcome,
@@ -37,7 +40,16 @@ const pick = (path: string, size = 1000, type = 'application/pdf'): Picked => ({
 });
 
 function outcome(over: Partial<Outcome> = {}): Outcome {
-	return { total: 12, folder: null, sent: 12, refused: [], unsent: 0, stopped: null, ...over };
+	return {
+		total: 12,
+		folder: null,
+		sent: 12,
+		refused: [],
+		unsent: 0,
+		stopped: null,
+		rest: [],
+		...over
+	};
 }
 
 /** A promise settled from outside, so a test decides when each upload finishes. */
@@ -131,9 +143,19 @@ describe('checkFile', () => {
 		expect(checkFile({ name: 'AR.PDF', size: 1000, type: '' })).toBeNull();
 	});
 
-	it('refuses XBRL until Maester reads it', () => {
-		expect(checkFile({ name: '500999_Q2.xml', size: 1000, type: 'text/xml' })).toBe(
-			'An XBRL file. Maester takes PDFs only for now.'
+	it('takes an XBRL instance: a .xml typed as XML, or left untyped', () => {
+		expect(checkFile({ name: 'q2.xml', size: 10, type: 'text/xml' })).toBeNull();
+		expect(checkFile({ name: 'q2.xml', size: 10, type: 'application/xml' })).toBeNull();
+		expect(checkFile({ name: 'Q2.XML', size: 10, type: '' })).toBeNull();
+	});
+
+	it('refuses an .xml of the wrong type, an empty one and one over the limit', () => {
+		expect(checkFile({ name: 'q2.xml', size: 10, type: 'application/pdf' })).toBe(
+			'Not a PDF or an XBRL file.'
+		);
+		expect(checkFile({ name: 'q2.xml', size: 0, type: 'text/xml' })).toBe('The file is empty.');
+		expect(checkFile({ name: 'q2.xml', size: MAX_UPLOAD_BYTES + 1, type: 'text/xml' })).toBe(
+			'50.1 MB, over the 50 MB limit.'
 		);
 	});
 
@@ -157,9 +179,11 @@ describe('checkFile', () => {
 			'A picture, not a PDF.'
 		);
 		expect(checkFile({ name: 'report.pdf.zip', size: 10, type: 'application/zip' })).toBe(
-			'Not a PDF.'
+			'Not a PDF or an XBRL file.'
 		);
-		expect(checkFile({ name: 'ar.pdf', size: 10, type: 'text/plain' })).toBe('Not a PDF.');
+		expect(checkFile({ name: 'ar.pdf', size: 10, type: 'text/plain' })).toBe(
+			'Not a PDF or an XBRL file.'
+		);
 	});
 });
 
@@ -172,22 +196,38 @@ describe('looksLikePdf', () => {
 	});
 });
 
+describe('looksLikeXml', () => {
+	it('is true when the first bytes, after a BOM and whitespace, start with <', () => {
+		const bytes = (text: string) => new TextEncoder().encode(text);
+		expect(looksLikeXml(bytes('\uFEFF\n<?xml'))).toBe(true);
+		expect(looksLikeXml(bytes('  \r\n\t<xbrl'))).toBe(true);
+		expect(looksLikeXml(bytes('%PDF'))).toBe(false);
+		expect(looksLikeXml(bytes('   '))).toBe(false);
+		expect(looksLikeXml(new Uint8Array())).toBe(false);
+	});
+});
+
 describe('screen', () => {
 	it('lets through the PDFs and names every other file with why, in the order chosen', async () => {
 		const picked = [
 			pick('bse/a.pdf'),
 			pick('bse/b.xml', 10, 'text/xml'),
 			pick('bse/fake.pdf'),
+			pick('bse/fake.xml', 10, 'text/xml'),
 			pick('bse/empty.pdf', 0),
 			pick('bse/c.pdf')
 		];
-		const read = async (f: File) =>
-			f.name === 'fake.pdf' ? new TextEncoder().encode('<html>') : PDF_HEAD;
+		const read = async (f: File) => {
+			if (f.name === 'fake.pdf') return new TextEncoder().encode('<html>');
+			if (f.name === 'fake.xml') return PDF_HEAD;
+			if (f.name === 'b.xml') return new TextEncoder().encode('<?xml version="1.0"?>');
+			return PDF_HEAD;
+		};
 		const { accepted, refused } = await screen(picked, 'bse', read);
-		expect(accepted.map((item) => item.path)).toEqual(['bse/a.pdf', 'bse/c.pdf']);
+		expect(accepted.map((item) => item.path)).toEqual(['bse/a.pdf', 'bse/b.xml', 'bse/c.pdf']);
 		expect(refused).toEqual([
-			{ name: 'b.xml', reason: 'An XBRL file. Maester takes PDFs only for now.' },
 			{ name: 'fake.pdf', reason: 'Named .pdf, but not a PDF inside.' },
+			{ name: 'fake.xml', reason: 'Named .xml, but not XML inside.' },
 			{ name: 'empty.pdf', reason: 'The file is empty.' }
 		]);
 	});
@@ -208,7 +248,7 @@ describe('sendFailure', () => {
 			stop: null
 		});
 		expect(sendFailure(new ApiError(415, 'UNSUPPORTED_MEDIA_TYPE', 'x'), size).reason).toBe(
-			'Not a PDF.'
+			'Not a PDF or an XBRL file.'
 		);
 		expect(sendFailure(new Error('boom'), size)).toEqual({
 			reason: 'The upload didn’t finish. Add it again.',
@@ -259,7 +299,22 @@ describe('sendAll', () => {
 		expect(most).toBe(4);
 		expect(new Set(started).size).toBe(10);
 		expect(settled).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-		expect(result).toEqual({ sent: 10, refused: [], unsent: 0, stopped: null });
+		expect(result).toEqual({ sent: 10, refused: [], unsent: 0, stopped: null, rest: [] });
+	});
+
+	it('sends every XBRL file before any PDF, each kind in the order chosen, and names refusals in the order chosen', async () => {
+		const chosen = ['a.pdf', 'q1.xml', 'b.pdf', 'q2.XML', 'c.pdf', 'd.pdf', 'q3.xml'].map((p) =>
+			pick(p)
+		);
+		const started: string[] = [];
+		const result = await sendAll(chosen, null, async (item) => {
+			started.push(item.path);
+			if (item.path === 'q3.xml' || item.path === 'a.pdf')
+				throw new ApiError(415, 'UNSUPPORTED_MEDIA_TYPE', 'x');
+		});
+		expect(started).toEqual(['q1.xml', 'q2.XML', 'q3.xml', 'a.pdf', 'b.pdf', 'c.pdf', 'd.pdf']);
+		expect(result.refused.map((r) => r.name)).toEqual(['a.pdf', 'q3.xml']);
+		expect(result.sent).toBe(5);
 	});
 
 	it('names each file the API refused, in the order chosen, and carries on', async () => {
@@ -270,11 +325,12 @@ describe('sendAll', () => {
 		expect(result).toEqual({
 			sent: 3,
 			refused: [
-				{ name: 'f1.pdf', reason: 'Not a PDF.' },
-				{ name: 'f3.pdf', reason: 'Not a PDF.' }
+				{ name: 'f1.pdf', reason: 'Not a PDF or an XBRL file.' },
+				{ name: 'f3.pdf', reason: 'Not a PDF or an XBRL file.' }
 			],
 			unsent: 0,
-			stopped: null
+			stopped: null,
+			rest: []
 		});
 	});
 
@@ -297,8 +353,131 @@ describe('sendAll', () => {
 			sent: 0,
 			refused: [],
 			unsent: 0,
-			stopped: null
+			stopped: null,
+			rest: []
 		});
+	});
+
+	it('offline at the third file: the rest is the offline failures and the untried, in order', async () => {
+		const result = await sendAll(many(10), null, async (item) => {
+			if (item.path >= 'f2.pdf') throw new ApiError(0, 'NETWORK', 'offline');
+		});
+		expect(result.stopped).toBe('offline');
+		expect(result.sent).toBe(2);
+		expect(result.rest.map((p) => p.path)).toEqual([
+			'f2.pdf',
+			'f3.pdf',
+			'f4.pdf',
+			'f5.pdf',
+			'f6.pdf',
+			'f7.pdf',
+			'f8.pdf',
+			'f9.pdf'
+		]);
+		// f0 and f1 go; f2–f5 fail offline (the f0 and f1 lanes start f4 and f5 before the f2 and f3 lanes catch); f6–f9 are never tried
+	});
+
+	it('offline with XBRL sent first: the rest is in the order chosen, never the XBRL that went', async () => {
+		const chosen = ['a.pdf', 'b.pdf', 'q1.xml', 'c.pdf', 'd.pdf', 'q2.xml', 'e.pdf'].map((p) =>
+			pick(p)
+		);
+		const started: string[] = [];
+		const result = await sendAll(chosen, null, async (item) => {
+			started.push(item.path);
+			if (item.path.endsWith('.pdf')) throw new ApiError(0, 'NETWORK', 'offline');
+		});
+		expect(started.slice(0, 2)).toEqual(['q1.xml', 'q2.xml']);
+		expect(result.stopped).toBe('offline');
+		expect(result.sent).toBe(2);
+		expect(result.rest.map((p) => p.path)).toEqual(['a.pdf', 'b.pdf', 'c.pdf', 'd.pdf', 'e.pdf']);
+	});
+
+	it('the files that went are never in the rest', async () => {
+		const went: string[] = [];
+		const result = await sendAll(many(10), null, async (item) => {
+			if (item.path >= 'f2.pdf') throw new ApiError(0, 'NETWORK', 'offline');
+			went.push(item.path);
+		});
+		expect(went).toEqual(['f0.pdf', 'f1.pdf']);
+		expect(result.rest.filter((p) => went.includes(p.path))).toEqual([]);
+	});
+
+	it('a file the API refused for itself is not in the rest', async () => {
+		const result = await sendAll(many(6), null, async (item) => {
+			if (item.path === 'f0.pdf') throw new ApiError(413, 'UPLOAD_TOO_LARGE', 'big');
+			if (item.path >= 'f3.pdf') throw new ApiError(0, 'NETWORK', 'offline');
+		});
+		expect(result.rest.map((p) => p.path)).toEqual(['f3.pdf', 'f4.pdf', 'f5.pdf']);
+	});
+
+	it('signed out has no rest', async () => {
+		const result = await sendAll(many(6), null, async () => {
+			throw new ApiError(401, 'UNAUTHENTICATED', 'signed out');
+		});
+		expect(result.stopped).toBe('signed-out');
+		expect(result.rest).toEqual([]);
+	});
+
+	describe('a file still in flight when the connection drops', () => {
+		/** Four files start at once; `settle` decides how each one ends, after f2 fails offline. */
+		async function dropThenSettle(settle: (waits: ReturnType<typeof deferred>[]) => void) {
+			const waits: ReturnType<typeof deferred>[] = [];
+			const done = sendAll(many(6), null, (item) => {
+				const wait = deferred();
+				waits[Number(item.path.slice(1, -4))] = wait;
+				return wait.promise;
+			});
+			await flush();
+			waits[2].reject(new ApiError(0, 'NETWORK', 'offline'));
+			await flush();
+			settle(waits);
+			await flush();
+			return done;
+		}
+
+		it('signed out after the drop is still in the rest, in the order chosen', async () => {
+			const result = await dropThenSettle((waits) => {
+				waits[1].reject(new ApiError(401, 'UNAUTHENTICATED', 'signed out'));
+				waits[0].resolve();
+				waits[3].resolve();
+			});
+			expect(result.stopped).toBe('offline');
+			expect(result.sent).toBe(2);
+			expect(result.rest.map((p) => p.path)).toEqual(['f1.pdf', 'f2.pdf', 'f4.pdf', 'f5.pdf']);
+		});
+
+		it('sent after the drop is not in the rest', async () => {
+			const result = await dropThenSettle((waits) => {
+				waits[0].resolve();
+				waits[1].resolve();
+				waits[3].resolve();
+			});
+			expect(result.sent).toBe(3);
+			expect(result.rest.map((p) => p.path)).toEqual(['f2.pdf', 'f4.pdf', 'f5.pdf']);
+		});
+
+		it('refused with a 5xx after the drop is refused, not in the rest', async () => {
+			const result = await dropThenSettle((waits) => {
+				waits[1].reject(new ApiError(503, 'INTERNAL', 'unavailable'));
+				waits[0].resolve();
+				waits[3].resolve();
+			});
+			expect(result.refused.map((r) => r.name)).toEqual(['f1.pdf', 'f2.pdf']);
+			expect(result.rest.map((p) => p.path)).toEqual(['f2.pdf', 'f4.pdf', 'f5.pdf']);
+		});
+	});
+
+	it('sending the rest again sends exactly those, and a second drop has only what is left', async () => {
+		const first = await sendAll(many(10), null, async (item) => {
+			if (item.path >= 'f2.pdf') throw new ApiError(0, 'NETWORK', 'offline');
+		});
+		const again: string[] = [];
+		const second = await sendAll(first.rest, null, async (item) => {
+			again.push(item.path);
+			if (item.path >= 'f6.pdf') throw new ApiError(0, 'NETWORK', 'offline');
+		});
+		expect([...again].sort()).toEqual(first.rest.map((p) => p.path).sort());
+		expect(second.rest.map((p) => p.path)).toEqual(['f6.pdf', 'f7.pdf', 'f8.pdf', 'f9.pdf']);
 	});
 });
 
@@ -328,6 +507,12 @@ describe('what the strip says', () => {
 		);
 	});
 
+	it('titles a batch that stopped offline by how many went', () => {
+		expect(unfinishedTitle(outcome({ total: 806, sent: 214, stopped: 'offline' }))).toBe(
+			'The upload didn’t finish. 214 of 806 files were sent.'
+		);
+	});
+
 	it('titles the refusal Notice against every file chosen, with the singulars', () => {
 		const one = [{ name: 'a.xml', reason: 'x' }];
 		expect(refusedTitle(outcome({ total: 1, sent: 0, refused: one }))).toBe(
@@ -351,5 +536,69 @@ describe('what the strip says', () => {
 		expect(endAloud(outcome({ total: 2, sent: 0, refused: [...one, ...one] }))).toBe(
 			'None of the 2 files were added.'
 		);
+	});
+});
+
+describe('carryOver', () => {
+	const inFolder = (n: number) => pick(`bse-xbrl/f${n}.xml`);
+	const first = outcome({
+		total: 806,
+		folder: 'bse-xbrl',
+		sent: 214,
+		refused: [
+			{ name: 'notes.docx', reason: 'A Word document, not a PDF.' },
+			{ name: 'f214.xml', reason: 'Not sent: the connection dropped.' }
+		],
+		unsent: 590,
+		stopped: 'offline',
+		rest: Array.from({ length: 591 }, (_, i) => inFolder(214 + i))
+	});
+
+	it('keeps the first batch’s record: what went, and the files refused for themselves', () => {
+		const second = outcome({
+			total: 591,
+			folder: 'bse-xbrl',
+			sent: 590,
+			refused: [{ name: 'f300.xml', reason: '61 MB, over the 50 MB limit.' }],
+			unsent: 0,
+			stopped: null,
+			rest: []
+		});
+		const both = carryOver(first, second);
+		expect(both).toEqual({
+			total: 806,
+			folder: 'bse-xbrl',
+			sent: 804,
+			refused: [
+				{ name: 'notes.docx', reason: 'A Word document, not a PDF.' },
+				{ name: 'f300.xml', reason: '61 MB, over the 50 MB limit.' }
+			],
+			unsent: 0,
+			stopped: null,
+			rest: []
+		});
+		expect(refusedTitle(both)).toBe('2 of the 806 files weren’t added.');
+	});
+
+	it('stops again offline with the counts of both batches, and only the new rest', () => {
+		const rest = first.rest.slice(100);
+		const second = outcome({
+			total: 591,
+			folder: 'bse-xbrl',
+			sent: 100,
+			refused: [],
+			unsent: 491,
+			stopped: 'offline',
+			rest
+		});
+		const both = carryOver(first, second);
+		expect(unfinishedTitle(both)).toBe('The upload didn’t finish. 314 of 806 files were sent.');
+		expect(both.rest).toBe(rest);
+		expect(both.refused).toEqual([{ name: 'notes.docx', reason: 'A Word document, not a PDF.' }]);
+	});
+
+	it('is the batch itself when nothing is carried', () => {
+		const alone = outcome();
+		expect(carryOver(null, alone)).toBe(alone);
 	});
 });

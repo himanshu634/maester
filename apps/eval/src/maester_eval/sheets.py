@@ -11,13 +11,14 @@ import re
 
 from maester_eval.artefacts import Artefact
 from maester_eval.files import write_text_atomically
+from maester_eval.periods import span_of_label
 from maester_eval.text import normalise
 
 SHEET_COLUMNS = [
-    "row", "statement", "basis", "section", "label", "period_label", "period_end",
+    "row", "statement", "basis", "section", "label", "period_label", "period_end", "span",
     "printed", "value", "unit_label", "scale_factor", "normalized_value", "page", "printed_pages",
     "text_layer_match", "is_subtotal", "material",
-    "concept", "gold_text", "gold_scale", "gold_page", "gold_period_end", "adds_up", "verified", "note",
+    "concept", "gold_text", "gold_scale", "gold_page", "gold_period_end", "gold_span", "adds_up", "verified", "note",
 ]
 
 # Labelling aid only: rows worth checking first. Not a mapping; see the module docstring.
@@ -50,12 +51,16 @@ def sheet_rows(artefact: Artefact) -> list[dict[str, str]]:
     rows = []
     for index, fact in enumerate(artefact.result["facts"], start=1):
         page = fact["pageIndex"] + 1
+        period_end = fact["periodEnd"] or fact["asOfDate"] or ""
+        # A balance sheet line is a point in time and has no span; for the rest the header's words say it, a
+        # year to date column by the month it ends in. A span the header does not give stays blank.
+        span = None if fact["statement"] == "balance_sheet" else span_of_label(fact["periodLabel"], period_end or None)
         rows.append(dict(
             blank,
             row=str(index), statement=fact["statement"], basis=fact["basis"], section=fact["section"],
             label=fact["reportedLabel"], period_label=fact["periodLabel"],
             # The fact's one date: a balance sheet fact is "as at" and keeps it in asOfDate, a period fact in periodEnd.
-            period_end=fact["periodEnd"] or fact["asOfDate"] or "",
+            period_end=period_end, span=span or "",
             printed=fact["reportedText"], value=fact["reportedValue"] or "", unit_label=fact["unitLabel"] or "",
             scale_factor=fact["scaleFactor"] or "", normalized_value=fact["normalizedValue"] or "",
             page=str(page), printed_pages=_printed_pages(page, artefact.printed_pages_per_page),
@@ -69,9 +74,11 @@ def sheet_path(sheets_dir: Path, filing_id: str) -> Path:
     return sheets_dir / f"{filing_id}.csv"
 
 
-def write_sheet(path: Path, rows: list[dict[str, str]]) -> None:
+def write_sheet(path: Path, rows: list[dict[str, str]], columns: list[str] = SHEET_COLUMNS) -> None:
+    """The rows as CSV under `columns`. A row with a key outside `columns` is a `ValueError` (DictWriter's default
+    `extrasaction`), so a settle sheet is written with its own columns, never trimmed into a labelling sheet's."""
     text = io.StringIO(newline="")
-    writer = csv.DictWriter(text, fieldnames=SHEET_COLUMNS)
+    writer = csv.DictWriter(text, fieldnames=columns)
     writer.writeheader()
     writer.writerows(rows)
     # A BOM so spreadsheet applications read the UTF-8 (₹ in unit notes) correctly.

@@ -1,6 +1,7 @@
 packages:
   - "apps/api"
   - "apps/worker"
+  - "apps/import"
   - "packages/*"
 allowBuilds:
   esbuild: true

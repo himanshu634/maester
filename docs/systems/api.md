@@ -43,12 +43,24 @@ This document describes the HTTP service in `apps/api`. For the full system, rea
 | band | The name of the range that the mood is in, for example `cautious`. |
 | filing | A document that has a company. `listCompanyFilings` gives the filings of a workspace or of one company. |
 | read annual report | A filing with the kind `annual_report` and the intake state `read`. Only these filings go into the statement tables. |
+| pipeline | The state of a document on four tracks: `stored`, `identified`, `numbers` and `text`. The API works it out on each read from the stored data. It keeps no pipeline state. |
+| track | One part of the pipeline, for example `numbers`. |
+| workspace filing | One entry in `companies[].filings` of `GET .../filings`: the documents of one company with one filing key. |
+| filing key | The value that groups documents into one workspace filing. |
+| unsorted document | A document in `unsorted` of `GET .../filings`: it has no company and no held identity. |
+| text index | The passages of a PDF for search. The job `document.index` builds it. |
 | statement table | One `StatementTable`: the statement lines of one statement on one basis, with one year column for each financial year. |
 | statement line | One line of a statement table, with a section and a printed label. The contract calls it a row. |
 | year column | One financial year of a statement table. Each year column comes from one filing. |
 | cell | One figure of one statement line in one year column. It has a status, a source page and a check. |
 | stock | The answer of `GET .../companies/:id/stock`: the NSE closing prices of the share of one company. |
 | closing price | The value of one day in the series `eq:<SYMBOL>`. |
+| XBRL instance | A document with the format `xbrl`. It is an XML file with the facts of a results filing. |
+| pipeline | The `pipeline` object of a document. It shows the three tracks `stored`, `identified` and the numbers and text of the document. The API works it out on each read. It stores nothing. |
+| track | One of the parts of a pipeline: `stored`, `identified`, `numbers` and `text`. |
+| source | Where the numbers of a statement come from: `xbrl` or `pdf`. |
+| held identity | A company identity that files print, and that no company of the workspace has yet. A person must confirm it. |
+| cell source | The `source` of a cell. It is a page of a PDF or an element of an XBRL instance. |
 
 ## Function
 
@@ -113,19 +125,24 @@ All routes under `/v1` need a session. All routes under `/v1/workspaces/:ws/` al
 | GET | `/v1/workspaces/:ws/companies/:id` | One company. |
 | GET | `/v1/workspaces/:ws/research/companies` | The companies for the Research list, with the annual reports that Maester read. |
 | GET | `/v1/workspaces/:ws/companies/:id/financials` | The statement tables of one company, and its filings. |
+| GET | `/v1/workspaces/:ws/filings` | The workspace filings of each company, the held identities and the unsorted documents. |
 | GET | `/v1/workspaces/:ws/companies/:id/stock` | The stock of one company. |
-| POST | `/v1/workspaces/:ws/documents/uploads` | Creates a document and a signed upload URL. Status 201. |
+| POST | `/v1/workspaces/:ws/companies/confirm` | Gives a company to every held file that prints one identity. |
+| GET | `/v1/workspaces/:ws/filings` | The files of the workspace by company and filing, with the source of each statement. |
+| POST | `/v1/workspaces/:ws/documents/uploads` | Creates a document and a signed upload URL. The document has the format `pdf` or `xbrl`. Status 201. |
 | POST | `/v1/workspaces/:ws/documents/:id/finalize` | Checks the upload and creates a `document.verify` job. |
 | GET | `/v1/workspaces/:ws/documents` | A page of documents. |
-| GET | `/v1/workspaces/:ws/documents/:id` | One document, with its latest job and its current classification. |
+| GET | `/v1/workspaces/:ws/documents/:id` | One document, with its latest job, its current classification and its `pipeline`. |
 | GET | `/v1/workspaces/:ws/documents/:id/download` | A signed download URL. |
 | GET | `/v1/workspaces/:ws/documents/:id/file` | A redirect to a signed download URL of the PDF. Status 302. The API does not cache the response. |
-| POST | `/v1/workspaces/:ws/documents/:id/extract` | Creates a new `document.extract` job. Status 202. |
+| POST | `/v1/workspaces/:ws/documents/:id/extract` | Creates a new `document.extract` job, or a `document.xbrl` job for an XBRL instance. Status 202. |
+| POST | `/v1/workspaces/:ws/documents/:id/index` | Queues the `document.index` job of a stored document again. Status 202. |
 | GET | `/v1/workspaces/:ws/documents/:id/extraction` | The current revision and its checks. |
 | GET | `/v1/workspaces/:ws/documents/:id/facts` | The facts of a revision. The query `revisionId` is optional. |
 | GET | `/v1/workspaces/:ws/documents/:id/classification` | The current classification and its evidence. |
 | POST | `/v1/workspaces/:ws/documents/:id/classification` | Changes the answers. |
 | POST | `/v1/workspaces/:ws/documents/:id/classify` | Creates a new `document.classify` job. Status 202. |
+| GET | `/v1/workspaces/:ws/search` | The passages of indexed documents that match the query `q`. Status 503 with `SEARCH_UNAVAILABLE` when the embedder does not answer. |
 | GET | `/v1/workspaces/:ws/jobs/:id` | One job. |
 | POST | `/v1/workspaces/:ws/jobs/:id/retry` | Starts a job again. |
 | GET | `/v1/workspaces/:ws/jobs/:id/events` | A Server-Sent Events stream of the job. |
@@ -191,29 +208,93 @@ The limiter gets the client address from the `x-forwarded-for` header. It reads 
 ### Upload of a document
 
 1. The browser sends `POST .../documents/uploads` with `originalName`, `size`, `mimeType` and an optional `companyId`.
-2. The `mimeType` must be `application/pdf`. If `size` is more than `MAX_UPLOAD_BYTES`, the result is `UPLOAD_TOO_LARGE`.
+2. The `mimeType` must be `application/pdf`, `application/xml` or `text/xml`. A PDF type gives the format `pdf`. An XML type gives the format `xbrl`. If `size` is more than `MAX_UPLOAD_BYTES`, the result is `UPLOAD_TOO_LARGE`.
 3. If `companyId` is not a company of the workspace, the result is `VALIDATION_FAILED`.
 4. The API changes each control character, `/` and `\` in the name to `_`. It keeps 255 characters or fewer.
-5. The API writes a document with the state `pending_upload`. The object key is `workspaces/<ws>/documents/<id>/original.pdf`.
+5. The API writes a document with the state `pending_upload` and its format. The object key is `workspaces/<ws>/documents/<id>/original.pdf` for a PDF and `original.xml` for an XBRL instance.
 6. The API asks the object store for a signed upload URL. The URL is valid for `UPLOAD_URL_TTL_SECONDS` and agrees only with the declared type and size.
-7. The response has the document and `upload`: the method `PUT`, the URL, the headers and `expiresAt`.
+7. The response has the document, with its `pipeline`, and `upload`: the method `PUT`, the URL, the headers and `expiresAt`.
 8. The browser sends the bytes to the signed URL.
 9. The browser sends `POST .../documents/:id/finalize`.
 10. If the state is `pending_upload` and the object is not in the object store, the result is `INVALID_STATE`. If the object is there, the API changes the state to `uploaded`.
 11. The API creates a `document.verify` job. A second `finalize` call gets the same job.
 12. The browser follows the job with `GET .../jobs/:id/events`.
 
+### Workspace filings
+
+1. `GET .../filings` calls `listFilingRows`. This gives each document of the workspace in each state: `pending_upload`, `uploaded`, `verifying`, `stored` and `rejected`. A refused document and an abandoned upload stay in the response after a reload.
+2. `documentPipelines` works out the pipeline of each document with a fixed number of queries.
+3. `buildFilings` puts each duplicate in the `duplicates` of its original. A duplicate whose original is not in the list does not show. If the original goes to `held`, the duplicate goes in `documentIds` of its held identity.
+4. `buildFilings` groups each other document that has a company and a classification by the filing key.
+5. A document with no company goes to `held` if its intake state is `needs_company` and it prints an identifier. Then `groupHeld` groups it by the identity that it prints.
+6. Each other document with no company goes to `unsorted`. This includes a document with no classification, a refused document and an abandoned upload.
+
+The filing key is the company ID, a colon, and the filing identity from `filingIdentity`:
+
+| Kind | Filing identity |
+| --- | --- |
+| `annual_report` or `financial_results` | The kind and the period end. |
+| `other` | `other`, the `otherType` and the period end. If the classification has no type, the type is `unlisted_type`. |
+| `not_sure` | `not_sure` and the document ID. Thus each `not_sure` document is a workspace filing. |
+
+If a document has no period end, the document ID replaces the period end. `groupHeld` counts the `filings` of a held identity with the same filing identity, but without the company ID. Thus the count does not change when the user confirms the company.
+
+`documentIds` of a held identity lists the held documents and the duplicates of the held originals. `files` and `filings` of the held identity count the originals only.
+
+Each document in `files` and in `unsorted` is a `FilingFile`. It has these fields in addition to the fields of its pipeline:
+
+- `state`: the state of the document, also `rejected` and `pending_upload`.
+- `rejectionCode`: the code of a refused document. For any other document it is `null`.
+- `companyNameAsPrinted`: the company name in the current classification. If the document has no classification, or the classification has no name, it is `null`.
+
+### Source of a statement
+
+For each basis and statement of a workspace filing, `sources` gives the source of its numbers and a `reason` if XBRL is not the source. These are the reasons:
+
+| Reason | Meaning |
+| --- | --- |
+| `xbrl_lacks_statement` | An XBRL instance of the basis has facts, but none for this statement. |
+| `xbrl_format_unmapped` | The instance has a format that Maester has no map for. |
+| `no_xbrl` | The workspace filing has no XBRL instance of the basis. |
+| `not_in_filing` | No source has the statement. |
+| `not_read_yet`, `read_failed` | The PDF that prints the statement is not read, or its read failed. |
+| `xbrl_read_failed` | The workspace filing has an XBRL instance of the basis, and its `numbers` track is `failed`. |
+| `xbrl_not_read_yet` | The workspace filing has an XBRL instance of the basis, and its `numbers` track is `now` or `waiting`. |
+
+`xbrl_read_failed` and `xbrl_not_read_yet` replace `no_xbrl` and `not_in_filing`. If the instance with the failed read and the instance with the unfinished read are of the same basis, `xbrl_read_failed` wins. Every other reason stays as it was. Thus an unread instance does not look like an instance that has no statement.
+
+### Tracks of a document
+
+- The `stored` track is `failed` for a refused document.
+- The `stored` track is also `failed` if two conditions are true. The document is in the state `uploaded` or `verifying`. The latest job of the document is a `document.verify` job in the state `failed`. Nothing moves such a document on.
+- The `numbers` track of an XBRL document that is `done` has `partial` and `warnings`. `partial` is true when the current revision has the state `partial`.
+- `warnings` has the codes of the revision that are in this list, each one time, in this order: `XBRL_ROUNDING_MISSING`, `XBRL_ROUNDING_MISMATCH`, `XBRL_ELEMENT_UNMAPPED`, `XBRL_NIL`.
+- For a PDF, and for each other state of an XBRL document, `partial` is false and `warnings` is `[]`.
+
+### Queue of a document index
+
+1. The browser sends `POST .../documents/:id/index`.
+2. If the document is not in the state `stored`, or it is a duplicate, the result is `INVALID_STATE`. The API creates no job.
+3. The API calls `createJob` with the type `document.index`, the subject type `document_index` and the pipeline version `indexPipelineVersion(EMBEDDING_MODEL)`. This gives the job that the verify step made, or a new job.
+4. If the job is `failed`, the API calls `retryJob`. The job goes to `queued` and gets its attempts again.
+5. If the job is `succeeded`, the result is `INVALID_STATE` with the message `the index is built`.
+6. If the job is `cancelled`, the result is `INVALID_STATE` with the message `the index job was cancelled`. `retryJob` does not start a cancelled job.
+7. If the job is `queued` or `running`, the API sends it as it is.
+8. The response has status 202 and the body `{ "job" }`.
+
 ### Change of a classification
 
 1. The browser sends `POST .../documents/:id/classification`. The body has `basedOn`, the ID of the classification that the user saw, and one or more new answers.
 2. The API starts a database transaction and locks the document row.
-3. If the document has no classification, the result is `INVALID_STATE`. If `basedOn` is not the current classification, the result is `CONFLICT`.
-4. If the body has `company.id`, the company must be in the workspace. If the body has `company.new`, the API creates the company.
-5. The API compares the new answers with the current answers. If nothing changed, the result is `VALIDATION_FAILED`.
-6. The API writes a new classification with `setBy` set to `investor`.
-7. The API copies the evidence for each answer that did not change. For each changed answer with a value, it adds evidence with the source `investor`.
-8. After the transaction, the API calls `decideIntake` from `@maester/jobs`. This sets the next intake state of the document. For a read, it also creates a `document.extract` job, and dispatches it after its own transaction.
-9. The response has the document, the new classification and its evidence.
+3. If the body has the kind `annual_report` and the document is an XBRL instance, the result is `VALIDATION_FAILED`. An instance holds the figures of results, so it must not fill the annual tables.
+4. If the document has no classification, the result is `INVALID_STATE`. If `basedOn` is not the current classification, the result is `CONFLICT`.
+5. If the body has `company.id`, the company must be in the workspace. If the body has `company.new`, the API creates the company.
+6. The API compares the new answers with the current answers. If nothing changed, the result is `VALIDATION_FAILED`.
+7. The API writes a new classification with `setBy` set to `investor`.
+8. The API copies the evidence for each answer that did not change. For each changed answer with a value, it adds evidence with the source `investor`.
+9. After the transaction, the API calls `decideIntake` from `@maester/jobs`. This sets the next intake state of the document. For a read, it also creates a `document.extract` job, or a `document.xbrl` job for an XBRL instance, and dispatches it after its own transaction. A results PDF can get the state `waiting_for_xbrl` or `read` instead. See the [worker description](worker.md).
+10. If the document is an XBRL instance, or the new kind is `financial_results`, the API then calls `redecidePdfsAfterXbrl`. Thus a new period end of a results PDF can release the PDF or send it to a read.
+11. The response has the document, the new classification and its evidence.
 
 A read starts only when all these conditions are true:
 
@@ -294,6 +375,17 @@ Other rules for the mood:
 
 `GET /v1/market-mood/readings/:key` calculates the full mood, then sends one reading and the last 500 values of its series, oldest first. If `:key` is not one of the 10 readings, the result is `NOT_FOUND`.
 
+### Search
+
+1. `GET .../search` takes the query `q` (1 to 500 characters), the query `limit` (1 to 50, default 10) and the optional query `company` (a UUID).
+2. If `EMBEDDER_URL` has no value, the route sends `SEARCH_UNAVAILABLE` with status 503.
+3. The route sends the query `q` to the embedder, with the model `EMBEDDING_MODEL`.
+4. `searchChunks` finds the 50 nearest chunks by vector and the 50 best chunks by keyword. It joins the two lists by reciprocal rank with k = 60. It searches only the current chunks of the workspace.
+5. The response is `{ "items" }`. Each item has the document, the company, the page, the section path, the text source, the kind, the text and the two ranks.
+6. If the embedder fails, the route sends `SEARCH_UNAVAILABLE` with status 503. The log has the error code and the trace ID. It does not have the query.
+
+The search result has no figure. It has text and the place of the text.
+
 ### Research
 
 1. `GET .../research/companies` reads up to 100 companies and the filings of all companies in the workspace.
@@ -322,7 +414,7 @@ Other rules for the statement tables:
 - A per-share line is a statement line with a section or label that matches `earnings per share`, `earning per share`, `earnings per equity share`, `earning per equity share` or the word `eps` after `normalise`. The pattern is `earnings? per (equity )?share|\beps\b`. The extractor uses the same pattern. The API sends the printed value of a per-share line and never moves its decimal point.
 - The `status` of a cell is `value`, `dash`, `unparsed` or `missing`. `missing` means that the filing of the year column does not print the statement line.
 - If an older filing prints a different value or status for the same statement line and period, the cell has `restated`. It holds the page and the printed text of the older filing.
-- Before `stitch` compares two values, it rounds them to the same precision. The precision of a value is the number of decimals of its `reportedValue`, minus the places that `stitch` moved its decimal point into the unit of the table. A per-share value does not move. The precision can be less than 0: then the value is known to tens or hundreds only. `stitch` uses the lower precision of the two values. `roundTo` rounds half away from zero, exactly, with strings and `BigInt`. Thus "12,10,543.21" in lakh and "12,105.43" in crore are the same value, and the cell has no `restated`.
+- Before `stitch` compares two values, it rounds them to the same precision. The precision of a value is the number of decimals of its `reportedValue`. From this number, `stitch` subtracts the places that it moved the decimal point into the unit of the table. A per-share value does not move. The precision can be less than 0: then the value is known to tens or hundreds only. `stitch` uses the lower precision of the two values. `roundTo` rounds half away from zero, exactly, with strings and `BigInt`. Thus "12,10,543.21" in lakh and "12,105.43" in crore are the same value, and the cell has no `restated`.
 - A cell has the check of the subtotal that it is, or the check of the subtotal that has the statement line as a component. If more than one check applies to a subtotal, the worst status wins: `failed`, then `not_checked`, then `passed`. If two checks have the same status, the check that names the section wins.
 - A component gets only the `subtotal` check of its subtotal. It never gets the `balance_identity` check. The balance identity compares total assets with equity and liabilities, thus only total assets has it.
 - `check.checkType` tells which check the cell has: `subtotal`, `balance_identity`, or `null` if the cell has no check. For the balance identity, `expected` is total assets as printed and `actual` is equity and liabilities.
@@ -346,6 +438,89 @@ Other rules for the statement tables:
 | `not_tracked` | The series has no closing price, and the install has a Dhan connection. The worker stores closing prices only for the Nifty 500 members. | `symbol` has the symbol. All other values are `null`, and `series` is empty. |
 
 `GET .../documents/:id/file` gets the document. If the state is not `stored`, the result is `INVALID_STATE`. If not, the API signs a download URL for the time `DOWNLOAD_URL_TTL_SECONDS` and sends a redirect with status 302 and `Cache-Control: no-store`. A browser keeps the fragment of an address across the redirect. Thus `.../file#page=213` opens the PDF at page 213.
+
+### The pipeline of a document
+
+Each document in a response has a `pipeline` object. `documentPipelines` in `apps/api/src/documents/pipeline.ts` works it out for each read from the rows in the database. It stores nothing.
+
+| Track | Values | Meaning |
+| --- | --- | --- |
+| `stored` | `done`, `now`, `failed` | `now` while the file is uploaded or verified. `failed` for a rejected file. |
+| `identified` | `done`, `now`, `needs_you`, `failed`, `waiting`, `not_needed` | `needs_you` when the kind or the company is open. `waiting` when the file is not stored yet. `not_needed` for a duplicate and for a rejected file. |
+| `numbers.state` | `done`, `now`, `not_needed`, `failed`, `waiting`, `not_read` | The state of the read of the figures. |
+| `text.state` | `done`, `now`, `partial`, `failed`, `waiting`, `not_needed` | The state of the index. |
+
+The `numbers` track also has these fields:
+
+1. `source` is `xbrl` or `pdf`. It is `null` when no figure is read.
+2. `coveredByXbrl` lists the XBRL documents that give a results PDF its numbers. When the list is complete, the state is `not_needed`.
+3. `waitingOn` lists the XBRL documents that a PDF waits for. The state is `waiting` and the reason is `waiting_for_xbrl`.
+4. `reason` is one of `format_unmapped`, `not_a_read_kind`, `duplicate`, `waiting_for_xbrl`, `not_identified` and `needs_you`.
+5. `format` is the kind of an instance that Maester reads but has no map for. It goes with the reason `format_unmapped`.
+
+The reasons give these states:
+
+- A duplicate and a rejected file have `numbers.state` `not_needed`, with the reason `duplicate` for a duplicate. Their `text.state` is `not_needed`.
+- A kept document has `numbers.state` `not_read`, with the reason `not_a_read_kind`.
+- A PDF that failed to identify has `numbers.state` `not_read`, with the reason `not_identified`.
+- A document that waits for the investor has `numbers.state` `waiting`, with the reason `needs_you`.
+- A results PDF that XBRL covers has the source `xbrl`, the state `not_needed` and the list `coveredByXbrl`.
+- An XBRL instance of a format with no map has the state `not_read` and the reason `format_unmapped`.
+
+The `text` track has `pages`, `pagesRead`, `pagesOcr`, `chunks`, `xbrlBlocks` and `ahead`. `xbrlBlocks` is the number of distinct XBRL text blocks among the chunks. `ahead` is the number of index jobs that are queued before the job of this document. It is `null` when the job is not queued.
+
+### Filings
+
+`GET .../filings` gives the files of the workspace, grouped by company and then by filing.
+
+1. `listFilingRows` gives the companies, the documents and the held identities of the workspace.
+2. `documentPipelines` works out the pipeline of each document.
+3. `loadXbrlFilingData` reads the facts of the current XBRL revisions, and the `xbrl_in_pdf` checks of these facts.
+4. `buildFilings` makes the response. A filing is the files for one company, one kind and one period end. Its `key` names them.
+5. A duplicate is not a file. Its ID is in the `duplicates` list of the original.
+6. For each filing, `sources` has one entry for each basis. Each entry has one `StatementSource` for each statement.
+7. A `StatementSource` has the `source` (`xbrl` or `pdf`), the XBRL document and the spans of its facts. It also has the PDF document and its pages for the statement, and `inPdf`. It has a `reason` when the numbers do not come from XBRL.
+8. `inPdf` counts how many XBRL facts of the statement the check found on the PDF. If the check is off, the reason is `disabled`.
+   - A pass does not verify a figure. The check does not compare the sign. A value one unit away from the true value passes by chance in 16% to 23% of tests in crore and lakh. A value of zero always passes.
+   - A fail is not evidence of a wrong figure. See the [evaluation report](../eval/2026-10-21-xbrl-map-v1.md).
+9. `settled` is true when no file of the filing has work left.
+10. `held` has each identity that files print and that no company has. `matches` lists the companies of the workspace that it can be.
+11. `unsorted` has the files that have no company and no held identity.
+
+### Confirm a company
+
+`POST .../companies/confirm` gives one company to all the held files that print one identity.
+
+1. The body has `identity` with at least one of `cin`, `bseCode`, `isin` and `nseSymbol`. It also has `company`: `{ id }` for a company of the workspace, or `{ new }` to make one.
+2. The route runs in one transaction. If `company.new` is in the body, it creates the company. The company takes the codes of the identity first, then the codes in `new`.
+3. `lockHeldDocuments` locks the held documents of the workspace that print any of the identifiers. The oldest document comes first.
+4. A held document gets a new classification only when it has no company and its current classification prints a code of the identity. `writeInvestorClassification` writes it with `setBy` `investor`. The route reads the classification after the lock. Thus a confirm that waits for a lock does not use answers that changed.
+5. The route sorts the written documents so that XBRL instances come before PDFs.
+6. After the commit, `decideIntake` runs for each document. A PDF decided after the instances sees them as not settled, and waits.
+7. `redecidePdfsAfterXbrl` then decides the waiting PDFs again.
+8. The response is `{ companyId, confirmed }`. `confirmed` is the number of documents that got the company.
+
+A company name or an identifier that the workspace has gives `CONFLICT`. If a confirm already gave a document its company, the route skips that document.
+
+### The source of a cell
+
+A cell of a statement table has a `source` that is one of two kinds:
+
+| Kind | Fields | Meaning |
+| --- | --- | --- |
+| `page` | `documentId`, `pageIndex`, `pageCount`, `textLayerMatch` | The figure comes from a page of a PDF. |
+| `xbrl` | `documentId`, `originalName`, `element`, `contextId`, `decimals`, `nil`, `periodStart`, `span`, `inPdf` | The figure comes from an element of an XBRL instance. An instance has no page. |
+
+`inPdf` of an `xbrl` source tells what the `xbrl_in_pdf` check found. It has the `status`, the PDF document and the page index where the value was found. It also has the pages of the statement and a `reason` for a fact that was not checked. The status comes from the first rule that applies:
+
+1. If the filing has no PDF, the status is `not_checked` with the reason `no_pdf`.
+2. If `XBRL_PDF_CHECK` is `false`, the reason is `disabled`.
+3. If no row exists for this fact, this PDF classification and the current check version, the reason is `not_yet`.
+4. Otherwise, the status, the page and the reason are those of the row.
+
+A value that is nil has the status `unparsed`. It is never zero. The `restated` field of a cell is a `page` or an `xbrl` kind too.
+
+An XBRL fact can enter a year column only through `annualSlotOf` of `@maester/financial-engine`. A fact of a `financial_results` filing never enters an annual column. A fact of an annual XBRL filing enters it in two cases. Its span is `year`, or it is an instant on the period end of the filing.
 
 ### Settings connections
 
@@ -390,12 +565,13 @@ The API sends each error in the error envelope. The trace ID is in the envelope 
 | `VALIDATION_FAILED` | 400 | The body or the query does not agree with its schema. Also a company that is not in the workspace, and a classification change that changes nothing. Also a secret that the provider refuses, and a Dhan token for a different client ID. |
 | `CONFLICT` | 409 | A company name or identifier that the workspace has. A stale `basedOn`. A job key that a different workspace has. |
 | `UPLOAD_TOO_LARGE` | 413 | The declared `size` is more than `MAX_UPLOAD_BYTES`. |
-| `INVALID_STATE` | 409 | The document or the job is not in the correct state for the action. Also a connections route when `CONNECTIONS_KEY` has no value. |
+| `INVALID_STATE` | 409 | The document or the job is not in the correct state for the action. Also a connections route when `CONNECTIONS_KEY` has no value. Also `extract` on a results PDF whose numbers come from XBRL, or that waits for its XBRL file. |
 | `RATE_LIMITED` | 429 | Dhan sends a rate limit to the check of a Dhan secret, also after three more tries. |
+| `SEARCH_UNAVAILABLE` | 503 | The search route cannot embed the query: `EMBEDDER_URL` has no value, or the embedder fails. |
 | `INTERNAL` | 500 | An unexpected error. The message is `internal error`. The log has the stack. |
 | `INTERNAL` | 503 | The check of a secret fails because the provider does not answer correctly. The message is `SOURCE_UNAVAILABLE`. |
 | `FORBIDDEN` | 403 | Not used by an API route. |
-| `UNSUPPORTED_MEDIA_TYPE` | 415 | Not used by an API route. A type that is not PDF gets `VALIDATION_FAILED`. |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 | Not used by an API route. A type that is not PDF or XML gets `VALIDATION_FAILED`. |
 
 Better Auth makes its own responses for `/api/auth/*`. These responses do not use the error envelope. A request over the rate limit gets status 429 from Better Auth. The `/dev` routes also send a short `{ "error" }` body, not the error envelope.
 
@@ -411,7 +587,8 @@ Better Auth makes its own responses for `/api/auth/*`. These responses do not us
 | `needs_kind` | The kind is `not_sure`. | The user must give the kind. |
 | `needs_company` | A read kind without a company. | The user must give the company. |
 | `kept` | The kind is `other`. | No read starts. |
-| `reading` | A read kind with a company. | A `document.extract` job starts. |
+| `reading` | A read kind with a company. | A `document.extract` job starts for a PDF. A `document.xbrl` job starts for an XBRL instance. |
+| `waiting_for_xbrl` | A results PDF waits for an XBRL document of the same company and period. | No job starts. The worker decides again after the XBRL document settles. |
 
 The API does not write the other intake states or the state `verifying`.
 
@@ -468,7 +645,7 @@ The API writes these tables directly or through `@maester/db`:
 - `job`, through `createJob`, `retryJob` and `decideIntake`.
 - `market_connection`, through `saveConnection` and `deleteConnection`. It has one row for each provider and no workspace column.
 
-The API reads the `extraction_revision`, `extraction_check`, `financial_fact` and `source_reference` tables through `@maester/db`. It does not write them.
+The API reads the `extraction_revision`, `extraction_check`, `financial_fact`, `source_reference` and `xbrl_source` tables through `@maester/db`. It does not write them.
 
 The Research routes read the `document` and `document_classification` tables with `listCompanyFilings`. They read the facts with their pages with `listFactsWithSourcesForRevisions`, and the checks with `listChecksForRevisions`. All three queries take the workspace ID.
 
@@ -519,6 +696,9 @@ The `dev` script reads the root `.env` file. A value that is an empty string cou
 | `MAIL_DRIVER` | `console` | `console` or `resend`. The `console` driver writes the mail to the log. Production refuses it. |
 | `RESEND_API_KEY`, `MAIL_FROM` | None | Necessary for `resend`. |
 | `CONNECTIONS_KEY` | None | 32 bytes in base64. It encrypts each secret. Without a value, the connections routes give `INVALID_STATE`. A value that is not 32 bytes in base64 stops the start. |
+| `XBRL_PDF_CHECK` | `true` | Whether Research and the filings route show the `xbrl_in_pdf` check. With `false`, each XBRL figure has the reason `disabled`. Set the same value for the worker. If the worker has `false` and the API has `true`, the reason stays `not_yet` for ever. |
+| `EMBEDDER_URL` | None | The base URL of the embedder. Without a value, the search route sends `SEARCH_UNAVAILABLE`. The API stops a request to the embedder after 30 seconds, and sends a failed request again one time. |
+| `EMBEDDING_MODEL` | `Snowflake/snowflake-arctic-embed-l-v2.0` | The embedding model for search queries. It must be the model of the index. |
 | `MIGRATIONS_FOLDER` | None | Only for `migrate.ts`. The Docker image sets `/app/drizzle`. |
 | `DATABASE_URL_TEST_API` | `postgres://maester:maester@localhost:5433/maester_test_api` | Only for the tests. |
 
@@ -613,7 +793,9 @@ CAUTION: Set `DATABASE_URL_TEST_API` only to a test database. The test setup emp
 - `fpi_flows` and `dii_flows` have no provider. Thus the mood uses 6 of the 7 scored readings at most.
 - The API calculates the mood again for each request and keeps no cache. A request for one reading also calculates the full mood.
 - The Research list shows 100 companies at most. It has no pages.
-- The statement tables use only read annual reports. Results for a quarter or a half year are not in them.
+- The statement tables use only read annual reports. Results for a quarter or a half year are not in them. XBRL facts of a results filing never enter an annual column.
+- The filings route loads the facts of each XBRL revision for each request. It keeps no cache.
+- A cell does not carry a sign check of the PDF. The check compares absolute values.
 - The financials route reads all facts of each read annual report for each request. It keeps no cache.
 - The stock has the closing prices of the Nifty 500 members only. The worker stores no other closing price.
 - The API does not decrypt a secret and does not write market data. The market refresher of the worker does this work.
@@ -623,6 +805,14 @@ CAUTION: Set `DATABASE_URL_TEST_API` only to a test database. The test setup emp
 ## Sources
 
 - [apps/api/package.json](../../apps/api/package.json)
+- [apps/api/src/documents/pipeline.ts](../../apps/api/src/documents/pipeline.ts)
+- [apps/api/src/documents/filings.ts](../../apps/api/src/documents/filings.ts)
+- [apps/api/src/financials/in-pdf.ts](../../apps/api/src/financials/in-pdf.ts)
+- [apps/api/src/routes/filings.ts](../../apps/api/src/routes/filings.ts)
+- [apps/api/src/routes/companies.ts](../../apps/api/src/routes/companies.ts)
+- [packages/contracts/src/pipeline.ts](../../packages/contracts/src/pipeline.ts)
+- [packages/contracts/src/filings.ts](../../packages/contracts/src/filings.ts)
+- [packages/contracts/src/research.ts](../../packages/contracts/src/research.ts)
 - [apps/api/Dockerfile](../../apps/api/Dockerfile)
 - [apps/api/src/server.ts](../../apps/api/src/server.ts)
 - [apps/api/src/app.ts](../../apps/api/src/app.ts)
@@ -638,6 +828,7 @@ CAUTION: Set `DATABASE_URL_TEST_API` only to a test database. The test setup emp
 - [apps/api/src/financials/](../../apps/api/src/financials/)
 - [apps/api/src/middleware/](../../apps/api/src/middleware/)
 - [apps/api/src/routes/](../../apps/api/src/routes/)
+- [apps/api/src/routes/search.ts](../../apps/api/src/routes/search.ts)
 - [apps/api/src/jobs/create.ts](../../apps/api/src/jobs/create.ts)
 - [apps/api/src/dispatch/index.ts](../../apps/api/src/dispatch/index.ts)
 - [apps/api/src/mail/](../../apps/api/src/mail/)

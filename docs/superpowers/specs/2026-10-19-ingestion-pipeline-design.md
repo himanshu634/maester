@@ -162,7 +162,7 @@ The indexer's `/v1/index` takes the file and answers NDJSON: `started` (versions
 
 - **PDF**: Docling (MIT; its models Apache-2.0 and CDLA-Permissive-2.0), version pinned, on the CPU. It reads layout, reading order, headings and tables (TableFormer, accurate mode). Docling decides OCR **per region**, not per page: a region is OCR'd when it overlaps an image, has no text, or has shapes the text layer does not explain, and it prefers visible text, then OCR, then an invisible text layer (what a scanner's own OCR usually is). So a page can mix text-layer and OCR text, and every item says which through its provenance.
   - **The OCR engine is set explicitly**: RapidOCR on onnxruntime (Apache-2.0, runs natively on arm64), never Docling's automatic choice, because the engine is part of the cache key and of every chunk's source. Tesseract 5 is the second engine the spot check (§10.4) compares against.
-  - **Long documents.** Docling's suggested `document_timeout` of 90–120 s would cut a 300-page report off; the indexer reads in page ranges (`INDEX_PAGE_RANGE`, default 20 pages), with `page_batch_size` set for memory, and streams each range's pages and chunks as soon as they are read.
+  - **Long documents.** Docling's suggested `document_timeout` of 90–120 s would cut a 300-page report off; the worker sends the document one page range at a time (`INDEX_PAGE_RANGE`, default 20 pages, one `/v1/index` request each), so a retry resumes at the first range not stored; the indexer reads a range with `page_batch_size` set for memory and streams its pages and chunks as soon as they are read. A cached read is chunked again through `/v1/chunk` without reading.
   - `do_cell_matching` can break tables whose cells run together across columns, which packed right-aligned numbers do; the setting is decided by the OCR and table spot check.
 - **Claude OCR**, optional (`OCR_ENGINE=claude`): the page as a one-page PDF to `claude-sonnet-5-5` through the official `anthropic` SDK, asked for the text exactly as printed; refusal fallback on, the answering model recorded. Off by default because it is paid.
 - **XBRL**: text-block facts (accounting policies, notes, the directors' report where present, as escaped HTML) are converted to plain text and become chunks with `text_source = xbrl` and their element instead of a page.
@@ -195,7 +195,7 @@ From Docling's document structure, deterministic and versioned (`chunker_version
 
 `searchChunks(db, { workspaceId, query, limit, companyId?, documentIds? })` in a shared package, behind `GET /v1/workspaces/:workspaceId/search?q=&limit=&company=` (session required, member of the workspace):
 
-1. Embed the query through the indexer, on `EMBEDDING_MODEL`.
+1. Embed the query through the embedder, on `EMBEDDING_MODEL`.
 2. Top 50 by cosine distance among the workspace's current chunks for that model; top 50 by `ts_rank` on `websearch_to_tsquery('simple', q)`. The `simple` configuration, not `english`: stemming mangles company names, CINs and Ind AS terms. Keyword search matters here: on number-heavy finance questions it beats vectors (NanoRTEB FinQA: BM25 0.733 against dense 0.605). A filter by company or document uses its B-tree and an exact distance sort; pgvector's iterative scan (`hnsw.iterative_scan = relaxed_order`) covers middle cases.
 3. Merge by reciprocal rank (k = 60); return up to `limit` (default 10, at most 50): document, company, page or element, section path, text source, the text and both ranks.
 

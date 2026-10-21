@@ -30,8 +30,10 @@ describe('researchApi', () => {
 		]);
 	});
 
-	it('links to the PDF at a page counted from 1', () => {
+	it('fileHref links the stored file; pageHref adds its page, counted from 1', () => {
 		const api = researchApi((() => Promise.reject()) as unknown as Fetcher, WS);
+		expect(api.fileHref('d/1')).toBe(`/v1/workspaces/${WS}/documents/d%2F1/file`);
+		expect(api.pageHref('d/1', 212)).toBe(`/v1/workspaces/${WS}/documents/d%2F1/file#page=213`);
 		expect(api.pageHref(CO, 212)).toBe(`/v1/workspaces/${WS}/documents/${CO}/file#page=213`);
 	});
 });

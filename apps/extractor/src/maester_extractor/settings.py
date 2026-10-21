@@ -19,6 +19,9 @@ class Settings:
     max_bytes: int = 50 * 1024 * 1024
     heartbeat_seconds: float = 15.0
     deadline_seconds: float = 840.0
+    xbrl_max_bytes: int = 20 * 1024 * 1024
+    xbrl_max_facts: int = 100_000
+    xbrl_deadline_seconds: float = 30.0
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> "Settings":
@@ -33,4 +36,7 @@ class Settings:
             max_bytes=int(env.get("EXTRACT_MAX_BYTES", str(50 * 1024 * 1024))),
             heartbeat_seconds=float(env.get("EXTRACT_HEARTBEAT_SECONDS", "15")),
             deadline_seconds=float(env.get("EXTRACT_DEADLINE_SECONDS", "840")),
+            xbrl_max_bytes=int(env.get("XBRL_MAX_BYTES", str(20 * 1024 * 1024))),
+            xbrl_max_facts=int(env.get("XBRL_MAX_FACTS", "100000")),
+            xbrl_deadline_seconds=float(env.get("XBRL_DEADLINE_SECONDS", "30")),
         )

@@ -8,13 +8,17 @@ import type { CompanyFinancials, CompanyStock, ResearchCompany } from './types';
 export function researchApi(fetcher: Fetcher, workspaceId: string) {
 	const base = `/v1/workspaces/${encodeURIComponent(workspaceId)}`;
 	const company = (id: string) => `${base}/companies/${encodeURIComponent(id)}`;
+	const fileHref = (documentId: string) =>
+		`${base}/documents/${encodeURIComponent(documentId)}/file`;
 	return {
 		companies: () => getJson<{ items: ResearchCompany[] }>(fetcher, `${base}/research/companies`),
 		financials: (id: string) => getJson<CompanyFinancials>(fetcher, `${company(id)}/financials`),
 		stock: (id: string) => getJson<CompanyStock>(fetcher, `${company(id)}/stock`),
+		/** The stored file: the API redirects to it. */
+		fileHref,
 		/** The stored PDF at a page: the API redirects and the browser keeps "#page=". Counted from 1. */
 		pageHref: (documentId: string, pageIndex: number) =>
-			`${base}/documents/${encodeURIComponent(documentId)}/file#page=${pageIndex + 1}`
+			`${fileHref(documentId)}#page=${pageIndex + 1}`
 	};
 }
 

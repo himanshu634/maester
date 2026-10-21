@@ -2,6 +2,7 @@ import { boolean, date, index, integer, jsonb, pgEnum, pgTable, text, uuid, type
 import { user } from "./auth.js";
 import { company, document, job, ts, workspace } from "./platform.js";
 
+export const reportingBasis = pgEnum("reporting_basis", ["consolidated", "standalone", "unknown"]);
 export const classificationKind = pgEnum("classification_kind", ["annual_report", "financial_results", "other", "not_sure"]);
 export const otherDocumentType = pgEnum("other_document_type", [
   "shareholding_pattern", "shareholder_notice", "board_meeting", "investor_presentation",
@@ -32,6 +33,11 @@ export const documentClassification = pgTable(
     cin: text("cin"),
     bseCode: text("bse_code"),
     nseSymbol: text("nse_symbol"),
+    isin: text("isin"),
+    /** The format id of an XBRL instance (`in-capmkt/ind_as`); null for a PDF. */
+    xbrlFormat: text("xbrl_format"),
+    /** An XBRL instance's basis; null for a PDF, whose bases are in `statementsFound`. */
+    basis: reportingBasis("basis"),
     statementsFound: jsonb("statements_found").$type<StatementsFoundJson>().notNull().default([]),
     setBy: classificationSetBy("set_by").notNull(),
     setByUserId: text("set_by_user_id").references(() => user.id),
@@ -60,6 +66,10 @@ export const classificationEvidence = pgTable(
     pageIndex: integer("page_index"),
     quote: text("quote"),
     textLayerMatch: boolean("text_layer_match"),
+    /** The XBRL element an answer was read from; null for a PDF. */
+    element: text("element"),
+    /** The XBRL context that element was read in; null for a PDF. */
+    context: text("context"),
   },
   (t) => [index("classification_evidence_classification").on(t.classificationId)],
 );

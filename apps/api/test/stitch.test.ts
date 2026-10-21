@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { XbrlInPdf } from "@maester/contracts";
 import type { ExtractionCheckRow, FactWithSource } from "@maester/db";
 import { moveDecimal, normalise, roundTo, stitch, type Filing } from "../src/financials/stitch.js";
 
@@ -23,13 +24,44 @@ function fact(doc: Doc, label: string, periodEnd: string, printed: string, o: Op
       id, workspaceId: WS, revisionId: doc.revisionId, companyId: null, statement, basis: o.basis ?? "consolidated",
       section: o.section ?? "Income", lineOrder: o.order ?? 0, reportedLabel: label, isSubtotal: o.subtotal ?? false,
       componentLabels: o.parts ?? [], periodLabel: `Year ended ${periodEnd}`,
-      periodEnd: dated && !balance ? periodEnd : null, asOfDate: dated && balance ? periodEnd : null,
+      periodEnd: dated && !balance ? periodEnd : null, periodStart: null, span: null, asOfDate: dated && balance ? periodEnd : null,
       reportedText: printed, reportedValue: reported, valueStatus: status, unitLabel: "₹ in crore", scaleFactor: scale,
       currency: o.currency ?? "INR",
       normalizedValue: reported === null || scale === null ? null : moveDecimal(reported, scale.length - 1),
       createdAt: new Date(),
     },
     source: { id: crypto.randomUUID(), workspaceId: WS, factId: id, documentId: doc.documentId, pageIndex: (o.page ?? 213) - 1, textLayerMatch: o.match === undefined ? true : o.match },
+    xbrl: null,
+  };
+}
+
+type XOpts = {
+  statement?: Kind; basis?: "consolidated" | "standalone"; section?: string; order?: number; span?: "quarter" | "half_year" | "nine_months" | "year" | null;
+  start?: string | null; unit?: string; scale?: string; element?: string; context?: string; decimals?: string | null; nil?: boolean;
+};
+
+/** An XBRL fact as `document.xbrl` writes it: a duration with its span and start, or an instant (span null) with its as-of date. */
+function xfact(doc: Doc, label: string, periodEnd: string, value: string | null, o: XOpts = {}): FactWithSource {
+  const span = o.span === undefined ? "year" : o.span;
+  const scale = o.scale ?? "10000000";
+  const nil = o.nil ?? false;
+  const id = crypto.randomUUID();
+  const day = new Date(`${periodEnd}T00:00:00Z`);
+  const label_ = `${span === null ? "As at" : "Year ended"} ${day.getUTCDate()} ${day.toLocaleString("en-GB", { month: "short", timeZone: "UTC" })} ${day.getUTCFullYear()}`;
+  return {
+    fact: {
+      id, workspaceId: WS, revisionId: doc.revisionId, companyId: null, statement: o.statement ?? (span === null ? "balance_sheet" : "income_statement"),
+      basis: o.basis ?? "consolidated", section: o.section ?? "Income", lineOrder: o.order ?? 0, reportedLabel: label, isSubtotal: false, componentLabels: [],
+      periodLabel: label_, periodEnd: span === null ? null : periodEnd, periodStart: span === null ? null : (o.start === undefined ? null : o.start), span,
+      asOfDate: span === null ? periodEnd : null, reportedText: nil ? "" : value!, reportedValue: nil ? null : value, valueStatus: nil ? "unparsed" : "value",
+      unitLabel: o.unit ?? "₹ crore", scaleFactor: scale, currency: "INR",
+      normalizedValue: nil || value === null ? null : moveDecimal(value, scale.length - 1), createdAt: new Date(),
+    },
+    source: null,
+    xbrl: {
+      id: crypto.randomUUID(), workspaceId: WS, factId: id, documentId: doc.documentId, element: o.element ?? "RevenueFromOperations", contextId: o.context ?? "FourD",
+      decimals: o.decimals === undefined ? "-5" : o.decimals, nil, concept: null, footnoteIds: [], createdAt: new Date(),
+    },
   };
 }
 
@@ -40,14 +72,30 @@ function check(
   return {
     id: crypto.randomUUID(), workspaceId: WS, revisionId: doc.revisionId, checkType: o.type ?? "subtotal", statement: o.statement ?? "income_statement",
     basis: "consolidated", section: o.section === undefined ? "Income" : o.section, periodLabel: `Year ended ${periodEnd}`, subjectLabel: subject, status, expected, actual, detail: "",
+    factId: null, pdfDocumentId: null, pdfClassificationId: null, pageIndex: null, reason: null, checkVersion: null,
   };
 }
 
-function filing(periodEnd: string, build: (d: Doc) => { facts: FactWithSource[]; checks?: ExtractionCheckRow[] }, created = "2026-10-01T00:00:00Z"): Filing {
+const COMPANY = "11111111-1111-4111-8111-111111111111";
+type FilingOpts = { source?: "pdf" | "xbrl"; kind?: "annual_report" | "financial_results"; inPdf?: (d: Doc, facts: FactWithSource[]) => Map<string, XbrlInPdf> };
+
+function filing(
+  periodEnd: string, build: (d: Doc) => { facts: FactWithSource[]; checks?: ExtractionCheckRow[] }, created = "2026-10-01T00:00:00Z", o: FilingOpts = {},
+): Filing {
   const doc = { documentId: crypto.randomUUID(), revisionId: crypto.randomUUID() };
   const { facts, checks = [] } = build(doc);
-  return { documentId: doc.documentId, periodEnd, revisionCreatedAt: new Date(created), pageCount: 286, facts, checks };
+  const source = o.source ?? "pdf";
+  return {
+    documentId: doc.documentId, revisionId: doc.revisionId, companyId: COMPANY, source, filingKind: o.kind ?? "annual_report",
+    originalName: source === "xbrl" ? "Integrated_Finance_Ind_As_MC.xml" : "ar.pdf",
+    periodEnd, revisionCreatedAt: new Date(created), pageCount: source === "xbrl" ? 1 : 286, facts, checks,
+    inPdf: o.inPdf ? o.inPdf(doc, facts) : new Map(),
+  };
 }
+
+/** An XBRL filing (an MCA-style annual instance unless `kind` says results), read before the PDFs unless `created` says otherwise. */
+const xfiling = (periodEnd: string, build: (d: Doc) => { facts: FactWithSource[] }, o: FilingOpts & { created?: string } = {}) =>
+  filing(periodEnd, build, o.created ?? "2026-09-01T00:00:00Z", { source: "xbrl", ...o });
 
 const pl = (tables: ReturnType<typeof stitch>, basis = "consolidated") =>
   tables.find((t) => t.statement === "income_statement" && t.basis === basis)!;
@@ -90,7 +138,7 @@ describe("stitch", () => {
     expect(t.columns.map((c) => c.periodEnd)).toEqual(["2024-03-31", "2025-03-31", "2026-03-31"]);
     expect(t.columns.map((c) => c.documentId)).toEqual([ar25.documentId, ar26.documentId, ar26.documentId]);
     expect(row(t, "Revenue from operations").cells.map((c) => c.value)).toEqual(["10312.8", "11240.75", "12105.4"]);
-    expect(row(t, "Revenue from operations").cells[2]!.source).toEqual({ documentId: ar26.documentId, pageIndex: 212, pageCount: 286, textLayerMatch: true });
+    expect(row(t, "Revenue from operations").cells[2]!.source).toEqual({ kind: "page", documentId: ar26.documentId, pageIndex: 212, pageCount: 286, textLayerMatch: true });
   });
 
   it("marks a figure restated when an older filing printed something else for that year", () => {
@@ -98,7 +146,7 @@ describe("stitch", () => {
     const ar26 = filing("2026-03-31", (d) => ({ facts: [fact(d, "Freight and forwarding", "2026-03-31", "2,602.15"), fact(d, "Freight and forwarding", "2025-03-31", "2,401.60")] }));
     const cells = row(pl(stitch([ar26, ar25])), "Freight and forwarding").cells;
     expect(cells[0]!.value).toBe("2401.6");
-    expect(cells[0]!.restated).toEqual({ documentId: ar25.documentId, filingPeriodEnd: "2025-03-31", pageIndex: 197, value: "2389.1", printed: "2,389.10" });
+    expect(cells[0]!.restated).toEqual({ kind: "page", documentId: ar25.documentId, filingPeriodEnd: "2025-03-31", pageIndex: 197, value: "2389.1", printed: "2,389.10" });
     expect(cells[1]!.restated).toBeNull();
   });
 
@@ -133,7 +181,7 @@ describe("stitch", () => {
     it("marks it restated when lakh and crore still differ at the coarser precision", () => {
       const { ar25, cell } = lakhThenCrore("12,10,553.21");
       expect(cell.value).toBe("12105.43");
-      expect(cell.restated).toEqual({ documentId: ar25.documentId, filingPeriodEnd: "2025-03-31", pageIndex: 197, value: "12105.5321", printed: "12,10,553.21" });
+      expect(cell.restated).toEqual({ kind: "page", documentId: ar25.documentId, filingPeriodEnd: "2025-03-31", pageIndex: 197, value: "12105.5321", printed: "12,10,553.21" });
     });
 
     it("doesn't mark a year restated when only crore became lakh", () => {
@@ -144,7 +192,7 @@ describe("stitch", () => {
 
     it("marks it restated when crore and lakh still differ at the coarser precision", () => {
       const { ar25, cell } = croreThenLakh("12,105.53");
-      expect(cell.restated).toEqual({ documentId: ar25.documentId, filingPeriodEnd: "2025-03-31", pageIndex: 197, value: "1210553", printed: "12,105.53" });
+      expect(cell.restated).toEqual({ kind: "page", documentId: ar25.documentId, filingPeriodEnd: "2025-03-31", pageIndex: 197, value: "1210553", printed: "12,105.53" });
     });
 
     it("compares whole crore with lakh to the nearest hundred lakh", () => {
@@ -408,5 +456,168 @@ describe("stitch", () => {
       fact(d, "Total assets", "2026-03-31", "17,580.00", { statement: "balance_sheet" }),
     ] }));
     expect(stitch([ar]).map((t) => `${t.statement}/${t.basis}`)).toEqual(["income_statement/consolidated", "income_statement/standalone", "balance_sheet/consolidated"]);
+  });
+});
+
+// The XBRL filings below are filingKind "annual_report" (an MCA-style annual instance), so no test answers the open Q4 question.
+describe("stitch across sources", () => {
+  const REV = "Revenue from operations";
+  const passed = (pdfDocumentId: string): XbrlInPdf => ({ status: "passed", pdfDocumentId, pageIndex: 4, statementPages: [4, 5], reason: null });
+
+  it("an annual-report XBRL filing owns a year a newer annual-report PDF also prints, and the column never mixes them", () => {
+    const x25 = xfiling("2025-03-31", (d) => ({ facts: [
+      xfact(d, REV, "2025-03-31", "11240.75", { order: 0, start: "2024-04-01" }),
+      xfact(d, "Other income", "2025-03-31", "312.25", { order: 1, element: "OtherIncome", start: "2024-04-01" }),
+    ] }));
+    const ar26 = filing("2026-03-31", (d) => ({ facts: [
+      fact(d, REV, "2026-03-31", "12,105.40", { order: 0 }), fact(d, REV, "2025-03-31", "11,240.75", { order: 0 }),
+      fact(d, "Other income", "2026-03-31", "374.60", { order: 1 }), fact(d, "Other income", "2025-03-31", "312.25", { order: 1 }),
+    ] }));
+    for (const input of [[x25, ar26], [ar26, x25]]) {
+      const t = pl(stitch(input));
+      expect(t.columns.map((c) => [c.periodEnd, c.documentId])).toEqual([["2025-03-31", x25.documentId], ["2026-03-31", ar26.documentId]]);
+      for (const r of t.rows) {
+        expect(r.cells[0]!.source).toMatchObject({ kind: "xbrl", documentId: x25.documentId });
+        expect(r.cells[1]!.source).toMatchObject({ kind: "page", documentId: ar26.documentId });
+      }
+      expect(row(t, REV).cells.map((c) => c.value)).toEqual(["11240.75", "12105.4"]);
+      expect(row(t, REV).cells[0]!.restated).toBeNull();
+    }
+  });
+
+  it("a line only the PDF prints stays out of the XBRL-owned column", () => {
+    const x25 = xfiling("2025-03-31", (d) => ({ facts: [xfact(d, REV, "2025-03-31", "11240.75")] }));
+    const ar26 = filing("2026-03-31", (d) => ({ facts: [
+      fact(d, REV, "2026-03-31", "12,105.40", { order: 0 }), fact(d, REV, "2025-03-31", "11,240.75", { order: 0 }),
+      fact(d, "Exceptional items", "2026-03-31", "40.00", { order: 1 }), fact(d, "Exceptional items", "2025-03-31", "35.00", { order: 1 }),
+    ] }));
+    const cells = row(pl(stitch([x25, ar26])), "Exceptional items").cells;
+    expect(cells.map((c) => c.status)).toEqual(["missing", "value"]);
+    expect(cells[0]).toMatchObject({ value: null, source: null, restated: null });
+  });
+
+  it("a year XBRL does not print comes from the PDF", () => {
+    const x26 = xfiling("2026-03-31", (d) => ({ facts: [xfact(d, REV, "2026-03-31", "12105.40")] }));
+    const ar26 = filing("2026-03-31", (d) => ({ facts: [fact(d, REV, "2026-03-31", "12,105.40"), fact(d, REV, "2025-03-31", "11,240.75")] }));
+    const t = pl(stitch([ar26, x26]));
+    expect(t.columns.map((c) => [c.periodEnd, c.documentId])).toEqual([["2025-03-31", ar26.documentId], ["2026-03-31", x26.documentId]]);
+    expect(row(t, REV).cells.map((c) => c.source?.kind)).toEqual(["page", "xbrl"]);
+  });
+
+  it("an XBRL quarter and its half year ending on 30 Sep never sit in an annual table", () => {
+    const x = xfiling("2026-03-31", (d) => ({ facts: [
+      xfact(d, REV, "2025-09-30", "3010.00", { span: "quarter", start: "2025-07-01", context: "OneD" }),
+      xfact(d, REV, "2025-09-30", "5920.00", { span: "half_year", start: "2025-04-01", context: "FourD" }),
+      xfact(d, REV, "2026-03-31", "12105.40", { span: "year", start: "2025-04-01" }),
+      xfact(d, "Total assets", "2025-09-30", "17000.00", { span: null, context: "OneI", element: "Assets" }),
+    ] }));
+    const tables = stitch([x]);
+    expect(tables.map((t) => `${t.statement}/${t.basis}`)).toEqual(["income_statement/consolidated"]);
+    const t = pl(tables);
+    expect(t.columns.map((c) => c.periodEnd)).toEqual(["2026-03-31"]);
+    expect(row(t, REV).cells.map((c) => c.value)).toEqual(["12105.4"]);
+    expect(t.unplaced).toBe(0);
+  });
+
+  it("a Q4 results XBRL (filingKind financial_results) with year facts adds no column and owns no year", () => {
+    // The open question's default: the annual report's PDF still owns 2025-26.
+    const q4 = xfiling("2026-03-31", (d) => ({ facts: [
+      xfact(d, REV, "2026-03-31", "3200.00", { span: "quarter", start: "2026-01-01", context: "OneD" }),
+      xfact(d, REV, "2026-03-31", "12999.00", { span: "year", start: "2025-04-01" }),
+      xfact(d, "Total assets", "2026-03-31", "17000.00", { span: null, context: "OneI", element: "Assets" }),
+    ] }), { kind: "financial_results" });
+    const ar26 = filing("2026-03-31", (d) => ({ facts: [fact(d, REV, "2026-03-31", "12,105.40")] }));
+    const tables = stitch([q4, ar26]);
+    expect(tables.map((t) => `${t.statement}/${t.basis}`)).toEqual(["income_statement/consolidated"]);
+    const t = pl(tables);
+    expect(t.columns.map((c) => [c.periodEnd, c.documentId])).toEqual([["2026-03-31", ar26.documentId]]);
+    expect(row(t, REV).cells[0]).toMatchObject({ value: "12105.4", restated: null, source: { kind: "page" } });
+    expect(stitch([q4])).toEqual([]);
+  });
+
+  it("a half-year results XBRL with a 30 Sep OneI balance sheet adds no column", () => {
+    const h1 = xfiling("2025-09-30", (d) => ({ facts: [
+      xfact(d, "Total assets", "2025-09-30", "17000.00", { span: null, context: "OneI", element: "Assets" }),
+      xfact(d, "Total assets", "2025-03-31", "16500.00", { span: null, context: "PY_I", element: "Assets" }),
+    ] }), { kind: "financial_results" });
+    const ar26 = filing("2026-03-31", (d) => ({ facts: [
+      fact(d, "Total assets", "2026-03-31", "17,580.00", { statement: "balance_sheet" }),
+      fact(d, "Total assets", "2025-03-31", "16,400.00", { statement: "balance_sheet" }),
+    ] }));
+    const bs = stitch([h1, ar26]).find((t) => t.statement === "balance_sheet")!;
+    expect(bs.columns.map((c) => [c.periodEnd, c.documentId])).toEqual([["2025-03-31", ar26.documentId], ["2026-03-31", ar26.documentId]]);
+    expect(bs.rows[0]!.cells.map((c) => c.restated)).toEqual([null, null]);
+    expect(stitch([h1])).toEqual([]);
+  });
+
+  it("an XBRL per-share fact is per share by its unit, whatever its label says", () => {
+    const x = xfiling("2026-03-31", (d) => ({ facts: [
+      xfact(d, "Basic", "2026-03-31", "61.98", { order: 0, unit: "₹ a share", scale: "1", element: "BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations", decimals: "INF" }),
+      xfact(d, REV, "2026-03-31", "12105.40", { order: 1 }),
+      // Labelled as earnings per share, but its unit is crore: not a per-share line.
+      xfact(d, "Earnings per share reserve", "2026-03-31", "40.00", { order: 2, element: "OtherEquity" }),
+    ] }));
+    const t = pl(stitch([x]));
+    expect(t.unit).toEqual({ label: "₹ crore", scale: "10000000", currency: "INR" });
+    expect(row(t, "Basic")).toMatchObject({ perShare: true, cells: [{ value: "61.98" }] });
+    expect(row(t, REV).perShare).toBe(false);
+    expect(row(t, "Earnings per share reserve").perShare).toBe(false);
+  });
+
+  it("an XBRL cell carries its element, context, decimals and the in-PDF outcome; a page cell carries kind 'page'", () => {
+    const pdfId = crypto.randomUUID();
+    const x26 = xfiling("2026-03-31", (d) => ({ facts: [
+      xfact(d, REV, "2026-03-31", "12105.40", { order: 0, start: "2025-04-01" }),
+      xfact(d, "Other income", "2026-03-31", "374.60", { order: 1, element: "OtherIncome", decimals: "-6" }),
+    ] }), { inPdf: (_d, facts) => new Map([[facts[0]!.fact.id, passed(pdfId)]]) });
+    const ar26 = filing("2026-03-31", (d) => ({ facts: [fact(d, REV, "2025-03-31", "11,240.75", { page: 198, match: null })] }));
+    const t = pl(stitch([x26, ar26]));
+    expect(row(t, REV).cells[1]!.source).toEqual({
+      kind: "xbrl", documentId: x26.documentId, originalName: "Integrated_Finance_Ind_As_MC.xml", element: "RevenueFromOperations", contextId: "FourD",
+      decimals: "-5", nil: false, periodStart: "2025-04-01", span: "year", inPdf: passed(pdfId),
+    });
+    // A fact the route gave no outcome for claims nothing about the PDF.
+    expect(row(t, "Other income").cells[1]!.source).toMatchObject({
+      kind: "xbrl", element: "OtherIncome", decimals: "-6",
+      inPdf: { status: "not_checked", pdfDocumentId: null, pageIndex: null, statementPages: [], reason: "not_yet" },
+    });
+    expect(row(t, REV).cells[0]!.source).toEqual({ kind: "page", documentId: ar26.documentId, pageIndex: 197, pageCount: 286, textLayerMatch: null });
+  });
+
+  describe("XBRL restated against a PDF: the restated variant is the PDF's, at the coarser precision", () => {
+    const LAKH = { scale: "100000", unit: "₹ lakh" };
+    const pair = (pdfPrinted: string) => {
+      const x26 = xfiling("2026-03-31", (d) => ({ facts: [xfact(d, REV, "2026-03-31", "12345.00", LAKH)] }));
+      const ar26 = filing("2026-03-31", (d) => ({ facts: [fact(d, REV, "2026-03-31", pdfPrinted, { scale: "100000", page: 5 })] }));
+      return { ar26, cell: row(pl(stitch([ar26, x26])), REV).cells[0]! };
+    };
+
+    it("12345.00 lakh against 12,345 lakh is not restated", () => {
+      expect(pair("12,345").cell).toMatchObject({ value: "12345", source: { kind: "xbrl" }, restated: null });
+    });
+
+    it("12345.00 lakh against 12,346 lakh is restated, with the PDF's page", () => {
+      const { ar26, cell } = pair("12,346");
+      expect(cell.restated).toEqual({ kind: "page", documentId: ar26.documentId, filingPeriodEnd: "2026-03-31", pageIndex: 4, value: "12346", printed: "12,346" });
+    });
+
+    it("an XBRL filing restated by another XBRL filing names its element", () => {
+      const older = xfiling("2026-03-31", (d) => ({ facts: [xfact(d, REV, "2026-03-31", "12340.00", LAKH)] }), { created: "2026-08-01T00:00:00Z" });
+      const newer = xfiling("2026-03-31", (d) => ({ facts: [xfact(d, REV, "2026-03-31", "12345.00", LAKH)] }));
+      const cell = row(pl(stitch([older, newer])), REV).cells[0]!;
+      expect(cell.source).toMatchObject({ kind: "xbrl", documentId: newer.documentId });
+      expect(cell.restated).toEqual({ kind: "xbrl", documentId: older.documentId, filingPeriodEnd: "2026-03-31", element: "RevenueFromOperations", value: "12340", printed: "12340.00" });
+    });
+  });
+
+  it("an XBRL fact whose value is nil is '—' with status unparsed and nil true", () => {
+    const x = xfiling("2026-03-31", (d) => ({ facts: [xfact(d, REV, "2026-03-31", "12105.40", { order: 0 }), xfact(d, "Other income", "2026-03-31", null, { order: 1, nil: true, element: "OtherIncome" })] }));
+    const cell = row(pl(stitch([x])), "Other income").cells[0]!;
+    expect(cell).toMatchObject({ status: "unparsed", value: null, source: { kind: "xbrl", element: "OtherIncome", nil: true } });
+  });
+
+  it("shows a fact stored without its source row with source null", () => {
+    const ar = filing("2026-03-31", (d) => ({ facts: [{ ...fact(d, REV, "2026-03-31", "12,105.40"), source: null }] }));
+    expect(row(pl(stitch([ar])), REV).cells[0]).toMatchObject({ status: "value", value: "12105.4", source: null });
   });
 });

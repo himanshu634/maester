@@ -12,8 +12,13 @@ This document gives the system level of Maester. Each app and each shared packag
 | session | A sign-in record of Better Auth in the `session` table. The browser keeps it in a cookie with the prefix `maester`. |
 | waitlist | The `waitlist_entry` table. Only an email with an approved row can get an account. |
 | workspace | A row in the `workspace` table. Companies, documents and jobs belong to one workspace. |
-| document | A row in the `document` table. It records one PDF that the investor added. |
-| PDF | The bytes of a document. The object store keeps them. |
+| document | A row in the `document` table. It records one file that the investor added: a PDF or an XBRL instance. |
+| PDF | The bytes of a document that has the format `pdf`. The object store keeps them. |
+| XBRL instance | An XML file in the XBRL format. It holds the numbers of one results filing for one basis. Maester reads it with no model. |
+| format | The `format` column of a document: `pdf` or `xbrl`. |
+| element map | A reviewed file that says which element of an XBRL format is which line of which statement. |
+| source rule | The rule that says which source gives the numbers of a statement, and if a results PDF is read, skipped or held for XBRL. |
+| pipeline | The `pipeline` object of a document. It shows where the document stands on its tracks. The API works it out on each read. |
 | object store | The storage for PDFs, through the `ObjectStore` interface. The drivers are `gcs` (Cloud Storage), `disk` (a local folder) and memory (tests only). |
 | job | A row in the `job` table. It is one unit of background work, with a type and a state. |
 | dispatch | The HTTP request that tells the worker to run one job. The dispatcher is the code that sends it. |
@@ -26,7 +31,7 @@ This document gives the system level of Maester. Each app and each shared packag
 | revision | A row in the `extraction_revision` table. It holds the result of one extraction. |
 | fact | A row in the `financial_fact` table. It holds one figure from a statement. |
 | extraction check | A row in the `extraction_check` table. It holds the result of one arithmetic check of the facts. |
-| slip | The panel on the Documents page that shows one document. |
+| opened filing | The panel on the Documents page that shows one filing: the files of one company, one kind and one period. |
 | market point | A row in the `market_point` table. It holds the value of one daily market series on one day, with its source. |
 | market refresh | One run of the market refresher in the worker. It gets new market points from Dhan and FRED. Each market refresh that starts writes one row in the `market_fetch` table. |
 | market connection | A row in the `market_connection` table. It holds the encrypted secret for one market data source: Dhan or FRED. |
@@ -37,35 +42,40 @@ This document gives the system level of Maester. Each app and each shared packag
 
 ## Function
 
-Maester reads financial filings for an investor. The investor signs in to the web client and adds a PDF. Maester finds what the PDF is and which company it is for. If the PDF is an annual report or financial results, Maester reads the statements into facts. Each fact keeps the page that it came from.
+Maester reads financial filings for an investor. The investor signs in to the web client and adds a PDF or an XBRL instance. Maester finds what the file is and which company it is for. If the file is an annual report or financial results, Maester reads the statements into facts. Each fact from a PDF keeps the page that it came from. Each fact from an XBRL instance keeps its element and its context.
 
-Maester also shows a market mood. It calculates the market mood from daily market data that the investor's own Dhan and FRED accounts give. The repository holds six apps, eight shared packages and the deployment scripts.
+If an XBRL instance covers the statements of a results PDF, Maester does not read that PDF with a model. The numbers come from the instance.
+
+Maester also shows a market mood. It calculates the market mood from daily market data that the investor's own Dhan and FRED accounts give. The repository holds eight apps, nine shared packages and the deployment scripts.
 
 ## Parts
 
 | Part | Location | Function |
 | --- | --- | --- |
 | [API](api.md) | `apps/api` | TypeScript HTTP service (Hono). It serves sign-in at `/api/auth/*` through Better Auth and the routes for workspaces, companies, documents and jobs at `/v1`. It writes documents and jobs and dispatches jobs. It also serves the market mood at `/v1/market-mood`, the market connections at `/v1/settings/connections` and the statements and prices of a company for Research. |
-| [Worker](worker.md) | `apps/worker` | TypeScript HTTP service (Hono). In the `queue` mode, it claims each job from the database. In the `cloud-tasks` mode, it receives a dispatch at `POST /tasks/:type`. It takes a lease and runs `document.verify`, `document.classify` or `document.extract`. If `CONNECTIONS_KEY` has a value, it also runs the market refresh on a timer. |
-| [Extractor](extractor.md) | `apps/extractor` | Python HTTP service (FastAPI). It answers `POST /v1/classify` and `POST /v1/extract` for the worker and calls Gemini on Vertex AI. It does not write data. |
+| [Worker](worker.md) | `apps/worker` | TypeScript HTTP service (Hono). In the `queue` mode, it claims each job from the database. In the `cloud-tasks` mode, it receives a dispatch at `POST /tasks/:type`. It takes a lease and runs `document.verify`, `document.classify`, `document.extract`, `document.index`, `document.xbrl` or `document.xbrl_check`. If `CONNECTIONS_KEY` has a value, it also runs the market refresh on a timer. |
+| [Extractor](extractor.md) | `apps/extractor` | Python HTTP service (FastAPI). It answers `POST /v1/classify` and `POST /v1/extract` for the worker and calls Gemini on Vertex AI. It also answers `POST /v1/xbrl` and `POST /v1/xbrl/pdf-check`, which call no model. It does not write data. |
+| [Indexer](indexer.md) | `apps/indexer` | Python HTTP service. It answers `POST /v1/index`, `POST /v1/chunk` and `POST /v1/chunk-text` for the worker. It reads the pages of a PDF with Docling and cuts them into chunks. It does not write data. |
 | [Web client](web.md) | `apps/web` | Static SvelteKit site. In a container, nginx serves it and sends `/api/auth/`, `/v1/` and `/dev/` to the API. |
 | [CLI](cli.md) | `apps/cli` | Python command `maester` with `ingest`, `ask` and `list-docs`. It keeps a JSON cache in `data/cache`. It does not use the API or the database. |
-| [Evaluation harness](eval.md) | `apps/eval` | Python command `maester-eval` with `live`, `export`, `freeze` and `report`. It runs the extraction workflow over the public filings in `data/eval/corpus` and scores a run against the gold files in `data/eval/gold`. It does not use the API or the database. |
+| [Evaluation harness](eval.md) | `apps/eval` | Python command `maester-eval` with `live`, `export`, `freeze`, `report`, `xbrl-elements` and `xbrl-map`. It runs the extraction workflow over the public filings in `data/eval/corpus` and scores a run against the gold files in `data/eval/gold`. It does not use the API or the database. |
 | [Contracts](packages.md) | `packages/contracts` | Zod shapes for requests, responses and the wire format of the extractor. |
 | [Database package](packages.md) | `packages/db` | Drizzle schema, queries and migrations for Postgres. |
 | [Jobs package](packages.md) | `packages/jobs` | Job creation, the dispatchers and the intake decision. The API and the worker use it. |
 | [Storage package](packages.md) | `packages/storage` | The `ObjectStore` interface and its drivers. |
 | [Market package](packages.md) | `packages/market` | The clients for Dhan and FRED, and the encryption of the secrets of market connections. The API and the worker use it. |
 | [Financial engine](packages.md) | `packages/financial-engine` | Python engine with the namespace `pdf_financial_qa`. The extractor, the CLI and the evaluation harness use it. |
-| [TypeScript engine](packages.md) | `packages/financial-engine-ts` | A placeholder. It exports only `ENGINE_VERSION`. |
+| [TypeScript engine](packages.md) | `packages/financial-engine-ts` | The source rule. |
+| [Import command](packages.md) | `apps/import` | The command `pnpm --filter @maester/import run import <folder>`. It sends the PDFs and XBRL instances of a folder through the API. |
 | [Shared configuration](packages.md) | `packages/config` | The base TypeScript and ESLint configuration. |
 | Infrastructure | `infra` | Bash scripts that prepare a Google Cloud project and deploy the API, the worker and the web client to Cloud Run. |
 
 The repository has three package managers:
 
-- The pnpm workspace at the root holds `apps/api`, `apps/worker` and `packages/*`. Turborepo runs its scripts.
+- The pnpm workspace at the root holds `apps/api`, `apps/worker`, `apps/import` and `packages/*`. Turborepo runs its scripts.
 - `apps/web` is a separate pnpm project with its own lockfile. A root `pnpm install` does not install it.
 - The uv workspace holds `apps/cli`, `apps/eval`, `apps/extractor` and `packages/financial-engine`.
+- `apps/indexer` is a separate uv project with its own `uv.lock`, because Docling needs torch.
 
 ## Operation
 
@@ -82,15 +92,15 @@ The repository has three package managers:
 
 ### Document intake
 
-1. The Documents page reads `GET /v1/me` and uses the first workspace in the answer (`apps/web/src/lib/components/documents/DocumentsPage.svelte:129-130`).
-2. The web client sends `POST /v1/workspaces/:ws/documents/uploads` with the name, the size and the type of the PDF (`apps/web/src/lib/documents/client.ts:162-167`).
+1. The Documents page reads `GET /v1/me` and uses the first workspace in the answer (`apps/web/src/lib/components/documents/DocumentsPage.svelte:383-384`).
+2. The web client sends `POST /v1/workspaces/:ws/documents/uploads` with the name, the size and the type of the file. The type is `application/xml` for an `.xml` file and `application/pdf` for all other files. The API also accepts `text/xml` (`apps/web/src/lib/documents/client.ts:185-189`).
 3. The API writes a document with the state `pending_upload` and returns a signed upload URL (`apps/api/src/routes/documents.ts:47-82`).
-4. The browser sends the PDF with `PUT` to the signed URL (`apps/web/src/lib/documents/client.ts:175-179`). With the `gcs` driver, the URL goes to Cloud Storage. With the `disk` driver, the URL goes to `/dev/blobs/*` on the API (`apps/api/src/routes/dev.ts:117-125`).
-5. The web client sends `POST .../documents/:id/finalize` (`apps/web/src/lib/documents/client.ts:180`). The API makes sure that the PDF is in the object store. Then it sets the state to `uploaded` and creates a `document.verify` job (`apps/api/src/routes/documents.ts:84-111`).
+4. The browser sends the PDF with `PUT` to the signed URL (`apps/web/src/lib/documents/client.ts:197-201`). With the `gcs` driver, the URL goes to Cloud Storage. With the `disk` driver, the URL goes to `/dev/blobs/*` on the API (`apps/api/src/routes/dev.ts:117-125`).
+5. The web client sends `POST .../documents/:id/finalize` (`apps/web/src/lib/documents/client.ts:202`). The API makes sure that the PDF is in the object store. Then it sets the state to `uploaded` and creates a `document.verify` job (`apps/api/src/routes/documents.ts:84-111`).
 6. `createJob` writes a job with the state `queued` and a unique key, then dispatches it (`packages/jobs/src/create.ts:28-56`). A second call with the same key returns the first job and does not dispatch again.
 7. In the `queue` mode, the dispatcher runs `pg_notify('job_ready', <type>)` (`packages/jobs/src/dispatch.ts`). In the `cloud-tasks` mode, it creates a task with an OIDC token.
 8. In the `queue` mode, a claim loop of the worker claims the job and takes the lease (`apps/worker/src/queue.ts`, `apps/worker/src/lease.ts`). In the `cloud-tasks` mode, the worker checks the token, and `runJob` takes the lease. Then `executeJob` calls the handler for the job type (`apps/worker/src/run.ts`).
-9. `document.verify` reads the PDF from the object store. It calculates the SHA-256 hash and the size, and it looks for the `%PDF-` header (`apps/worker/src/jobs/document-verify.ts:50-109`). A good PDF gets the state `stored`. A bad PDF gets the state `rejected`.
+9. `document.verify` reads the file from the object store. It calculates the SHA-256 hash and the size. For a PDF, it looks for the `%PDF-` header. For an XBRL instance, it reads the first `XBRL_SNIFF_BYTES` bytes and checks that the root is an XBRL instance with no DOCTYPE (`apps/worker/src/jobs/document-verify.ts`, `apps/worker/src/sniff.ts`). A good file gets the state `stored`. A bad file gets the state `rejected` with the code `UNSUPPORTED_TYPE`.
 10. The worker compares the hash of a stored document with the other stored documents in the workspace. A copy gets the intake state `duplicate`. Any other document gets `identifying` and a `document.classify` job (`apps/worker/src/jobs/document-verify.ts:15-46`).
 11. `document.classify` sends the PDF to `POST /v1/classify` on the extractor (`apps/worker/src/jobs/document-classify.ts:96-134`, `apps/worker/src/extractor.ts:71-81`). The extractor returns one JSON object with the kind, the company as printed, the period and the evidence (`apps/extractor/src/maester_extractor/app.py:188-205`).
 12. If the investor gave no company, the worker looks for one company in the workspace that agrees with the printed identifiers or name (`apps/worker/src/jobs/document-classify.ts:78-81`). Then it writes the classification and its evidence in one transaction (`apps/worker/src/jobs/document-classify.ts:16-76`).
@@ -101,15 +111,36 @@ The repository has three package managers:
     - An annual report or financial results with a company gives `reading` and a new `document.extract` job.
 14. `document.extract` sends the PDF to `POST /v1/extract` (`apps/worker/src/jobs/document-extract.ts:141-187`). The extractor answers with an NDJSON stream: `started`, then `progress` and `heartbeat` lines, then one `result` or one `error` (`apps/extractor/src/maester_extractor/app.py:123-186`). For each line, the worker extends its lease (`apps/worker/src/jobs/document-extract.ts:175-178`).
 15. The worker writes the result in one transaction: one revision with its facts, its `source_reference` rows and its extraction checks (`apps/worker/src/jobs/document-extract.ts:36-128`). Then it sets the intake state to `read` (`apps/worker/src/jobs/document-extract.ts:131-139`).
-16. While Maester works on the document in the slip, the Documents page reads `GET .../documents/:id` again every 2 seconds (`apps/web/src/lib/documents/intake.ts:25`, `apps/web/src/lib/components/documents/DocumentsPage.svelte:236-243`). While any document in the list has work in progress, the page reads the list again every 5 seconds (`apps/web/src/lib/documents/intake.ts:28`).
-17. The page shows the intake state, the classification and its evidence. It does not show facts.
+16. While a track of the opened filing is live, the Documents page reads `GET .../documents/:id` for each file of the filing every 2 seconds (`apps/web/src/lib/documents/intake.ts:24`, `apps/web/src/lib/components/documents/DocumentsPage.svelte:354-378`). While another filing in the list "Working on" is live, the page reads `GET .../filings` every 5 seconds (`apps/web/src/lib/documents/intake.ts:27`, `apps/web/src/lib/components/documents/DocumentsPage.svelte:316`). The page also reads `GET .../filings` one time when a polled file changes its state, its intake state or its identification.
+17. The page shows the two tracks of each filing, the source of each statement, the classification and its evidence. It does not show facts.
+18. In parallel, `document.verify` creates a `document.index` job for each stored document that is not a duplicate. The job sends the PDF to the indexer one range at a time. It keeps the pages and the chunks. It sends the chunks to the embedder for their vectors. The API route `GET .../search` finds the chunks. Read the [worker description](worker.md) and the [indexer description](indexer.md).
+
+### XBRL intake
+
+An XBRL instance follows the steps of the document intake up to `document.verify`. The API sets the format `xbrl` from the declared type. The object key ends in `original.xml`. These steps differ:
+
+1. `document.classify` sends the instance to `POST /v1/xbrl` with the mode `classify`. The extractor finds the format, the company identifiers, the basis, the period and the span from the elements of the instance. No model runs.
+2. An instance with both bases or no basis gets the kind `not_sure` and the warning `XBRL_MIXED_BASIS`. It waits for the investor.
+3. If the classification has a company, `decideIntake` sets `reading` and creates a `document.xbrl` job. If the company is not known, the investor confirms the printed identity once for all the files that print it, with `POST .../companies/confirm`.
+4. `document.xbrl` sends the instance to `POST /v1/xbrl` with the mode `read`. The worker writes a revision with the source `xbrl`. Each fact has its span, its period, its unit and its element. The read also does the sum checks of the element map.
+5. A format with no element map (banking, NBFC, other than Ind AS) writes no fact. The classification and the text are still stored. The warning is `XBRL_FORMAT_UNMAPPED`.
+6. After the read, the worker pairs the instance with the results PDF of the same company and period end. A `document.xbrl_check` job looks for each XBRL value on the statement pages of the PDF.
+7. The worker also decides again each results PDF that waited for XBRL. `document.index` cuts the text blocks of the instance into chunks with `text_source` `xbrl`.
+
+A results PDF follows the source rule at the intake decision:
+
+1. The PDF waits in the state `waiting_for_xbrl` if an XBRL document of its company and period can still settle.
+2. If settled XBRL covers each statement and basis that the PDF prints, the worker does not read the PDF with the model. The PDF gets the state `read` with no revision.
+3. Else the worker reads the PDF with `document.extract`.
+
+A person can add a whole folder of PDFs and instances from the command line. See the procedure "To import a folder".
 
 ### Change by the investor
 
-1. The investor can change the kind, the company or the period of a document in the slip. The web client sends `POST .../documents/:id/classification` (`apps/web/src/lib/documents/client.ts:133-138`). The body names the classification that the change starts from, in the field `basedOn`.
-2. The API locks the document row and writes a new classification with `setBy` equal to `investor` (`apps/api/src/routes/classification.ts:34-157`). If `basedOn` is not the current classification, the API answers `CONFLICT`.
-3. The API then calls `decideIntake`, which can start a new `document.extract` job (`apps/api/src/routes/classification.ts:165`).
-4. The slip can also start the work again. The web client then sends `POST .../classify` or `POST .../extract` (`apps/web/src/lib/documents/client.ts:141-149`). Each call creates a new job (`apps/api/src/routes/classification.ts:177-195`, `apps/api/src/routes/documents.ts:147-162`).
+1. The investor can change the kind, the company or the period of a document in the opened filing. The web client sends `POST .../documents/:id/classification` (`apps/web/src/lib/documents/client.ts:135-140`). The body names the classification that the change starts from, in the field `basedOn`.
+2. The API locks the document row and writes a new classification with `setBy` equal to `investor` (`apps/api/src/routes/classification.ts:35-65`). If `basedOn` is not the current classification, the API answers `CONFLICT`. If the new kind is `annual_report` and the document is an XBRL instance, the API answers `VALIDATION_FAILED`.
+3. The API then calls `decideIntake`, which can start a new `document.extract` job, or a `document.xbrl` job for an XBRL instance (`apps/api/src/routes/classification.ts:51`).
+4. The opened filing can also start the work again. The web client then sends `POST .../classify`, `POST .../extract` or `POST .../index` (`apps/web/src/lib/documents/client.ts:143-165`). Each call creates a new job (`apps/api/src/routes/classification.ts:67-85`, `apps/api/src/routes/documents.ts:185-201`, `apps/api/src/routes/documents.ts:205-222`).
 
 ### Market connections
 
@@ -149,16 +180,18 @@ The repository has three package managers:
 | --- | --- | --- |
 | Document `pending_upload` | The API created the upload. | The browser sends the PDF and then calls `finalize`. |
 | Document `uploaded` | `finalize` found the PDF in the object store. | A `document.verify` job starts. |
-| Document `verifying` | The verify job runs. | The worker reads the PDF. |
-| Document `stored` | The PDF has the `%PDF-` header and is not larger than `MAX_UPLOAD_BYTES`. | Intake starts. |
-| Document `rejected` with `NOT_A_PDF`, `TOO_LARGE` or `OBJECT_MISSING` | The PDF failed a check, or the object store did not have it. | The document stops. The investor must add the PDF again. |
+| Document `verifying` | The verify job runs. | The worker reads the file. |
+| Document `stored` | The file is a PDF with the `%PDF-` header, or an XBRL instance with no DOCTYPE. It is not larger than `MAX_UPLOAD_BYTES`. | Intake starts. |
+| Document `rejected` with `UNSUPPORTED_TYPE`, `TOO_LARGE` or `OBJECT_MISSING` | The file is not a PDF or an XBRL instance, or it is too large, or the object store did not have it. | The document stops. The investor must add the file again. |
 | Intake `duplicate` | A stored document in the workspace has the same SHA-256 hash. | Maester does not classify or read it. |
 | Intake `identifying` | Verify stored the PDF. | `document.classify` runs. |
 | Intake `needs_kind` | The extractor answered `not_sure`. | The investor selects the kind. |
 | Intake `needs_company` | No company or more than one company agrees with the printed details. | The investor selects or adds the company. |
 | Intake `kept` | The kind is `other`. | Maester keeps the document and does not read it. |
-| Intake `reading` | The kind is a kind that Maester reads, and the document has a company. | `document.extract` runs. |
-| Intake `read` | The revision is in the database. | `GET .../extraction` and `GET .../facts` return the result. |
+| Intake `reading` | The kind is a kind that Maester reads, and the document has a company. | `document.extract` runs for a PDF. `document.xbrl` runs for an XBRL instance. |
+| Intake `waiting_for_xbrl` | A results PDF waits for an XBRL document of its company and period. | No job runs. The worker decides again when the XBRL document settles. |
+| `XBRL_UNREADABLE` | The extractor refuses an instance: it is malformed, too large, has a DOCTYPE, has too many facts or takes too long. | The job fails without a second run. The intake state goes to `read_failed`. |
+| Intake `read` | The revision is in the database, or XBRL covers the results PDF. | `GET .../extraction` and `GET .../facts` return the result. A skipped PDF has no revision. |
 | Intake `identify_failed` | The last run of `document.classify` failed. | The investor can send `POST .../classify`. |
 | Intake `read_failed` | The last run of `document.extract` failed. | The investor can send `POST .../extract`. |
 | Job `queued`, `running`, `succeeded`, `failed` | The worker changes the state under its lease. | The API returns the latest job of a document as `latestJob`. |
@@ -195,12 +228,15 @@ The repository has three package managers:
 | --- | --- | --- | --- |
 | `postgres` | `pgvector/pgvector:pg16` | 5433 | None |
 | `migrate` | `apps/api/Dockerfile` | None | `postgres`. It applies the migrations and stops. |
-| `api` | `apps/api/Dockerfile` | 8787 | `postgres`, the `blobs` volume |
-| `worker` | `apps/worker/Dockerfile` | 8788 | `postgres`, `extractor`, the `blobs` volume |
+| `api` | `apps/api/Dockerfile` | 8787 | `postgres`, `embedder`, the `blobs` volume |
+| `worker` | `apps/worker/Dockerfile` | 8788 | `postgres`, `extractor`, `indexer`, `embedder`, the `blobs` volume |
 | `extractor` | `apps/extractor/Dockerfile` | 8790 | Vertex AI. It reads Google credentials from a folder that it mounts read-only. |
+| `models` | `apps/indexer/Dockerfile` | None | The `models` volume. It runs one time, by hand, in the profile `setup`. It gets the weights and stops. |
+| `indexer` | `apps/indexer/Dockerfile` | 8791 | The `models` volume, read-only |
+| `embedder` | `ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9` | 8792 (container port 80) | The `models` volume, read-only |
 | `web` | `apps/web/Dockerfile` | 5173 (container port 8080) | `api` (nginx sends `/api/auth/`, `/v1/` and `/dev/` to it) |
 
-The volume `pgdata` keeps the database. The volume `blobs` keeps the PDFs for the `disk` driver. The API and the worker share it.
+The worker and the API do not wait for the indexer or the embedder. Until they answer, index jobs wait and retry, and the search route sends status 503. The volume `models` keeps the weights. The volume `pgdata` keeps the database. The volume `blobs` keeps the PDFs for the `disk` driver. The API and the worker share it.
 
 ### Database
 
@@ -211,7 +247,7 @@ Postgres 16 holds one database, `maester`. The schema is in `packages/db/src/sch
 | Sign-in | `user`, `session`, `account`, `verification`, `rate_limit`, `waitlist_entry` |
 | Platform | `workspace`, `membership`, `company`, `document`, `job` |
 | Classification | `document_classification`, `classification_evidence` |
-| Extraction | `extraction_revision`, `financial_fact`, `source_reference`, `extraction_check` |
+| Extraction | `extraction_revision`, `financial_fact`, `source_reference`, `extraction_check`, `xbrl_source` |
 | Market | `market_point`, `market_fetch`, `market_connection` |
 
 The market tables have no workspace column. The market points and the market connections belong to the installation, not to a user or a workspace.
@@ -220,7 +256,7 @@ On a new `pgdata` volume, `scripts/db/init.sql` also creates the test databases 
 
 ### Object storage
 
-The API and the worker keep each PDF at the key `workspaces/{workspace}/documents/{document}/original.pdf` (`apps/api/src/routes/documents.ts:35-37`). The `gcs` driver signs Cloud Storage URLs of version 4. The `disk` driver signs URLs to `/dev/blobs/*` with an HMAC-SHA256 signature and an expiry time. The API and the worker refuse the `disk` driver when `NODE_ENV` is `production`.
+The API and the worker keep each file at the key `workspaces/{workspace}/documents/{document}/original.pdf`, or `original.xml` for an XBRL instance, (`apps/api/src/routes/documents.ts:35-37`). The `gcs` driver signs Cloud Storage URLs of version 4. The `disk` driver signs URLs to `/dev/blobs/*` with an HMAC-SHA256 signature and an expiry time. The API and the worker refuse the `disk` driver when `NODE_ENV` is `production`.
 
 ### Job dispatch
 
@@ -232,6 +268,7 @@ Maester has no separate queue in the local stack. The `job` table holds the stat
 | --- | --- | --- |
 | Google OAuth | API | Sign-in with Google. It is off when `GOOGLE_CLIENT_ID` has no value. |
 | Resend | API | Confirmation and reset mail when `MAIL_DRIVER` is `resend`. |
+| Hugging Face | `models` service | The weights, one time. Nothing is fetched at run time. |
 | Gemini on Vertex AI | Extractor, CLI, evaluation harness | Classification, extraction and the answers of the CLI. The `live` command of the evaluation harness runs extraction. |
 | Cloud Storage | API, worker | PDFs when `STORAGE_DRIVER` is `gcs`. |
 | Cloud Tasks | API, worker | Dispatch when `DISPATCH_MODE` is `cloud-tasks`. In `queue` mode, Postgres does this work. |
@@ -245,14 +282,15 @@ Maester has no separate queue in the local stack. The `job` table holds the stat
 
 1. Install Docker with Compose version 2.
 2. Go to the root of the repository.
-3. Start the stack:
+3. Build the indexer image and get the weights. Do this one time. The [development guide](../DEVELOPMENT.md) gives the commands.
+4. Start the stack:
 
    ```bash
    docker compose up --build
    ```
 
-4. Open `http://localhost:5173` in a browser.
-5. To stop the stack and keep the data, run this command:
+5. Open `http://localhost:5173` in a browser.
+6. To stop the stack and keep the data, run this command:
 
    ```bash
    pnpm stack:down
@@ -287,6 +325,29 @@ Maester has no separate queue in the local stack. The `job` table holds the stat
 
 6. Open the link in the same browser.
 7. Sign in at `http://localhost:5173/login`.
+
+### To import a folder of filings
+
+You can send a folder of PDFs and XBRL instances through the API. The command reads the session cookie of the investor from the environment.
+
+1. Sign in to Maester in the browser.
+2. Copy the session cookie as `name=value`. The name is `maester.session_token` in development and `__Secure-maester.session_token` in production.
+3. Set the cookie and the workspace ID:
+
+   ```bash
+   export MAESTER_SESSION_COOKIE='maester.session_token=<value>'
+   export MAESTER_WORKSPACE=<workspace id>
+   ```
+
+4. Run the import. Use `run import`, because `pnpm import` is a built-in command of pnpm:
+
+   ```bash
+   pnpm --filter @maester/import run import <folder>
+   ```
+
+5. Read the last line. It shows the counts of sent, refused and failed files.
+
+The command sends four files at a time. A second run of the same folder makes duplicates. Maester does not read a duplicate again.
 
 ### To let the extractor call Gemini
 
@@ -464,7 +525,10 @@ CAUTION: `pnpm stack:reset` deletes the `pgdata` and `blobs` volumes. Use `pnpm 
 - Each signed-in user reads and changes the same two market connections. The market data has no owner.
 - `infra/deploy.sh` does not set `CONNECTIONS_KEY`. Thus, the deployed API refuses the routes for market connections, and the deployed worker does not run the market refresh.
 - The CLI does not share data with the API, the worker or the database.
-- `packages/financial-engine-ts` holds only a version number.
+- `packages/financial-engine-ts` holds only the source rule.
+- Only two XBRL formats have an element map: Ind AS in the `in-capmkt` family and Ind AS in the `in-bse-fin` family. Other formats are read and write no fact.
+- The `xbrl_in_pdf` check compares absolute values and counts a match anywhere on a statement page. The first evaluation report measures how often a number is found by chance.
+- A text or chunker version change does not rebuild the index of an XBRL document through the backfill.
 
 ## Sources
 
@@ -475,6 +539,7 @@ CAUTION: `pnpm stack:reset` deletes the `pgdata` and `blobs` volumes. Use `pnpm 
 - [`apps/api/src/middleware/workspace.ts`](../../apps/api/src/middleware/workspace.ts), [`apps/api/src/routes/documents.ts`](../../apps/api/src/routes/documents.ts), [`apps/api/src/routes/classification.ts`](../../apps/api/src/routes/classification.ts), [`apps/api/src/routes/dev.ts`](../../apps/api/src/routes/dev.ts), [`apps/api/src/routes/jobs.ts`](../../apps/api/src/routes/jobs.ts), [`apps/api/src/jobs/create.ts`](../../apps/api/src/jobs/create.ts)
 - [`apps/worker/src/app.ts`](../../apps/worker/src/app.ts), [`apps/worker/src/auth.ts`](../../apps/worker/src/auth.ts), [`apps/worker/src/env.ts`](../../apps/worker/src/env.ts), [`apps/worker/src/dispatch.ts`](../../apps/worker/src/dispatch.ts), [`apps/worker/src/run.ts`](../../apps/worker/src/run.ts), [`apps/worker/src/lease.ts`](../../apps/worker/src/lease.ts), [`apps/worker/src/extractor.ts`](../../apps/worker/src/extractor.ts)
 - [`apps/worker/src/jobs/document-verify.ts`](../../apps/worker/src/jobs/document-verify.ts), [`apps/worker/src/jobs/document-classify.ts`](../../apps/worker/src/jobs/document-classify.ts), [`apps/worker/src/jobs/document-extract.ts`](../../apps/worker/src/jobs/document-extract.ts)
+- [`apps/indexer/README.md`](../../apps/indexer/README.md), [`docker-compose.yml`](../../docker-compose.yml)
 - [`apps/extractor/src/maester_extractor/app.py`](../../apps/extractor/src/maester_extractor/app.py), [`apps/extractor/src/maester_extractor/settings.py`](../../apps/extractor/src/maester_extractor/settings.py)
 - [`apps/web/nginx.conf.template`](../../apps/web/nginx.conf.template), [`apps/web/vite.config.ts`](../../apps/web/vite.config.ts), [`apps/web/package.json`](../../apps/web/package.json), [`apps/web/src/lib/session.ts`](../../apps/web/src/lib/session.ts), [`apps/web/src/routes/login/+page.svelte`](../../apps/web/src/routes/login/+page.svelte), [`apps/web/src/lib/components/terminal/SignedInPage.svelte`](../../apps/web/src/lib/components/terminal/SignedInPage.svelte)
 - [`apps/api/src/routes/market-mood.ts`](../../apps/api/src/routes/market-mood.ts), [`apps/api/src/market-mood/compute.ts`](../../apps/api/src/market-mood/compute.ts), [`apps/api/src/routes/connections.ts`](../../apps/api/src/routes/connections.ts)

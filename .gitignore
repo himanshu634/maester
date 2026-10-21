@@ -7,9 +7,16 @@ data/blobs/
 data/gcloud/
 data/eval/corpus/
 data/eval/runs/
+data/eval/xbrl/
+data/eval/ocr/*
+!data/eval/ocr/pages.json
+!data/eval/ocr/.gitkeep
+# The retrieval set holds questions a person wrote about filings.
+data/eval/retrieval/
 __pycache__/
 *.pyc
 .venv/
+apps/indexer/.venv/
 *.egg-info/
 .uv-cache/
 build/

@@ -1,0 +1,3 @@
+{"type": "started", "versions": {"doclingVersion": "2.134.0", "ocrEngine": "rapidocr-onnxruntime 3.9.2", "readerOptions": "table=accurate;cell_matching=true;ocr=rapidocr", "chunkerVersion": "1", "tokenizer": "Snowflake/snowflake-arctic-embed-l-v2.0"}, "pageCount": 3, "firstPage": 1, "lastPage": 3}
+{"type": "progress", "stage": "reading", "percent": 10.0}
+{"type": "error", "code": "UNREADABLE_PDF", "retryable": false, "message": "The PDF could not be opened."}

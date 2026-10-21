@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { EMBEDDING_MODELS } from "@maester/document-index";
 
 const Schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -13,6 +14,11 @@ const Schema = z.object({
   WORKER_URL: z.url(),
   API_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
   MAX_UPLOAD_BYTES: z.coerce.number().int().default(52428800),
+  // Bytes from the start of an XML upload that verify keeps, to tell an XBRL instance from anything else.
+  XBRL_SNIFF_BYTES: z.coerce.number().int().positive().default(65536),
+  // Look for each XBRL value on its results PDF's statement pages (document.xbrl_check). "false": the jobs are still
+  // created, and each answers `disabled` and writes no row.
+  XBRL_PDF_CHECK: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
   LEASE_SECONDS: z.coerce.number().int().default(600),
   // Milliseconds between timer renewals of a running job's lease.
   JOB_HEARTBEAT_MS: z.coerce.number().int().positive().default(15000),
@@ -29,6 +35,25 @@ const Schema = z.object({
   // Seconds one extraction request may take, with its whole stream. Thirty minutes: a long annual report takes that.
   EXTRACT_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(1800),
   EXTRACT_MAX_BYTES: z.coerce.number().int().positive().default(52428800),
+  // Indexing (apps/indexer, the embedder). Unset INDEXER_URL or EMBEDDER_URL: document.index fails INDEXER_NOT_CONFIGURED.
+  INDEXER_URL: z.url().optional(),
+  INDEXER_SECRET: z.string().optional(),
+  EMBEDDER_URL: z.url().optional(),
+  EMBEDDING_MODEL: z
+    .string()
+    .default("Snowflake/snowflake-arctic-embed-l-v2.0")
+    .refine((v) => Object.hasOwn(EMBEDDING_MODELS, v), `EMBEDDING_MODEL must be one of: ${Object.keys(EMBEDDING_MODELS).join(", ")}`),
+  // Pages read in one call to the indexer.
+  INDEX_PAGE_RANGE: z.coerce.number().int().positive().default(20),
+  // Seconds the whole document.index job may take.
+  INDEX_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(7200),
+  // Chunks embedded in one call to the embedder: at most the embedder's --max-client-batch-size (32 in docker-compose.yml).
+  EMBED_BATCH: z.coerce.number().int().positive().max(32, "EMBED_BATCH must be at most 32, the embedder's --max-client-batch-size").default(16),
+  // Seconds one call to the embedder may take. A call that times out is not sent again within the job's attempt:
+  // the embedder keeps working on it, so a second call would only queue behind it.
+  EMBED_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(300),
+  // Pages one document may send to OCR.
+  OCR_PAGE_BUDGET: z.coerce.number().int().min(0).default(400),
   // Needed only to enqueue follow-up jobs through Cloud Tasks.
   GOOGLE_CLOUD_PROJECT: z.string().min(1).optional(),
   GOOGLE_CLOUD_LOCATION: z.string().default("asia-south1"),
@@ -69,5 +94,6 @@ export function loadWorkerEnv(source: NodeJS.ProcessEnv = process.env): WorkerEn
     if (parsed.data.DISPATCH_MODE === "cloud-tasks" && (!parsed.data.GOOGLE_CLOUD_PROJECT || !parsed.data.WORKER_INVOKER_SA))
       throw new Error("GOOGLE_CLOUD_PROJECT and WORKER_INVOKER_SA required to enqueue extraction when DISPATCH_MODE=cloud-tasks");
   }
+  if (parsed.data.INDEXER_URL && !parsed.data.INDEXER_SECRET) throw new Error("INDEXER_SECRET required when INDEXER_URL is set");
   return parsed.data;
 }

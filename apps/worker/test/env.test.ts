@@ -40,6 +40,13 @@ describe("worker env: the queue", () => {
     expect(loadWorkerEnv({ ...base, LEASE_SECONDS: "10", JOB_HEARTBEAT_MS: "5000" }).JOB_HEARTBEAT_MS).toBe(5000);
   });
 
+  it("checks XBRL values in PDFs unless XBRL_PDF_CHECK is false", () => {
+    expect(loadWorkerEnv(base).XBRL_PDF_CHECK).toBe(true);
+    expect(loadWorkerEnv({ ...base, XBRL_PDF_CHECK: "true" }).XBRL_PDF_CHECK).toBe(true);
+    expect(loadWorkerEnv({ ...base, XBRL_PDF_CHECK: "false" }).XBRL_PDF_CHECK).toBe(false);
+    expect(() => loadWorkerEnv({ ...base, XBRL_PDF_CHECK: "no" })).toThrow(/XBRL_PDF_CHECK/);
+  });
+
   it("reads EXTRACT_TIMEOUT_SECONDS", () => {
     expect(loadWorkerEnv({ ...base, EXTRACT_TIMEOUT_SECONDS: "60" }).EXTRACT_TIMEOUT_SECONDS).toBe(60);
   });
@@ -54,7 +61,9 @@ describe("worker env: the queue", () => {
   it("builds the runner's options from the environment", () => {
     const env = loadWorkerEnv({ ...base, JOB_CONCURRENCY: "document.extract=3", JOB_POLL_MS: "250", JOB_SWEEP_MS: "5000" });
     const opts = buildQueueOptions(env, handlers, silentLogger);
-    expect(opts.concurrency).toEqual({ "document.verify": 4, "document.classify": 2, "document.extract": 3 });
+    expect(opts.concurrency).toEqual({
+      "document.verify": 4, "document.classify": 2, "document.extract": 3, "document.index": 1, "document.xbrl": 2, "document.xbrl_check": 2,
+    });
     expect(opts).toMatchObject({ pollMs: 250, sweepMs: 5000 });
     expect(typeof opts.listen).toBe("function");
   });
@@ -74,6 +83,41 @@ describe("worker env: extraction", () => {
     const cloud = { ...base, DISPATCH_MODE: "cloud-tasks", API_SERVICE_ACCOUNT_EMAIL: "api@p.iam", EXTRACTOR_URL: "https://x", EXTRACTOR_AUTH: "oidc" };
     expect(() => loadWorkerEnv(cloud)).toThrow("WORKER_INVOKER_SA");
     expect(loadWorkerEnv({ ...cloud, GOOGLE_CLOUD_PROJECT: "p", WORKER_INVOKER_SA: "api@p.iam" }).EXTRACTOR_AUTH).toBe("oidc");
+  });
+});
+
+describe("worker env: indexing", () => {
+  it("has the index defaults and leaves the indexer and embedder off", () => {
+    const env = loadWorkerEnv(base);
+    expect(env).toMatchObject({
+      INDEX_PAGE_RANGE: 20,
+      INDEX_TIMEOUT_SECONDS: 7200,
+      EMBED_BATCH: 16,
+      EMBED_TIMEOUT_SECONDS: 300,
+      OCR_PAGE_BUDGET: 400,
+      EMBEDDING_MODEL: "Snowflake/snowflake-arctic-embed-l-v2.0",
+    });
+    expect(env.INDEXER_URL).toBeUndefined();
+    expect(env.EMBEDDER_URL).toBeUndefined();
+  });
+
+  it("refuses an EMBED_BATCH over the embedder's --max-client-batch-size of 32", () => {
+    expect(loadWorkerEnv({ ...base, EMBED_BATCH: "32" }).EMBED_BATCH).toBe(32);
+    expect(() => loadWorkerEnv({ ...base, EMBED_BATCH: "33" })).toThrow(/EMBED_BATCH must be at most 32/);
+  });
+
+  it("reads EMBED_TIMEOUT_SECONDS and refuses zero", () => {
+    expect(loadWorkerEnv({ ...base, EMBED_TIMEOUT_SECONDS: "60" }).EMBED_TIMEOUT_SECONDS).toBe(60);
+    expect(() => loadWorkerEnv({ ...base, EMBED_TIMEOUT_SECONDS: "0" })).toThrow(/EMBED_TIMEOUT_SECONDS/);
+  });
+
+  it("refuses an embedding model it does not know", () => {
+    expect(() => loadWorkerEnv({ ...base, EMBEDDING_MODEL: "nope" })).toThrow(/EMBEDDING_MODEL/);
+  });
+
+  it("requires a secret when INDEXER_URL is set", () => {
+    expect(() => loadWorkerEnv({ ...base, INDEXER_URL: "http://indexer:8791" })).toThrow("INDEXER_SECRET");
+    expect(loadWorkerEnv({ ...base, INDEXER_URL: "http://indexer:8791", INDEXER_SECRET: "s" }).INDEXER_URL).toBe("http://indexer:8791");
   });
 });
 

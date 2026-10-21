@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { schema } from "@maester/db";
+import { schema, type JobRow } from "@maester/db";
 import { JobFailure, type JobHandler } from "../src/jobs/types.js";
 import { claimNext } from "../src/lease.js";
 import { executeJob, runJob } from "../src/run.js";
@@ -105,6 +105,28 @@ describe("executeJob", () => {
     const out = await executeJob(c, job, { heartbeatMs: 50 });
     expect(out.outcome).toBe("succeeded");
     expect(seen!.getTime()).toBeGreaterThan(job.leaseExpiresAt!.getTime() + 60_000); // renewed to LEASE_SECONDS
+    await c.close();
+  });
+
+  it("passes the final-failure hook the worker's db and dispatcher, and only on the last attempt", async () => {
+    const seen: { jobId: string; deps: { db: unknown; dispatcher: unknown } }[] = [];
+    const handler: JobHandler = Object.assign(
+      async () => {
+        throw new Error("boom");
+      },
+      { onFinalFailure: async (job: JobRow, deps: { db: unknown; dispatcher: unknown }) => void seen.push({ jobId: job.id, deps }) },
+    );
+    const c = await createWorkerContext({ "test.hooked": handler });
+    const { workspaceId } = await seedWorkspace(c.db);
+    const id = await seedJob(c.db, workspaceId, { type: "test.hooked", maxAttempts: 2 });
+    expect((await runJob(c, "test.hooked", id)).status).toBe(500);
+    expect(seen).toHaveLength(0);
+    expect((await runJob(c, "test.hooked", id)).status).toBe(200);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.jobId).toBe(id);
+    expect(Object.keys(seen[0]!.deps).sort()).toEqual(["db", "dispatcher"]);
+    expect(seen[0]!.deps.db).toBe(c.db);
+    expect(seen[0]!.deps.dispatcher).toBe(c.dispatcher);
     await c.close();
   });
 

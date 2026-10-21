@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file=../../.env src/server.ts",
+    "eval": "tsx --env-file=../../.env src/eval/cli.ts",
+    "index:candidate": "tsx --env-file=../../.env src/index-candidate-cli.ts",
+    "index:backfill": "tsx --env-file=../../.env src/index-backfill-cli.ts",
+    "index:prune": "tsx --env-file=../../.env src/index-prune-cli.ts",
     "market:refresh": "tsx --env-file=../../.env src/market-refresh-cli.ts",
     "build": "tsup",
     "start": "node dist/server.js",
@@ -17,6 +21,7 @@
     "@hono/node-server": "^2.1.0",
     "@maester/contracts": "workspace:*",
     "@maester/db": "workspace:*",
+    "@maester/document-index": "workspace:*",
     "@maester/jobs": "workspace:*",
     "@maester/market": "workspace:*",
     "@maester/storage": "workspace:*",
@@ -25,6 +30,7 @@
     "hono": "^4.13.0",
     "pg": "^8.16.0",
     "pino": "^10.0.0",
+    "saxes": "6.0.0",
     "zod": "^4.1.0"
   },
   "devDependencies": {

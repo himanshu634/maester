@@ -1,4 +1,4 @@
-import { and, eq, lt, or, sql } from "drizzle-orm";
+import { and, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { schema, type Db, type JobProgressJson, type JobRow } from "@maester/db";
 
 export async function acquireLease(db: Db, jobId: string, leaseSeconds: number): Promise<JobRow | null> {
@@ -130,9 +130,12 @@ export async function failAttempt(
  * outcome, each guarded by `lease_expires_at < now()`, so a job renewed meanwhile is untouched.
  * The backoff is worked out in SQL from each row's own attempt, with the same formula and
  * jitter as `backoffSeconds`: least(900, 30 * 2^(attempt-1)) * (1 + 0.2 * random()).
+ * Only jobs of the given types are swept: a runner fails a job without its final-failure hook
+ * unless it has that type's handler, so it must leave every other type to the worker that has one.
  */
-export async function sweepExpired(db: Db): Promise<{ requeued: JobRow[]; failed: JobRow[] }> {
-  const expired = and(eq(schema.job.state, "running"), lt(schema.job.leaseExpiresAt, sql`now()`));
+export async function sweepExpired(db: Db, types: string[]): Promise<{ requeued: JobRow[]; failed: JobRow[] }> {
+  if (types.length === 0) return { requeued: [], failed: [] };
+  const expired = and(eq(schema.job.state, "running"), inArray(schema.job.type, types), lt(schema.job.leaseExpiresAt, sql`now()`));
   const cleared = { leaseToken: null, leaseExpiresAt: null, lastErrorCode: "LEASE_EXPIRED", updatedAt: sql`now()` };
   const requeued = await db
     .update(schema.job)

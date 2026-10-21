@@ -38,6 +38,12 @@ const EnvSchema = z.object({
   MAIL_DRIVER: z.enum(["console", "resend"]).default("console"),
   RESEND_API_KEY: z.string().optional().transform((v) => v || undefined),
   MAIL_FROM: z.string().optional().transform((v) => v || undefined),
+  // The text embedder (TEI) that turns a search query into a vector. Unset: search answers SEARCH_UNAVAILABLE.
+  EMBEDDER_URL: z.string().optional().transform((v) => v || undefined).pipe(z.url().optional()),
+  EMBEDDING_MODEL: z.string().default("Snowflake/snowflake-arctic-embed-l-v2.0"),
+  // Whether Research shows each XBRL figure's check against its results PDF (`xbrl_in_pdf`). "false": every XBRL figure
+  // says the check is turned off (`disabled`), as the worker's own XBRL_PDF_CHECK=false makes the check job write no row.
+  XBRL_PDF_CHECK: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
   // 32 bytes, base64. Encrypts saved market data keys. Unset: the Settings routes answer INVALID_STATE and the refresher is off.
   CONNECTIONS_KEY: z
     .string()

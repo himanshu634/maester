@@ -9,6 +9,9 @@ export const DEFAULT_CONCURRENCY: Readonly<Record<string, number>> = Object.free
   "document.verify": 4,
   "document.classify": 2,
   "document.extract": 2,
+  "document.index": 1,
+  "document.xbrl": 2,
+  "document.xbrl_check": 2,
 });
 
 /** Opens a wake-up source; calls onReady(type) when a job of that type may be ready. Resolves to its close function. */
@@ -127,13 +130,13 @@ export function startQueueRunner(deps: WorkerDeps, opts: QueueRunnerOptions): Qu
 
   const sweep = async () => {
     try {
-      const { requeued, failed } = await sweepExpired(deps.db);
+      const { requeued, failed } = await sweepExpired(deps.db, types);
       if (requeued.length || failed.length) {
         log.warn({ requeued: requeued.length, failed: failed.length, jobIds: [...requeued, ...failed].map((j) => j.id) }, "expired leases swept");
       }
       for (const job of failed) {
         try {
-          await deps.handlers[job.type]?.onFinalFailure?.(job, deps.db);
+          await deps.handlers[job.type]?.onFinalFailure?.(job, { db: deps.db, dispatcher: deps.dispatcher });
         } catch (err) {
           log.error({ type: job.type, jobId: job.id, err: message(err) }, "final-failure hook failed");
         }

@@ -3,7 +3,9 @@ import { schema, type Db, type JobRow } from "@maester/db";
 import type { Dispatcher } from "@maester/jobs";
 import type { ObjectStore } from "@maester/storage";
 import type { WorkerEnv } from "./env.js";
+import type { Embedder } from "@maester/document-index";
 import type { ExtractorClient } from "./extractor.js";
+import type { IndexerClient } from "./indexer.js";
 import { JobFailure, type JobHandler } from "./jobs/types.js";
 import { acquireLease, completeJob, failAttempt, renewLease, writeProgress } from "./lease.js";
 import type { Logger } from "./logger.js";
@@ -16,6 +18,8 @@ export interface WorkerDeps {
   handlers: Record<string, JobHandler>;
   dispatcher: Dispatcher;
   extractor: ExtractorClient | null;
+  indexer: IndexerClient | null;
+  embedder: Embedder | null;
 }
 
 /** Minimum gap between lease renewals triggered by heartbeat(). */
@@ -68,6 +72,8 @@ export async function executeJob(deps: WorkerDeps, job: JobRow, opts: { heartbea
       env: deps.env,
       dispatcher: deps.dispatcher,
       extractor: deps.extractor,
+      indexer: deps.indexer,
+      embedder: deps.embedder,
       progress: (p) => writeProgress(deps.db, job.id, leaseToken, p),
       heartbeat: async () => {
         if (Date.now() - lastRenewal < HEARTBEAT_THROTTLE_MS) return;
@@ -90,7 +96,7 @@ export async function executeJob(deps: WorkerDeps, job: JobRow, opts: { heartbea
     await failAttempt(deps.db, job, leaseToken, { code, message }, final);
     if (final && handler.onFinalFailure) {
       try {
-        await handler.onFinalFailure(job, deps.db);
+        await handler.onFinalFailure(job, { db: deps.db, dispatcher: deps.dispatcher });
       } catch (hookErr) {
         log.error({ err: (hookErr as Error).message }, "final-failure hook failed");
       }

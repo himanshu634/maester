@@ -1,3 +1,4011 @@
 {
-  "filings": []
+  "filings": [
+    {
+      "file": "aether-industries/ar-2024-25.pdf",
+      "company": "Aether Industries",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "small",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "aether-industries/ar-2025-26.pdf",
+      "company": "Aether Industries",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "aether-industries/results-2024-09.pdf",
+      "company": "Aether Industries",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "aether-industries/results-2024-12.pdf",
+      "company": "Aether Industries",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "aether-industries/results-2025-06.pdf",
+      "company": "Aether Industries",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "aether-industries/results-2025-09.pdf",
+      "company": "Aether Industries",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "aether-industries/results-2025-12.pdf",
+      "company": "Aether Industries",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "aether-industries/results-2026-03.pdf",
+      "company": "Aether Industries",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "aether-industries/results-2026-06.pdf",
+      "company": "Aether Industries",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "anant-raj/ar-2024-25.pdf",
+      "company": "Anant Raj",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "anant-raj/ar-2025-26.pdf",
+      "company": "Anant Raj",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "anant-raj/results-2024-09.pdf",
+      "company": "Anant Raj",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "anant-raj/results-2024-12.pdf",
+      "company": "Anant Raj",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "anant-raj/results-2025-03.pdf",
+      "company": "Anant Raj",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "anant-raj/results-2025-06.pdf",
+      "company": "Anant Raj",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "anant-raj/results-2025-09.pdf",
+      "company": "Anant Raj",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "anant-raj/results-2025-12.pdf",
+      "company": "Anant Raj",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "anant-raj/results-2026-03.pdf",
+      "company": "Anant Raj",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "anant-raj/results-2026-06.pdf",
+      "company": "Anant Raj",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "asian-paints/ar-2024-25.pdf",
+      "company": "Asian Paints",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "asian-paints/ar-2025-26.pdf",
+      "company": "Asian Paints",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "large",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "asian-paints/results-2024-09.pdf",
+      "company": "Asian Paints",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "asian-paints/results-2024-12.pdf",
+      "company": "Asian Paints",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "asian-paints/results-2025-03.pdf",
+      "company": "Asian Paints",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "asian-paints/results-2025-06.pdf",
+      "company": "Asian Paints",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "asian-paints/results-2025-09.pdf",
+      "company": "Asian Paints",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "asian-paints/results-2025-12.pdf",
+      "company": "Asian Paints",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "asian-paints/results-2026-03.pdf",
+      "company": "Asian Paints",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "asian-paints/results-2026-06.pdf",
+      "company": "Asian Paints",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "astral/ar-2024-25.pdf",
+      "company": "Astral",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "astral/ar-2025-26.pdf",
+      "company": "Astral",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "astral/results-2024-09.pdf",
+      "company": "Astral",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "astral/results-2024-12.pdf",
+      "company": "Astral",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "astral/results-2025-03.pdf",
+      "company": "Astral",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "astral/results-2025-06.pdf",
+      "company": "Astral",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "astral/results-2025-09.pdf",
+      "company": "Astral",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "astral/results-2025-12.pdf",
+      "company": "Astral",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "astral/results-2026-03.pdf",
+      "company": "Astral",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "astral/results-2026-06.pdf",
+      "company": "Astral",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "bajaj-finance/ar-2024-25.pdf",
+      "company": "Bajaj Finance",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "bajaj-finance/ar-2025-26.pdf",
+      "company": "Bajaj Finance",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "bajaj-finance/results-2024-09.pdf",
+      "company": "Bajaj Finance",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "bajaj-finance/results-2024-12.pdf",
+      "company": "Bajaj Finance",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "bajaj-finance/results-2025-03.pdf",
+      "company": "Bajaj Finance",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "bajaj-finance/results-2025-06.pdf",
+      "company": "Bajaj Finance",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "bajaj-finance/results-2025-09.pdf",
+      "company": "Bajaj Finance",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "bajaj-finance/results-2025-12.pdf",
+      "company": "Bajaj Finance",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "bajaj-finance/results-2026-03.pdf",
+      "company": "Bajaj Finance",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "bajaj-finance/results-2026-06.pdf",
+      "company": "Bajaj Finance",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "balkrishna-industries/ar-2024-25.pdf",
+      "company": "Balkrishna Industries",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "balkrishna-industries/ar-2025-26.pdf",
+      "company": "Balkrishna Industries",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "balkrishna-industries/results-2024-09.pdf",
+      "company": "Balkrishna Industries",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "balkrishna-industries/results-2024-12.pdf",
+      "company": "Balkrishna Industries",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "balkrishna-industries/results-2025-03.pdf",
+      "company": "Balkrishna Industries",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "balkrishna-industries/results-2025-06.pdf",
+      "company": "Balkrishna Industries",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "balkrishna-industries/results-2025-09.pdf",
+      "company": "Balkrishna Industries",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "balkrishna-industries/results-2025-12.pdf",
+      "company": "Balkrishna Industries",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "balkrishna-industries/results-2026-03.pdf",
+      "company": "Balkrishna Industries",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "balkrishna-industries/results-2026-06.pdf",
+      "company": "Balkrishna Industries",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "bharti-airtel/ar-2024-25.pdf",
+      "company": "Bharti Airtel",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "bharti-airtel/ar-2025-26.pdf",
+      "company": "Bharti Airtel",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "large",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "bharti-airtel/results-2024-09.pdf",
+      "company": "Bharti Airtel",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "bharti-airtel/results-2024-12.pdf",
+      "company": "Bharti Airtel",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "bharti-airtel/results-2025-03.pdf",
+      "company": "Bharti Airtel",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "bharti-airtel/results-2025-06.pdf",
+      "company": "Bharti Airtel",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "bharti-airtel/results-2025-09.pdf",
+      "company": "Bharti Airtel",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "bharti-airtel/results-2025-12.pdf",
+      "company": "Bharti Airtel",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "bharti-airtel/results-2026-03.pdf",
+      "company": "Bharti Airtel",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "bharti-airtel/results-2026-06.pdf",
+      "company": "Bharti Airtel",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "cera-sanitaryware/ar-2024-25.pdf",
+      "company": "Cera Sanitaryware",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "cera-sanitaryware/ar-2025-26.pdf",
+      "company": "Cera Sanitaryware",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "cera-sanitaryware/results-2024-09.pdf",
+      "company": "Cera Sanitaryware",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "cera-sanitaryware/results-2024-12.pdf",
+      "company": "Cera Sanitaryware",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "cera-sanitaryware/results-2025-03.pdf",
+      "company": "Cera Sanitaryware",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "cera-sanitaryware/results-2025-06.pdf",
+      "company": "Cera Sanitaryware",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "cera-sanitaryware/results-2025-09.pdf",
+      "company": "Cera Sanitaryware",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "cera-sanitaryware/results-2025-12.pdf",
+      "company": "Cera Sanitaryware",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "cera-sanitaryware/results-2026-03.pdf",
+      "company": "Cera Sanitaryware",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "cera-sanitaryware/results-2026-06.pdf",
+      "company": "Cera Sanitaryware",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "cms-info-systems/ar-2024-25.pdf",
+      "company": "CMS Info Systems",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "small",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "cms-info-systems/ar-2025-26.pdf",
+      "company": "CMS Info Systems",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "small",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "cms-info-systems/results-2024-09.pdf",
+      "company": "CMS Info Systems",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "cms-info-systems/results-2024-12.pdf",
+      "company": "CMS Info Systems",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "cms-info-systems/results-2025-03.pdf",
+      "company": "CMS Info Systems",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "cms-info-systems/results-2025-06.pdf",
+      "company": "CMS Info Systems",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "cms-info-systems/results-2025-09.pdf",
+      "company": "CMS Info Systems",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "cms-info-systems/results-2025-12.pdf",
+      "company": "CMS Info Systems",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "cms-info-systems/results-2026-03.pdf",
+      "company": "CMS Info Systems",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "cms-info-systems/results-2026-06.pdf",
+      "company": "CMS Info Systems",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "coforge/ar-2024-25.pdf",
+      "company": "Coforge",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "mid",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "coforge/ar-2025-26.pdf",
+      "company": "Coforge",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "mid",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "coforge/results-2024-09.pdf",
+      "company": "Coforge",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "coforge/results-2024-12.pdf",
+      "company": "Coforge",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "coforge/results-2025-03.pdf",
+      "company": "Coforge",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "coforge/results-2025-09.pdf",
+      "company": "Coforge",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "coforge/results-2026-03.pdf",
+      "company": "Coforge",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "coforge/results-2026-06.pdf",
+      "company": "Coforge",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "craftsman-automation/ar-2024-25.pdf",
+      "company": "Craftsman Automation",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "craftsman-automation/ar-2025-26.pdf",
+      "company": "Craftsman Automation",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "craftsman-automation/results-2024-09.pdf",
+      "company": "Craftsman Automation",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "craftsman-automation/results-2024-12.pdf",
+      "company": "Craftsman Automation",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "craftsman-automation/results-2025-03.pdf",
+      "company": "Craftsman Automation",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "craftsman-automation/results-2025-06.pdf",
+      "company": "Craftsman Automation",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "craftsman-automation/results-2025-09.pdf",
+      "company": "Craftsman Automation",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "craftsman-automation/results-2025-12.pdf",
+      "company": "Craftsman Automation",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "craftsman-automation/results-2026-03.pdf",
+      "company": "Craftsman Automation",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "craftsman-automation/results-2026-06.pdf",
+      "company": "Craftsman Automation",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "cummins-india/ar-2024-25.pdf",
+      "company": "Cummins India",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "cummins-india/ar-2025-26.pdf",
+      "company": "Cummins India",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "cummins-india/results-2024-09.pdf",
+      "company": "Cummins India",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "cummins-india/results-2024-12.pdf",
+      "company": "Cummins India",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "cummins-india/results-2025-03.pdf",
+      "company": "Cummins India",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "cummins-india/results-2025-06.pdf",
+      "company": "Cummins India",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "cummins-india/results-2025-09.pdf",
+      "company": "Cummins India",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "cummins-india/results-2025-12.pdf",
+      "company": "Cummins India",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "cummins-india/results-2026-03.pdf",
+      "company": "Cummins India",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "cummins-india/results-2026-06.pdf",
+      "company": "Cummins India",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "dixon-technologies/ar-2024-25.pdf",
+      "company": "Dixon Technologies",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "dixon-technologies/ar-2025-26.pdf",
+      "company": "Dixon Technologies",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "dixon-technologies/results-2024-09.pdf",
+      "company": "Dixon Technologies",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "dixon-technologies/results-2024-12.pdf",
+      "company": "Dixon Technologies",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "dixon-technologies/results-2025-03.pdf",
+      "company": "Dixon Technologies",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "dixon-technologies/results-2025-06.pdf",
+      "company": "Dixon Technologies",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "dixon-technologies/results-2025-09.pdf",
+      "company": "Dixon Technologies",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "dixon-technologies/results-2025-12.pdf",
+      "company": "Dixon Technologies",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "dixon-technologies/results-2026-03.pdf",
+      "company": "Dixon Technologies",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "dixon-technologies/results-2026-06.pdf",
+      "company": "Dixon Technologies",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "federal-bank/ar-2024-25.pdf",
+      "company": "Federal Bank",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "federal-bank/ar-2025-26.pdf",
+      "company": "Federal Bank",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1.",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "federal-bank/results-2024-09.pdf",
+      "company": "Federal Bank",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "federal-bank/results-2024-12.pdf",
+      "company": "Federal Bank",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "federal-bank/results-2025-03.pdf",
+      "company": "Federal Bank",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "federal-bank/results-2025-06.pdf",
+      "company": "Federal Bank",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "federal-bank/results-2025-09.pdf",
+      "company": "Federal Bank",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "federal-bank/results-2025-12.pdf",
+      "company": "Federal Bank",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "federal-bank/results-2026-03.pdf",
+      "company": "Federal Bank",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "federal-bank/results-2026-06.pdf",
+      "company": "Federal Bank",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "godrej-properties/ar-2024-25.pdf",
+      "company": "Godrej Properties",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "mid",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "godrej-properties/ar-2025-26.pdf",
+      "company": "Godrej Properties",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "mid",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "godrej-properties/results-2024-09.pdf",
+      "company": "Godrej Properties",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "godrej-properties/results-2024-12.pdf",
+      "company": "Godrej Properties",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "godrej-properties/results-2025-03.pdf",
+      "company": "Godrej Properties",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "godrej-properties/results-2025-06.pdf",
+      "company": "Godrej Properties",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "godrej-properties/results-2025-09.pdf",
+      "company": "Godrej Properties",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "godrej-properties/results-2025-12.pdf",
+      "company": "Godrej Properties",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "godrej-properties/results-2026-03.pdf",
+      "company": "Godrej Properties",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "godrej-properties/results-2026-06.pdf",
+      "company": "Godrej Properties",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "gravita-india/ar-2024-25.pdf",
+      "company": "Gravita India",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "gravita-india/ar-2025-26.pdf",
+      "company": "Gravita India",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "gravita-india/results-2024-09.pdf",
+      "company": "Gravita India",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "gravita-india/results-2024-12.pdf",
+      "company": "Gravita India",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "gravita-india/results-2025-03.pdf",
+      "company": "Gravita India",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "gravita-india/results-2025-06.pdf",
+      "company": "Gravita India",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "gravita-india/results-2025-09.pdf",
+      "company": "Gravita India",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "gravita-india/results-2025-12.pdf",
+      "company": "Gravita India",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "gravita-india/results-2026-03.pdf",
+      "company": "Gravita India",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "gravita-india/results-2026-06.pdf",
+      "company": "Gravita India",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "gujarat-state-petronet/ar-2024-25.pdf",
+      "company": "Gujarat State Petronet",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "gujarat-state-petronet/results-2024-09.pdf",
+      "company": "Gujarat State Petronet",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "gujarat-state-petronet/results-2025-03.pdf",
+      "company": "Gujarat State Petronet",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "gujarat-state-petronet/results-2025-06.pdf",
+      "company": "Gujarat State Petronet",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "gujarat-state-petronet/results-2025-09.pdf",
+      "company": "Gujarat State Petronet",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "gujarat-state-petronet/results-2025-12.pdf",
+      "company": "Gujarat State Petronet",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "hdfc-bank/ar-2024-25.pdf",
+      "company": "HDFC Bank",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "hdfc-bank/ar-2025-26.pdf",
+      "company": "HDFC Bank",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "hdfc-bank/results-2024-12.pdf",
+      "company": "HDFC Bank",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "hdfc-bank/results-2025-03.pdf",
+      "company": "HDFC Bank",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "hdfc-bank/results-2025-06.pdf",
+      "company": "HDFC Bank",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "hdfc-bank/results-2025-12.pdf",
+      "company": "HDFC Bank",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "hdfc-bank/results-2026-03.pdf",
+      "company": "HDFC Bank",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "hdfc-bank/results-2026-06.pdf",
+      "company": "HDFC Bank",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "hindalco-industries/ar-2024-25.pdf",
+      "company": "Hindalco Industries",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "hindalco-industries/ar-2025-26.pdf",
+      "company": "Hindalco Industries",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "large",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "hindalco-industries/results-2024-09.pdf",
+      "company": "Hindalco Industries",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "hindalco-industries/results-2024-12.pdf",
+      "company": "Hindalco Industries",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "hindalco-industries/results-2025-03.pdf",
+      "company": "Hindalco Industries",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "hindalco-industries/results-2025-06.pdf",
+      "company": "Hindalco Industries",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "hindalco-industries/results-2025-09.pdf",
+      "company": "Hindalco Industries",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "hindalco-industries/results-2025-12.pdf",
+      "company": "Hindalco Industries",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "hindalco-industries/results-2026-03.pdf",
+      "company": "Hindalco Industries",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "hindalco-industries/results-2026-06.pdf",
+      "company": "Hindalco Industries",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "hindustan-unilever/ar-2024-25.pdf",
+      "company": "Hindustan Unilever",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "large",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "hindustan-unilever/ar-2025-26.pdf",
+      "company": "Hindustan Unilever",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "large",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "hindustan-unilever/results-2024-09.pdf",
+      "company": "Hindustan Unilever",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "hindustan-unilever/results-2024-12.pdf",
+      "company": "Hindustan Unilever",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "hindustan-unilever/results-2025-03.pdf",
+      "company": "Hindustan Unilever",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "hindustan-unilever/results-2025-06.pdf",
+      "company": "Hindustan Unilever",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "hindustan-unilever/results-2025-09.pdf",
+      "company": "Hindustan Unilever",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "hindustan-unilever/results-2025-12.pdf",
+      "company": "Hindustan Unilever",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "hindustan-unilever/results-2026-03.pdf",
+      "company": "Hindustan Unilever",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "hindustan-unilever/results-2026-06.pdf",
+      "company": "Hindustan Unilever",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "icici-bank/ar-2024-25.pdf",
+      "company": "ICICI Bank",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "icici-bank/ar-2025-26.pdf",
+      "company": "ICICI Bank",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "icici-bank/results-2024-09.pdf",
+      "company": "ICICI Bank",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "icici-bank/results-2024-12.pdf",
+      "company": "ICICI Bank",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "icici-bank/results-2025-03.pdf",
+      "company": "ICICI Bank",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "icici-bank/results-2025-06.pdf",
+      "company": "ICICI Bank",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "icici-bank/results-2025-09.pdf",
+      "company": "ICICI Bank",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "icici-bank/results-2025-12.pdf",
+      "company": "ICICI Bank",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "icici-bank/results-2026-03.pdf",
+      "company": "ICICI Bank",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "icici-bank/results-2026-06.pdf",
+      "company": "ICICI Bank",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "indian-hotels/ar-2024-25.pdf",
+      "company": "Indian Hotels",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "mid",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "indian-hotels/ar-2025-26.pdf",
+      "company": "Indian Hotels",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "indian-hotels/results-2024-09.pdf",
+      "company": "Indian Hotels",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "indian-hotels/results-2024-12.pdf",
+      "company": "Indian Hotels",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "indian-hotels/results-2025-03.pdf",
+      "company": "Indian Hotels",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "indian-hotels/results-2025-06.pdf",
+      "company": "Indian Hotels",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "indian-hotels/results-2025-09.pdf",
+      "company": "Indian Hotels",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "indian-hotels/results-2025-12.pdf",
+      "company": "Indian Hotels",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "indian-hotels/results-2026-03.pdf",
+      "company": "Indian Hotels",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "indian-hotels/results-2026-06.pdf",
+      "company": "Indian Hotels",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "infosys/ar-2024-25.pdf",
+      "company": "Infosys",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "infosys/ar-2025-26.pdf",
+      "company": "Infosys",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "infosys/results-2024-09.pdf",
+      "company": "Infosys",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "infosys/results-2024-12.pdf",
+      "company": "Infosys",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "infosys/results-2025-03.pdf",
+      "company": "Infosys",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "infosys/results-2025-06.pdf",
+      "company": "Infosys",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "infosys/results-2025-09.pdf",
+      "company": "Infosys",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "infosys/results-2025-12.pdf",
+      "company": "Infosys",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "infosys/results-2026-06.pdf",
+      "company": "Infosys",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "itc/ar-2024-25.pdf",
+      "company": "ITC",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "itc/ar-2025-26.pdf",
+      "company": "ITC",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "itc/results-2024-09.pdf",
+      "company": "ITC",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "itc/results-2024-12.pdf",
+      "company": "ITC",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "itc/results-2025-03.pdf",
+      "company": "ITC",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "itc/results-2025-06.pdf",
+      "company": "ITC",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "itc/results-2025-09.pdf",
+      "company": "ITC",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "itc/results-2025-12.pdf",
+      "company": "ITC",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "itc/results-2026-03.pdf",
+      "company": "ITC",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "itc/results-2026-06.pdf",
+      "company": "ITC",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "jyothy-labs/ar-2024-25.pdf",
+      "company": "Jyothy Labs",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "jyothy-labs/ar-2025-26.pdf",
+      "company": "Jyothy Labs",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "jyothy-labs/results-2024-09.pdf",
+      "company": "Jyothy Labs",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "jyothy-labs/results-2024-12.pdf",
+      "company": "Jyothy Labs",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "jyothy-labs/results-2025-03.pdf",
+      "company": "Jyothy Labs",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "jyothy-labs/results-2025-06.pdf",
+      "company": "Jyothy Labs",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "jyothy-labs/results-2025-09.pdf",
+      "company": "Jyothy Labs",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "jyothy-labs/results-2025-12.pdf",
+      "company": "Jyothy Labs",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "jyothy-labs/results-2026-03.pdf",
+      "company": "Jyothy Labs",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "jyothy-labs/results-2026-06.pdf",
+      "company": "Jyothy Labs",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "kajaria-ceramics/ar-2024-25.pdf",
+      "company": "Kajaria Ceramics",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "small",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "kajaria-ceramics/ar-2025-26.pdf",
+      "company": "Kajaria Ceramics",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "kajaria-ceramics/results-2024-09.pdf",
+      "company": "Kajaria Ceramics",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "kajaria-ceramics/results-2024-12.pdf",
+      "company": "Kajaria Ceramics",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "kajaria-ceramics/results-2025-03.pdf",
+      "company": "Kajaria Ceramics",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "kajaria-ceramics/results-2025-06.pdf",
+      "company": "Kajaria Ceramics",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "kajaria-ceramics/results-2025-09.pdf",
+      "company": "Kajaria Ceramics",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "kajaria-ceramics/results-2025-12.pdf",
+      "company": "Kajaria Ceramics",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "kajaria-ceramics/results-2026-03.pdf",
+      "company": "Kajaria Ceramics",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "kajaria-ceramics/results-2026-06.pdf",
+      "company": "Kajaria Ceramics",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "larsen-and-toubro/ar-2024-25.pdf",
+      "company": "Larsen & Toubro",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "larsen-and-toubro/ar-2025-26.pdf",
+      "company": "Larsen & Toubro",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "larsen-and-toubro/results-2024-09.pdf",
+      "company": "Larsen & Toubro",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "larsen-and-toubro/results-2024-12.pdf",
+      "company": "Larsen & Toubro",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "larsen-and-toubro/results-2025-03.pdf",
+      "company": "Larsen & Toubro",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "larsen-and-toubro/results-2025-06.pdf",
+      "company": "Larsen & Toubro",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "larsen-and-toubro/results-2025-09.pdf",
+      "company": "Larsen & Toubro",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "larsen-and-toubro/results-2025-12.pdf",
+      "company": "Larsen & Toubro",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "larsen-and-toubro/results-2026-03.pdf",
+      "company": "Larsen & Toubro",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "larsen-and-toubro/results-2026-06.pdf",
+      "company": "Larsen & Toubro",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "mahindra-and-mahindra/ar-2024-25.pdf",
+      "company": "Mahindra & Mahindra",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "large",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "mahindra-and-mahindra/ar-2025-26.pdf",
+      "company": "Mahindra & Mahindra",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "large",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "mahindra-and-mahindra/results-2024-09.pdf",
+      "company": "Mahindra & Mahindra",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "mahindra-and-mahindra/results-2024-12.pdf",
+      "company": "Mahindra & Mahindra",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "mahindra-and-mahindra/results-2025-03.pdf",
+      "company": "Mahindra & Mahindra",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "mahindra-and-mahindra/results-2025-06.pdf",
+      "company": "Mahindra & Mahindra",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "mahindra-and-mahindra/results-2025-09.pdf",
+      "company": "Mahindra & Mahindra",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "mahindra-and-mahindra/results-2025-12.pdf",
+      "company": "Mahindra & Mahindra",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "mahindra-and-mahindra/results-2026-03.pdf",
+      "company": "Mahindra & Mahindra",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "mahindra-and-mahindra/results-2026-06.pdf",
+      "company": "Mahindra & Mahindra",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "maruti-suzuki/ar-2024-25.pdf",
+      "company": "Maruti Suzuki",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "maruti-suzuki/ar-2025-26.pdf",
+      "company": "Maruti Suzuki",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "large",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "maruti-suzuki/results-2024-09.pdf",
+      "company": "Maruti Suzuki",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "maruti-suzuki/results-2024-12.pdf",
+      "company": "Maruti Suzuki",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "maruti-suzuki/results-2025-03.pdf",
+      "company": "Maruti Suzuki",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "maruti-suzuki/results-2025-06.pdf",
+      "company": "Maruti Suzuki",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "maruti-suzuki/results-2025-09.pdf",
+      "company": "Maruti Suzuki",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "maruti-suzuki/results-2025-12.pdf",
+      "company": "Maruti Suzuki",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "maruti-suzuki/results-2026-03.pdf",
+      "company": "Maruti Suzuki",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "maruti-suzuki/results-2026-06.pdf",
+      "company": "Maruti Suzuki",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "max-healthcare/ar-2024-25.pdf",
+      "company": "Max Healthcare",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "mid",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "max-healthcare/ar-2025-26.pdf",
+      "company": "Max Healthcare",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "max-healthcare/results-2024-09.pdf",
+      "company": "Max Healthcare",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "max-healthcare/results-2024-12.pdf",
+      "company": "Max Healthcare",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "max-healthcare/results-2025-03.pdf",
+      "company": "Max Healthcare",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "max-healthcare/results-2025-06.pdf",
+      "company": "Max Healthcare",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "max-healthcare/results-2025-09.pdf",
+      "company": "Max Healthcare",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "max-healthcare/results-2025-12.pdf",
+      "company": "Max Healthcare",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "max-healthcare/results-2026-03.pdf",
+      "company": "Max Healthcare",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "max-healthcare/results-2026-06.pdf",
+      "company": "Max Healthcare",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "navin-fluorine/ar-2024-25.pdf",
+      "company": "Navin Fluorine",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "navin-fluorine/ar-2025-26.pdf",
+      "company": "Navin Fluorine",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "navin-fluorine/results-2024-09.pdf",
+      "company": "Navin Fluorine",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "navin-fluorine/results-2024-12.pdf",
+      "company": "Navin Fluorine",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "navin-fluorine/results-2025-03.pdf",
+      "company": "Navin Fluorine",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "navin-fluorine/results-2025-06.pdf",
+      "company": "Navin Fluorine",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "navin-fluorine/results-2025-09.pdf",
+      "company": "Navin Fluorine",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "navin-fluorine/results-2025-12.pdf",
+      "company": "Navin Fluorine",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "navin-fluorine/results-2026-03.pdf",
+      "company": "Navin Fluorine",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "navin-fluorine/results-2026-06.pdf",
+      "company": "Navin Fluorine",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "nestle-india/ar-2024-25.pdf",
+      "company": "Nestle India",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "nestle-india/ar-2025-26.pdf",
+      "company": "Nestle India",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "nestle-india/results-2024-09.pdf",
+      "company": "Nestle India",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "nestle-india/results-2024-12.pdf",
+      "company": "Nestle India",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "nestle-india/results-2025-03.pdf",
+      "company": "Nestle India",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "nestle-india/results-2025-06.pdf",
+      "company": "Nestle India",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "nestle-india/results-2025-09.pdf",
+      "company": "Nestle India",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "nestle-india/results-2025-12.pdf",
+      "company": "Nestle India",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "nestle-india/results-2026-03.pdf",
+      "company": "Nestle India",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "nestle-india/results-2026-06.pdf",
+      "company": "Nestle India",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "nestle-india/results-2026-09.pdf",
+      "company": "Nestle India",
+      "kind": "financial_results",
+      "period_end": "2026-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "ntpc/ar-2024-25.pdf",
+      "company": "NTPC",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "ntpc/ar-2025-26.pdf",
+      "company": "NTPC",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "ntpc/results-2024-09.pdf",
+      "company": "NTPC",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "ntpc/results-2024-12.pdf",
+      "company": "NTPC",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "ntpc/results-2025-03.pdf",
+      "company": "NTPC",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "ntpc/results-2025-06.pdf",
+      "company": "NTPC",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "ntpc/results-2025-09.pdf",
+      "company": "NTPC",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "ntpc/results-2025-12.pdf",
+      "company": "NTPC",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "ntpc/results-2026-03.pdf",
+      "company": "NTPC",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "ntpc/results-2026-06.pdf",
+      "company": "NTPC",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "oberoi-realty/ar-2024-25.pdf",
+      "company": "Oberoi Realty",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "oberoi-realty/ar-2025-26.pdf",
+      "company": "Oberoi Realty",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "oberoi-realty/results-2024-09.pdf",
+      "company": "Oberoi Realty",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "oberoi-realty/results-2024-12.pdf",
+      "company": "Oberoi Realty",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "oberoi-realty/results-2025-03.pdf",
+      "company": "Oberoi Realty",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "oberoi-realty/results-2025-06.pdf",
+      "company": "Oberoi Realty",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "oberoi-realty/results-2025-09.pdf",
+      "company": "Oberoi Realty",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "oberoi-realty/results-2025-12.pdf",
+      "company": "Oberoi Realty",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "oberoi-realty/results-2026-03.pdf",
+      "company": "Oberoi Realty",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "oberoi-realty/results-2026-06.pdf",
+      "company": "Oberoi Realty",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "page-industries/ar-2024-25.pdf",
+      "company": "Page Industries",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "page-industries/ar-2025-26.pdf",
+      "company": "Page Industries",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "page-industries/results-2024-09.pdf",
+      "company": "Page Industries",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "page-industries/results-2024-12.pdf",
+      "company": "Page Industries",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "page-industries/results-2025-03.pdf",
+      "company": "Page Industries",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "page-industries/results-2025-06.pdf",
+      "company": "Page Industries",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "page-industries/results-2025-09.pdf",
+      "company": "Page Industries",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "page-industries/results-2025-12.pdf",
+      "company": "Page Industries",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "page-industries/results-2026-03.pdf",
+      "company": "Page Industries",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "page-industries/results-2026-06.pdf",
+      "company": "Page Industries",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "persistent-systems/ar-2024-25.pdf",
+      "company": "Persistent Systems",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "persistent-systems/ar-2025-26.pdf",
+      "company": "Persistent Systems",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "persistent-systems/results-2024-09.pdf",
+      "company": "Persistent Systems",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "persistent-systems/results-2024-12.pdf",
+      "company": "Persistent Systems",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "persistent-systems/results-2025-03.pdf",
+      "company": "Persistent Systems",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "persistent-systems/results-2025-06.pdf",
+      "company": "Persistent Systems",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "persistent-systems/results-2025-09.pdf",
+      "company": "Persistent Systems",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "persistent-systems/results-2025-12.pdf",
+      "company": "Persistent Systems",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "persistent-systems/results-2026-03.pdf",
+      "company": "Persistent Systems",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "persistent-systems/results-2026-06.pdf",
+      "company": "Persistent Systems",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "polycab-india/ar-2024-25.pdf",
+      "company": "Polycab India",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "polycab-india/ar-2025-26.pdf",
+      "company": "Polycab India",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "polycab-india/results-2024-09.pdf",
+      "company": "Polycab India",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "polycab-india/results-2024-12.pdf",
+      "company": "Polycab India",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "polycab-india/results-2025-03.pdf",
+      "company": "Polycab India",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "polycab-india/results-2025-06.pdf",
+      "company": "Polycab India",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "polycab-india/results-2025-09.pdf",
+      "company": "Polycab India",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "polycab-india/results-2025-12.pdf",
+      "company": "Polycab India",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "polycab-india/results-2026-03.pdf",
+      "company": "Polycab India",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "polycab-india/results-2026-06.pdf",
+      "company": "Polycab India",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "polycab-india/results-2026-09.pdf",
+      "company": "Polycab India",
+      "kind": "financial_results",
+      "period_end": "2026-09-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "ratnamani-metals/ar-2024-25.pdf",
+      "company": "Ratnamani Metals",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "small",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "ratnamani-metals/ar-2025-26.pdf",
+      "company": "Ratnamani Metals",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "small",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "ratnamani-metals/results-2024-09.pdf",
+      "company": "Ratnamani Metals",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "ratnamani-metals/results-2024-12.pdf",
+      "company": "Ratnamani Metals",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "ratnamani-metals/results-2025-03.pdf",
+      "company": "Ratnamani Metals",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "ratnamani-metals/results-2025-06.pdf",
+      "company": "Ratnamani Metals",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "ratnamani-metals/results-2025-09.pdf",
+      "company": "Ratnamani Metals",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "ratnamani-metals/results-2025-12.pdf",
+      "company": "Ratnamani Metals",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "ratnamani-metals/results-2026-03.pdf",
+      "company": "Ratnamani Metals",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "ratnamani-metals/results-2026-06.pdf",
+      "company": "Ratnamani Metals",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "redington/ar-2024-25.pdf",
+      "company": "Redington",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "small",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "redington/ar-2025-26.pdf",
+      "company": "Redington",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "small",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "redington/results-2024-09.pdf",
+      "company": "Redington",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "redington/results-2024-12.pdf",
+      "company": "Redington",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "redington/results-2025-03.pdf",
+      "company": "Redington",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "redington/results-2025-06.pdf",
+      "company": "Redington",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "redington/results-2025-09.pdf",
+      "company": "Redington",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "redington/results-2025-12.pdf",
+      "company": "Redington",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "redington/results-2026-03.pdf",
+      "company": "Redington",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "redington/results-2026-06.pdf",
+      "company": "Redington",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "reliance-industries/ar-2024-25.pdf",
+      "company": "Reliance Industries",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "large",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "reliance-industries/ar-2025-26.pdf",
+      "company": "Reliance Industries",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "large",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "reliance-industries/results-2024-12.pdf",
+      "company": "Reliance Industries",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "reliance-industries/results-2025-03.pdf",
+      "company": "Reliance Industries",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "reliance-industries/results-2025-06.pdf",
+      "company": "Reliance Industries",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "reliance-industries/results-2025-09.pdf",
+      "company": "Reliance Industries",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "reliance-industries/results-2025-12.pdf",
+      "company": "Reliance Industries",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "reliance-industries/results-2026-03.pdf",
+      "company": "Reliance Industries",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "reliance-industries/results-2026-06.pdf",
+      "company": "Reliance Industries",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "sansera-engineering/ar-2024-25.pdf",
+      "company": "Sansera Engineering",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "sansera-engineering/ar-2025-26.pdf",
+      "company": "Sansera Engineering",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "sansera-engineering/results-2024-09.pdf",
+      "company": "Sansera Engineering",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "sansera-engineering/results-2024-12.pdf",
+      "company": "Sansera Engineering",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "sansera-engineering/results-2025-03.pdf",
+      "company": "Sansera Engineering",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "sansera-engineering/results-2025-06.pdf",
+      "company": "Sansera Engineering",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "sansera-engineering/results-2025-09.pdf",
+      "company": "Sansera Engineering",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "sansera-engineering/results-2025-12.pdf",
+      "company": "Sansera Engineering",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "sansera-engineering/results-2026-03.pdf",
+      "company": "Sansera Engineering",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "sansera-engineering/results-2026-06.pdf",
+      "company": "Sansera Engineering",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "state-bank-of-india/ar-2024-25.pdf",
+      "company": "State Bank of India",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "state-bank-of-india/ar-2025-26.pdf",
+      "company": "State Bank of India",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "state-bank-of-india/results-2024-09.pdf",
+      "company": "State Bank of India",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "state-bank-of-india/results-2024-12.pdf",
+      "company": "State Bank of India",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "state-bank-of-india/results-2025-03.pdf",
+      "company": "State Bank of India",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "state-bank-of-india/results-2025-06.pdf",
+      "company": "State Bank of India",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "state-bank-of-india/results-2025-09.pdf",
+      "company": "State Bank of India",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "state-bank-of-india/results-2025-12.pdf",
+      "company": "State Bank of India",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "state-bank-of-india/results-2026-03.pdf",
+      "company": "State Bank of India",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "state-bank-of-india/results-2026-06.pdf",
+      "company": "State Bank of India",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "financials",
+      "out_of_scope": "Bank and NBFC statements are outside taxonomy v1."
+    },
+    {
+      "file": "sun-pharmaceutical/ar-2024-25.pdf",
+      "company": "Sun Pharmaceutical",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "sun-pharmaceutical/ar-2025-26.pdf",
+      "company": "Sun Pharmaceutical",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "sun-pharmaceutical/results-2024-09.pdf",
+      "company": "Sun Pharmaceutical",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "sun-pharmaceutical/results-2024-12.pdf",
+      "company": "Sun Pharmaceutical",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "sun-pharmaceutical/results-2025-03.pdf",
+      "company": "Sun Pharmaceutical",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "sun-pharmaceutical/results-2025-06.pdf",
+      "company": "Sun Pharmaceutical",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "sun-pharmaceutical/results-2025-09.pdf",
+      "company": "Sun Pharmaceutical",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "sun-pharmaceutical/results-2025-12.pdf",
+      "company": "Sun Pharmaceutical",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "sun-pharmaceutical/results-2026-03.pdf",
+      "company": "Sun Pharmaceutical",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "sun-pharmaceutical/results-2026-06.pdf",
+      "company": "Sun Pharmaceutical",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "supreme-industries/ar-2024-25.pdf",
+      "company": "Supreme Industries",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "supreme-industries/ar-2025-26.pdf",
+      "company": "Supreme Industries",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "supreme-industries/results-2024-09.pdf",
+      "company": "Supreme Industries",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "supreme-industries/results-2024-12.pdf",
+      "company": "Supreme Industries",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "supreme-industries/results-2025-03.pdf",
+      "company": "Supreme Industries",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "supreme-industries/results-2025-06.pdf",
+      "company": "Supreme Industries",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "supreme-industries/results-2025-09.pdf",
+      "company": "Supreme Industries",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "supreme-industries/results-2025-12.pdf",
+      "company": "Supreme Industries",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "supreme-industries/results-2026-03.pdf",
+      "company": "Supreme Industries",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "supreme-industries/results-2026-06.pdf",
+      "company": "Supreme Industries",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "mid"
+    },
+    {
+      "file": "tata-consultancy-services/ar-2024-25.pdf",
+      "company": "Tata Consultancy Services",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "tata-consultancy-services/ar-2025-26.pdf",
+      "company": "Tata Consultancy Services",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "tata-consultancy-services/results-2024-12.pdf",
+      "company": "Tata Consultancy Services",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "tata-consultancy-services/results-2025-03.pdf",
+      "company": "Tata Consultancy Services",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "tata-consultancy-services/results-2025-06.pdf",
+      "company": "Tata Consultancy Services",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "tata-consultancy-services/results-2025-09.pdf",
+      "company": "Tata Consultancy Services",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "tata-consultancy-services/results-2025-12.pdf",
+      "company": "Tata Consultancy Services",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "tata-consultancy-services/results-2026-03.pdf",
+      "company": "Tata Consultancy Services",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "tata-consultancy-services/results-2026-06.pdf",
+      "company": "Tata Consultancy Services",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "tata-consultancy-services/results-2026-09.pdf",
+      "company": "Tata Consultancy Services",
+      "kind": "financial_results",
+      "period_end": "2026-09-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "titan-company/ar-2024-25.pdf",
+      "company": "Titan Company",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "titan-company/ar-2025-26.pdf",
+      "company": "Titan Company",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "titan-company/results-2024-09.pdf",
+      "company": "Titan Company",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "titan-company/results-2024-12.pdf",
+      "company": "Titan Company",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "titan-company/results-2025-03.pdf",
+      "company": "Titan Company",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "titan-company/results-2025-06.pdf",
+      "company": "Titan Company",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "titan-company/results-2025-09.pdf",
+      "company": "Titan Company",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "titan-company/results-2025-12.pdf",
+      "company": "Titan Company",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "titan-company/results-2026-03.pdf",
+      "company": "Titan Company",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "titan-company/results-2026-06.pdf",
+      "company": "Titan Company",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "large"
+    },
+    {
+      "file": "triveni-turbine/ar-2024-25.pdf",
+      "company": "Triveni Turbine",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "small",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "triveni-turbine/ar-2025-26.pdf",
+      "company": "Triveni Turbine",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "triveni-turbine/results-2024-09.pdf",
+      "company": "Triveni Turbine",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "triveni-turbine/results-2024-12.pdf",
+      "company": "Triveni Turbine",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "triveni-turbine/results-2025-03.pdf",
+      "company": "Triveni Turbine",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "triveni-turbine/results-2025-06.pdf",
+      "company": "Triveni Turbine",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "triveni-turbine/results-2025-09.pdf",
+      "company": "Triveni Turbine",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "triveni-turbine/results-2025-12.pdf",
+      "company": "Triveni Turbine",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "triveni-turbine/results-2026-03.pdf",
+      "company": "Triveni Turbine",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "triveni-turbine/results-2026-06.pdf",
+      "company": "Triveni Turbine",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "small"
+    },
+    {
+      "file": "ultratech-cement/ar-2024-25.pdf",
+      "company": "UltraTech Cement",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "ultratech-cement/ar-2025-26.pdf",
+      "company": "UltraTech Cement",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "large",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "ultratech-cement/results-2024-09.pdf",
+      "company": "UltraTech Cement",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "ultratech-cement/results-2024-12.pdf",
+      "company": "UltraTech Cement",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "ultratech-cement/results-2025-03.pdf",
+      "company": "UltraTech Cement",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "ultratech-cement/results-2025-06.pdf",
+      "company": "UltraTech Cement",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "ultratech-cement/results-2025-09.pdf",
+      "company": "UltraTech Cement",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "ultratech-cement/results-2025-12.pdf",
+      "company": "UltraTech Cement",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "ultratech-cement/results-2026-03.pdf",
+      "company": "UltraTech Cement",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "ultratech-cement/results-2026-06.pdf",
+      "company": "UltraTech Cement",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "large"
+    },
+    {
+      "file": "voltas/ar-2024-25.pdf",
+      "company": "Voltas",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "voltas/ar-2025-26.pdf",
+      "company": "Voltas",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "mid",
+      "printed_pages_per_page": 2
+    },
+    {
+      "file": "voltas/results-2024-09.pdf",
+      "company": "Voltas",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "voltas/results-2024-12.pdf",
+      "company": "Voltas",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "voltas/results-2025-03.pdf",
+      "company": "Voltas",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "voltas/results-2025-06.pdf",
+      "company": "Voltas",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "voltas/results-2025-09.pdf",
+      "company": "Voltas",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "voltas/results-2025-12.pdf",
+      "company": "Voltas",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "voltas/results-2026-03.pdf",
+      "company": "Voltas",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "voltas/results-2026-06.pdf",
+      "company": "Voltas",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "dev",
+      "stratum": "mid"
+    },
+    {
+      "file": "welspun-living/ar-2024-25.pdf",
+      "company": "Welspun Living",
+      "kind": "annual_report",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "welspun-living/ar-2025-26.pdf",
+      "company": "Welspun Living",
+      "kind": "annual_report",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "welspun-living/results-2024-09.pdf",
+      "company": "Welspun Living",
+      "kind": "financial_results",
+      "period_end": "2024-09-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "welspun-living/results-2024-12.pdf",
+      "company": "Welspun Living",
+      "kind": "financial_results",
+      "period_end": "2024-12-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "welspun-living/results-2025-03.pdf",
+      "company": "Welspun Living",
+      "kind": "financial_results",
+      "period_end": "2025-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "welspun-living/results-2025-06.pdf",
+      "company": "Welspun Living",
+      "kind": "financial_results",
+      "period_end": "2025-06-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "welspun-living/results-2025-09.pdf",
+      "company": "Welspun Living",
+      "kind": "financial_results",
+      "period_end": "2025-09-30",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "welspun-living/results-2025-12.pdf",
+      "company": "Welspun Living",
+      "kind": "financial_results",
+      "period_end": "2025-12-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "welspun-living/results-2026-03.pdf",
+      "company": "Welspun Living",
+      "kind": "financial_results",
+      "period_end": "2026-03-31",
+      "set": "heldout",
+      "stratum": "small"
+    },
+    {
+      "file": "welspun-living/results-2026-06.pdf",
+      "company": "Welspun Living",
+      "kind": "financial_results",
+      "period_end": "2026-06-30",
+      "set": "heldout",
+      "stratum": "small"
+    }
+  ]
 }

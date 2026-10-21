@@ -14,6 +14,8 @@ from typer.testing import CliRunner
 
 from maester_eval import cli
 from maester_eval.artefacts import read_artefacts, write_artefact
+from maester_eval.compare import SETTLE_COLUMNS
+from maester_eval.gold import read_sheet
 from maester_eval.manifest import Filing
 from maester_eval.paths import EvalPaths
 from maester_eval.runner import run_filing
@@ -57,7 +59,7 @@ class SheetRowTests(unittest.TestCase):
         self.assertEqual(first["normalized_value"], "12000000000")
         self.assertEqual(first["page"], "2")  # page_index 1 → page 2
         self.assertEqual(first["text_layer_match"], "yes")
-        for blank in ("concept", "gold_text", "gold_scale", "gold_page", "gold_period_end", "adds_up", "verified"):
+        for blank in ("concept", "gold_text", "gold_scale", "gold_page", "gold_period_end", "gold_span", "adds_up", "verified"):
             self.assertEqual(first[blank], "")
 
     def test_material_hint_marks_totals_and_profit(self):
@@ -85,11 +87,33 @@ class SheetRowTests(unittest.TestCase):
 
     def test_the_columns_run_in_the_order_a_person_works_down_them(self):
         self.assertEqual(SHEET_COLUMNS, [
-            "row", "statement", "basis", "section", "label", "period_label", "period_end",
+            "row", "statement", "basis", "section", "label", "period_label", "period_end", "span",
             "printed", "value", "unit_label", "scale_factor", "normalized_value", "page", "printed_pages",
             "text_layer_match", "is_subtotal", "material",
-            "concept", "gold_text", "gold_scale", "gold_page", "gold_period_end", "adds_up", "verified", "note",
+            "concept", "gold_text", "gold_scale", "gold_page", "gold_period_end", "gold_span", "adds_up", "verified", "note",
         ])
+
+    def test_the_span_is_read_from_the_column_header(self):
+        by_label = {r["label"]: r for r in sheet_rows(self.artefact)}
+        # The fixture heads the profit and loss "Year ended 31 March 2026", the balance sheet "As at 31 March 2026".
+        self.assertEqual((by_label["Expenses"]["period_label"], by_label["Expenses"]["span"]), ("Year ended 31 March 2026", "year"))
+        self.assertEqual((by_label["Total assets"]["period_label"], by_label["Total assets"]["span"]), ("As at 31 March 2026", ""))
+        half = sheet_rows(with_first_fact(self.artefact, statement="income_statement", periodLabel="Half year ended 30.09.2025",
+                                          periodEnd="2025-09-30", asOfDate=None))[0]
+        self.assertEqual(half["span"], "half_year")
+        # A year to date column takes its span from the month the column ends in, the date the sheet's period_end shows.
+        ytd = sheet_rows(with_first_fact(self.artefact, statement="income_statement", periodEnd="2025-12-31", asOfDate=None,
+                                         periodLabel="Year to date figures for current period ended 31.12.2025"))[0]
+        self.assertEqual(ytd["span"], "nine_months")
+        undated = sheet_rows(with_first_fact(self.artefact, statement="income_statement", periodEnd=None, asOfDate=None,
+                                             periodLabel="Year to date figures"))[0]
+        self.assertEqual(undated["span"], "")  # a span that cannot be read stays blank, never guessed
+        self.assertEqual(sheet_rows(with_first_fact(self.artefact, periodLabel="Current period"))[0]["span"], "")
+
+    def test_a_balance_sheet_fact_has_no_span_whatever_its_header_says(self):
+        row = sheet_rows(with_first_fact(self.artefact, statement="balance_sheet", periodLabel="Half year ended 30.09.2025",
+                                         periodEnd="2025-09-30"))[0]
+        self.assertEqual((row["statement"], row["span"]), ("balance_sheet", ""))
 
     def test_printed_pages_equal_the_page_when_a_pdf_page_is_one_printed_page(self):
         rows = sheet_rows(self.artefact)
@@ -213,6 +237,28 @@ class ExportRunTests(unittest.TestCase):
         with sheet_path(self.paths.sheets, OTHER.id).open(encoding="utf-8-sig", newline="") as handle:
             rows = list(csv.DictReader(handle))
         self.assertEqual([row["note"] for row in rows], ["extraction failed: NO_STATEMENTS_FOUND"])
+
+
+class SettleSheetTests(unittest.TestCase):
+    def test_a_settle_sheet_is_written_with_its_own_columns(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "settle.csv"
+            settle_row = {column: "" for column in SETTLE_COLUMNS}
+            settle_row.update(row="2", concept="revenue_from_operations", concept_from="own", xbrl_element="RevenueFromOperations",
+                              xbrl_value="10000.00", xbrl_unit="₹ lakh", xbrl_normalized="1000000000", outcome="disagree_value")
+            write_sheet(path, [settle_row], columns=SETTLE_COLUMNS)
+            self.assertTrue(path.read_bytes().startswith(b"\xef\xbb\xbf"))
+            with path.open(encoding="utf-8-sig", newline="") as handle:
+                self.assertEqual(next(csv.reader(handle)), SETTLE_COLUMNS)
+            (back,) = read_sheet(path)
+            self.assertEqual(back, settle_row)
+            # The labelling sheet's columns refuse a settle row: DictWriter raises on a key outside its fieldnames.
+            with self.assertRaises(ValueError):
+                write_sheet(Path(temp) / "labelling.csv", [settle_row])
+
+    def test_the_settle_columns_are_the_sheet_columns_and_the_xbrl_side(self):
+        self.assertEqual(SETTLE_COLUMNS, SHEET_COLUMNS + ["concept_from", "xbrl_element", "xbrl_value", "xbrl_unit",
+                                                          "xbrl_normalized", "outcome", "xbrl_run", "map_version"])
 
 
 class ExportCommandTests(unittest.TestCase):

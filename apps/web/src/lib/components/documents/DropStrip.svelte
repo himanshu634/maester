@@ -1,6 +1,6 @@
 <!--
 	Where files come in: a 2px dashed box (the dashed outline already marks "not there yet" on
-	the sector bars) saying "Drop PDFs here", or "Choose files" and "Choose a folder", which open
+	the sector bars) saying "Drop PDFs or XBRL files here", or "Choose files" and "Choose a folder", which open
 	the system pickers. Dragging is never the only way. The limit is stated before anything is
 	chosen. While a batch is checked and sent, one line in the box says how far it has got, with
 	the ruler; the page announces the start and the end, so the line itself is not live. Files
@@ -31,15 +31,18 @@
 		busy?: string | null;
 		/** How the last batch went. */
 		outcome?: Outcome | null;
+		/** Sends the files a batch stopped offline before sending, in the order chosen. */
+		onresend?: (rest: Picked[]) => void;
 		/** No file can be taken yet; `waitingNote` is the id of the visible line that says why. */
 		waitingNote?: string;
 	}
 
-	let { onfiles, busy = null, outcome = null, waitingNote }: Props = $props();
+	let { onfiles, busy = null, outcome = null, onresend, waitingNote }: Props = $props();
 
 	const id = $props.id();
 	const signInHref = resolve(signInAgainHref('/terminal/documents'));
 	let filesInput = $state<HTMLInputElement>();
+	let strip = $state<HTMLElement>();
 	let folderInput = $state<HTMLInputElement>();
 	let over = $state(false);
 
@@ -96,6 +99,15 @@
 		if (files.length > 0) onfiles(pickedFrom(files));
 	}
 
+	/**
+	 * "Send the rest" starts the batch again, and its Notice goes with the button in it, so focus
+	 * moves to the box, which stays and holds the line saying how far the batch has got.
+	 */
+	function resend(rest: Picked[]) {
+		onresend?.(rest);
+		strip?.focus();
+	}
+
 	/** Files dropped anywhere else would open in the tab and leave the page. */
 	function guard(event: DragEvent) {
 		if (hasFiles(event)) event.preventDefault();
@@ -113,7 +125,7 @@
 {/snippet}
 
 <div class="strip-wrap">
-	<div class={['strip', { over }]} {@attach dropTarget}>
+	<div class={['strip', { over }]} tabindex="-1" bind:this={strip} {@attach dropTarget}>
 		{#if busy}
 			<Loader label={busy} live={false} />
 		{:else}
@@ -145,7 +157,7 @@
 			class="visually-hidden"
 			type="file"
 			multiple
-			accept="application/pdf,.pdf"
+			accept="application/pdf,.pdf,.xml,application/xml,text/xml"
 			tabindex="-1"
 			aria-hidden="true"
 			onchange={chosen}
@@ -177,11 +189,14 @@
 			{:else if refused.refused.length > 0}
 				<div class="refused">{@render list(refused.refused)}</div>
 			{/if}
-			{#if refused.stopped}
-				<p>{copy.drop.stopped[refused.stopped](refused.unsent)}</p>
-			{/if}
 			{#if refused.stopped === 'signed-out'}
+				<p>{copy.drop.stopped[refused.stopped](refused.unsent)}</p>
 				<a href={signInHref}>{copy.drop.signIn}</a>
+			{:else if refused.stopped === 'offline' && refused.rest.length > 0 && onresend}
+				<button class="button outline" type="button" onclick={() => resend(refused.rest)}>
+					{copy.drop.sendRest}
+				</button>
+				<p class="rest-note">{copy.drop.restNote}</p>
 			{:else}
 				<button class="button outline" type="button" onclick={() => filesInput?.click()}>
 					{copy.drop.chooseAgain}
@@ -233,6 +248,10 @@
 	}
 
 	.note {
+		color: var(--ink-muted);
+	}
+
+	.rest-note {
 		color: var(--ink-muted);
 	}
 

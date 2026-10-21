@@ -33,6 +33,12 @@ This document describes `apps/extractor`, the Python service that reads financia
 | error | A response that has a `code`, a `retryable` value and a `message`, and no result. |
 | classifier | The function `run_classification` in the engine. It makes the classification. |
 | secret | The value of `EXTRACTOR_SECRET`. The worker sends it in the `x-extractor-secret` header. |
+| XBRL instance | An XML file in the XBRL 2.1 format. Its facts are the numbers of a results filing. |
+| format | The kind of an XBRL instance, as `<family>/<kind>`. The families are `in-capmkt` and `in-bse-fin`. The kinds are `ind_as`, `banking`, `nbfc`, `other_than_ind_as` and `unknown`. |
+| element map | A reviewed JSON file in `pdf_financial_qa/xbrl/maps`. It says which element of a format is which line of which statement. |
+| mapped format | A format that has an element map. Only `in-capmkt/ind_as` and `in-bse-fin/ind_as` are mapped. |
+| XBRL mode | One of `classify`, `read` and `text`. The header `x-xbrl-mode` of `/v1/xbrl` names it. |
+| PDF check | The `xbrl_in_pdf` check. It looks for each XBRL value on the statement pages of a results PDF. |
 
 ## Function
 
@@ -41,7 +47,15 @@ The extractor reads financial documents in PDF format for the worker. It does tw
 - Classification: it finds the type of document, the company, the company identifiers, the period and the statements.
 - Extraction: it reads each statement into facts and does arithmetic checks on the facts.
 
-For each answer and each fact, the extractor records the page index of its source. The extractor stores nothing. It has no access to the database or to object storage. The worker sends the PDF in the request body and writes the result to the database.
+The extractor also reads XBRL instances. This reading uses no model and costs nothing. It does three tasks:
+
+- Classification: it finds the format, the company identifiers, the basis, the period and the statements from the elements of the instance.
+- Reading: it writes each line of a mapped format as a fact, with its span, its period, its unit and its element. It also does the sum checks.
+- Text: it turns the long notes of the instance into plain text for the index.
+
+A fourth route compares the facts of an instance with a results PDF. It is the PDF check.
+
+For each answer and each fact from a PDF, the extractor records the page index of its source. The extractor stores nothing. It has no access to the database or to object storage. The worker sends the PDF in the request body and writes the result to the database.
 
 ## Parts
 
@@ -62,7 +76,16 @@ For each answer and each fact, the extractor records the page index of its sourc
 | Classifier | `pdf_financial_qa/classify/runner.py` | Holds `run_classification`. It uses the rules first and the model for open questions. |
 | Classification rules | `pdf_financial_qa/classify/rules.py` | Regular expressions that find answers in the text layer. |
 | Classification model | `pdf_financial_qa/classify/model.py`, `pdf_financial_qa/classify/prompts.py` | Holds `GeminiClassificationModel` and its prompt. |
-| Tests | `tests/test_extractor_service.py`, `tests/test_extraction_*.py`, `tests/test_classification_*.py` | Offline unit tests for the extractor and the engine. |
+| XBRL parser | `pdf_financial_qa/xbrl/parser.py` | Reads an instance with `lxml` and hard limits. It refuses a DOCTYPE. |
+| XBRL format | `pdf_financial_qa/xbrl/formats.py`, `formats.json` | Finds the family and the kind of an instance from its elements. |
+| XBRL classification | `pdf_financial_qa/xbrl/classify.py`, `identity.py` | Answers the classification questions from the identity facts. |
+| XBRL read | `pdf_financial_qa/xbrl/read.py`, `units.py`, `periods.py` | Writes the facts of a mapped format. Sets the unit, the span and the period of each fact. |
+| XBRL maps | `pdf_financial_qa/xbrl/maps.py`, `maps/*.json`, `maps/README.md` | Loads the element maps. The README says how each map was made and checked. |
+| XBRL checks | `pdf_financial_qa/xbrl/checks.py` | Checks each sum of the map and the balance identity. |
+| XBRL text | `pdf_financial_qa/xbrl/text.py` | Turns the text blocks of an instance into plain text. |
+| XBRL PDF check | `pdf_financial_qa/xbrl/pdf_check.py` | Runs `check_xbrl_in_pdf`. |
+| XBRL wire format | `pdf_financial_qa/xbrl/contracts.py` | Pydantic classes of the XBRL events and of the PDF check. The Zod twin is `packages/contracts/src/xbrl.ts`. |
+| Tests | `tests/test_extractor_xbrl.py`, `tests/test_xbrl_*.py`, `tests/test_extractor_service.py`, `tests/test_extraction_*.py`, `tests/test_classification_*.py` | Offline unit tests for the extractor and the engine. |
 
 ## Operation
 
@@ -82,8 +105,10 @@ For each answer and each fact, the extractor records the page index of its sourc
 | `GET /healthz` | No body. | `200` with `{"status":"ok"}`. |
 | `POST /v1/classify` | The PDF as the body. Optional header `x-document-id`. | `200` with one JSON body: `{"type":"result","result":{…}}` or `{"type":"error",…}`. |
 | `POST /v1/extract` | The PDF as the body. Optional headers `x-document-id` and `x-company-name`. | `200` with an `application/x-ndjson` stream of events. |
+| `POST /v1/xbrl` | The XBRL instance as the body. The header `x-xbrl-mode` is `classify`, `read` or `text`. Optional header `x-document-id`. | `200` with an `application/x-ndjson` stream of events. |
+| `POST /v1/xbrl/pdf-check` | `multipart/form-data` with a `pdf` file and a `request` JSON part. Optional header `x-document-id`. | `200` with one JSON body: the check result, or `{"type":"error",…}`. |
 
-The two `POST` routes do these steps before their own work:
+The three `POST` routes of the PDF and the two XBRL routes do the first step before their own work. The PDF routes also do the two other steps:
 
 1. The `authenticate` dependency compares `x-extractor-secret` with the secret. It uses `hmac.compare_digest`. If the secret has a value and the two values are different, the response is `401` with the code `EXTRACTOR_UNAUTHORIZED`.
 2. The `pdf_body` dependency reads the body. If `content-length` or the body is larger than `EXTRACT_MAX_BYTES`, the response is `413` with the code `TOO_LARGE_FOR_EXTRACTION`.
@@ -202,6 +227,73 @@ The extractor uses one model provider: Gemini on Vertex AI, in the region `VERTE
 8. For model evidence, `textLayerMatch` is `true` if the quote is on the page. It is `null` if the page is a scanned page.
 9. Each item of `statementsFound` has `pages`, a list of page indexes.
 
+### XBRL instances
+
+The route `/v1/xbrl` answers with an `application/x-ndjson` stream, as `/v1/extract` does. The routes `/v1/classify` and `/v1/extract` read a PDF. This route reads an XBRL instance and calls no model.
+
+1. The `authenticate` dependency does the secret check. If the header `x-xbrl-mode` is not `classify`, `read` or `text`, the response is `400` with the code `BAD_REQUEST`.
+2. The `xbrl_body` dependency reads the body. If the body is empty, the response is `400` with the code `EMPTY_BODY`.
+3. If the body is larger than `XBRL_MAX_BYTES`, the dependency stops reading. The route still answers `200`. The stream has a `started` event and an `error` event with the code `XBRL_UNREADABLE` and the message `TOO_LARGE`.
+4. The route sends a `started` event with `parserVersion`, `mapVersion` and `mode`.
+5. The route runs `read_xbrl` in a separate thread. If the thread does not finish in `EXTRACT_HEARTBEAT_SECONDS`, the route sends a `heartbeat` event. It does this again each time that period passes.
+6. `parse_instance` reads the instance. It refuses a DOCTYPE, a file over `XBRL_MAX_BYTES`, a file with more than `XBRL_MAX_FACTS` facts, and a parse that takes more than `XBRL_DEADLINE_SECONDS`. The parser never resolves an entity and never opens the network.
+7. The route sends one last event. The type of the event depends on the mode.
+
+| Mode | Last event | Content |
+| --- | --- | --- |
+| `classify` | `classification` | The format, the kind, the span, the period end, the company name as printed, the BSE code, the NSE symbol, the ISIN, the basis, the audit flag, the statements found, the evidence and the warnings. |
+| `read` | `read` | The format, the basis, the state, the declared rounding, the facts, the sum checks and the warnings. |
+| `text` | `text` | The text blocks of the instance, each with its element, its context, a heading and its plain text. |
+
+The classification rules for an instance use only its own elements:
+
+1. The family comes from the namespace of the facts. The kind comes from the numeric elements that the instance holds. The first rule of `formats.json` that matches gives the kind.
+2. The period comes from the dates `DateOfStartOfReportingPeriod` and `DateOfEndOfReportingPeriod`. The span comes from these dates only. The word in `ReportingQuarter` is never read, because it disagrees with the dates in 106 of the 807 instances on hand.
+3. The basis comes from `NatureOfReportStandaloneConsolidated`. If the instance states both bases, or neither, the classification has the kind `not_sure` and the warning `XBRL_MIXED_BASIS`.
+4. A shape check rejects an identifier that has the wrong shape. A BSE code is six digits. The symbol `NOTLISTED` is not a symbol.
+5. `statementsFound` lists each statement that has a figure for a line of the element map. It has no pages. A format that has no map finds no statement.
+
+The read has these rules:
+
+1. The read writes a fact for each numeric fact that meets three conditions. Its context has no member. Its element is a line of the map. Its unit is money or money per share.
+2. The unit comes from the rounding word that the instance declares in `LevelOfRounding` or `LevelOfRoundingUsedInFinancialStatements`. The word `Crores` gives `₹ crore` and the scale 10000000. The word `Lakhs` gives `₹ lakh` and 100000. The word `Millions` gives `₹ million` and 1000000.
+3. A per-share fact has the unit `₹ a share` and the scale 1.
+4. Each fact has two values. `normalizedValue` is in full rupees, as the file writes it. `reportedValue` is in the declared unit. It has at least as many places as the finest `decimals` of the instance needs, and the read never rounds it.
+5. A fact that the file marks nil has the status `unparsed` and no value. The warning `XBRL_NIL` names its element. A nil fact is unknown, not zero.
+6. The span comes from the dates of the context. Some durations start on the first of a month and end on the last day of a month. Their spans are `quarter`, `half_year`, `nine_months` and `year`, for 3, 6, 9 and 12 months. Any other duration has the span `other`. An instant has no span.
+7. `CashAndCashEquivalentsCashFlowStatement` is an instant. The read writes it into each cash-flow duration that it opens or closes, with an opening label and a closing label.
+8. Each fact has the concept of its element in the map. The read stores the concept with the fact. The concept is `null` for an "Others" line.
+9. The checks follow each sum of the map for each period in which its total has a fact. The tolerance is n × ½ × 10^(−finest decimals). The number n counts the total and the parts that are present. A sum with no part present, or with a nil value, has the status `not_checked`.
+10. The balance identity compares `Assets` with `EquityAndLiabilities`.
+11. If the instance declares no rounding, the read adds the warning `XBRL_ROUNDING_MISSING` and the state is `partial`. A monetary fact then has no `reportedValue`. If the declared rounding is not the coarsest `decimals`, the read adds `XBRL_ROUNDING_MISMATCH` and the state is `partial`.
+12. An element that is not a line of the map and not in its `ignored` list gives the warning `XBRL_ELEMENT_UNMAPPED`. A mapped element in a unit that is neither money nor money per share gives `XBRL_UNIT_UNSUPPORTED`, and the read writes no fact for it.
+13. A format with no map gives the warning `XBRL_FORMAT_UNMAPPED` and no fact.
+
+The text mode finds the facts that have no unit and an element name that ends in `TextBlock` or `Explanatory`, with or without a member. It turns the escaped HTML of each fact into plain text. It keeps the lines and the table rows.
+
+### The PDF check
+
+The route `/v1/xbrl/pdf-check` tells if each XBRL value is on the statement pages of a results PDF. It calls no model.
+
+1. The `pdf_check_parts` dependency reads the multipart body. The body can hold a PDF of `EXTRACT_MAX_BYTES` and a `request` part of 16 MiB. A larger body gets the response `413` with the code `TOO_LARGE_FOR_EXTRACTION`. A body that is not `multipart/form-data` gets `400` with the code `BAD_REQUEST`.
+2. The request has `scale`, `places`, `statementPages` and `facts`. A fact has an ID, a value in full rupees, a flag for a per-share value, a statement and a basis.
+3. `check_xbrl_in_pdf` opens the PDF and reads its text layer. It looks for each value on the pages that the request gives for the statement and the basis of the fact.
+4. For a monetary value, the check looks for the value divided by `scale`. If `places` has a value, the check also tries that number rounded to `places`. For a per-share value, the check looks for the value as it is.
+5. A page that has a match gives the status `passed` and the page index. The check compares the absolute value. It does not compare the sign.
+6. If no page has a match, and every page has a text layer, the status is `failed`.
+7. If a page has no text layer, and no other page has a match, the status is `not_checked` with the reason `scanned`.
+8. The other reasons that the extractor gives are `no_value`, `no_unit` and `no_statement_pages`. A fact with no value or no unit gets its reason before the extractor looks at a page. The API gives `no_pdf`, `disabled` and `not_yet` when it has no check row to show.
+9. The result has `checkVersion`, the number `XBRL_PDF_CHECK_VERSION`. The extractor refuses a check of another version.
+
+### The element maps
+
+An element map is a mapping rule. A change to a map, to the parser or to a sum changes `XBRL_MAP_VERSION` or `XBRL_PARSER_VERSION`. A change to the PDF check changes `XBRL_PDF_CHECK_VERSION`. Each change ships with an evaluation report in `docs/eval`.
+
+1. Edit the file in `pdf_financial_qa/xbrl/maps`. Add the new lines to the table of `maps/README.md` and say why.
+2. Change the version number in `pdf_financial_qa/xbrl/__init__.py` and in `packages/contracts`.
+3. Run `maester-eval xbrl-map` over the instances. The [eval description](eval.md) says how.
+4. Put the report in `docs/eval`. Read its first section. A sum that fails is a fault of the map or of the filer. The map README lists each filer fault with the page of the PDF that shows it.
+
 ## States and errors
 
 The extraction stream sends an error as an `error` event. The classification route sends an error as a JSON body with `"type":"error"`. The worker uses `retryable` to find if the same request can succeed later.
@@ -223,6 +315,17 @@ The extraction stream sends an error as an `error` event. The classification rou
 | `CANCELLED` | The stream stopped before the workflow finished. | Error, `retryable` `true`. |
 | `CLASSIFICATION_FAILED` | `run_classification` raised an unexpected exception. | Error, `retryable` `true`. |
 | `complete` | All located statements have the status `extracted`. | A `result` event. |
+| `400` `BAD_REQUEST` | The header `x-xbrl-mode` is not one of the three modes, or the PDF check body is not a valid multipart body. | HTTP error. No stream. |
+| `XBRL_UNREADABLE` | `parse_instance` refuses the instance. The message is a reason code: `TOO_LARGE`, `DOCTYPE`, `MALFORMED`, `NOT_AN_INSTANCE`, `TOO_MANY_FACTS` or `TIMED_OUT`. A fact that names a context or a unit that the file does not declare gives `MALFORMED`. | Error event, `retryable` `false`. The message holds no document text. |
+| `XBRL_FAILED` | The XBRL thread raised an unexpected exception. | Error event, `retryable` `true`. The message holds only the type of the exception. |
+| `XBRL_PDF_CHECK_FAILED` | The PDF check raised an unexpected exception. | JSON error, `retryable` `true`. |
+| `XBRL_FORMAT_UNMAPPED` | The format has no element map. | Result warning on a read and on a classification. The read has no fact. |
+| `XBRL_MIXED_BASIS` | The instance states both bases, or neither. | Result warning on a classification. The kind is `not_sure`. |
+| `XBRL_ROUNDING_MISSING` | The instance declares no level of rounding, or a word that Maester cannot name. | Result warning. The state is `partial`. A monetary fact has no `reportedValue`. |
+| `XBRL_ROUNDING_MISMATCH` | The declared level of rounding is not the coarsest `decimals` of the monetary facts. | Result warning. The state is `partial`. |
+| `XBRL_UNIT_UNSUPPORTED` | A mapped element has a unit that is neither money nor money per share. | Result warning. The read writes no fact for that element. |
+| `XBRL_ELEMENT_UNMAPPED` | A numeric element is neither a line of the map nor in its `ignored` list. | Result warning. The read writes no fact for it. |
+| `XBRL_NIL` | A mapped fact is nil. | Result warning. The fact has the status `unparsed` and no value. |
 | `partial` | Some statements have the status `extracted`, and some have the status `failed`. | A `result` event. |
 | `LOCATE_PAGE_OUT_OF_RANGE` | The model gave a page number outside the PDF. | Result warning. The workflow ignores that page. |
 | `CORRECTION_REJECTED` | A corrected value is not on the text layer of its page, or the correction has no line items. | Result warning. The workflow keeps the original section. |
@@ -248,7 +351,7 @@ The extractor writes:
 - The response, to the client.
 - Log messages, to the standard output. A log message contains the document ID, the codes, the counts, the time in seconds, and the state or the type of document. It does not contain document text.
 
-The extractor sends PDF pages to Vertex AI for each model call. It writes no files and has no database connection.
+An XBRL read sends nothing to Vertex AI. The extractor sends PDF pages to Vertex AI for each model call of a classification or an extraction. It writes no files and has no database connection.
 
 | Variable | Default | Function |
 | --- | --- | --- |
@@ -262,6 +365,9 @@ The extractor sends PDF pages to Vertex AI for each model call. It writes no fil
 | `EXTRACT_MAX_BYTES` | 52428800 (50 MiB) | The largest body that the extractor accepts. |
 | `EXTRACT_HEARTBEAT_SECONDS` | `15` | The time without events before a `heartbeat` event. |
 | `EXTRACT_DEADLINE_SECONDS` | `840` | The time limit of one extraction. The workflow compares the time with this limit before each model call. |
+| `XBRL_MAX_BYTES` | 20971520 (20 MiB) | The largest XBRL instance that the extractor reads. |
+| `XBRL_MAX_FACTS` | `100000` | The largest number of facts in one instance. |
+| `XBRL_DEADLINE_SECONDS` | `30` | The time limit of one parse. |
 
 The extractor depends on the engine, `fastapi` and `uvicorn` (`apps/extractor/pyproject.toml`). The engine depends on `langgraph`, `langchain-google-genai`, `google-genai`, `pydantic` and `pypdf`. The wire format in the engine mirrors the Zod schemas in `packages/contracts/src/extraction.ts` and `packages/contracts/src/classification.ts`.
 
@@ -333,7 +439,13 @@ CAUTION: Set `EXTRACTOR_SECRET` on a host that other computers can connect to. W
 - On a scanned page, the extractor cannot compare a value or a quote with the page. `textLayerMatch` is then `null`.
 - The classification model sees a maximum of 10 pages.
 - The deadline and the cancel signal stop the workflow only before a model call. A model call that started can continue for 300 seconds. Thus a request can take more time than `EXTRACT_DEADLINE_SECONDS`.
-- The extractor does not examine the `content-type` header. A body that is not a PDF gets the error `UNREADABLE_PDF`.
+- The extractor does not examine the `content-type` header of `/v1/classify` and `/v1/extract`. A body that is not a PDF gets the error `UNREADABLE_PDF`.
+- Only two formats have an element map: `in-capmkt/ind_as` and `in-bse-fin/ind_as`. A banking, NBFC or "other than Ind AS" instance is classified and read, and the read has no fact.
+- The PDF check compares absolute values. A negative XBRL value, or a cash-flow outflow that the PDF prints in brackets, matches the number without its sign.
+- A match anywhere on a statement page counts. A number can match by chance. The [first report](../eval/2026-10-21-xbrl-map-v1.md) measures how often.
+- The PDF check assumes that the PDF prints in the unit that the instance declares. When the PDF prints another unit, the check fails every fact of the pair.
+- The PDF check reads the text layer only. A scanned page gives `scanned`, never a pass.
+- The extractor reads no dimensional fact (a fact with a member) as a figure.
 - `/healthz` does not examine the model or the credentials.
 - The extractor publishes no OpenAPI schema.
 - `infra/deploy.sh` does not deploy the extractor. The production host of the extractor: Not known.
@@ -360,7 +472,10 @@ CAUTION: Set `EXTRACTOR_SECRET` on a host that other computers can connect to. W
 - [packages/financial-engine/src/pdf_financial_qa/classify/model.py](../../packages/financial-engine/src/pdf_financial_qa/classify/model.py)
 - [packages/financial-engine/src/pdf_financial_qa/classify/prompts.py](../../packages/financial-engine/src/pdf_financial_qa/classify/prompts.py)
 - [packages/financial-engine/src/pdf_financial_qa/classify/contracts.py](../../packages/financial-engine/src/pdf_financial_qa/classify/contracts.py)
+- [packages/financial-engine/src/pdf_financial_qa/xbrl/](../../packages/financial-engine/src/pdf_financial_qa/xbrl/)
+- [packages/financial-engine/src/pdf_financial_qa/xbrl/maps/README.md](../../packages/financial-engine/src/pdf_financial_qa/xbrl/maps/README.md)
 - [tests/test_extractor_service.py](../../tests/test_extractor_service.py)
+- [tests/test_extractor_xbrl.py](../../tests/test_extractor_xbrl.py)
 - [tests/test_extraction_workflow.py](../../tests/test_extraction_workflow.py)
 - [tests/test_classification_runner.py](../../tests/test_classification_runner.py)
 - [tests/pdf_fixtures.py](../../tests/pdf_fixtures.py)

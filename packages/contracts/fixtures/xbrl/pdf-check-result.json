@@ -1,0 +1,9 @@
+{
+  "checkVersion": 1,
+  "results": [
+    { "factId": "0b6f1c1e-6d1a-4c52-9a53-0f3a2d1f7a01", "status": "passed", "pageIndex": 3, "reason": null },
+    { "factId": "0b6f1c1e-6d1a-4c52-9a53-0f3a2d1f7a02", "status": "failed", "pageIndex": null, "reason": null },
+    { "factId": "0b6f1c1e-6d1a-4c52-9a53-0f3a2d1f7a03", "status": "not_checked", "pageIndex": null, "reason": "no_value" },
+    { "factId": "0b6f1c1e-6d1a-4c52-9a53-0f3a2d1f7a04", "status": "not_checked", "pageIndex": null, "reason": "scanned" }
+  ]
+}

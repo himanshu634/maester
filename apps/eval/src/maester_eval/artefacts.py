@@ -8,6 +8,7 @@ label or a figure of the filing."""
 
 import json
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -28,6 +29,34 @@ class ModelCalls(BaseModel):
     @property
     def total(self) -> int:
         return self.locate + self.extract + self.correct
+
+
+# What read a run: the Gemini workflow on the PDF, or the XBRL parser on the paired instances.
+RunSource = Literal["pdf", "xbrl"]
+
+
+class InstanceRead(BaseModel):
+    """What `xbrl-read` did with one XBRL instance paired with a results filing, and why it did not use it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # `<company-folder>/xbrl/<name>.xml`, relative to the corpus; basis, period and filed come from the pair.
+    file: str
+    basis: str
+    period: str
+    filed: str
+    sha256: str
+    # The format id from `classify_instance`; null when the file could not be read.
+    format: str | None
+    mapped: bool
+    used: bool
+    # `XBRL_UNREADABLE:<reason code>`, `XBRL_PAIR_COMPANY`, `XBRL_PAIR_PERIOD`, `XBRL_PAIR_BASIS` or `XBRL_FORMAT_UNMAPPED`.
+    reason: str | None
+    # `complete` or `partial` for an instance that was read, null for one that was not used.
+    state: str | None
+    facts: int
+    # Codes only: a message of the reader can name an element.
+    warnings: list[str]
 
 
 class ArtefactError(BaseModel):
@@ -60,6 +89,9 @@ class Artefact(BaseModel):
     pages_without_text: list[int]
     result: dict | None
     error: ArtefactError | None
+    # An XBRL artefact reads no PDF: its facts come from the paired instances, each one's use recorded here.
+    source: RunSource = "pdf"
+    instances: list[InstanceRead] = []
 
 
 class RunRecord(BaseModel):
@@ -76,6 +108,10 @@ class RunRecord(BaseModel):
     prompt_version: str | None = None
     model: str | None = None
     filings: list[str] | None = None
+    # An XBRL run says so, with the parser and map versions it read under. A run without `source` is a PDF run.
+    source: RunSource | None = None
+    parser_version: str | None = None
+    map_version: str | None = None
 
 
 def artefact_path(run_dir: Path, filing_id: str) -> Path:

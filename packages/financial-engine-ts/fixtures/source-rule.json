@@ -1,0 +1,719 @@
+{
+  "version": 1,
+  "about": "The source rule's cases, shared by @maester/financial-engine (sources.ts) and maester_eval.source_rule. Every expected value was worked out by hand from the rule in the phase 4 plan, Task 9; each case's why says how. Timestamps are UTC in the toISOString() shape.",
+  "rank": [
+    {
+      "name": "xbrl-wins-over-a-newer-pdf",
+      "why": "Source comes first: xbrl before pdf, though the pdf's filing period and revision are both newer.",
+      "candidates": [
+        { "revisionId": "rev-pdf", "documentId": "doc-pdf", "source": "pdf", "filingPeriodEnd": "2026-03-31", "revisionCreatedAt": "2026-05-10T09:00:00.000Z" },
+        { "revisionId": "rev-xbrl", "documentId": "doc-xbrl", "source": "xbrl", "filingPeriodEnd": "2025-12-31", "revisionCreatedAt": "2026-01-20T09:00:00.000Z" }
+      ],
+      "expected": ["rev-xbrl", "rev-pdf"]
+    },
+    {
+      "name": "newest-xbrl-of-two",
+      "why": "Both xbrl: the newer filing period (2026-03-31) first, though its revision is older.",
+      "candidates": [
+        { "revisionId": "rev-x-dec", "documentId": "doc-x-dec", "source": "xbrl", "filingPeriodEnd": "2025-12-31", "revisionCreatedAt": "2026-06-01T09:00:00.000Z" },
+        { "revisionId": "rev-x-mar", "documentId": "doc-x-mar", "source": "xbrl", "filingPeriodEnd": "2026-03-31", "revisionCreatedAt": "2026-05-01T09:00:00.000Z" }
+      ],
+      "expected": ["rev-x-mar", "rev-x-dec"]
+    },
+    {
+      "name": "pdf-by-filing-period-then-revision",
+      "why": "All pdf: the two 2026-03-31 filings come before the 2025-03-31 one; between them the later revision (20 May) first.",
+      "candidates": [
+        { "revisionId": "rev-p-2025", "documentId": "doc-p-2025", "source": "pdf", "filingPeriodEnd": "2025-03-31", "revisionCreatedAt": "2026-06-01T09:00:00.000Z" },
+        { "revisionId": "rev-p-2026-may01", "documentId": "doc-p-2026", "source": "pdf", "filingPeriodEnd": "2026-03-31", "revisionCreatedAt": "2026-05-01T09:00:00.000Z" },
+        { "revisionId": "rev-p-2026-may20", "documentId": "doc-p-2026", "source": "pdf", "filingPeriodEnd": "2026-03-31", "revisionCreatedAt": "2026-05-20T09:00:00.000Z" }
+      ],
+      "expected": ["rev-p-2026-may20", "rev-p-2026-may01", "rev-p-2025"]
+    },
+    {
+      "name": "null-filing-period-last",
+      "why": "Among pdf, a null filing period goes after a dated one, though its revision is newer. The xbrl with a null filing period still comes first, because source is compared before the period.",
+      "candidates": [
+        { "revisionId": "rev-p-null", "documentId": "doc-p-null", "source": "pdf", "filingPeriodEnd": null, "revisionCreatedAt": "2026-07-01T09:00:00.000Z" },
+        { "revisionId": "rev-p-2024", "documentId": "doc-p-2024", "source": "pdf", "filingPeriodEnd": "2024-03-31", "revisionCreatedAt": "2025-01-01T09:00:00.000Z" },
+        { "revisionId": "rev-x-null", "documentId": "doc-x-null", "source": "xbrl", "filingPeriodEnd": null, "revisionCreatedAt": "2024-01-01T09:00:00.000Z" }
+      ],
+      "expected": ["rev-x-null", "rev-p-2024", "rev-p-null"]
+    },
+    {
+      "name": "later-xbrl-takes-over",
+      "why": "Same filing period; the pdf revision was created first, the xbrl one a day later. xbrl wins on source.",
+      "candidates": [
+        { "revisionId": "rev-pdf", "documentId": "doc-pdf", "source": "pdf", "filingPeriodEnd": "2026-03-31", "revisionCreatedAt": "2026-05-01T09:00:00.000Z" },
+        { "revisionId": "rev-xbrl", "documentId": "doc-xbrl", "source": "xbrl", "filingPeriodEnd": "2026-03-31", "revisionCreatedAt": "2026-05-02T09:00:00.000Z" }
+      ],
+      "expected": ["rev-xbrl", "rev-pdf"]
+    },
+    {
+      "name": "newer-revision-of-one-filing-first",
+      "why": "Same source and filing period: the later revisionCreatedAt (10:00 after 09:00) decides.",
+      "candidates": [
+        { "revisionId": "rev-b-0900", "documentId": "doc-x", "source": "xbrl", "filingPeriodEnd": "2025-09-30", "revisionCreatedAt": "2025-11-01T09:00:00.000Z" },
+        { "revisionId": "rev-a-1000", "documentId": "doc-x", "source": "xbrl", "filingPeriodEnd": "2025-09-30", "revisionCreatedAt": "2025-11-01T10:00:00.000Z" }
+      ],
+      "expected": ["rev-a-1000", "rev-b-0900"]
+    },
+    {
+      "name": "larger-revision-id-breaks-a-tie",
+      "why": "Same source, filing period and created time: the larger revisionId (rev-b > rev-a as text) first.",
+      "candidates": [
+        { "revisionId": "rev-a", "documentId": "doc-p", "source": "pdf", "filingPeriodEnd": "2025-09-30", "revisionCreatedAt": "2025-11-01T09:00:00.000Z" },
+        { "revisionId": "rev-b", "documentId": "doc-p", "source": "pdf", "filingPeriodEnd": "2025-09-30", "revisionCreatedAt": "2025-11-01T09:00:00.000Z" }
+      ],
+      "expected": ["rev-b", "rev-a"]
+    },
+    {
+      "name": "no-candidates",
+      "why": "Nothing to rank.",
+      "candidates": [],
+      "expected": []
+    }
+  ],
+  "annual": [
+    {
+      "name": "q4-results-xbrl-does-not-fill-annual",
+      "why": "Rule 1: a financial_results filing gives no annual slot, even for a full-year fact on the year end.",
+      "filing": { "companyId": "co-cem", "kind": "financial_results", "source": "xbrl", "periodEnd": "2026-03-31" },
+      "fact": { "statement": "income_statement", "basis": "consolidated", "span": "year", "periodEnd": "2026-03-31", "asOfDate": null },
+      "expected": null
+    },
+    {
+      "name": "half-year-results-balance-sheet-adds-no-column",
+      "why": "Rule 1: a financial_results filing gives no annual slot, so its half-year balance sheet opens no column.",
+      "filing": { "companyId": "co-cem", "kind": "financial_results", "source": "xbrl", "periodEnd": "2025-09-30" },
+      "fact": { "statement": "balance_sheet", "basis": "consolidated", "span": null, "periodEnd": null, "asOfDate": "2025-09-30" },
+      "expected": null
+    },
+    {
+      "name": "results-pdf-does-not-fill-annual",
+      "why": "Rule 1 comes before rule 2: a results PDF's full-year fact gives no annual slot either.",
+      "filing": { "companyId": "co-cem", "kind": "financial_results", "source": "pdf", "periodEnd": "2026-03-31" },
+      "fact": { "statement": "income_statement", "basis": "standalone", "span": "year", "periodEnd": "2026-03-31", "asOfDate": null },
+      "expected": null
+    },
+    {
+      "name": "annual-xbrl-year-fills",
+      "why": "Rule 3: an xbrl fact with span year gives its slot.",
+      "filing": { "companyId": "co-cem", "kind": "annual_report", "source": "xbrl", "periodEnd": "2026-03-31" },
+      "fact": { "statement": "income_statement", "basis": "standalone", "span": "year", "periodEnd": "2026-03-31", "asOfDate": null },
+      "expected": { "companyId": "co-cem", "filingKind": "annual_report", "statement": "income_statement", "basis": "standalone", "periodEnd": "2026-03-31", "span": "year" }
+    },
+    {
+      "name": "annual-xbrl-quarter-does-not-fill",
+      "why": "Rule 3: a quarter is neither a year nor an instant, though it ends on the filing's period end.",
+      "filing": { "companyId": "co-cem", "kind": "annual_report", "source": "xbrl", "periodEnd": "2026-03-31" },
+      "fact": { "statement": "income_statement", "basis": "consolidated", "span": "quarter", "periodEnd": "2026-03-31", "asOfDate": null },
+      "expected": null
+    },
+    {
+      "name": "annual-xbrl-instant-on-its-own-period-end-fills",
+      "why": "Rule 3: an instant (span null) whose asOfDate is the filing's period end gives its slot, periodEnd from asOfDate, span null.",
+      "filing": { "companyId": "co-cem", "kind": "annual_report", "source": "xbrl", "periodEnd": "2026-03-31" },
+      "fact": { "statement": "balance_sheet", "basis": "consolidated", "span": null, "periodEnd": null, "asOfDate": "2026-03-31" },
+      "expected": { "companyId": "co-cem", "filingKind": "annual_report", "statement": "balance_sheet", "basis": "consolidated", "periodEnd": "2026-03-31", "span": null }
+    },
+    {
+      "name": "annual-xbrl-instant-on-another-day-does-not-fill",
+      "why": "Rule 3: the prior year's instant (2025-03-31) is not the filing's period end (2026-03-31); an instance holds no comparatives.",
+      "filing": { "companyId": "co-cem", "kind": "annual_report", "source": "xbrl", "periodEnd": "2026-03-31" },
+      "fact": { "statement": "balance_sheet", "basis": "consolidated", "span": null, "periodEnd": null, "asOfDate": "2025-03-31" },
+      "expected": null
+    },
+    {
+      "name": "annual-xbrl-undated-instant-in-undated-filing-does-not-fill",
+      "why": "Rule 3: a null asOfDate is not a null period end. Unknown never equals unknown, so no slot.",
+      "filing": { "companyId": "co-cem", "kind": "annual_report", "source": "xbrl", "periodEnd": null },
+      "fact": { "statement": "balance_sheet", "basis": "consolidated", "span": null, "periodEnd": null, "asOfDate": null },
+      "expected": null
+    },
+    {
+      "name": "annual-pdf-comparative-fills",
+      "why": "Rule 2: a pdf fact gives its slot at fact.periodEnd, a comparative year included; span stays null as read.",
+      "filing": { "companyId": "co-cem", "kind": "annual_report", "source": "pdf", "periodEnd": "2026-03-31" },
+      "fact": { "statement": "income_statement", "basis": "consolidated", "span": null, "periodEnd": "2025-03-31", "asOfDate": null },
+      "expected": { "companyId": "co-cem", "filingKind": "annual_report", "statement": "income_statement", "basis": "consolidated", "periodEnd": "2025-03-31", "span": null }
+    },
+    {
+      "name": "annual-pdf-instant-takes-its-as-of-date",
+      "why": "Rule 2: periodEnd is fact.periodEnd, else fact.asOfDate.",
+      "filing": { "companyId": "co-cem", "kind": "annual_report", "source": "pdf", "periodEnd": "2026-03-31" },
+      "fact": { "statement": "balance_sheet", "basis": "standalone", "span": null, "periodEnd": null, "asOfDate": "2025-03-31" },
+      "expected": { "companyId": "co-cem", "filingKind": "annual_report", "statement": "balance_sheet", "basis": "standalone", "periodEnd": "2025-03-31", "span": null }
+    },
+    {
+      "name": "annual-pdf-undated-fact-gives-no-slot",
+      "why": "Rule 2 with neither periodEnd nor asOfDate: there is no period end to key the slot by, so null (stitch already leaves undated figures out).",
+      "filing": { "companyId": "co-cem", "kind": "annual_report", "source": "pdf", "periodEnd": "2026-03-31" },
+      "fact": { "statement": "income_statement", "basis": "consolidated", "span": null, "periodEnd": null, "asOfDate": null },
+      "expected": null
+    }
+  ],
+  "plan": [
+    {
+      "name": "both-bases-covered-skips",
+      "why": "Rule 5: two settled instances of the same company and period cover all six pairs.",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "financial_results",
+        "periodEnd": "2025-09-30",
+        "statementsFound": [
+          { "statement": "income_statement", "basis": "consolidated" },
+          { "statement": "balance_sheet", "basis": "consolidated" },
+          { "statement": "cash_flow", "basis": "consolidated" },
+          { "statement": "income_statement", "basis": "standalone" },
+          { "statement": "balance_sheet", "basis": "standalone" },
+          { "statement": "cash_flow", "basis": "standalone" }
+        ]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-cons", "state": "settled", "companyId": "co-cem",
+          "identity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+          "periodEnd": "2025-09-30",
+          "coverage": [
+            { "statement": "income_statement", "basis": "consolidated" },
+            { "statement": "balance_sheet", "basis": "consolidated" },
+            { "statement": "cash_flow", "basis": "consolidated" }
+          ]
+        },
+        {
+          "documentId": "x-sa", "state": "settled", "companyId": "co-cem",
+          "identity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+          "periodEnd": "2025-09-30",
+          "coverage": [
+            { "statement": "income_statement", "basis": "standalone" },
+            { "statement": "balance_sheet", "basis": "standalone" },
+            { "statement": "cash_flow", "basis": "standalone" }
+          ]
+        }
+      ],
+      "expected": { "action": "skip", "coveredBy": ["x-cons", "x-sa"] }
+    },
+    {
+      "name": "consolidated-only-reads-for-standalone",
+      "why": "Rule 6: only the consolidated instance came; the three standalone pairs are uncovered, in statementsFound order.",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "financial_results",
+        "periodEnd": "2025-09-30",
+        "statementsFound": [
+          { "statement": "income_statement", "basis": "consolidated" },
+          { "statement": "balance_sheet", "basis": "consolidated" },
+          { "statement": "cash_flow", "basis": "consolidated" },
+          { "statement": "income_statement", "basis": "standalone" },
+          { "statement": "balance_sheet", "basis": "standalone" },
+          { "statement": "cash_flow", "basis": "standalone" }
+        ]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-cons", "state": "settled", "companyId": "co-cem",
+          "identity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+          "periodEnd": "2025-09-30",
+          "coverage": [
+            { "statement": "income_statement", "basis": "consolidated" },
+            { "statement": "balance_sheet", "basis": "consolidated" },
+            { "statement": "cash_flow", "basis": "consolidated" }
+          ]
+        }
+      ],
+      "expected": {
+        "action": "read",
+        "coveredBy": ["x-cons"],
+        "uncovered": [
+          { "statement": "income_statement", "basis": "standalone" },
+          { "statement": "balance_sheet", "basis": "standalone" },
+          { "statement": "cash_flow", "basis": "standalone" }
+        ]
+      }
+    },
+    {
+      "name": "q1-without-cash-flow-reads-cash-flow",
+      "why": "Rule 6: the Q1 instance holds the income statement only; the PDF's cash flow is uncovered.",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "financial_results",
+        "periodEnd": "2025-06-30",
+        "statementsFound": [
+          { "statement": "income_statement", "basis": "consolidated" },
+          { "statement": "cash_flow", "basis": "consolidated" }
+        ]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-q1", "state": "settled", "companyId": "co-cem",
+          "identity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+          "periodEnd": "2025-06-30",
+          "coverage": [{ "statement": "income_statement", "basis": "consolidated" }]
+        }
+      ],
+      "expected": {
+        "action": "read",
+        "coveredBy": ["x-q1"],
+        "uncovered": [{ "statement": "cash_flow", "basis": "consolidated" }]
+      }
+    },
+    {
+      "name": "unsettled-unknown-company-waits",
+      "why": "Rule 3 before rule 5: an unsettled instance with no company, an all-null identity and no period could match, so the PDF waits, though a settled one already covers it.",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "financial_results",
+        "periodEnd": "2025-06-30",
+        "statementsFound": [{ "statement": "income_statement", "basis": "consolidated" }]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-q1", "state": "settled", "companyId": "co-cem",
+          "identity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+          "periodEnd": "2025-06-30",
+          "coverage": [{ "statement": "income_statement", "basis": "consolidated" }]
+        },
+        {
+          "documentId": "x-new", "state": "unsettled", "companyId": null,
+          "identity": { "cin": null, "bseCode": null, "nseSymbol": null, "isin": null },
+          "periodEnd": null,
+          "coverage": []
+        }
+      ],
+      "expected": { "action": "wait", "waitingOn": ["x-new"] }
+    },
+    {
+      "name": "held-with-matching-bse-code-waits",
+      "why": "Rule 2: no company yet, but its BSE code is the PDF company's, and its period is the PDF's; held, so wait.",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "financial_results",
+        "periodEnd": "2025-06-30",
+        "statementsFound": [{ "statement": "income_statement", "basis": "consolidated" }]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-held", "state": "held", "companyId": null,
+          "identity": { "cin": null, "bseCode": "532123", "nseSymbol": null, "isin": null },
+          "periodEnd": "2025-06-30",
+          "coverage": []
+        }
+      ],
+      "expected": { "action": "wait", "waitingOn": ["x-held"] }
+    },
+    {
+      "name": "held-with-other-codes-does-not-wait",
+      "why": "Rule 2: no company, and its codes (500999, OTHERCO) share none with the PDF company's; it cannot match. Nothing covers, so read everything.",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "financial_results",
+        "periodEnd": "2025-06-30",
+        "statementsFound": [{ "statement": "income_statement", "basis": "consolidated" }]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-held", "state": "held", "companyId": null,
+          "identity": { "cin": null, "bseCode": "500999", "nseSymbol": "OTHERCO", "isin": null },
+          "periodEnd": "2025-06-30",
+          "coverage": []
+        }
+      ],
+      "expected": { "action": "read", "coveredBy": [], "uncovered": [{ "statement": "income_statement", "basis": "consolidated" }] }
+    },
+    {
+      "name": "held-of-another-company-does-not-wait",
+      "why": "Rule 2: its companyId is set and is not the PDF's, so its matching BSE code does not count.",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "financial_results",
+        "periodEnd": "2025-06-30",
+        "statementsFound": [{ "statement": "income_statement", "basis": "consolidated" }]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-held", "state": "held", "companyId": "co-pow",
+          "identity": { "cin": null, "bseCode": "532123", "nseSymbol": null, "isin": null },
+          "periodEnd": "2025-06-30",
+          "coverage": []
+        }
+      ],
+      "expected": { "action": "read", "coveredBy": [], "uncovered": [{ "statement": "income_statement", "basis": "consolidated" }] }
+    },
+    {
+      "name": "unsettled-of-another-period-does-not-wait",
+      "why": "Rule 2: same company, but its period (2025-03-31) is set and is not the PDF's (2025-06-30).",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "financial_results",
+        "periodEnd": "2025-06-30",
+        "statementsFound": [{ "statement": "income_statement", "basis": "consolidated" }]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-mar", "state": "unsettled", "companyId": "co-cem",
+          "identity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+          "periodEnd": "2025-03-31",
+          "coverage": []
+        }
+      ],
+      "expected": { "action": "read", "coveredBy": [], "uncovered": [{ "statement": "income_statement", "basis": "consolidated" }] }
+    },
+    {
+      "name": "waits-on-every-match-in-input-order",
+      "why": "Rule 3: the unsettled unknown and the held one with the PDF company's ISIN both could match; the settled one is not waited on. Input order kept.",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "financial_results",
+        "periodEnd": "2025-12-31",
+        "statementsFound": [{ "statement": "income_statement", "basis": "standalone" }]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-first", "state": "unsettled", "companyId": null,
+          "identity": { "cin": null, "bseCode": null, "nseSymbol": null, "isin": null },
+          "periodEnd": null,
+          "coverage": []
+        },
+        {
+          "documentId": "x-settled", "state": "settled", "companyId": "co-cem",
+          "identity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+          "periodEnd": "2025-12-31",
+          "coverage": [{ "statement": "income_statement", "basis": "standalone" }]
+        },
+        {
+          "documentId": "x-second", "state": "held", "companyId": null,
+          "identity": { "cin": null, "bseCode": null, "nseSymbol": null, "isin": "INE000S01010" },
+          "periodEnd": "2025-12-31",
+          "coverage": []
+        }
+      ],
+      "expected": { "action": "wait", "waitingOn": ["x-first", "x-second"] }
+    },
+    {
+      "name": "failed-xbrl-does-not-wait",
+      "why": "A failed read is settled with empty coverage: rule 3 does not apply (settled) and it covers nothing, so read.",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "financial_results",
+        "periodEnd": "2025-06-30",
+        "statementsFound": [{ "statement": "income_statement", "basis": "consolidated" }]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-failed", "state": "settled", "companyId": "co-cem",
+          "identity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+          "periodEnd": "2025-06-30",
+          "coverage": []
+        }
+      ],
+      "expected": { "action": "read", "coveredBy": [], "uncovered": [{ "statement": "income_statement", "basis": "consolidated" }] }
+    },
+    {
+      "name": "unmapped-format-covers-nothing",
+      "why": "Two settled banking instances (unmapped: no facts, empty coverage) of the same company and period: nothing is covered, so both pairs are read.",
+      "pdf": {
+        "companyId": "co-bank",
+        "companyIdentity": { "cin": "L65110MH1994PLC080618", "bseCode": "500180", "nseSymbol": "SYNBANK", "isin": "INE000B01010" },
+        "kind": "financial_results",
+        "periodEnd": "2025-12-31",
+        "statementsFound": [
+          { "statement": "income_statement", "basis": "consolidated" },
+          { "statement": "income_statement", "basis": "standalone" }
+        ]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-bank-cons", "state": "settled", "companyId": "co-bank",
+          "identity": { "cin": "L65110MH1994PLC080618", "bseCode": "500180", "nseSymbol": "SYNBANK", "isin": "INE000B01010" },
+          "periodEnd": "2025-12-31",
+          "coverage": []
+        },
+        {
+          "documentId": "x-bank-sa", "state": "settled", "companyId": "co-bank",
+          "identity": { "cin": "L65110MH1994PLC080618", "bseCode": "500180", "nseSymbol": "SYNBANK", "isin": "INE000B01010" },
+          "periodEnd": "2025-12-31",
+          "coverage": []
+        }
+      ],
+      "expected": {
+        "action": "read",
+        "coveredBy": [],
+        "uncovered": [
+          { "statement": "income_statement", "basis": "consolidated" },
+          { "statement": "income_statement", "basis": "standalone" }
+        ]
+      }
+    },
+    {
+      "name": "annual-report-never-waits-or-skips",
+      "why": "Rule 1: an annual report is read whole, nothing covered, though an unsettled unknown instance could match and a settled one covers both pairs.",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "annual_report",
+        "periodEnd": "2026-03-31",
+        "statementsFound": [
+          { "statement": "income_statement", "basis": "consolidated" },
+          { "statement": "balance_sheet", "basis": "consolidated" }
+        ]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-new", "state": "unsettled", "companyId": null,
+          "identity": { "cin": null, "bseCode": null, "nseSymbol": null, "isin": null },
+          "periodEnd": null,
+          "coverage": []
+        },
+        {
+          "documentId": "x-cover", "state": "settled", "companyId": "co-cem",
+          "identity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+          "periodEnd": "2026-03-31",
+          "coverage": [
+            { "statement": "income_statement", "basis": "consolidated" },
+            { "statement": "balance_sheet", "basis": "consolidated" }
+          ]
+        }
+      ],
+      "expected": {
+        "action": "read",
+        "coveredBy": [],
+        "uncovered": [
+          { "statement": "income_statement", "basis": "consolidated" },
+          { "statement": "balance_sheet", "basis": "consolidated" }
+        ]
+      }
+    },
+    {
+      "name": "results-with-no-period-reads",
+      "why": "Rule 1: a PDF whose period end is null is read whole, nothing covered, though an unsettled unknown instance could otherwise match.",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "financial_results",
+        "periodEnd": null,
+        "statementsFound": [{ "statement": "income_statement", "basis": "consolidated" }]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-new", "state": "unsettled", "companyId": null,
+          "identity": { "cin": null, "bseCode": null, "nseSymbol": null, "isin": null },
+          "periodEnd": null,
+          "coverage": []
+        }
+      ],
+      "expected": { "action": "read", "coveredBy": [], "uncovered": [{ "statement": "income_statement", "basis": "consolidated" }] }
+    },
+    {
+      "name": "empty-statements-found-reads",
+      "why": "Rule 5 needs a non-empty statementsFound, so rule 6: read; a covering document needs a shared pair, so coveredBy is empty, and nothing is uncovered.",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "financial_results",
+        "periodEnd": "2025-06-30",
+        "statementsFound": []
+      },
+      "xbrl": [
+        {
+          "documentId": "x-q1", "state": "settled", "companyId": "co-cem",
+          "identity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+          "periodEnd": "2025-06-30",
+          "coverage": [{ "statement": "income_statement", "basis": "consolidated" }]
+        }
+      ],
+      "expected": { "action": "read", "coveredBy": [], "uncovered": [] }
+    },
+    {
+      "name": "unknown-basis-never-covered",
+      "why": "Rule 4: the PDF's income_statement/unknown is never covered, even by coverage that lists the same pair; the consolidated pair is covered.",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "financial_results",
+        "periodEnd": "2025-06-30",
+        "statementsFound": [
+          { "statement": "income_statement", "basis": "unknown" },
+          { "statement": "income_statement", "basis": "consolidated" }
+        ]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-q1", "state": "settled", "companyId": "co-cem",
+          "identity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+          "periodEnd": "2025-06-30",
+          "coverage": [
+            { "statement": "income_statement", "basis": "consolidated" },
+            { "statement": "income_statement", "basis": "unknown" }
+          ]
+        }
+      ],
+      "expected": {
+        "action": "read",
+        "coveredBy": ["x-q1"],
+        "uncovered": [{ "statement": "income_statement", "basis": "unknown" }]
+      }
+    },
+    {
+      "name": "settled-of-another-company-does-not-cover",
+      "why": "Rule 4: covering needs the PDF's companyId; co-pow's instance of the same period covers nothing here.",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "financial_results",
+        "periodEnd": "2025-06-30",
+        "statementsFound": [{ "statement": "income_statement", "basis": "consolidated" }]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-pow", "state": "settled", "companyId": "co-pow",
+          "identity": { "cin": null, "bseCode": "532555", "nseSymbol": "SYNPOW", "isin": null },
+          "periodEnd": "2025-06-30",
+          "coverage": [{ "statement": "income_statement", "basis": "consolidated" }]
+        }
+      ],
+      "expected": { "action": "read", "coveredBy": [], "uncovered": [{ "statement": "income_statement", "basis": "consolidated" }] }
+    }
+  ],
+  "covering": [
+    {
+      "name": "covering-ignores-unsettled",
+      "why": "Rule 4 alone: the settled instance covers the consolidated pairs; the unsettled unknown one is ignored (no wait here).",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "financial_results",
+        "periodEnd": "2025-09-30",
+        "statementsFound": [
+          { "statement": "income_statement", "basis": "consolidated" },
+          { "statement": "balance_sheet", "basis": "consolidated" },
+          { "statement": "income_statement", "basis": "standalone" }
+        ]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-new", "state": "unsettled", "companyId": null,
+          "identity": { "cin": null, "bseCode": null, "nseSymbol": null, "isin": null },
+          "periodEnd": null,
+          "coverage": []
+        },
+        {
+          "documentId": "x-cons", "state": "settled", "companyId": "co-cem",
+          "identity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+          "periodEnd": "2025-09-30",
+          "coverage": [
+            { "statement": "income_statement", "basis": "consolidated" },
+            { "statement": "balance_sheet", "basis": "consolidated" },
+            { "statement": "cash_flow", "basis": "consolidated" }
+          ]
+        }
+      ],
+      "expected": ["x-cons"]
+    },
+    {
+      "name": "covering-needs-a-shared-pair",
+      "why": "Same company and period, but its coverage (consolidated) shares no pair with statementsFound (standalone).",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "financial_results",
+        "periodEnd": "2025-09-30",
+        "statementsFound": [{ "statement": "income_statement", "basis": "standalone" }]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-cons", "state": "settled", "companyId": "co-cem",
+          "identity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+          "periodEnd": "2025-09-30",
+          "coverage": [{ "statement": "income_statement", "basis": "consolidated" }]
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "covering-keeps-input-order",
+      "why": "x-sa and x-cons each share a pair; x-pow is another company. The ids come in input order.",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "financial_results",
+        "periodEnd": "2025-12-31",
+        "statementsFound": [
+          { "statement": "income_statement", "basis": "consolidated" },
+          { "statement": "income_statement", "basis": "standalone" }
+        ]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-sa", "state": "settled", "companyId": "co-cem",
+          "identity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+          "periodEnd": "2025-12-31",
+          "coverage": [{ "statement": "income_statement", "basis": "standalone" }]
+        },
+        {
+          "documentId": "x-pow", "state": "settled", "companyId": "co-pow",
+          "identity": { "cin": null, "bseCode": "532555", "nseSymbol": "SYNPOW", "isin": null },
+          "periodEnd": "2025-12-31",
+          "coverage": [{ "statement": "income_statement", "basis": "consolidated" }]
+        },
+        {
+          "documentId": "x-cons", "state": "settled", "companyId": "co-cem",
+          "identity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+          "periodEnd": "2025-12-31",
+          "coverage": [{ "statement": "income_statement", "basis": "consolidated" }]
+        }
+      ],
+      "expected": ["x-sa", "x-cons"]
+    },
+    {
+      "name": "covering-null-period-never-matches",
+      "why": "A PDF with no period end is covered by nothing: a null period is not the same period as another null.",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "financial_results",
+        "periodEnd": null,
+        "statementsFound": [{ "statement": "income_statement", "basis": "consolidated" }]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-undated", "state": "settled", "companyId": "co-cem",
+          "identity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+          "periodEnd": null,
+          "coverage": [{ "statement": "income_statement", "basis": "consolidated" }]
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "covering-unknown-basis-never-matches",
+      "why": "Basis unknown never matches, even when both sides list income_statement/unknown.",
+      "pdf": {
+        "companyId": "co-cem",
+        "companyIdentity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+        "kind": "financial_results",
+        "periodEnd": "2025-06-30",
+        "statementsFound": [{ "statement": "income_statement", "basis": "unknown" }]
+      },
+      "xbrl": [
+        {
+          "documentId": "x-q1", "state": "settled", "companyId": "co-cem",
+          "identity": { "cin": "L26940MH2001PLC123456", "bseCode": "532123", "nseSymbol": "SYNCEM", "isin": "INE000S01010" },
+          "periodEnd": "2025-06-30",
+          "coverage": [{ "statement": "income_statement", "basis": "unknown" }]
+        }
+      ],
+      "expected": []
+    }
+  ]
+}

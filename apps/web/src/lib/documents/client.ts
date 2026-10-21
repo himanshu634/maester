@@ -8,6 +8,8 @@ import type {
 	ChangeClassificationRequest,
 	ClassificationChanged,
 	Company,
+	ConfirmCompanyRequest,
+	ConfirmCompanyResponse,
 	CreateUploadResponse,
 	DocumentClassification,
 	DocumentRecord,
@@ -16,13 +18,12 @@ import type {
 	FinalizeResponse,
 	Job,
 	Me,
-	Page
+	Page,
+	WorkspaceFilings
 } from './types';
 
 export type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
 
-/** How many documents the Earlier list reads: the first page. */
-export const DOCUMENT_PAGE = 25;
 /** Companies offered in the company picker. The API's largest page. */
 export const COMPANY_PAGE = 100;
 
@@ -42,6 +43,11 @@ export class ApiError extends Error {
 	names(path: string): boolean {
 		return this.fields.some((field) => field.path === path);
 	}
+}
+
+/** The session has ended: the page stops asking and offers to sign in again. */
+export function isSignedOut(error: unknown): boolean {
+	return error instanceof ApiError && error.code === 'UNAUTHENTICATED';
 }
 
 const BY_STATUS: Record<number, ErrorCode> = {
@@ -112,10 +118,6 @@ export function documentsApi(fetcher: Fetcher, workspaceId: string) {
 	const doc = (id: string) => `${base}/documents/${encodeURIComponent(id)}`;
 
 	return {
-		listDocuments(): Promise<Page<DocumentRecord>> {
-			return getJson(fetcher, `${base}/documents?limit=${DOCUMENT_PAGE}`);
-		},
-
 		getDocument(id: string): Promise<DocumentRecord> {
 			return getJson(fetcher, doc(id));
 		},
@@ -147,6 +149,26 @@ export function documentsApi(fetcher: Fetcher, workspaceId: string) {
 			return postJson(fetcher, `${doc(id)}/extract`);
 		},
 
+		/** The workspace's filings: by company, the identities held for one, and files with none. */
+		listFilings(): Promise<WorkspaceFilings> {
+			return getJson(fetcher, `${base}/filings`);
+		},
+
+		/** Say which company the held files that print this identity belong to, once for all of them. */
+		confirmCompany(request: ConfirmCompanyRequest): Promise<ConfirmCompanyResponse> {
+			return postJson(fetcher, `${base}/companies/confirm`, request);
+		},
+
+		/** Index the document's text again. */
+		index(id: string): Promise<{ job: Job }> {
+			return postJson(fetcher, `${doc(id)}/index`);
+		},
+
+		/** A plain link to the stored file. */
+		fileHref(id: string): string {
+			return `${doc(id)}/file`;
+		},
+
 		getCompany(id: string): Promise<Company> {
 			return getJson(fetcher, `${base}/companies/${encodeURIComponent(id)}`);
 		},
@@ -163,7 +185,7 @@ export function documentsApi(fetcher: Fetcher, workspaceId: string) {
 			const created = await postJson<CreateUploadResponse>(fetcher, `${base}/documents/uploads`, {
 				originalName: file.name,
 				size: file.size,
-				mimeType: 'application/pdf'
+				mimeType: /\.xml$/i.test(file.name) ? 'application/xml' : 'application/pdf'
 			});
 			hooks.onCreated?.(created.document);
 			// Content-Length is the browser's to set; passing it on is at best ignored.

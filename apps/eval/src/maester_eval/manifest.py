@@ -10,15 +10,24 @@ from pathlib import Path
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 
 from maester_eval.errors import EvalError
+from maester_eval.files import write_text_atomically
 from maester_eval.text import normalise
 
 FilingKind = Literal["annual_report", "financial_results"]
 EvalSet = Literal["dev", "heldout"]
 Stratum = Literal["large", "mid", "small", "financials"]
 SetChoice = Literal["dev", "heldout", "all"]
+Unit = Literal["lakh", "crore", "thousand", "million", "rupees"]
+Basis = Literal["consolidated", "standalone"]
+
+# BSE's period token as its CSV writes it, such as `SQ2025-2026`. The second year is the first plus one.
+_PERIOD_TOKEN = re.compile(r"(JQ|SQ|SH|DQ|DN|MQ|MH|MC)([0-9]{4})-([0-9]{4})")
+# (month, day, years after the first year) of the last day of the period a token's letters name.
+_PERIOD_END = {"JQ": (6, 30, 0), "SQ": (9, 30, 0), "SH": (9, 30, 0), "DQ": (12, 31, 0), "DN": (12, 31, 0),
+               "MQ": (3, 31, 1), "MH": (3, 31, 1), "MC": (3, 31, 1)}
 
 
 class ManifestError(EvalError, ValueError):
@@ -36,6 +45,71 @@ def is_iso_date(text: str) -> bool:
     return True
 
 
+def period_end_of_token(token: str) -> date:
+    """The last day of the period a BSE token names.
+
+    JQ is 30 June of the first year; SQ and SH, 30 September of the first year; DQ and DN, 31 December of the
+    first year; MQ, MH and MC, 31 March of the second year. The token is upper case. Anything else is a `ValueError`.
+    """
+    match = _PERIOD_TOKEN.fullmatch(token)
+    if match is None:
+        raise ValueError(f"not a BSE period token: {token!r}")
+    letters, first, second = match.group(1), int(match.group(2)), int(match.group(3))
+    if second != first + 1:
+        raise ValueError(f"the second year of {token!r} is not the first year plus one")
+    month, day, extra = _PERIOD_END[letters]
+    return date(first + extra, month, day)
+
+
+class XbrlPair(BaseModel):
+    """One XBRL instance BSE filed for a results filing."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # `<company-folder>/xbrl/<name>.xml`, relative to the corpus.
+    file: str
+    basis: Basis
+    # BSE's token as the CSV writes it.
+    period: str
+    # An ISO date.
+    filed: str
+    # The format id from `detect_format` when paired, such as `in-capmkt/ind_as`; null when unreadable.
+    format: str | None
+
+    @field_validator("file")
+    @classmethod
+    def _xbrl_path(cls, value: str) -> str:
+        path = Path(value)
+        if (value != path.as_posix() or value.startswith("/") or ".." in path.parts or len(path.parts) != 3
+                or path.parts[1] != "xbrl" or not value.endswith(".xml")):
+            raise ValueError("file must be `<company-folder>/xbrl/<name>.xml`, relative to the corpus")
+        return value
+
+    @field_validator("period")
+    @classmethod
+    def _period_token(cls, value: str) -> str:
+        period_end_of_token(value)
+        return value
+
+    @field_validator("filed")
+    @classmethod
+    def _iso_filed(cls, value: str) -> str:
+        if not is_iso_date(value):
+            raise ValueError("filed must be a calendar date written YYYY-MM-DD")
+        return value
+
+
+class FormatTags(BaseModel):
+    """How a filing prints its figures, as its own XBRL or the investor says. Null is not tagged."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    unit: Unit | None = None
+    unit_from: Literal["xbrl", "investor"] | None = None
+    negatives_in_brackets: bool | None = None
+    restated_columns: bool | None = None
+
+
 class Filing(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -50,10 +124,19 @@ class Filing(BaseModel):
     out_of_scope: str | None = None
     # 2 when each PDF page is a spread of two printed pages, so page N of the PDF holds printed pages 2N-1 and 2N.
     printed_pages_per_page: Literal[1, 2] = 1
+    # BSE's six-digit scrip code, which pairs a results filing with the instances BSE filed for it.
+    bse_code: str | None = None
+    # The XBRL instances paired with a results filing, one per basis.
+    xbrl: list[XbrlPair] = []
+    tags: FormatTags | None = None
 
     @property
     def id(self) -> str:
         return re.sub(r"\.pdf$", "", self.file, flags=re.IGNORECASE)
+
+    @property
+    def company_folder(self) -> str:
+        return Path(self.file).parts[0]
 
     @field_validator("file")
     @classmethod
@@ -70,6 +153,28 @@ class Filing(BaseModel):
         if not is_iso_date(value):
             raise ValueError("period_end must be a calendar date written YYYY-MM-DD")
         return value
+
+    @field_validator("bse_code")
+    @classmethod
+    def _six_digits(cls, value: str | None) -> str | None:
+        if value is not None and not re.fullmatch(r"[0-9]{6}", value):
+            raise ValueError("bse_code must be six digits")
+        return value
+
+    @model_validator(mode="after")
+    def _pairs_belong(self) -> "Filing":
+        if not self.xbrl:
+            return self
+        if self.kind != "financial_results":
+            raise ValueError("only a financial_results filing is paired with XBRL instances")
+        if self.bse_code is None:
+            raise ValueError("a filing with XBRL instances needs a bse_code")
+        for pair in self.xbrl:
+            if Path(pair.file).parts[0] != self.company_folder:
+                raise ValueError(f"{pair.file} is not under {self.company_folder}/xbrl/")
+            if period_end_of_token(pair.period).isoformat() != self.period_end:
+                raise ValueError(f"{pair.file}: period {pair.period} does not end on {self.period_end}")
+        return self
 
 
 class Manifest(BaseModel):
@@ -129,6 +234,25 @@ def load_manifest(path: Path) -> Manifest:
     if mixed:
         raise ManifestError(f"each company and corpus folder must be in one set only: {'; '.join(mixed)}")
     return manifest
+
+
+def write_manifest(path: Path, manifest: Manifest) -> None:
+    """Write the manifest as the committed file is written: two-space indent, defaults left out, a final newline."""
+    filings = [f.model_dump(mode="json", exclude_defaults=True) for f in manifest.filings]
+    write_text_atomically(path, json.dumps({"filings": filings}, indent=2, ensure_ascii=False) + "\n")
+
+
+def tag_values(filing: Filing) -> dict[str, str]:
+    """A filing's format tags in words, for a report's breakdown. A value nobody tagged is `not tagged`."""
+    tags = filing.tags or FormatTags()
+
+    def flag(value: bool | None) -> str:
+        return "not tagged" if value is None else "yes" if value else "no"
+
+    return {"unit": tags.unit or "not tagged", "brackets": flag(tags.negatives_in_brackets),
+            "restated": flag(tags.restated_columns),
+            "spreads": "yes" if filing.printed_pages_per_page == 2 else "no",
+            "financials": "yes" if filing.stratum == "financials" else "no"}
 
 
 def missing_files(filings: list[Filing], corpus: Path) -> list[str]:

@@ -19,9 +19,10 @@ from maester_eval import cli, files
 from maester_eval.artefacts import artefact_path, write_artefact, write_run
 from maester_eval.concepts import load_taxonomy
 from maester_eval.gold import (
-    ExpectedCheck, FreezeError, GoldFact, GoldFiling, GoldSealedError, count_unverified, freeze_sheet, gold_path,
-    read_gold, read_sheet, write_gold,
+    ExpectedCheck, FreezeError, GoldFact, GoldFiling, GoldSealedError, SettledRecord, count_unverified, freeze_sheet, gold_of_origin,
+    gold_path, read_gold, read_sheet, write_gold,
 )
+from maester_eval.manifest import Filing
 from maester_eval.paths import EvalPaths
 from maester_eval.runner import run_filing
 from maester_eval.sheets import SHEET_COLUMNS, sheet_path, sheet_rows, write_sheet
@@ -211,6 +212,176 @@ class FreezeTests(unittest.TestCase):
         spread = FILING.model_copy(update={"stratum": "mid", "printed_pages_per_page": 2})
         gold = freeze_sheet([scored_row()], spread, TAXONOMY, WHEN)
         self.assertEqual((gold.stratum, gold.printed_pages_per_page, gold.set, gold.kind), ("mid", 2, "dev", "annual_report"))
+
+
+Q2 = Filing(file="synthetic-cements/results-2025-09.pdf", company="Synthetic Cements Limited",
+            kind="financial_results", period_end="2025-09-30", set="dev")
+
+
+def revenue_row(**values):
+    """A verified income statement row of a results filing, in a column headed with no span word."""
+    return scored_row(**{"statement": "income_statement", "section": "Income", "label": "Revenue from operations",
+                         "concept": "revenue_from_operations", "period_label": "Current period ended 30.09.2025",
+                         "period_end": "2025-09-30", **values})
+
+
+class SpanTests(unittest.TestCase):
+    def test_a_verified_row_freezes_with_the_span_the_sheet_read(self):
+        fact = gold_of(revenue_row(span="year", period_label="Year ended 31 March 2026")).facts[0]
+        self.assertEqual(fact.span, "year")
+
+    def test_gold_span_overrides_it(self):
+        self.assertEqual(gold_of(revenue_row(span="quarter", gold_span="year")).facts[0].span, "year")
+        # A person may say other; the rule never does.
+        self.assertEqual(gold_of(revenue_row(gold_span="other")).facts[0].span, "other")
+
+    def test_a_row_with_no_span_freezes_with_none_in_an_annual_report(self):
+        self.assertIsNone(gold_of(scored_row()).facts[0].span)
+        self.assertIsNone(gold_of(revenue_row()).facts[0].span)  # phase 0's behaviour: annual reports are never paired
+
+    def test_another_word_is_refused_naming_the_row(self):
+        for word in ("annual", "full_year", "Q2", "3"):
+            with self.subTest(word=word), self.assertRaises(FreezeError) as caught:
+                gold_of(revenue_row(gold_span=word))
+            self.assertEqual(str(caught.exception),
+                             f"sheet row 2: gold_span {word} is not quarter, half_year, nine_months, year or other")
+        with self.assertRaisesRegex(FreezeError, "sheet row 2: span annual is not quarter"):
+            gold_of(revenue_row(span="annual"))
+
+    def test_one_slot_and_concept_under_two_header_wordings_is_refused(self):
+        # Same concept, basis, span and period end, but the headers are worded apart: one cell, as `settle` keys it.
+        rows = [revenue_row(span="quarter", period_label="Quarter ended 30.09.2025"),
+                revenue_row(row="2", span="quarter", period_label="Three months ended 30 September 2025")]
+        with self.assertRaises(FreezeError) as caught:
+            freeze_sheet(rows, Q2, TAXONOMY, WHEN)
+        self.assertEqual(str(caught.exception),
+                         "sheet row 3: sheet row 2 already has revenue_from_operations for the same basis and period")
+
+    def test_a_quarter_and_its_half_year_ending_on_one_day_are_two_facts(self):
+        rows = [revenue_row(span="quarter", period_label="Quarter ended 30.09.2025"),
+                revenue_row(row="2", span="half_year", period_label="Half year ended 30.09.2025")]
+        facts = freeze_sheet(rows, Q2, TAXONOMY, WHEN).facts
+        self.assertEqual([(f.span, f.period_end) for f in facts], [("quarter", "2025-09-30"), ("half_year", "2025-09-30")])
+
+    def test_a_word_is_read_without_its_case_or_spaces(self):
+        self.assertEqual(gold_of(revenue_row(gold_span=" Half_Year")).facts[0].span, "half_year")
+
+    def test_a_balance_sheet_line_has_no_span(self):
+        for column in ("gold_span", "span"):
+            with self.subTest(column=column), self.assertRaises(FreezeError) as caught:
+                gold_of(scored_row(**{column: "quarter"}))
+            self.assertEqual(str(caught.exception), "sheet row 2: a balance sheet line has no span")
+        # A results filing's balance sheet line needs none.
+        self.assertIsNone(freeze_sheet([scored_row()], Q2, TAXONOMY, WHEN).facts[0].span)
+
+    def test_a_results_row_with_no_span_is_refused_until_gold_span_is_filled(self):
+        with self.assertRaises(FreezeError) as caught:
+            freeze_sheet([revenue_row()], Q2, TAXONOMY, WHEN)
+        self.assertEqual(str(caught.exception), "sheet row 2: no span; fill gold_span")
+        fact = freeze_sheet([revenue_row(gold_span="half_year")], Q2, TAXONOMY, WHEN).facts[0]
+        self.assertEqual(fact.span, "half_year")
+        # The rule's own span is enough, and a row that is not verified is not asked.
+        self.assertEqual(freeze_sheet([revenue_row(span="quarter")], Q2, TAXONOMY, WHEN).facts[0].span, "quarter")
+        rows = [revenue_row(span="quarter"), revenue_row(row="2", verified="")]
+        self.assertEqual(len(freeze_sheet(rows, Q2, TAXONOMY, WHEN).facts), 1)
+
+    def test_a_results_row_with_no_date_is_not_refused_for_it(self):
+        fact = freeze_sheet([revenue_row(period_end="", gold_span="quarter")], Q2, TAXONOMY, WHEN).facts[0]
+        self.assertEqual((fact.period_end, fact.span), (None, "quarter"))
+
+    def test_an_edited_span_cell_is_refused_with_the_artefact(self):
+        artefact = run_filing(FILING, PDF, lambda: ScriptedModel(), FAST)
+        exported = {r["label"]: r for r in sheet_rows(artefact)}
+        checked = dict(exported["Expenses"], concept="total_expenses", verified="yes")
+        self.assertEqual(gold_of(checked, artefact=artefact).facts[0].span, "year")
+        for edited in ("quarter", "half_year"):
+            with self.subTest(edited=edited), self.assertRaises(FreezeError) as caught:
+                gold_of(dict(checked, span=edited), artefact=artefact)
+            self.assertEqual(str(caught.exception), "sheet row 2: span no longer matches the artefact")
+        # A cell a spreadsheet emptied is read again from the artefact; gold_span still decides.
+        self.assertEqual(gold_of(dict(checked, span=""), artefact=artefact).facts[0].span, "year")
+        self.assertEqual(gold_of(dict(checked, gold_span="other"), artefact=artefact).facts[0].span, "other")
+
+    def test_a_gold_file_written_before_this_task_still_reads(self):
+        data = gold_of(scored_row()).model_dump(mode="json")
+        del data["facts"][0]["span"]
+        del data["facts"][0]["origin"]
+        fact = GoldFiling.model_validate(data).facts[0]
+        self.assertEqual((fact.span, fact.origin), (None, "sheet"))
+
+    def test_a_gold_file_with_a_span_outside_the_vocabulary_is_refused(self):
+        data = gold_of(scored_row()).model_dump(mode="json")
+        data["facts"][0]["span"] = "annual"
+        with self.assertRaises(ValueError):
+            GoldFiling.model_validate(data)
+
+    def test_the_span_and_origin_are_written_and_read_back(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        gold = freeze_sheet([revenue_row(gold_span="half_year")], Q2, TAXONOMY, WHEN)
+        write_gold(Path(temp.name), gold)
+        fact = read_gold(Path(temp.name))[Q2.id].facts[0]
+        self.assertEqual((fact.span, fact.origin), ("half_year", "sheet"))
+
+
+def quarter_revenue(**values):
+    """`revenue_row` for the quarter, consolidated unless said, with the scale a lakh sheet gives."""
+    return revenue_row(**{"gold_span": "quarter", "scale_factor": "100000", **values})
+
+
+class KeepSettledTests(unittest.TestCase):
+    """`freeze_sheet(keep=...)`: a gold file that is replaced keeps the cells the investor settled."""
+
+    def setUp(self):
+        self.record = SettledRecord(pdf_run="p", xbrl_run="x", map_version=None, compare_rule=1, settled_at=WHEN.isoformat(), facts=1)
+        base = freeze_sheet([quarter_revenue(basis="standalone", row="2")], Q2, TAXONOMY, WHEN)
+        settled = base.facts[0].model_copy(update={"origin": "settled"})
+        self.old = base.model_copy(update={"facts": [settled], "settled": [self.record]})
+
+    def test_the_settled_facts_and_records_stay_after_the_sheets_facts(self):
+        gold = freeze_sheet([quarter_revenue()], Q2, TAXONOMY, WHEN, keep=self.old)
+        self.assertEqual([(f.basis, f.origin) for f in gold.facts], [("consolidated", "sheet"), ("standalone", "settled")])
+        self.assertEqual(gold.settled, [self.record])
+        self.assertEqual(self.old.settled, [self.record])  # not changed in place
+        self.assertEqual(freeze_sheet([quarter_revenue()], Q2, TAXONOMY, WHEN).settled, [])
+
+    def test_a_sheet_never_takes_a_settled_cell(self):
+        for change in ({"basis": "standalone"}, {"basis": "standalone", "period_label": "Three months ended 30 Sep 2025"}):
+            with self.subTest(change=change), self.assertRaises(FreezeError) as caught:
+                freeze_sheet([quarter_revenue(), quarter_revenue(row="2", **change)], Q2, TAXONOMY, WHEN, keep=self.old)
+            self.assertEqual(str(caught.exception), "sheet row 3: gold already has revenue_from_operations for standalone "
+                                                    "2025-09-30 from a settled disagreement")
+
+    def test_a_sheet_fact_of_the_old_file_is_not_kept(self):
+        old = self.old.model_copy(update={"facts": [*freeze_sheet([quarter_revenue()], Q2, TAXONOMY, WHEN).facts, *self.old.facts]})
+        gold = freeze_sheet([quarter_revenue(row="3", concept="other_income", label="Other income")], Q2, TAXONOMY, WHEN, keep=old)
+        self.assertEqual([(f.concept, f.origin) for f in gold.facts], [("other_income", "sheet"), ("revenue_from_operations", "settled")])
+
+    def test_a_gold_file_with_no_settled_key_still_reads(self):
+        data = freeze_sheet([quarter_revenue()], Q2, TAXONOMY, WHEN).model_dump(mode="json")
+        del data["settled"]
+        self.assertEqual(GoldFiling.model_validate(data).settled, [])
+
+
+class GoldOfOriginTests(unittest.TestCase):
+    def test_each_view_keeps_the_facts_of_its_origin_and_drops_a_filing_left_with_none(self):
+        base = gold_of(scored_row(adds_up="yes"), scored_row(row="2", concept="inventories", label="Inventories"))
+        settled_fact = base.facts[0].model_copy(update={"origin": "settled", "concept": "trade_payables"})
+        a = base.model_copy(update={"facts": [*base.facts, settled_fact]})
+        b = freeze_sheet([scored_row()], OTHER, TAXONOMY, WHEN)
+        b = b.model_copy(update={"facts": [b.facts[0].model_copy(update={"origin": "settled"})]})
+        gold = {a.filing_id: a, b.filing_id: b}
+        sheet = gold_of_origin(gold, "sheet")
+        self.assertEqual({k: len(v.facts) for k, v in sheet.items()}, {a.filing_id: 2})
+        self.assertEqual(sheet[a.filing_id].expected_checks, a.expected_checks)
+        settled = gold_of_origin(gold, "settled")
+        self.assertEqual({k: len(v.facts) for k, v in settled.items()}, {a.filing_id: 1, b.filing_id: 1})
+        self.assertEqual(settled[a.filing_id].expected_checks, [])
+        self.assertEqual([f.concept for f in settled[a.filing_id].facts], ["trade_payables"])
+        self.assertEqual(len(a.facts), 3)  # the originals are not changed
+
+    def test_no_gold_gives_no_gold(self):
+        self.assertEqual(gold_of_origin({}, "sheet"), {})
 
 
 class RetypedCellsTests(unittest.TestCase):

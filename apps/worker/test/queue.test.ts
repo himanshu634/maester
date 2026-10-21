@@ -113,6 +113,51 @@ describe("queue runner", () => {
     }
   });
 
+  it("the sweeper gives the final-failure hook the worker's db and dispatcher", async () => {
+    const seen: { db: unknown; dispatcher: unknown }[] = [];
+    const handler: JobHandler = Object.assign(async () => {}, { onFinalFailure: async (_job: JobRow, deps: { db: unknown; dispatcher: unknown }) => void seen.push(deps) });
+    const c = await createWorkerContext({ "test.spent.deps": handler });
+    const runner = startQueueRunner(c, { concurrency: {}, pollMs: 20, sweepMs: 30, listen: noListen });
+    try {
+      const { workspaceId } = await seedWorkspace(c.db);
+      await seedJob(c.db, workspaceId, { type: "test.spent.deps", state: "running", attempt: 5, maxAttempts: 5, leaseToken: crypto.randomUUID(), leaseExpiresAt: new Date(Date.now() - 1_000) });
+      await waitFor(() => seen.length === 1, 5_000);
+      expect(Object.keys(seen[0]!).sort()).toEqual(["db", "dispatcher"]);
+      expect(seen[0]!.db).toBe(c.db);
+      expect(seen[0]!.dispatcher).toBe(c.dispatcher);
+    } finally {
+      await runner.stop(1_000);
+      await c.close();
+    }
+  });
+
+  it("a runner sweeps only the types it handles, so another type's final-attempt job keeps its hook for the worker that has it", async () => {
+    const finals: JobRow[] = [];
+    const classify: JobHandler = Object.assign(async () => {}, { onFinalFailure: async (job: JobRow) => void finals.push(job) });
+    const candidate = await createWorkerContext({ "document.index.eval": async () => {} });
+    const live = await createWorkerContext({ "document.classify": classify });
+    const candidateRunner = startQueueRunner(candidate, { concurrency: {}, pollMs: 20, sweepMs: 30, listen: noListen });
+    let liveRunner: ReturnType<typeof startQueueRunner> | undefined;
+    try {
+      const { workspaceId } = await seedWorkspace(candidate.db);
+      const id = await seedJob(candidate.db, workspaceId, {
+        type: "document.classify", state: "running", attempt: 5, maxAttempts: 5, leaseToken: crypto.randomUUID(), leaseExpiresAt: new Date(Date.now() - 1_000),
+      });
+      await new Promise((r) => setTimeout(r, 400)); // several sweeps of the candidate's runner
+      expect(await countState(candidate.db, "running", "document.classify")).toBe(1);
+      expect(finals).toEqual([]);
+      liveRunner = startQueueRunner(live, { concurrency: {}, pollMs: 20, sweepMs: 30, listen: noListen });
+      await waitFor(() => finals.length === 1, 5_000);
+      expect(finals[0]!.id).toBe(id);
+      expect(await countState(candidate.db, "failed", "document.classify")).toBe(1);
+    } finally {
+      await candidateRunner.stop(1_000);
+      await liveRunner?.stop(1_000);
+      await candidate.close();
+      await live.close();
+    }
+  });
+
   it("a claim that throws is logged and the loop carries on after the poll interval", async () => {
     const { logger, lines } = captureLogger();
     const c = await createWorkerContext({ "test.flaky": async () => {} }, { logger });
@@ -254,8 +299,18 @@ describe("parseConcurrency", () => {
     expect(() => parseConcurrency("document.extract=two", ["document.extract"])).toThrow();
   });
 
+  it("runs document.index one at a time by default", () => {
+    expect(parseConcurrency(undefined, ["document.index"])).toEqual({ "document.index": 1 });
+  });
+
+  it("runs two XBRL reads and two XBRL PDF checks at once by default", () => {
+    expect(parseConcurrency(undefined, ["document.xbrl", "document.xbrl_check"])).toEqual({ "document.xbrl": 2, "document.xbrl_check": 2 });
+  });
+
   it("uses the defaults when unset, reads several overrides, and refuses malformed entries", () => {
-    expect(DEFAULT_CONCURRENCY).toEqual({ "document.verify": 4, "document.classify": 2, "document.extract": 2 });
+    expect(DEFAULT_CONCURRENCY).toEqual({
+      "document.verify": 4, "document.classify": 2, "document.extract": 2, "document.index": 1, "document.xbrl": 2, "document.xbrl_check": 2,
+    });
     expect(parseConcurrency(undefined, ["document.classify", "test.x"])).toEqual({ "document.classify": 2, "test.x": 1 });
     expect(parseConcurrency(" document.extract=3 , document.verify=8 ", ["document.extract", "document.verify"])).toEqual({ "document.extract": 3, "document.verify": 8 });
     expect(() => parseConcurrency("document.extract=1.5", ["document.extract"])).toThrow();
