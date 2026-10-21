@@ -147,8 +147,10 @@ class ReportTests(ReportCase):
         self.assertIn("| Checks passed | 3 | 100.0% |", summary)
 
     def test_every_outcome_has_a_label_and_a_row_in_the_delta(self):
-        self.assertEqual(set(LABELS), set(OUTCOMES))
-        self.assertLessEqual(set(OUTCOMES), {name for name, _ in RATES})
+        # Every outcome the PDF path gives. The three only an XBRL figure gives are not phase 0's table.
+        pdf_outcomes = set(OUTCOMES) - {"match_at_precision", "match_dash_zero", "wrong_sign"}
+        self.assertEqual(set(LABELS), pdf_outcomes)
+        self.assertLessEqual(pdf_outcomes, {name for name, _ in RATES})
 
     def test_the_strata_tables_are_kind_scanned_basis_statement_and_stratum(self):
         text = render_markdown(self.score(), generated_at=WHEN)
