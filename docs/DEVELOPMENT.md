@@ -380,7 +380,7 @@ uv run --locked maester-eval freeze synthetic-cements/ar-2025-26 --run latest
 uv run --locked maester-eval report --run latest --set dev --to docs/eval/2026-10-16-baseline.md
 ```
 
-Keep every sheet column as text and every date as `YYYY-MM-DD` in your spreadsheet application. `freeze --run` reads the machine columns (`statement`, `basis`, `section`, `label`, `period_label`, `period_end`, `printed`, `scale_factor`, `page`) back from the run's artefact, so a cell you edit there must still agree with it; put a correction in the matching `gold_` column (`gold_text`, `gold_scale`, `gold_page`, `gold_period_end`) instead. The model comes from the same variables as the extractor (`GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION`, `GEMINI_MODEL`). The console shows ids, codes and counts; figures are only in the files. The full description is [System: evaluation harness](systems/eval.md).
+Keep every sheet column as text and every date as `YYYY-MM-DD` in your spreadsheet application. `freeze --run` reads the machine columns (`statement`, `basis`, `section`, `label`, `period_label`, `period_end`, `span`, `printed`, `scale_factor`, `page`) back from the run's artefact, so a cell you edit there must still agree with it; put a correction in the matching `gold_` column (`gold_text`, `gold_scale`, `gold_page`, `gold_period_end`, `gold_span`) instead. The model comes from the same variables as the extractor (`GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION`, `GEMINI_MODEL`). The console shows ids, codes and counts; figures are only in the files. The full description is [System: evaluation harness](systems/eval.md).
 
 ## 14. Known limitations
 

@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from eval_fixtures import FILING
+from eval_fixtures import FILING, RESULTS_Q2
 from test_extraction_workflow import PDF, ScriptedModel
 from typer.testing import CliRunner
 
@@ -22,7 +22,7 @@ from maester_eval.cli import app
 from maester_eval.errors import EvalError
 from maester_eval.files import WriteError
 from maester_eval.gold import FreezeError, GoldError, GoldSealedError
-from maester_eval.manifest import ManifestError
+from maester_eval.manifest import Manifest, ManifestError, XbrlPair
 from maester_eval.paths import EvalPaths, RunLabelError, RunNotFoundError
 from maester_eval.runner import EvalConfigError
 from maester_eval.sheets import sheet_path
@@ -34,9 +34,9 @@ class HelpTests(unittest.TestCase):
         self.assertEqual(response.exit_code, 0, response.output)
         self.assertIn("evaluation harness", response.output)
 
-    def test_help_lists_the_four_commands(self):
+    def test_help_lists_the_commands(self):
         response = CliRunner().invoke(app, ["--help"])
-        for command in ("live", "export", "freeze", "report"):
+        for command in ("live", "export", "freeze", "report", "xbrl-read"):
             self.assertIn(command, response.output)
 
 
@@ -155,6 +155,76 @@ class LiveTests(CommandCase):
         self.assertIn("Permission denied", result.output)
         self.assertTrue((run_dir / "run.json").is_file())
         self.assertFalse(artefact_path(run_dir, FILING.id).exists())
+
+
+class LivePairedTests(CommandCase):
+    """`live --paired` reads only the filings that have XBRL instances. `run_live` is patched: no model is called."""
+
+    def setUp(self):
+        super().setUp()
+        pair = XbrlPair(file="synthetic-cements/xbrl/a.xml", basis="consolidated", period="SQ2025-2026",
+                        filed="2025-10-17", format=None)
+        self.paired = RESULTS_Q2.model_copy(update={"xbrl": [pair]})
+        self.unpaired = RESULTS_Q2.model_copy(update={"file": "synthetic-cements/results-2025-06.pdf",
+                                                      "period_end": "2025-06-30"})
+        self.annual = RESULTS_Q2.model_copy(update={"file": "synthetic-cements/ar-2025-26.pdf", "kind": "annual_report",
+                                                    "period_end": "2026-03-31", "bse_code": None})
+        filings = [self.paired, self.unpaired, self.annual]
+        self.paths.manifest.write_text(
+            json.dumps(Manifest(filings=filings).model_dump(mode="json")), encoding="utf-8")
+        for filing in filings:
+            (self.paths.corpus / filing.file).parent.mkdir(parents=True, exist_ok=True)
+            (self.paths.corpus / filing.file).write_bytes(PDF)
+        self.run_live = mock.patch.object(cli, "run_live", return_value=[])
+        self.called = self.run_live.start()
+        self.addCleanup(self.run_live.stop)
+
+    def selected(self):
+        self.called.assert_called_once()
+        return [filing.id for filing in self.called.call_args.args[0]]
+
+    def test_paired_keeps_only_the_filings_with_pairs_and_says_how_many(self):
+        result = self.run_command("live", "--set", "dev", "--paired")
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(self.selected(), [self.paired.id])
+        self.assertIn("paired: 1 of 3", result.output)
+        self.assertIn("1 filing(s), set dev", result.output)
+        # The count is printed before the run folder is named.
+        self.assertLess(result.output.index("paired: 1 of 3"), result.output.index("run "))
+
+    def test_without_paired_every_selected_filing_is_read(self):
+        result = self.run_command("live", "--set", "dev")
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(self.selected(), [self.paired.id, self.unpaired.id, self.annual.id])
+        self.assertNotIn("paired:", result.output)
+
+    def test_paired_with_only_counts_the_named_filings(self):
+        result = self.run_command("live", "--paired", "--only", self.unpaired.id, "--only", self.paired.id)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(self.selected(), [self.paired.id])
+        self.assertIn("paired: 1 of 2", result.output)
+
+    def test_a_filing_with_no_pdf_in_the_corpus_does_not_stop_a_paired_run_when_it_is_not_paired(self):
+        (self.paths.corpus / self.unpaired.file).unlink()
+        result = self.run_command("live", "--paired")
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(self.selected(), [self.paired.id])
+
+    def test_no_paired_filing_is_a_message_and_makes_no_run_folder(self):
+        self.paths.manifest.write_text(
+            json.dumps(Manifest(filings=[self.unpaired, self.annual]).model_dump(mode="json")), encoding="utf-8")
+        result = self.run_command("live", "--paired")
+        self.assert_refused(result, "paired: 0 of 2", "nothing to read: the selection is empty")
+        self.called.assert_not_called()
+        self.assertFalse(self.paths.runs.exists())
+
+    def test_the_model_is_never_built_for_a_paired_run_that_reads_nothing(self):
+        self.paths.manifest.write_text(
+            json.dumps(Manifest(filings=[self.annual]).model_dump(mode="json")), encoding="utf-8")
+        with mock.patch.object(cli, "gemini_model_factory") as factory:
+            result = self.run_command("live", "--paired")
+        self.assert_refused(result, "paired: 0 of 1", "nothing to read")
+        factory.assert_not_called()
 
 
 class ExportTests(CommandCase):

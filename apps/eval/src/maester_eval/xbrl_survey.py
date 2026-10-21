@@ -29,14 +29,9 @@ from pdf_financial_qa.xbrl.parser import Instance, parse_instance
 
 from maester_eval.errors import EvalError
 from maester_eval.files import write_text_atomically
+from maester_eval.xbrl_limits import XBRL_LIMITS
 
 COLUMNS = ("element", "files", "contexts", "statement_guess")
-
-# The extractor's limits (XBRL_MAX_BYTES, XBRL_MAX_FACTS, XBRL_DEADLINE_SECONDS): a file it would refuse is
-# counted here as unreadable.
-_MAX_BYTES = 20971520
-_MAX_FACTS = 100000
-_DEADLINE_SECONDS = 30.0
 
 
 class XbrlSurveyError(EvalError):
@@ -86,12 +81,8 @@ def survey_instances(paths: list[Path]) -> Survey:
     unreadable: Counter[str] = Counter()
     for path in paths:
         try:
-            instance = parse_instance(
-                path.read_bytes(),
-                max_bytes=_MAX_BYTES,
-                max_facts=_MAX_FACTS,
-                deadline_seconds=_DEADLINE_SECONDS,
-            )
+            # A file the extractor would refuse is counted here as unreadable.
+            instance = parse_instance(path.read_bytes(), **XBRL_LIMITS)
         except ExtractionError as refused:
             unreadable[refused.message] += 1  # the parser's message is its reason code and nothing else
             continue

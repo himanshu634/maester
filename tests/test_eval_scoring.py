@@ -252,7 +252,9 @@ class ScoreFilingTests(unittest.TestCase):
 
 class SummaryTests(unittest.TestCase):
     def test_every_outcome_has_a_count_in_the_summary(self):
-        self.assertEqual(OUTCOMES, ("match", "wrong_value", "wrong_scale", "wrong_status", "ambiguous", "missing"))
+        # Phase 0's six, then the three only an XBRL figure gives, which the PDF path never does.
+        self.assertEqual(OUTCOMES, ("match", "wrong_value", "wrong_scale", "wrong_status", "ambiguous", "missing",
+                                    "match_at_precision", "match_dash_zero", "wrong_sign"))
         self.assertLessEqual(set(OUTCOMES), set(Summary.model_fields))  # a count for an outcome the summary lacks would be dropped
 
     def test_rates_are_rounded_down_to_one_decimal_so_only_everything_reads_100(self):
@@ -380,6 +382,36 @@ class ScoreRunTests(unittest.TestCase):
         self.assertEqual((summary.gold_facts, summary.match, summary.missing, summary.page_checked, summary.page_match), (3, 2, 1, 2, 2))
         self.assertEqual((summary.checks_passed, summary.checks_failed, summary.checks_not_checked), (6, 0, 0))
         self.assertEqual((summary.rate("failed"), summary.rate("checks_passed")), ("33.3%", "100.0%"))
+
+    def test_a_pdf_run_is_scored_as_before(self):
+        # The XBRL work adds a source and three outcomes; a PDF run keeps phase 0's counts and gives none of the three.
+        filings = [Filing(file=f"{name}/ar-2025-26.pdf", company=f"{name} Limited", kind="annual_report",
+                          period_end="2026-03-31", set="dev") for name in ("a-co", "b-co", "c-co")]
+        first = read(filings[0]).model_copy(update={"seconds": 10.0})
+        second = read(filings[1]).model_copy(update={"seconds": 20.0, "model_calls": ModelCalls(locate=1, extract=3, correct=2)})
+        third = read(filings[2], ScriptedModel(locate=[NOTHING_LOCATED])).model_copy(update={"seconds": 99.0})
+        golds = {f.id: freeze_sheet([row()], f, TAXONOMY, WHEN) for f in filings}
+        timed = score_run("r", [first, second, third], golds, list(golds), eval_set="dev")
+        one = score_run("r", [read()], {FILING.id: gold(row())}, [FILING.id], eval_set="dev")
+        new = {"match_at_precision": 0, "match_dash_zero": 0, "wrong_sign": 0}
+        expected = {
+            "timed": {"filings": 3, "extracted": 2, "failed": 1, "gold_facts": 3, "match": 2, "wrong_value": 0, "wrong_scale": 0,
+                      "wrong_status": 0, "ambiguous": 0, "missing": 1, "page_checked": 2, "page_match": 2, "checks_passed": 6,
+                      "checks_failed": 0, "checks_not_checked": 0, "seconds_median": 15.0, "seconds_max": 20.0,
+                      "model_calls_median": 4, "model_calls_max": 6, **new},
+            "one": {"filings": 1, "extracted": 1, "failed": 0, "gold_facts": 1, "match": 1, "wrong_value": 0, "wrong_scale": 0,
+                    "wrong_status": 0, "ambiguous": 0, "missing": 0, "page_checked": 1, "page_match": 1, "checks_passed": 3,
+                    "checks_failed": 0, "checks_not_checked": 0, "seconds_median": one.filings[0].seconds,
+                    "seconds_max": one.filings[0].seconds, "model_calls_median": one.filings[0].model_calls,
+                    "model_calls_max": one.filings[0].model_calls, **new},
+        }
+        for name, score in (("timed", timed), ("one", one)):
+            with self.subTest(run=name):
+                self.assertEqual(score.source, "pdf")
+                self.assertEqual(list(score.strata()), ["kind", "scanned", "basis", "statement", "stratum"])
+                self.assertEqual(score.summary().model_dump(), expected[name])
+                self.assertTrue(all(f.source == "pdf" and f.outside_slots == 0 and f.not_placed == {} for f in score.filings))
+                self.assertEqual([f.gold_index for filing in score.filings for f in filing.facts], [None] * score.summary().gold_facts)
 
     def test_the_run_and_the_versions_it_was_made_with_are_carried(self):
         score = score_run("20261016T093005Z-baseline", [read()], {FILING.id: gold(row())}, [FILING.id], "dev",

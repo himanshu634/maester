@@ -26,7 +26,7 @@ Maester's product plan connects portfolio tracking with company research and ver
 | [System: web](systems/web.md) | The SvelteKit web app: routes, API client, build and serving, checks | Frontend |
 | [System: CLI](systems/cli.md) | The command-line tool: commands, cache, model calls | Engineering |
 | [System: shared packages](systems/packages.md) | Config, contracts, database, financial engines, jobs, market data and storage | Engineering |
-| [System: evaluation harness](systems/eval.md) | The `maester-eval` app: live runs over real filings, labelling sheets, the gold set and the report | Engineering and data |
+| [System: evaluation harness](systems/eval.md) | The `maester-eval` app: live runs over real filings, XBRL reads, labelling sheets, the gold set, the report, compare and settle | Engineering and data |
 | [Monorepo decision](decisions/0001-platform-monorepo.md) | Rationale and consequences of the package split | Engineering |
 | [Web client decision](decisions/0002-web-sveltekit-brutalist-design-system.md) | SvelteKit, the brutalist design system and how it is enforced | Engineering and design |
 | [TypeScript backend decision](decisions/0003-typescript-backend.md) | Hono API and worker on Cloud Run, Zod contracts, Drizzle | Engineering |

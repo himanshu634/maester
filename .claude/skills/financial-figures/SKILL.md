@@ -72,6 +72,28 @@ Paths marked *(phase n)* arrive with that phase of the spec; until then they do 
 4. Compare with the previous report: exact match, agreement mix, check pass rate. A regression on held-out stops the change.
 5. Commit the report under `docs/eval/` with the code.
 
+**Change the element map** (an XBRL element's concept, scale or sign in `packages/financial-engine/src/pdf_financial_qa/xbrl/maps/`)
+
+1. `xbrl-map --against` (phase 4): the map's own baseline report, against the earlier map.
+2. `maester-eval xbrl-read --set dev`: a new XBRL run, read under the new map.
+3. `maester-eval report --run <pdf run> --run <new xbrl run> --against <old xbrl run> --set dev`.
+4. `maester-eval compare --run <pdf run> --xbrl <new xbrl run> --against <old xbrl run>`.
+5. The held-out set once, to land, in this order. Only `xbrl-read` and `compare` take `--gate`.
+   - Baseline: the held-out XBRL run under the old map (an earlier `xbrl-read --set heldout --gate` with the old map, or run it before you change the map).
+   - `maester-eval xbrl-read --set heldout --gate`: the held-out XBRL run under the new map.
+   - `maester-eval live --set heldout --paired`: the held-out PDF run. It calls the model and costs money, so ask the investor first and reuse an existing held-out PDF run when there is one.
+   - `maester-eval report --set heldout --run <pdf run> --run <new xbrl run> --against <old xbrl run>`.
+   - `maester-eval compare --set heldout --gate --run <pdf run> --xbrl <new xbrl run> --against <old xbrl run>`.
+6. No regression on held-out in the `xbrl` exact match (exact equality only, over `origin "sheet"` gold) or in `compare`'s agreement. A rise in any count that decides their denominator, or a fall in cells in the agreement denominator, also stops the change, because it moves gold facts or cells out of the rates while the rates hold:
+   - in `report`'s `Against <old xbrl run>` counts, for `xbrl` and `shown`: Outside, Not placed, filings with no used instance, instances not used;
+   - in `compare`'s `Against`: filings not compared, instances not used, `outside_instance`, `pdf_only`, `xbrl_only`;
+   - a fall in `compare`'s `Against` cells in the agreement denominator (a map change that moves an element to another concept turns a `disagree_*` cell into `pdf_only` and raises the agreement).
+
+   Read the at-precision, dash-as-`0` and sign-only counts beside them.
+7. The reports under `docs/eval/` (`--to`), committed with the change.
+
+A change of sign convention in the map (an element whose figure is to be read as negative) is a map change like any other. It goes through these seven steps, and its report states which elements changed sign. Never flip a sign anywhere else, and never to make a number match.
+
 **Show a figure**
 
 1. The value comes from `/series`, `/compute`, `/financials` or an MCP tool, already in its canonical unit with provenance. The component formats it (`Intl`, the project's `format.ts`) and nothing more.
