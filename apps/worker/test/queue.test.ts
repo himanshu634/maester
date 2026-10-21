@@ -113,6 +113,33 @@ describe("queue runner", () => {
     }
   });
 
+  it("a runner sweeps only the types it handles, so another type's final-attempt job keeps its hook for the worker that has it", async () => {
+    const finals: JobRow[] = [];
+    const classify: JobHandler = Object.assign(async () => {}, { onFinalFailure: async (job: JobRow) => void finals.push(job) });
+    const candidate = await createWorkerContext({ "document.index.eval": async () => {} });
+    const live = await createWorkerContext({ "document.classify": classify });
+    const candidateRunner = startQueueRunner(candidate, { concurrency: {}, pollMs: 20, sweepMs: 30, listen: noListen });
+    let liveRunner: ReturnType<typeof startQueueRunner> | undefined;
+    try {
+      const { workspaceId } = await seedWorkspace(candidate.db);
+      const id = await seedJob(candidate.db, workspaceId, {
+        type: "document.classify", state: "running", attempt: 5, maxAttempts: 5, leaseToken: crypto.randomUUID(), leaseExpiresAt: new Date(Date.now() - 1_000),
+      });
+      await new Promise((r) => setTimeout(r, 400)); // several sweeps of the candidate's runner
+      expect(await countState(candidate.db, "running", "document.classify")).toBe(1);
+      expect(finals).toEqual([]);
+      liveRunner = startQueueRunner(live, { concurrency: {}, pollMs: 20, sweepMs: 30, listen: noListen });
+      await waitFor(() => finals.length === 1, 5_000);
+      expect(finals[0]!.id).toBe(id);
+      expect(await countState(candidate.db, "failed", "document.classify")).toBe(1);
+    } finally {
+      await candidateRunner.stop(1_000);
+      await liveRunner?.stop(1_000);
+      await candidate.close();
+      await live.close();
+    }
+  });
+
   it("a claim that throws is logged and the loop carries on after the poll interval", async () => {
     const { logger, lines } = captureLogger();
     const c = await createWorkerContext({ "test.flaky": async () => {} }, { logger });

@@ -141,7 +141,7 @@ describe("lease", () => {
   it("sweepExpired requeues a running job whose lease expired, with backoff", async () => {
     const { workspaceId } = await seedWorkspace(ctx.db);
     const id = await seedJob(ctx.db, workspaceId, { state: "running", attempt: 1, leaseToken: crypto.randomUUID(), leaseExpiresAt: new Date(Date.now() - 1_000) });
-    const out = await sweepExpired(ctx.db);
+    const out = await sweepExpired(ctx.db, ["test.noop"]);
     expect(out.requeued.map((j) => j.id)).toContain(id);
     const [row] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, id));
     expect(row).toMatchObject({ state: "queued", leaseToken: null, lastErrorCode: "LEASE_EXPIRED" });
@@ -151,18 +151,33 @@ describe("lease", () => {
   it("sweepExpired fails a job whose attempts are spent", async () => {
     const { workspaceId } = await seedWorkspace(ctx.db);
     const id = await seedJob(ctx.db, workspaceId, { state: "running", attempt: 5, maxAttempts: 5, leaseToken: crypto.randomUUID(), leaseExpiresAt: new Date(Date.now() - 1_000) });
-    const out = await sweepExpired(ctx.db);
+    const out = await sweepExpired(ctx.db, ["test.noop"]);
     expect(out.failed.map((j) => j.id)).toContain(id);
     const [row] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, id));
     expect(row).toMatchObject({ state: "failed", leaseToken: null, leaseExpiresAt: null, lastErrorCode: "LEASE_EXPIRED" });
     expect(row!.finishedAt).not.toBeNull();
   });
 
+  it("sweepExpired touches only the types it is given", async () => {
+    const { workspaceId } = await seedWorkspace(ctx.db);
+    const expired = () => ({ state: "running" as const, leaseToken: crypto.randomUUID(), leaseExpiresAt: new Date(Date.now() - 1_000) });
+    const mine = await seedJob(ctx.db, workspaceId, { type: "test.mine", ...expired(), attempt: 5, maxAttempts: 5 });
+    const other = await seedJob(ctx.db, workspaceId, { type: "test.other", ...expired(), attempt: 5, maxAttempts: 5 });
+    const otherRetry = await seedJob(ctx.db, workspaceId, { type: "test.other", ...expired(), attempt: 1 });
+    const out = await sweepExpired(ctx.db, ["test.mine"]);
+    expect(out.failed.map((j) => j.id)).toEqual([mine]);
+    expect(out.requeued).toEqual([]);
+    for (const id of [other, otherRetry]) {
+      const [row] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, id));
+      expect(row!.state).toBe("running");
+    }
+  });
+
   it("sweepExpired leaves live leases and queued jobs alone", async () => {
     const { workspaceId } = await seedWorkspace(ctx.db);
     const live = await seedJob(ctx.db, workspaceId, { state: "running", attempt: 1, leaseToken: crypto.randomUUID(), leaseExpiresAt: new Date(Date.now() + 60_000) });
     const queued = await seedJob(ctx.db, workspaceId);
-    const out = await sweepExpired(ctx.db);
+    const out = await sweepExpired(ctx.db, ["test.noop"]);
     expect([...out.requeued, ...out.failed].map((j) => j.id)).not.toContain(live);
     expect([...out.requeued, ...out.failed].map((j) => j.id)).not.toContain(queued);
   });
@@ -172,7 +187,7 @@ describe("lease", () => {
     const expired = () => ({ state: "running" as const, leaseToken: crypto.randomUUID(), leaseExpiresAt: new Date(Date.now() - 1_000) });
     const first = await seedJob(ctx.db, workspaceId, { ...expired(), attempt: 1 });
     const third = await seedJob(ctx.db, workspaceId, { ...expired(), attempt: 3 });
-    await sweepExpired(ctx.db);
+    await sweepExpired(ctx.db, ["test.noop"]);
     const [a] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, first));
     const [b] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, third));
     // attempt 1 waits 30-36 s, attempt 3 waits 120-144 s
