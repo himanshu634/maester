@@ -24,8 +24,8 @@ from maester_eval.source_rule import Slot, Span, slot_key
 from pdf_financial_qa.xbrl.read import integer_decimals
 
 __all__ = [
-    "COMPARE_RULE_VERSION", "Placed", "gemini_slot", "gold_slot", "printed_exponent", "same_figure", "xbrl_exponent",
-    "xbrl_slot",
+    "COMPARE_RULE_VERSION", "Placed", "company_id", "gemini_slot", "gold_slot", "printed_exponent", "read_figure",
+    "same_figure", "xbrl_exponent", "xbrl_slot",
 ]
 
 COMPARE_RULE_VERSION = 1
@@ -40,6 +40,21 @@ class Placed:
 
     key: str | None
     reason: NotPlaced | None
+
+
+def company_id(file: str) -> str:
+    """The company part of a slot key: the company folder, the first part of a filing's or an artefact's `file`."""
+    return file.split("/", 1)[0]
+
+
+def read_figure(fact: dict) -> tuple:
+    """What a Gemini fact says, to tell two of them apart: its status and its printed and normalised values as decimals.
+
+    The printed value is in it because a fact with no scale has no normalised value. As decimals, `2000` and `2000.0`
+    are one figure, which a comparison of their text would call two. An XBRL fact is told apart by `owners.fact_figure`."""
+    reported, normalized = fact["reportedValue"], fact["normalizedValue"]
+    return (fact["valueStatus"], None if reported is None else Decimal(reported),
+            None if normalized is None else Decimal(normalized))
 
 
 def _key(company_id: str, filing_kind: str, statement: str, basis: str, period_end: str, span: Span | None) -> str:

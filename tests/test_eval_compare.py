@@ -251,6 +251,10 @@ class CellTests(CompareCase):
         # Two XBRL elements of one concept with two figures: ambiguous too, never a pick.
         fc = self.compare([pdf_fact()], [xbrl_fact(), xbrl_fact(element="RevenueFromOperationsOther", normalizedValue="1")])
         self.assertEqual([(c.outcome, c.xbrl_element) for c in fc.cells], [("ambiguous", None)])
+        # One figure written two ways (12,345.00 lakh and 123.45 crore) is one figure, as the scorer holds it
+        # (`owners.fact_figure`): the normalised value decides, not the reported one.
+        fc = self.compare([pdf_fact()], [xbrl_fact(), xbrl_fact(element="RevenueFromOperationsOther", reportedValue="123.45")])
+        self.assertEqual([c.outcome for c in fc.cells], ["agree"])
         # A filing whose instances are all unmapped: compared False, reason no_mapped_instance.
         for reason, expected in (("XBRL_FORMAT_UNMAPPED", "no_mapped_instance"), ("XBRL_UNREADABLE:DOCTYPE", "no_mapped_instance"),
                                  ("XBRL_PAIR_BASIS", "pair_mismatch")):

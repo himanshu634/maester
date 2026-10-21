@@ -20,7 +20,7 @@ from rich.console import Console
 
 from maester_eval.artefacts import artefact_path, read_artefact, read_artefacts, read_run
 from maester_eval.compare import (
-    SETTLE_COLUMNS, agreement_tenths, compare_runs, exact_agreement_tenths, rate_text, settle_rows, write_compare,
+    SETTLE_COLUMNS, agreement_tenths, compare_runs, exact_agreement_tenths, settle_rows, write_compare,
 )
 from maester_eval.concepts import load_taxonomy
 from maester_eval.errors import EvalError
@@ -34,7 +34,7 @@ from maester_eval.report import score_run_dir, score_xbrl_run_dir, write_report
 from maester_eval.runner import gemini_model_factory, run_live, workflow_settings_from_env
 from maester_eval.settle import merge_gold
 from maester_eval.sheets import export_run, sheet_path, write_sheet
-from maester_eval.scoring import RunScore, score_shown
+from maester_eval.scoring import RunScore, rate_text, score_shown
 from maester_eval.tags import gold_coverage, gold_units, pick_gold, propose_units, set_tags, unit_against_gold
 from maester_eval.xbrl_pair import apply_pairs, check_copies, plan_pairs, read_xbrl_manifest, summary_lines
 from maester_eval.xbrl_read import run_xbrl

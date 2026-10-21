@@ -36,15 +36,17 @@ from typing import Literal, get_args
 from pydantic import BaseModel
 
 from maester_eval.artefacts import Artefact
-from maester_eval.cells import COMPARE_RULE_VERSION, gemini_slot, printed_exponent, same_figure, xbrl_exponent, xbrl_slot
+from maester_eval.cells import (
+    COMPARE_RULE_VERSION, company_id, gemini_slot, printed_exponent, read_figure, same_figure, xbrl_exponent, xbrl_slot,
+)
 from maester_eval.concepts import Taxonomy
 from maester_eval.files import write_text_atomically
 from maester_eval.manifest import Manifest, SetChoice, tag_values
-from maester_eval.owners import OWNER_RULE_VERSION, DifferingCell, differing_cells, owned_facts, slot_owners
+from maester_eval.owners import OWNER_RULE_VERSION, DifferingCell, differing_cells, fact_figure, owned_facts, slot_owners
 from maester_eval.paths import to_utc
 from maester_eval.periods import SPAN_RULE_VERSION
 from maester_eval.report import TAG_TITLES, pp_change
-from maester_eval.scoring import unusable_reason
+from maester_eval.scoring import rate_text, unusable_reason
 from maester_eval.sheet_concepts import CONCEPT_CARRY_VERSION, CompanyConcepts, ConceptPick, load_company_concepts
 from maester_eval.sheets import SHEET_COLUMNS, sheet_rows
 from maester_eval.source_rule import SOURCE_RULE_VERSION
@@ -52,7 +54,7 @@ from maester_eval.tags import TAG_DIMENSIONS
 
 __all__ = [
     "COMPARE_OUTCOMES", "CellCompare", "CompareOutcome", "CompareRun", "FilingCompare", "SETTLE_COLUMNS", "agreement_tenths",
-    "compare_filing", "compare_runs", "exact_agreement_tenths", "rate_text", "render_compare_markdown", "settle_rows",
+    "compare_filing", "compare_runs", "exact_agreement_tenths", "render_compare_markdown", "settle_rows",
     "write_compare",
 ]
 
@@ -147,31 +149,12 @@ def exact_agreement_tenths(counts: dict[str, int]) -> int | None:
     return counts.get("agree", 0) * 1000 // denominator if denominator else None
 
 
-def rate_text(tenths: int | None) -> str:
-    """A rate in tenths as a percentage to one decimal, such as `50.0%`; "—" for None."""
-    return "—" if tenths is None else f"{tenths // 10}.{tenths % 10}%"
-
-
 # --- One filing ----------------------------------------------------------------------------------------------------
 
 
-def _gemini_figure(fact: dict) -> tuple:
-    """What a Gemini fact says, to tell two apart: its status, and its printed and normalised values as decimals. The
-    printed value is in it because a fact with no scale has no normalised value (as `scoring._figure`)."""
-    reported, normalized = fact["reportedValue"], fact["normalizedValue"]
-    return (fact["valueStatus"], None if reported is None else Decimal(reported),
-            None if normalized is None else Decimal(normalized))
-
-
-def _xbrl_figure(fact: dict) -> tuple:
-    """What an XBRL fact holds, to tell two apart: its status and its normalised and reported values as decimals."""
-    reported, normalized = fact["reportedValue"], fact["normalizedValue"]
-    return (fact["valueStatus"], None if normalized is None else Decimal(normalized),
-            None if reported is None else Decimal(reported))
-
-
-def _one(facts: list[dict], figure) -> dict | None:
-    """The first of `facts` when they all hold one figure; None when they hold two or more."""
+def _one(facts: list, figure) -> dict | None:
+    """The first of `facts` when they all hold one figure; None when they hold two or more. A Gemini figure is
+    `cells.read_figure`, an XBRL one `owners.fact_figure`, as the scorer tells them apart."""
     return facts[0] if len({figure(f) for f in facts}) == 1 else None
 
 
@@ -240,7 +223,7 @@ def compare_filing(pdf: Artefact, xbrl: Artefact, concepts: CompanyConcepts, tag
     reason = _not_compared(pdf, xbrl, concepts)
     if reason is not None:
         return _listed(pdf.filing_id, pdf.company, pdf.set, tags, reason)
-    company = xbrl.file.split("/", 1)[0]
+    company = company_id(xbrl.file)
     owners = slot_owners(xbrl)
     differ = differing_cells(xbrl)
     pooled_differ = {(c.slot, c.concept): c for c in differ if c.owner is None and c.concept is not None}
@@ -283,8 +266,8 @@ def compare_filing(pdf: Artefact, xbrl: Artefact, concepts: CompanyConcepts, tag
         slot, concept = key
         statement, basis, period_end, span = _slot_fields(slot)
         x_facts, g_facts = xbrl_cells.get(key, []), gemini_cells.get(key, [])
-        x = _one(x_facts, _xbrl_figure) if x_facts else None
-        g = _one(g_facts, lambda item: _gemini_figure(item[1])) if g_facts else None
+        x = _one(x_facts, fact_figure) if x_facts else None
+        g = _one(g_facts, lambda item: read_figure(item[1])) if g_facts else None
         if slot not in read:
             outcome: CompareOutcome = "span_unknown" if (statement, basis, period_end) in no_span else "not_read"
         elif key in pooled_differ:

@@ -23,7 +23,7 @@ from typing import Literal, get_args
 from pydantic import BaseModel, Field
 
 from maester_eval.artefacts import Artefact
-from maester_eval.cells import gold_slot, printed_exponent, same_figure, xbrl_exponent, xbrl_slot
+from maester_eval.cells import company_id, gold_slot, printed_exponent, read_figure, same_figure, xbrl_exponent, xbrl_slot
 from maester_eval.gold import GoldFact, GoldFiling
 from maester_eval.owners import SlotOwner, differing_cells, fact_figure, owned_facts, pooled_instances, slot_owners
 from maester_eval.source_rule import CompanyIdentity, StatementBasis, XbrlDocInput, plan_pdf_numbers
@@ -138,22 +138,16 @@ class Summary(BaseModel):
 
     def rate(self, name: str) -> str:
         """`name` over its denominator as a percentage, rounded down to one decimal, such as `66.6%`; "—" with nothing to divide by."""
-        tenths = self.tenths(name)
-        return "—" if tenths is None else f"{tenths // 10}.{tenths % 10}%"
+        return rate_text(self.tenths(name))
+
+
+def rate_text(tenths: int | None) -> str:
+    """A rate in tenths of a percent as a percentage to one decimal, such as `66.6%`; "—" for None."""
+    return "—" if tenths is None else f"{tenths // 10}.{tenths % 10}%"
 
 
 def _key(statement: str, basis: str, section: str, label: str, period_label: str) -> tuple:
     return (statement, basis, normalise(section), normalise(label), normalise(period_label))
-
-
-def _figure(fact: dict) -> tuple:
-    """What a fact says, to tell two of them apart: its status and its printed and normalised values as decimals.
-
-    The printed value is in it because a fact with no scale has no normalised value. As decimals, `2000` and
-    `2000.0` are one figure, which a comparison of their text would call two."""
-    reported, normalized = fact["reportedValue"], fact["normalizedValue"]
-    return (fact["valueStatus"], None if reported is None else Decimal(reported),
-            None if normalized is None else Decimal(normalized))
 
 
 def _compare(gold: GoldFact, fact: dict) -> Outcome:
@@ -200,7 +194,7 @@ def score_filing(artefact: Artefact, gold: GoldFiling) -> FilingScore:
         if not found:
             scores.append(FactScore(**base, outcome="missing", read_printed=None, read_normalized=None, page_match=None))
             continue
-        if len({_figure(f) for f in found}) > 1:
+        if len({read_figure(f) for f in found}) > 1:
             scores.append(FactScore(**base, outcome="ambiguous", read_printed=None, read_normalized=None, page_match=None))
             continue
         fact = min(found, key=lambda f: f["lineOrder"])
@@ -330,11 +324,6 @@ def compare_xbrl(g: GoldFact, fact: dict) -> Outcome:
     return "wrong_value"
 
 
-def _company_id(file: str) -> str:
-    """The company folder: the first part of the filing's path, as the slots key it."""
-    return file.split("/", 1)[0]
-
-
 def _holds_gold_figure(g: GoldFact, fact: dict) -> bool:
     """The XBRL fact holds the gold figure, exactly or at the coarser precision. A dash or nil holds no figure."""
     if g.value_status != "value" or fact["valueStatus"] != "value" or fact["normalizedValue"] is None:
@@ -381,7 +370,7 @@ def score_xbrl_filing(artefact: Artefact, gold: GoldFiling) -> FilingScore:
     the gold concept, or for a pooled slot the facts every pooled instance holds alike; a concept the pooled
     instances hold differently is `ambiguous` (`instances_differ`). A `missing` or `wrong_value` fact names the
     slot's elements of another concept, or none, that hold the gold figure (`map_suspect:`)."""
-    company = _company_id(artefact.file)
+    company = company_id(artefact.file)
     owners = slot_owners(artefact)
     pooled = pooled_instances(artefact)
     in_slot: dict[str, list[dict]] = {}
@@ -476,7 +465,7 @@ def _plan_reads_pdf(gold: GoldFiling, pdf_artefact: Artefact | None, xbrl_artefa
 
     The identity carries no code: neither the gold file nor an artefact holds the BSE code, and with every XBRL
     document settled and of the PDF's company, the plan never reads the identity."""
-    company = _company_id(gold.file)
+    company = company_id(gold.file)
     coverage = (pdf_artefact.result or {}).get("coverage", []) if pdf_artefact is not None else []
     found: list[StatementBasis] = [{"statement": e["statement"], "basis": e["basis"]} for e in coverage]
     facts = (xbrl_artefact.result or {}).get("facts", [])
@@ -501,7 +490,7 @@ def _shown_filing(gold: GoldFiling, pdf: FilingScore, xbrl: FilingScore | None, 
         by_index = {f.gold_index: f for f in x.facts}
         owners = slot_owners(xbrl_artefact)
         reads_pdf = _plan_reads_pdf(gold, pdf_artefact, xbrl_artefact)
-    company = _company_id(gold.file)
+    company = company_id(gold.file)
     not_placed: Counter = Counter()
     outside = 0
     facts: list[FactScore] = []

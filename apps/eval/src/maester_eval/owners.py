@@ -22,7 +22,7 @@ from decimal import Decimal
 from pathlib import PurePosixPath
 
 from maester_eval.artefacts import Artefact
-from maester_eval.cells import xbrl_slot
+from maester_eval.cells import company_id, xbrl_slot
 from maester_eval.source_rule import SlotCandidate, rank_slot_candidates
 
 __all__ = [
@@ -116,12 +116,12 @@ def _stamp_owner(tied: list[str]) -> str | None:
 
 
 def _slots(artefact: Artefact) -> dict[str, _Slot]:
-    company_id = artefact.file.split("/", 1)[0]
+    company = company_id(artefact.file)
     used = [i for i in artefact.instances if i.used]
     filed = {i.file: i.filed for i in used}
     held: dict[str, dict[str, list[dict]]] = {}
     for fact in (artefact.result or {}).get("facts", []):
-        key = xbrl_slot(company_id, artefact.kind, fact)
+        key = xbrl_slot(company, artefact.kind, fact)
         if key is None or fact["instance"] not in filed:
             continue
         held.setdefault(key, {}).setdefault(fact["instance"], []).append(fact)
