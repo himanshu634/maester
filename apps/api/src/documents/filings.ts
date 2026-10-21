@@ -270,7 +270,8 @@ function filingKey(companyId: string, c: ClassificationRow): string {
  * The workspace's files by company and filing, with where each statement's numbers come from. Pure.
  * - A file with a company and a classification is grouped by `filingKey`; the filing's period end is its files'.
  * - A duplicate is not a file: its id is under its original's `duplicates` (and a duplicate whose original is not
- *   listed is dropped). It is never held, unsorted or counted in `settled`.
+ *   listed is dropped). It is never unsorted or counted in `settled`. A duplicate of a held original is in that held
+ *   identity's `documentIds`, so the page finds it, but not in its `files` or `filings` counts.
  * - A file that needs a company goes to `held` by the identity it prints (`groupHeld`); one printing no identifier goes
  *   to `unsorted`, as does any other file with no company or no classification.
  * - Order: companies by name (all of the workspace's, with or without filings); filings newest period end first, none
