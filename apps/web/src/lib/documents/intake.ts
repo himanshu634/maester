@@ -288,9 +288,10 @@ export function identifiers(
 
 // The API's own checks (packages/contracts/src/classification.ts): an identifier that does not
 // match is left out rather than sent and refused.
-const CIN = /^[LU]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6}$/;
-const BSE = /^\d{6}$/;
-const NSE = /^[A-Z][A-Z0-9&-]{0,19}$/;
+export const CIN = /^[LU]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6}$/;
+export const BSE = /^\d{6}$/;
+export const NSE = /^[A-Z][A-Z0-9&-]{0,19}$/;
+export const ISIN = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
 
 /**
  * The answer that adds the company as printed (or under `name`), in India, carrying the

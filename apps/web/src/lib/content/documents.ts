@@ -478,6 +478,38 @@ export const documentsContent = {
 		showNewest: (count: number) => `Show the newest ${count}`
 	},
 
+	/** "Not in your workspace yet": the printed companies to confirm, once each (spec section 7). */
+	confirm: {
+		/** "31 companies. Their 214 files wait until you confirm each company, once." */
+		lede: (companies: number, files: number) =>
+			companies === 1
+				? `1 company. ${files === 1 ? 'Its file waits' : `Its ${files} files wait`} until you confirm it, once.`
+				: `${companies} companies. Their ${files === 1 ? 'file waits' : `${files} files wait`} until you confirm each company, once.`,
+		/** A row's "Add Coastline Bank"; "Add this company" when the filing prints no name. */
+		add: (name: string) => `Add ${name}`,
+		addUnnamed: 'Add this company',
+		/** "27 more companies", then the button that lists them. */
+		more: (count: number) => (count === 1 ? '1 more company' : `${count} more companies`),
+		showAll: 'Show all',
+		showFewer: 'Show fewer',
+		/** Said once the investor's own confirm lands. */
+		added: (name: string, files: number) =>
+			files === 1
+				? `${name} added. Its file carries on.`
+				: `${name} added. Its ${files} files carry on.`,
+		confirmed: (name: string, files: number) =>
+			`${files === 1 ? '1 file' : `${files} files`} confirmed as ${name}.`,
+		nothingWaiting: 'Nothing was waiting for this company any more.',
+		/** A file that prints no code: its Notice, and the action on it. */
+		unnamedAction: 'Say which company',
+		unnamedNoName: (file: string) => `${file}: which company is this?`,
+		unnamedNoNameDetail:
+			'Maester couldn’t find the company on the first pages. Say which it is and it carries on.',
+		unnamedWithName: (file: string, name: string) => `${file}: is this ${name}?`,
+		unnamedWithNameDetail:
+			'No company code is printed beside the name, so Maester can’t match it. Add it, or say which of your companies it is.'
+	},
+
 	/** A question that arrives, said once (Decision 10). */
 	questions: {
 		confirmCompany: (who: string) => `${who} needs you: confirm the company.`,

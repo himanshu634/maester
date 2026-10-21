@@ -182,7 +182,7 @@ export function fileLine(file: FilingFile): string {
 	return copies > 0 ? `${line}${t.separator}${t.addedTimes(copies + 1)}` : line;
 }
 
-function codesOf(x: Pick<Company, 'bseCode' | 'nseSymbol' | 'isin'>): string {
+export function codesOf(x: Pick<Company, 'bseCode' | 'nseSymbol' | 'isin'>): string {
 	const found: [string, string | null][] = [
 		['BSE', x.bseCode],
 		['NSE', x.nseSymbol],
@@ -194,7 +194,7 @@ function codesOf(x: Pick<Company, 'bseCode' | 'nseSymbol' | 'isin'>): string {
 }
 
 /** A held identity by its codes, the CIN only when it prints no other. */
-function heldCodes(h: HeldIdentity): string {
+export function heldCodes(h: HeldIdentity): string {
 	const codes = codesOf(h);
 	if (codes !== '') return codes;
 	return h.cin ? copy.company.printed('CIN', h.cin) : '';
