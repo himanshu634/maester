@@ -123,6 +123,12 @@ export function confirmRequest(
 	};
 }
 
+/**
+ * The id of the "Not in your workspace yet" heading, the one place on the page that holds it, so
+ * the page can move focus there when the row it wants is not drawn yet.
+ */
+export const CONFIRM_HEADING_ID = 'confirm-companies-heading';
+
 /** What is said once the investor's confirm lands. */
 export function confirmedAloud(
 	name: string,
@@ -133,13 +139,20 @@ export function confirmedAloud(
 	return isNew ? c.added(name, response.confirmed) : c.confirmed(name, response.confirmed);
 }
 
-/** What to say when a confirm was refused; a clash reads the companies again to open the picker. */
+/**
+ * What to say when a confirm was refused. A clash reads the companies again to open the picker; a
+ * held file that moved on meanwhile (gone, or no longer held) reads the filings again, as a
+ * refused Change does.
+ */
 export function confirmFailure(error: unknown): Failure {
 	const said = copy.changeFailed;
 	if (!(error instanceof ApiError)) return { message: said.other, reload: false };
 	switch (error.code) {
 		case 'CONFLICT':
 			return { message: said.companyClash, reload: true };
+		case 'INVALID_STATE':
+		case 'NOT_FOUND':
+			return { message: said.moved, reload: true };
 		case 'UNAUTHENTICATED':
 			return { message: said.signedOut, reload: false };
 		case 'NETWORK':

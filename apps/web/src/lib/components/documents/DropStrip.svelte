@@ -42,6 +42,7 @@
 	const id = $props.id();
 	const signInHref = resolve(signInAgainHref('/terminal/documents'));
 	let filesInput = $state<HTMLInputElement>();
+	let strip = $state<HTMLElement>();
 	let folderInput = $state<HTMLInputElement>();
 	let over = $state(false);
 
@@ -98,6 +99,15 @@
 		if (files.length > 0) onfiles(pickedFrom(files));
 	}
 
+	/**
+	 * "Send the rest" starts the batch again, and its Notice goes with the button in it, so focus
+	 * moves to the box, which stays and holds the line saying how far the batch has got.
+	 */
+	function resend(rest: Picked[]) {
+		onresend?.(rest);
+		strip?.focus();
+	}
+
 	/** Files dropped anywhere else would open in the tab and leave the page. */
 	function guard(event: DragEvent) {
 		if (hasFiles(event)) event.preventDefault();
@@ -115,7 +125,7 @@
 {/snippet}
 
 <div class="strip-wrap">
-	<div class={['strip', { over }]} {@attach dropTarget}>
+	<div class={['strip', { over }]} tabindex="-1" bind:this={strip} {@attach dropTarget}>
 		{#if busy}
 			<Loader label={busy} live={false} />
 		{:else}
@@ -183,7 +193,7 @@
 				<p>{copy.drop.stopped[refused.stopped](refused.unsent)}</p>
 				<a href={signInHref}>{copy.drop.signIn}</a>
 			{:else if refused.stopped === 'offline' && refused.rest.length > 0 && onresend}
-				<button class="button outline" type="button" onclick={() => onresend(refused.rest)}>
+				<button class="button outline" type="button" onclick={() => resend(refused.rest)}>
 					{copy.drop.sendRest}
 				</button>
 				<p class="rest-note">{copy.drop.restNote}</p>

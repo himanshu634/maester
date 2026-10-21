@@ -15,6 +15,7 @@ import {
 	listWatched,
 	matchesChanged,
 	newQuestions,
+	owedReads,
 	pickFiling,
 	pin,
 	questionKeys,
@@ -1169,6 +1170,41 @@ describe('the page’s bookkeeping (Task 10)', () => {
 			const b = ledger.begin();
 			expect(ledger.land(a)).toEqual(['x']);
 			expect(ledger.land(b)).toEqual([]);
+		});
+	});
+
+	describe('owedReads', () => {
+		it('a shape change owes a filings read until one lands, with the files that moved', () => {
+			const owed = owedReads();
+			expect(owed.due).toBe(false);
+			owed.owe(['a']);
+			expect(owed.due).toBe(true);
+			// The read fails: nothing settles, and the next tick asks again for the same file.
+			owed.take();
+			expect(owed.due).toBe(true);
+			// A later tick sees another file move: both are read for.
+			owed.owe(['b']);
+			const taken = owed.take();
+			expect([...taken.keys()].sort()).toEqual(['a', 'b']);
+			owed.landed(taken);
+			expect(owed.due).toBe(false);
+			expect(owed.take().size).toBe(0);
+		});
+
+		it('a file that moves again while the read is out stays owed', () => {
+			const owed = owedReads();
+			owed.owe(['a']);
+			const taken = owed.take();
+			owed.owe(['a', 'c']);
+			owed.landed(taken);
+			expect(owed.due).toBe(true);
+			expect([...owed.take().keys()].sort()).toEqual(['a', 'c']);
+		});
+
+		it('owing nothing owes no read', () => {
+			const owed = owedReads();
+			owed.owe([]);
+			expect(owed.due).toBe(false);
 		});
 	});
 });

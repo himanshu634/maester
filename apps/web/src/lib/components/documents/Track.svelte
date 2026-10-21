@@ -1,8 +1,8 @@
 <!--
-	One track of a filing: Numbers or Text. A label column and two lines of words. The first line is
-	bold only when the track needs the investor or stopped (Decision 18); the second is muted. In the
-	opened filing a working track is an ink block (`ink`), and its children (a "Try again") sit under
-	the words.
+	One track of a filing: Numbers or Text. A label column and two lines of words, all at regular
+	weight: only the first line of a track that needs the investor or stopped is bold (Decision 18);
+	the second is muted. In the opened filing a working track is an ink block (`ink`), and its
+	children (a "Try again") sit under the words.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -48,7 +48,7 @@
 
 	.label {
 		font-size: var(--text-sm);
-		font-weight: 700;
+		font-weight: 400;
 		line-height: var(--leading-small);
 	}
 

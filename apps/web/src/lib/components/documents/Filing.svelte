@@ -41,6 +41,12 @@
 
 	interface Props {
 		view: FilingView;
+		/**
+		 * The document the page pinned this filing to. A re-pin keeps it as its file moves filing; a
+		 * new one is another filing shown here without a remount (a batch pins its first file), so
+		 * the form, the retry and the reload outcome below start again.
+		 */
+		pinned: string;
 		/** The filing's company, once it is known and its name has loaded. */
 		company: Company | null;
 		companies: Company[];
@@ -67,6 +73,7 @@
 
 	let {
 		view,
+		pinned,
 		company,
 		companies,
 		answers,
@@ -83,15 +90,20 @@
 	}: Props = $props();
 
 	type Field = 'kind' | 'company';
+	type Editing = { documentId: string; field: Field; answerId: string };
+	type Retry = 'identify' | 'numbers' | 'text' | 'again' | 'reload';
+
+	/** `value`, read again whenever `key` changes: a state that starts again with its key. */
+	const resetOn = <T,>(_key: unknown, value: T): T => value;
 
 	const id = $props.id();
 	/** The answer being changed, and the set of answers the form was opened on. */
-	let editingFor = $state<{ documentId: string; field: Field; answerId: string } | null>(null);
+	let editingFor = $derived(resetOn(pinned, null as Editing | null));
 	let busy = $state(false);
 	/** Which retry is running ("Try again", "Read it again"); apart from saving a change. */
-	let retrying = $state<'identify' | 'numbers' | 'text' | 'again' | 'reload' | null>(null);
+	let retrying = $derived(resetOn(pinned, null as Retry | null));
 	/** What the last "Try again" on unloaded answers came to. */
-	let reloadOutcome = $state('');
+	let reloadOutcome = $derived(resetOn(pinned, ''));
 	/** The Change buttons, so focus can go back to the one that opened a form. */
 	let changeButtons = $state<Record<string, HTMLButtonElement | null>>({});
 
@@ -154,7 +166,7 @@
 		}
 	}
 
-	async function retry(kind: NonNullable<typeof retrying>, work: () => Promise<unknown>) {
+	async function retry(kind: Retry, work: () => Promise<unknown>) {
 		if (retrying) return;
 		retrying = kind;
 		try {
@@ -232,11 +244,7 @@
 	>
 {/snippet}
 
-{#snippet retryButton(
-	kind: NonNullable<typeof retrying>,
-	name: string,
-	work: () => Promise<unknown>
-)}
+{#snippet retryButton(kind: Retry, name: string, work: () => Promise<unknown>)}
 	<button
 		class="button outline"
 		type="button"
@@ -400,7 +408,15 @@
 							</span>
 							<span role="cell" class="cell">
 								<span class="col-name muted" aria-hidden="true">{copy.filing.columns.inPdf}</span>
-								<span class:strong={row.inPdf.strong}>{row.inPdf.text}</span>
+								{#if row.inPdf.why}
+									<span
+										><span aria-hidden="true">{row.inPdf.text}</span><span class="visually-hidden"
+											>{row.inPdf.why}</span
+										></span
+									>
+								{:else}
+									<span class:strong={row.inPdf.strong}>{row.inPdf.text}</span>
+								{/if}
 								{#if row.inPdf.missed}<span class="note">{row.inPdf.missed}</span>{/if}
 								{#if row.inPdf.open}
 									{@const href = `${fileHref(row.inPdf.open.documentId)}#page=${row.inPdf.open.pageIndex + 1}`}

@@ -10,9 +10,11 @@ import type {
 	BasisSources,
 	FilingFile,
 	InPdfCount,
+	NumbersState,
 	ReportingBasis,
 	StatementKind,
 	StatementSource,
+	StatementSourceReason,
 	XbrlFormatKind,
 	XbrlReadWarning
 } from './types';
@@ -44,10 +46,39 @@ export function abandonedUpload(file: FilingFile, ctx: TrackContext): boolean {
 	return file.state === 'pending_upload' && !ctx.uploading(file.documentId);
 }
 
+/** The XBRL states a statement's reason waits on: it holds only while an XBRL file of its basis is in one. */
+const REASON_HOLDS_WHILE: Partial<Record<StatementSourceReason, NumbersState[]>> = {
+	xbrl_not_read_yet: ['now', 'waiting'],
+	xbrl_read_failed: ['failed']
+};
+
+/**
+ * Whether the files say the sources are out of date. The sources come from the last filings read;
+ * the open filing's 2 s poll patches the files only. A statement whose reason is
+ * `xbrl_not_read_yet` or `xbrl_read_failed` is stale when the files hold an XBRL file of its basis
+ * and none of them is still in the state that reason names: that XBRL has been read, or has failed,
+ * since. With no XBRL file of the basis among the files, the files say nothing and the sources
+ * stand.
+ */
+export function sourcesStale(files: FilingFile[], sources: BasisSources[]): boolean {
+	return sources.some((b) =>
+		b.statements.some((s) => {
+			const holdsWhile = s.reason === null ? undefined : REASON_HOLDS_WHILE[s.reason];
+			if (holdsWhile === undefined) return false;
+			const ofBasis = files.filter((f) => f.format === 'xbrl' && f.basis === b.basis);
+			return (
+				ofBasis.length > 0 && !ofBasis.some((f) => holdsWhile.includes(f.pipeline.numbers.state))
+			);
+		})
+	);
+}
+
 /**
  * Whether a PDF's own numbers are needed (Decision 2). Never while an XBRL file of the filing is
- * still being read or waiting: what it covers is not known yet. Then: some statement takes its
- * numbers from this PDF, or nothing at all comes from XBRL, so nothing can cover it.
+ * still being read or waiting: what it covers is not known yet. Never while the sources are stale
+ * (`sourcesStale`): what the XBRL covers is not known until the filings are read again, and an
+ * unknown is not "nothing comes from XBRL". Then: some statement takes its numbers from this PDF,
+ * or nothing at all comes from XBRL, so nothing can cover it.
  */
 export function pdfNeeded(file: FilingFile, files: FilingFile[], sources: BasisSources[]): boolean {
 	const xbrlBusy = files.some(
@@ -55,7 +86,7 @@ export function pdfNeeded(file: FilingFile, files: FilingFile[], sources: BasisS
 			f.format === 'xbrl' &&
 			(f.pipeline.numbers.state === 'now' || f.pipeline.numbers.state === 'waiting')
 	);
-	if (xbrlBusy) return false;
+	if (xbrlBusy || sourcesStale(files, sources)) return false;
 	const statements = sources.flatMap((b) => b.statements);
 	if (statements.some((s) => s.source === 'pdf' && s.pdfDocumentId === file.documentId))
 		return true;

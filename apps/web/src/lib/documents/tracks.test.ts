@@ -429,7 +429,9 @@ describe('the Numbers track', () => {
 			first: 'Stopped',
 			second: 'Not a PDF or an XBRL file.'
 		});
-		expect(numbersTrack([rejected('r3', 'TOO_LARGE')], [], ctx).second).toBe('Larger than 50 MB.');
+		expect(numbersTrack([rejected('r3', 'TOO_LARGE')], [], ctx).second).toBe(
+			'Larger than 50 MB, the limit for a PDF or XBRL file.'
+		);
 		expect(numbersTrack([rejected('r2', null)], [], ctx).second).toBe('The upload didn’t arrive.');
 	});
 
@@ -571,6 +573,46 @@ describe('pdfNeeded', () => {
 		});
 		const p = pdfDone('p1');
 		expect(pdfNeeded(p, [x, p], [])).toBe(false);
+	});
+});
+
+describe('pdfNeeded on stale sources', () => {
+	it('a claim that waits on an XBRL read the files say is over does not need the PDF', () => {
+		const x = fileOf({
+			documentId: 'x1',
+			format: 'xbrl',
+			basis: 'consolidated',
+			pipeline: { numbers: { source: 'xbrl', state: 'done' }, text: { state: 'waiting' } }
+		});
+		const p = pdfDone('p1');
+		const stale = one([
+			stmt({
+				source: 'pdf',
+				xbrlDocumentId: null,
+				pdfDocumentId: 'p1',
+				reason: 'xbrl_not_read_yet'
+			})
+		]);
+		expect(pdfNeeded(p, [x, p], stale)).toBe(false);
+		// The Numbers track says what the files say: the XBRL is read.
+		expect(numbersTrack([x, p], stale, ctx)).toEqual({
+			state: 'done',
+			first: 'From XBRL · done',
+			second: null
+		});
+	});
+
+	it('with no XBRL file of that basis among the files, the sources stand', () => {
+		const p = pdfDone('p1');
+		const sources = one([
+			stmt({
+				source: 'pdf',
+				xbrlDocumentId: null,
+				pdfDocumentId: 'p1',
+				reason: 'xbrl_not_read_yet'
+			})
+		]);
+		expect(pdfNeeded(p, [xbrlDone('x2', 'standalone'), p], sources)).toBe(true);
 	});
 });
 

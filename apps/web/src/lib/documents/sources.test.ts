@@ -389,6 +389,38 @@ describe('sourceRows', () => {
 			null
 		);
 		expect(rows[0].inPdf.text).toBe('—');
+		expect(rows[0].inPdf.why).toBe('Not known whether the PDF shows these figures.');
+	});
+
+	it('every "—" in the ledger carries its reason; a figure that was checked needs none', () => {
+		const rows = sourceRows(q2Consolidated, q2Filing, null);
+		expect(rows.map((r) => r.inPdf.why)).toEqual([
+			null,
+			null,
+			'Nothing to check: these numbers are read from the PDF.'
+		]);
+		const nowhere = sourceRows(
+			one([
+				stmt({ source: null, xbrlDocumentId: null, reason: null }),
+				stmt({
+					statement: 'cash_flow',
+					source: null,
+					xbrlDocumentId: null,
+					reason: 'not_in_filing'
+				})
+			])[0],
+			q2Filing,
+			null
+		);
+		expect(nowhere.map((r) => [r.from.text, r.from.note, r.inPdf.text, r.inPdf.why])).toEqual([
+			[
+				'—',
+				'Where these numbers come from isn’t known yet.',
+				'—',
+				'Nothing to check until its numbers are read.'
+			],
+			['Not in this filing', null, '—', 'Nothing to check: this statement isn’t in this filing.']
+		]);
 	});
 });
 
@@ -514,6 +546,41 @@ describe('readAgainIds', () => {
 			})
 		]);
 		expect(readAgainIds([x, p], sources)).toEqual([]);
+	});
+});
+
+describe('stale sources (Review Focus 1)', () => {
+	// The 2 s poll patches the files only; the sources stay as the last filings read built them.
+	// The PDF was read by Gemini before its XBRL arrived; the XBRL has been read since, and the
+	// filings read that would rebuild the sources failed.
+	const x = fileOf({
+		documentId: 'x1',
+		format: 'xbrl',
+		basis: 'consolidated',
+		pipeline: { numbers: { source: 'xbrl', state: 'done' }, text: { state: 'waiting' } }
+	});
+	const notReadYet = one([
+		stmt({ source: 'pdf', xbrlDocumentId: null, pdfDocumentId: 'p1', reason: 'xbrl_not_read_yet' })
+	]);
+
+	it('never sends a PDF whose claim waits on an XBRL read the files say is over', () => {
+		expect(readAgainIds([x, pdfDone('p1')], notReadYet)).toEqual(['x1']);
+		const failedPdf = fileOf({
+			documentId: 'p1',
+			pipeline: { numbers: { source: 'pdf', state: 'failed' } }
+		});
+		expect(retryIds([x, failedPdf], notReadYet, 'numbers')).toEqual([]);
+	});
+
+	it('nor a PDF whose claim is a failed XBRL read, once the files say it was read', () => {
+		const readFailed = one([
+			stmt({ source: 'pdf', xbrlDocumentId: null, pdfDocumentId: 'p1', reason: 'xbrl_read_failed' })
+		]);
+		expect(readAgainIds([x, pdfDone('p1')], readFailed)).toEqual(['x1']);
+	});
+
+	it('an XBRL file that failed after the sources said not read yet leaves coverage unknown', () => {
+		expect(readAgainIds([xbrlFailed('x1'), pdfDone('p1')], notReadYet)).toEqual(['x1']);
 	});
 });
 

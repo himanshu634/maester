@@ -9,6 +9,7 @@
 	import { tick } from 'svelte';
 	import { documentsContent as copy } from '$lib/content/documents';
 	import {
+		CONFIRM_HEADING_ID,
 		CONFIRM_SHOWN,
 		confirmRequest,
 		openerFilled,
@@ -258,8 +259,8 @@
 	</form>
 {/snippet}
 
-<section class="confirm" aria-labelledby="{id}-heading">
-	<h2 id="{id}-heading">{copy.sections.confirm}</h2>
+<section class="confirm" aria-labelledby={CONFIRM_HEADING_ID}>
+	<h2 id={CONFIRM_HEADING_ID} tabindex="-1">{copy.sections.confirm}</h2>
 	<p class="lede">{lede}</p>
 
 	{#if rows.length > 0 && !companiesLoaded}
@@ -267,7 +268,7 @@
 	{/if}
 
 	{#if drawn.length > 0}
-		<ul class="rows">
+		<ul class="rows" id="{id}-rows">
 			{#each drawn as row, index (row.identity.key)}
 				{@const key = row.identity.key}
 				<li>
@@ -303,15 +304,18 @@
 				</li>
 			{/each}
 		</ul>
-		{#if more > 0}
+		<!-- One button whose words change, so focus stays on it when the list folds or unfolds. -->
+		{#if more > 0 || (expanded && rows.length > CONFIRM_SHOWN)}
 			<p class="more">
-				<span class="muted">{copy.confirm.more(more)}</span>
-				<button class="text-button" type="button" onclick={onexpand}>{copy.confirm.showAll}</button>
-			</p>
-		{:else if expanded && rows.length > CONFIRM_SHOWN}
-			<p class="more">
-				<button class="text-button" type="button" onclick={onexpand}>
-					{copy.confirm.showFewer}
+				{#if more > 0}<span class="muted">{copy.confirm.more(more)}</span>{/if}
+				<button
+					class="text-button"
+					type="button"
+					aria-expanded={more === 0}
+					aria-controls="{id}-rows"
+					onclick={onexpand}
+				>
+					{more > 0 ? copy.confirm.showAll : copy.confirm.showFewer}
 				</button>
 			</p>
 		{/if}

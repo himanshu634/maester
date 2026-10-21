@@ -9,7 +9,9 @@
  * own `numbers` say `done` or `failed`. A PDF Gemini read before its XBRL arrived still says
  * `source: pdf`, `done`, after XBRL owns every one of its slots. One more case holds a needed PDF
  * back (`pdfWorthReading`): a PDF whose only claim is `xbrl_read_failed`, beside a failed XBRL
- * file of that basis in the same send set. The free XBRL read goes alone.
+ * file of that basis in the same send set. The free XBRL read goes alone. And no PDF is sent while
+ * the files say the sources are stale (`sourcesStale`): the open filing's poll patches the files,
+ * never the sources, so an XBRL file read since the last filings read leaves its coverage unknown.
  */
 import { documentsContent } from '$lib/content/documents';
 import { fileCaveat, formatWords, pdfWorthReading } from './tracks';
@@ -35,6 +37,8 @@ export interface SourceRow {
 	from: { text: string; note: string | null };
 	inPdf: {
 		text: string;
+		/** Why `text` is "—", read out after it but not drawn; null when it is not "—". */
+		why: string | null;
 		/** A check missed something: said in bold. */
 		strong: boolean;
 		missed: string | null;
@@ -148,7 +152,7 @@ function fromOf(
 		case 'xbrl_not_read_yet':
 			return { text: words.none, note: words.notReadYet };
 		default:
-			return { text: words.none, note: null };
+			return { text: words.none, note: words.fromUnknown };
 	}
 }
 
@@ -159,17 +163,32 @@ function inPdfOf(
 	pdfStatements: StatementFound[] | null
 ): SourceRow['inPdf'] {
 	const count = statement.inPdf;
-	if (count === null) return { text: words.none, strong: false, missed: null, open: null };
+	const dash = (why: string) => ({
+		text: words.none,
+		why,
+		strong: false,
+		missed: null,
+		open: null
+	});
+	if (count === null) {
+		if (statement.source === 'pdf') return dash(words.inPdfWhy.pdf);
+		return dash(
+			statement.reason === 'not_in_filing' ? words.inPdfWhy.notInFiling : words.inPdfWhy.notRead
+		);
+	}
 	if (count.checked === 0) {
+		if (count.notChecked === null) return dash(words.inPdfWhy.unknown);
 		return {
-			text: count.notChecked === null ? words.none : notCheckedWords(count.notChecked),
+			text: notCheckedWords(count.notChecked),
+			why: null,
 			strong: false,
 			missed: null,
 			open: null
 		};
 	}
 	const text = words.found(count.found, count.checked);
-	if (count.notFound.length === 0) return { text, strong: false, missed: null, open: null };
+	if (count.notFound.length === 0)
+		return { text, why: null, strong: false, missed: null, open: null };
 
 	// The API checked the statement against the PDF that prints it; follow that PDF and its pages.
 	// Only a statement with no such PDF falls back to the filing's stored PDF and the classification.
@@ -191,7 +210,7 @@ function inPdfOf(
 					label: words.openPdf(Math.min(...pages) + 1)
 				}
 			: null;
-	return { text, strong: true, missed: words.missed(count.notFound.length), open };
+	return { text, why: null, strong: true, missed: words.missed(count.notFound.length), open };
 }
 
 /**

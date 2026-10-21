@@ -154,6 +154,14 @@ describe('companies to confirm', () => {
 	});
 
 	it('the other refusals', () => {
+		expect(confirmFailure(new ApiError(404, 'NOT_FOUND', 'x'))).toEqual({
+			message: copy.changeFailed.moved,
+			reload: true
+		});
+		expect(confirmFailure(new ApiError(409, 'INVALID_STATE', 'x'))).toEqual({
+			message: copy.changeFailed.moved,
+			reload: true
+		});
 		expect(confirmFailure(new ApiError(401, 'UNAUTHENTICATED', 'x'))).toEqual({
 			message: copy.changeFailed.signedOut,
 			reload: false

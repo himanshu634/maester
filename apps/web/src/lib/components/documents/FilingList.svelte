@@ -38,14 +38,14 @@
 
 	/**
 	 * What a group shows. The open filing is never left behind "Show all": a group holding it past
-	 * the newest few shows them all, and then has no way to fold back.
+	 * the newest few shows them all, and then has no way to fold back, whether or not the investor
+	 * had asked for them all, so the button never shows when pressing it would change nothing.
 	 */
 	function view(group: CompanyGroup) {
 		if (!collapse) return { shown: group.filings, button: null as string | null, expanded: true };
 		const asked = expandedBy[groupId(group)] ?? false;
 		const newest = shownFilings(group, false).shown;
 		const pinned =
-			!asked &&
 			openedKey !== null &&
 			newest.every((f) => f.key !== openedKey) &&
 			group.filings.some((f) => f.key === openedKey);

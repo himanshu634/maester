@@ -672,6 +672,34 @@ export function readLedger() {
 	};
 }
 
+/**
+ * The filings read the opened filing's poll owes (plan Decision 12). Once a poll sees a file change
+ * filing (`shapeChanged`), a filings read is owed until one lands; every later tick asks for it
+ * again, so one failed read never leaves the opened filing's sources and grouping behind its
+ * files. The poll patches the files first, so a later read cannot see the move itself: `take`
+ * gives the files owed so far, which the read is told have changed. `landed` settles those a
+ * landed read was taken for, and keeps any that moved again while it was out.
+ */
+export function owedReads() {
+	const owed = new Map<string, number>();
+	let seq = 0;
+	return {
+		owe(documentIds: Iterable<string>) {
+			for (const documentId of documentIds) owed.set(documentId, (seq += 1));
+		},
+		get due(): boolean {
+			return owed.size > 0;
+		},
+		take(): ReadonlyMap<string, number> {
+			return new Map(owed);
+		},
+		landed(taken: ReadonlyMap<string, number>) {
+			for (const [documentId, at] of taken)
+				if (owed.get(documentId) === at) owed.delete(documentId);
+		}
+	};
+}
+
 /** Every question the read asks the investor, by a key that stays the same while it is asked. */
 export function questionKeys(read: WorkspaceFilings): Map<string, Question> {
 	const keys = new Map<string, Question>();

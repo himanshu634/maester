@@ -33,6 +33,7 @@
 	} from '$lib/documents/batch';
 	import { changeFailure, LIST_POLL_MS, POLL_MS } from '$lib/documents/intake';
 	import {
+		CONFIRM_HEADING_ID,
 		CONFIRM_SHOWN,
 		confirmedAloud,
 		confirmFailure,
@@ -51,6 +52,7 @@
 		listWatched,
 		matchesChanged,
 		newQuestions,
+		owedReads,
 		pickFiling,
 		pin,
 		questionKeys,
@@ -124,6 +126,10 @@
 	let seenQuestions: ReadonlySet<string> = new Set();
 	/** Writes fresher than a filings read, and the order reads land in. */
 	const ledger = readLedger();
+	/** The filings read the opened filing's poll owes until one lands (`owedReads`). */
+	const shapeReads = owedReads();
+	/** The page is gone: no read it started is sent or applied. */
+	let destroyed = false;
 	/** Answers being asked for, so one is not asked for twice at once. */
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, never drawn
 	const asking = new Set<string>();
@@ -257,18 +263,24 @@
 		loadAnswers();
 	}
 
-	/** Focus where the opened document waits: its confirm row, or its unnamed file's Notice. */
+	/**
+	 * Focus where the opened document waits: its confirm row, or its unnamed file's Notice. While
+	 * the companies are read again no row is drawn yet, so focus goes to the section's heading
+	 * rather than falling to the page.
+	 */
 	async function goToWaiting() {
 		const target = waiting;
 		if (!target) return;
 		if (target.kind === 'held') {
 			const at = read.held.findIndex((h) => h.key === target.key);
 			if (at >= CONFIRM_SHOWN) confirmExpanded = true;
-			await tick();
-			document.getElementById(`confirm-${target.key}`)?.focus();
-		} else {
-			document.getElementById(`unnamed-${target.documentId}`)?.focus();
 		}
+		await tick();
+		const row =
+			target.kind === 'held'
+				? document.getElementById(`confirm-${target.key}`)
+				: document.getElementById(`unnamed-${target.documentId}`);
+		(row ?? document.getElementById(CONFIRM_HEADING_ID))?.focus();
 	}
 
 	/** A company's heading in Working on, else in Done, else the Working on heading. */
@@ -311,11 +323,15 @@
 
 	/**
 	 * Read the filings again. A read that began before the last one applied is dropped; files
-	 * written since it began (a poll, a change, an upload) keep their fresher state.
+	 * written since it began (a poll, a change, an upload) keep their fresher state. Resolves true
+	 * when the page now shows a read that began with this one or later: this one applied, or it was
+	 * dropped for a newer one. False when it failed or the page is gone.
 	 */
-	async function readFilings(opts: { quiet?: boolean; changed?: Iterable<string> } = {}) {
+	async function readFilings(
+		opts: { quiet?: boolean; changed?: Iterable<string> } = {}
+	): Promise<boolean> {
 		const client = api;
-		if (!client) return;
+		if (!client || destroyed) return false;
 		const ticket = ledger.begin();
 		let next: WorkspaceFilings;
 		try {
@@ -324,11 +340,13 @@
 		} catch (error) {
 			if (isSignedOut(error)) signedOut();
 			else listFailures += 1;
-			return;
+			return false;
 		}
+		if (destroyed) return false;
 		const fresher = ledger.land(ticket);
-		if (fresher === null) return;
+		if (fresher === null) return true;
 		applyRead(keepFresher(read, next, fresher), opts);
+		return true;
 	}
 
 	/** Read these documents again, then the filings. */
@@ -349,17 +367,18 @@
 
 	/**
 	 * The opened filing's own poll: each of its documents, written in where it sits. When one
-	 * changed where it belongs, or the filing's work stopped, the filings are read once.
+	 * changed where it belongs, the filings read is owed until one lands, so a failed read is
+	 * tried again on the next tick; when the filing's work stopped, the filings are read once.
 	 */
 	async function pollOpen() {
 		const client = api;
 		const filing = openFiling;
-		if (!client || !filing) return;
+		if (!client || !filing || destroyed) return;
 		const results = await Promise.allSettled(
 			filing.files.map((f) => client.getDocument(f.documentId))
 		);
-		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- one poll's bookkeeping, never drawn
-		const changed = new Set<string>();
+		if (destroyed) return;
+		const changed: string[] = [];
 		let failed = false;
 		results.forEach((result, i) => {
 			if (result.status === 'rejected') {
@@ -367,14 +386,17 @@
 				if (isSignedOut(result.reason)) signedOut();
 				return;
 			}
-			if (shapeChanged(filing.files[i], result.value)) changed.add(result.value.id);
+			if (shapeChanged(filing.files[i], result.value)) changed.push(result.value.id);
 			read = applyDocument(read, result.value);
 			ledger.wrote(result.value.id);
 		});
 		pollFailures = failed ? pollFailures + 1 : 0;
+		shapeReads.owe(changed);
 		if (load !== 'ready') return;
 		const live = openFiling !== null && filingLive(openFiling, ctx);
-		if (changed.size > 0 || !live) await readFilings({ changed });
+		if (!shapeReads.due && live) return;
+		const taken = shapeReads.take();
+		if (await readFilings({ changed: taken.keys() })) shapeReads.landed(taken);
 	}
 
 	async function start() {
@@ -417,6 +439,9 @@
 	onMount(() => {
 		hidden = document.hidden;
 		start();
+		return () => {
+			destroyed = true;
+		};
 	});
 
 	// The opened filing asks for its own documents while it is live. One self-rescheduling timer
@@ -640,7 +665,8 @@
 		} catch (error) {
 			if (isSignedOut(error)) signedOut();
 			const failure = confirmFailure(error);
-			// A name clash: read again, so the row offers the company to pick.
+			// A name clash, or files that moved on: read again, so the row offers the company to
+			// pick, or goes.
 			if (failure.reload) await Promise.all([readFilings({ quiet: true }), reloadCompanies()]);
 			return failure.message;
 		}
@@ -779,6 +805,7 @@
 						{#key openCount}
 							<Filing
 								view={openFiling}
+								pinned={opened?.documentId ?? openFiling.key}
 								company={openCompany}
 								companies={known}
 								{answers}

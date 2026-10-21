@@ -212,7 +212,7 @@ export const documentsContent = {
 		uploadUnfinished: 'The upload didn’t finish. Add it again.',
 		rejected: {
 			UNSUPPORTED_TYPE: 'Not a PDF or an XBRL file.',
-			TOO_LARGE: 'Larger than 50 MB.',
+			TOO_LARGE: 'Larger than 50 MB, the limit for a PDF or XBRL file.',
 			OBJECT_MISSING: 'The upload didn’t arrive.'
 		} satisfies Record<RejectionCode, string>,
 		checkFailed: 'Maester couldn’t check this file.',
@@ -379,6 +379,15 @@ export const documentsContent = {
 			full_year: 'year’s'
 		},
 		none: '—',
+		/** Why a statement's "Numbers from" is "—" when the API gives no reason. */
+		fromUnknown: 'Where these numbers come from isn’t known yet.',
+		/** Why "In the PDF" is "—", read out after the dash. */
+		inPdfWhy: {
+			pdf: 'Nothing to check: these numbers are read from the PDF.',
+			notInFiling: 'Nothing to check: this statement isn’t in this filing.',
+			notRead: 'Nothing to check until its numbers are read.',
+			unknown: 'Not known whether the PDF shows these figures.'
+		},
 		found: (found: number, checked: number) => `Found: ${found} of ${checked}`,
 		missed: (count: number) => `${count} not found.`,
 		openPdf: (page: number) => `Open the results PDF at page ${page}`,
