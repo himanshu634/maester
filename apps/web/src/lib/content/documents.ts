@@ -3,7 +3,14 @@
  * (docs/DESIGN.md section 7): what Maester did with a file and what is left to do. Every
  * answer Maester gives shows the page and words it came from; never a confidence.
  */
-import type { OtherType, ResultsSpan } from '$lib/documents/types';
+import type {
+	OtherType,
+	RejectionCode,
+	ResultsSpan,
+	XbrlFormatKind,
+	XbrlPdfNotChecked,
+	XbrlReadWarning
+} from '$lib/documents/types';
 
 export const documentsContent = {
 	heading: 'Documents',
@@ -224,6 +231,146 @@ export const documentsContent = {
 		heading: 'Earlier',
 		empty: 'Nothing added yet.',
 		more: (count: number) => `Showing the ${count} most recent.`
+	},
+
+	/**
+	 * A filing's two tracks in words (spec 2026-10-19 sections 4 and 5, board S1). Only "Needs you" and
+	 * "Stopped" are bold, which the component decides from the track's state (Decision 18).
+	 */
+	tracks: {
+		/** A track with nothing to say yet. */
+		none: '—',
+		sending: 'Sending',
+		stopped: 'Stopped',
+		needsYou: 'Needs you',
+		notRead: 'Not read',
+		uploadUnfinished: 'The upload didn’t finish. Add it again.',
+		rejected: {
+			UNSUPPORTED_TYPE: 'Not a PDF or an XBRL file.',
+			TOO_LARGE: 'Larger than 50 MB.',
+			OBJECT_MISSING: 'The upload didn’t arrive.'
+		} satisfies Record<RejectionCode, string>,
+		checkFailed: 'Maester couldn’t check this file.',
+		checking: 'Checking the file',
+		duplicate: 'You added this file before.',
+		identifyFailed: 'Maester couldn’t work out what this is.',
+		identifying: 'Working out what it is',
+		sayWhatItIs: 'Say what it is.',
+		confirmCompany: 'Confirm the company.',
+		numbersFailed: 'Maester couldn’t read the numbers.',
+		fromXbrlNow: 'From XBRL · reading now',
+		fromXbrlNext: 'From XBRL · next',
+		fromXbrlDone: 'From XBRL · done',
+		fromXbrlAndPdfDone: 'From XBRL and the PDF · done',
+		pdfNow: 'Read from the PDF · now',
+		pdfNext: 'Read from the PDF · next',
+		pdfDone: 'Read from the PDF · done',
+		waitingForXbrl: 'Waiting for XBRL',
+		pdfWaitsForIt: 'The PDF waits for it, so Gemini reads only what XBRL doesn’t cover.',
+		/** One XBRL file is read first; its name is "An XBRL file" when the page does not know it. */
+		beingRead: (name: string | null) =>
+			`${name ?? 'An XBRL file'} is being read. Gemini reads only what it doesn’t cover.`,
+		manyBeingRead: (count: number) =>
+			`${count} XBRL files are being read. Gemini reads only what they don’t cover.`,
+		noXbrl: 'No XBRL for this filing.',
+		xbrlUnreadable: 'The XBRL file couldn’t be read.',
+		xbrlFailedOne: 'Maester couldn’t read the XBRL file.',
+		xbrlFailedNamed: (name: string) => `${name} couldn’t be read.`,
+		xbrlFailedMany: (count: number) => `${count} XBRL files couldn’t be read.`,
+		geminiReadPdf: ' Gemini read the PDF.',
+		notReadFromXbrl: 'Not read from XBRL',
+		keptKind: 'Maester reads annual reports and financial results for now.',
+		/** "The XBRL is in the banking format, not mapped yet." */
+		unmapped: (format: string) => `The XBRL is in ${format}, not mapped yet.`,
+		formats: {
+			banking: 'the banking format',
+			nbfc: 'the NBFC format',
+			other_than_ind_as: 'the “other than Ind AS” format',
+			ind_as: 'the Ind AS format',
+			unknown: 'a format Maester doesn’t know yet'
+		} satisfies Record<XbrlFormatKind, string>,
+		/** Said after the check, so a partial read is never a clean "done" in words. */
+		warnings: {
+			XBRL_ROUNDING_MISSING: 'The XBRL file doesn’t declare its rounding, so its unit isn’t known.',
+			XBRL_ROUNDING_MISMATCH: 'Its rounding doesn’t match the rounding it declares.',
+			XBRL_ELEMENT_UNMAPPED: 'Some of its lines aren’t mapped yet, so they aren’t read.',
+			XBRL_NIL: 'Some lines are filed with no value.'
+		} satisfies Record<XbrlReadWarning, string>,
+		partialRead: 'Part of the XBRL file wasn’t read.',
+		/** The statements, in the order the split lists them, lower case. */
+		statementNames: {
+			income_statement: 'profit and loss',
+			balance_sheet: 'balance sheet',
+			cash_flow: 'cash flow'
+		},
+		split: {
+			xbrl: (statements: string) => `XBRL: ${statements}.`,
+			pdf: (statements: string) => `PDF: ${statements}.`,
+			joined: (xbrl: string, pdf: string) => `${xbrl} ${pdf}`,
+			oneSource: (basis: string, source: 'xbrl' | 'pdf') =>
+				`${basis} from ${source === 'xbrl' ? 'XBRL' : 'the PDF'}`,
+			mixed: (basis: string, xbrl: string, pdf: string) =>
+				`${basis}: XBRL for ${xbrl}, the PDF for ${pdf}`
+		},
+		/** One XBRL basis: its check against the PDF, in a sentence. */
+		check: {
+			found: (found: number, checked: number) =>
+				`${found} of ${checked} ${checked === 1 ? 'figure' : 'figures'} found in the PDF.`,
+			missed: (count: number) =>
+				`${count} ${count === 1 ? 'figure' : 'figures'} not found in the PDF.`,
+			notChecked: {
+				no_pdf: 'No PDF of these results in your documents.',
+				scanned: 'The PDF’s statement pages are scanned, so the check didn’t run.',
+				no_statement_pages: 'Maester didn’t find the statement pages in the PDF.',
+				disabled: 'The check against the PDF is turned off.',
+				not_yet: 'Checking against the PDF.',
+				no_value: 'The XBRL file gives no value to look for in the PDF.',
+				no_unit: 'The XBRL file declares no rounding, so there is no unit to look for in the PDF.'
+			} satisfies Record<XbrlPdfNotChecked, string>,
+			notCheckedUnknown: 'Not checked against the PDF.'
+		},
+		/** Two or more XBRL bases: each named, counted apart, never summed. */
+		checkBases: {
+			prefix: 'In the PDF: ',
+			found: (basis: string, found: number, checked: number) =>
+				`${basis} ${found} of ${checked} found`,
+			notYet: (basis: string) => `${basis} not checked yet`,
+			notChecked: (basis: string) => `${basis} not checked`,
+			notCheckedWhy: (basis: string, why: string) => `${basis} not checked: ${why}`,
+			why: {
+				no_pdf: 'no PDF of these results',
+				scanned: 'its statement pages are scanned',
+				no_statement_pages: 'no statement pages found',
+				disabled: 'the check is turned off',
+				no_value: 'no value to look for',
+				no_unit: 'the XBRL file declares no rounding'
+			} satisfies Partial<Record<XbrlPdfNotChecked, string>>
+		},
+		text: {
+			readingPages: 'Reading the pages',
+			page: (read: number, of: number) => `Page ${read} of ${of}`,
+			soFar: (ocr: number, chunks: number) =>
+				`${ocr > 0 ? `${ocr} ${ocr === 1 ? 'page' : 'pages'} by OCR · ` : ''}${chunks} ${chunks === 1 ? 'passage' : 'passages'} so far`,
+			readingXbrl: 'Reading the XBRL notes',
+			inLine: 'In line',
+			nextInLine: 'Next in line',
+			inLineAhead: (ahead: number) => `In line, ${ahead} ahead`,
+			waitingPdf: (pages: number) =>
+				pages > 0 ? `PDF: ${pages} ${pages === 1 ? 'page' : 'pages'}` : 'PDF',
+			waitingXbrl: 'XBRL: its notes',
+			stopped: 'The text wasn’t indexed. Your numbers aren’t affected.',
+			done: 'Done',
+			donePartial: 'Done, some pages without text',
+			/** The list's line: "22 pages, 4 by OCR · 61 passages · 12 XBRL notes". */
+			listPages: (pages: number, ocr: number) =>
+				`${pages} ${pages === 1 ? 'page' : 'pages'}${ocr > 0 ? `, ${ocr} by OCR` : ''}`,
+			listPassages: (chunks: number) => `${chunks} ${chunks === 1 ? 'passage' : 'passages'}`,
+			listNotes: (blocks: number) => `${blocks} XBRL ${blocks === 1 ? 'note' : 'notes'}`,
+			/** The opened filing's line: "18 pages of the PDF, 2 by OCR, 52 passages; 12 notes from the XBRL". */
+			openedPages: (pages: number) => `${pages} ${pages === 1 ? 'page' : 'pages'} of the PDF`,
+			openedOcr: (ocr: number) => `${ocr} by OCR`,
+			openedNotes: (blocks: number) => `${blocks} ${blocks === 1 ? 'note' : 'notes'} from the XBRL`
+		}
 	},
 
 	/** What it is, in plain words. */
