@@ -839,7 +839,7 @@ Each entry of `sources` holds `summary`, `strata` and `mismatches`. `mismatches`
 6. Sign only: the elements whose figure differs only in sign, with the count of cells.
 7. Instances that differ: each cell that another instance of the slot holds with another figure, with the owner of the slot and the other instances.
 8. Instances not used: each compared filing that has an instance that is not used, with the file of the instance and its reason code.
-9. `Against <earlier PDF run> and <earlier XBRL run>`, only with `--against`: the agreement and the exact agreement. Then the counts Filings compared, Filings not compared and Instances not used. Then the count of each outcome and of each Gemini count, `outside_instance` included. Each row gives the change.
+9. `Against <earlier PDF run> and <earlier XBRL run>`, only with `--against`: the agreement and the exact agreement. Then the count of cells in the agreement denominator. Then the counts Filings compared, Filings not compared and Instances not used. Then the count of each outcome and of each Gemini count, `outside_instance` included. Each row gives the change.
 
 `compare-xbrl.json` holds `pdf_run`, `xbrl_run`, `eval_set`, `generated_at`, `versions`, `filings`, `counts`, `agreement_tenths`, `exact_agreement_tenths` and `against`. With `--against`, it also holds `against_counts`, `against_agreement_tenths` and `against_exact_agreement_tenths`. Each entry of `filings` holds `filing_id`, `company`, `set`, `tags`, `compared`, `reason`, `cells`, `counts`, `instances_differ` and `unused_instances`. Each cell holds the slot, the statement, the basis, the span, the period end, the concept, the outcome and the concept source. It also holds the PDF figure and the XBRL figure that `compare` shows. `settle` reads `xbrl_run`, `versions` and `filings` from this file.
 
@@ -1184,6 +1184,13 @@ Note: The `xbrl-map` command of phase 4 is not in this version of the harness. S
     - Filings not compared.
     - Instances not used.
     - `outside_instance`.
+    - `pdf_only`.
+    - `xbrl_only`.
+
+    Check that this count does not decrease:
+    - Cells in the agreement denominator.
+
+    Note: A change of the map can move an element from one concept to another. A cell of `disagree_value` then becomes `pdf_only`. The cell leaves the total, and the agreement rises.
 15. If a check of step 11 to step 14 fails, stop the change.
 
     Note: An increase of one of these counts moves gold facts or cells out of the total. Then a rate can stay the same.
@@ -1259,7 +1266,8 @@ CAUTION: Do not tune a prompt, a rule or an element map on the `heldout` set. Ru
   - A Gemini fact with no concept is not a line that Gemini missed. `compare` does not compare a filing that has no such concept.
   - Phase 1 replaces this rule with a mapping rule.
 - The span of a Gemini fact or a gold fact comes from the words of its column head (the span rule, version 2).
-  - `H1` and `H2` give `half_year`. `9M` gives `nine_months`. `FY` gives `year` only if the head has no other span word. Thus `H1 FY 2025-26` gives `half_year`.
+  - `3M` gives `quarter`. `6M`, `1H`, `2H`, `H1`, `H2` and `HY` give `half_year`. `9M` gives `nine_months`. `12M` gives `year`.
+  - `FY` gives `year` only if the head has no span word and no other short span token. Thus `H1 FY 2025-26` and `6M FY 2025-26` give `half_year`, and `4M FY 2025-26` gives no span.
   - Words without a space between them, as in `H1FY26`, give no span.
   - A "year to date" head takes its span from the month of the period end, under the financial year that starts on 1 April. June gives `quarter`, September gives `half_year`, December gives `nine_months` and March gives `year`. Any other month gives no span.
   - A head with no span word gives no span. The harness does not place such a fact. A quarter and its year to date can end on one day, so a guess would be wrong.

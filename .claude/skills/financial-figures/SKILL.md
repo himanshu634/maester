@@ -84,9 +84,10 @@ Paths marked *(phase n)* arrive with that phase of the spec; until then they do 
    - `maester-eval live --set heldout --paired`: the held-out PDF run. It calls the model and costs money, so ask the investor first and reuse an existing held-out PDF run when there is one.
    - `maester-eval report --set heldout --run <pdf run> --run <new xbrl run> --against <old xbrl run>`.
    - `maester-eval compare --set heldout --gate --run <pdf run> --xbrl <new xbrl run> --against <old xbrl run>`.
-6. No regression on held-out in the `xbrl` exact match (exact equality only, over `origin "sheet"` gold) or in `compare`'s agreement. A rise in any count that decides their denominator also stops the change, because it moves gold facts or cells out of the rates while the rates hold:
+6. No regression on held-out in the `xbrl` exact match (exact equality only, over `origin "sheet"` gold) or in `compare`'s agreement. A rise in any count that decides their denominator, or a fall in cells in the agreement denominator, also stops the change, because it moves gold facts or cells out of the rates while the rates hold:
    - in `report`'s `Against <old xbrl run>` counts, for `xbrl` and `shown`: Outside, Not placed, filings with no used instance, instances not used;
-   - in `compare`'s `Against`: filings not compared, instances not used, `outside_instance`.
+   - in `compare`'s `Against`: filings not compared, instances not used, `outside_instance`, `pdf_only`, `xbrl_only`;
+   - a fall in `compare`'s `Against` cells in the agreement denominator (a map change that moves an element to another concept turns a `disagree_*` cell into `pdf_only` and raises the agreement).
 
    Read the at-precision, dash-as-`0` and sign-only counts beside them.
 7. The reports under `docs/eval/` (`--to`), committed with the change.

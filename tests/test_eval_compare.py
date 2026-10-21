@@ -262,8 +262,9 @@ class CellTests(CompareCase):
         # Two XBRL elements of one concept with two figures: ambiguous too, never a pick.
         fc = self.compare([pdf_fact()], [xbrl_fact(), xbrl_fact(element="RevenueFromOperationsOther", normalizedValue="1")])
         self.assertEqual([(c.outcome, c.xbrl_element) for c in fc.cells], [("ambiguous", None)])
-        # One figure written two ways (12,345.00 lakh and 123.45 crore) is one figure, as the scorer holds it
-        # (`owners.fact_figure`): the normalised value decides, not the reported one.
+        # This pins the helper's behaviour on a synthetic input (the reader cannot produce it: reported is derived from
+        # normalised within one instance): two facts whose reported texts differ (12,345.00 lakh and 123.45 crore) but
+        # whose normalised value is one are one figure, as the scorer holds it (`owners.fact_figure`).
         fc = self.compare([pdf_fact()], [xbrl_fact(), xbrl_fact(element="RevenueFromOperationsOther", reportedValue="123.45")])
         self.assertEqual([c.outcome for c in fc.cells], ["agree"])
         # A filing whose instances are all unmapped: compared False, reason no_mapped_instance.
@@ -360,6 +361,7 @@ class RunTests(CompareCase):
         self.assertIn("| RevenueFromOperations | no order (pooled) |", md)
         self.assertIn("## Against p0 and x0", md)
         self.assertIn("| Agreement | — | 100.0% | — |", md)
+        self.assertIn("| Cells in the agreement denominator | 0 | 1 | −1 |", md)
         self.assertIn("| instances_differ | 1 | 0 | +1 |", md)
 
     def test_a_filing_compared_on_one_instance_names_the_other(self):
@@ -385,6 +387,20 @@ class RunTests(CompareCase):
         self.assertIn("| Filings not compared | 1 | 0 | +1 |", part)
         self.assertIn("| Instances not used | 0 | 0 | 0 |", part)
         self.assertIn("| outside_instance | 1 | 0 | +1 |", part)                 # the comparative of PDF_FACTS
+
+    def test_against_counts_the_cells_in_the_agreement_denominator(self):
+        # A map change that moves an element to another concept turns a disagreement into `pdf_only`: it leaves the
+        # denominator and agreement rises. The count shows the move, with `pdf_only` and `xbrl_only` beside it.
+        manifest = Manifest(filings=[Q2_PAIRED])
+        disagree = xbrl_artefact(RESULTS_Q2, [xbrl_fact(normalizedValue="999")])
+        moved = xbrl_artefact(RESULTS_Q2, [xbrl_fact(concept="other_income")])
+        earlier = self.run_of(manifest, [pdf_artefact(RESULTS_Q2, [REVENUE])], [disagree])
+        run = self.run_of(manifest, [pdf_artefact(RESULTS_Q2, [REVENUE])], [moved])
+        earlier = earlier.model_copy(update={"pdf_run": "p0", "xbrl_run": "x0"})
+        part = render_compare_markdown(run, earlier).split("## Against p0 and x0")[1]
+        self.assertIn("| Cells in the agreement denominator | 0 | 1 | −1 |", part)
+        self.assertIn("| pdf_only | 1 | 0 | +1 |", part)
+        self.assertIn("| xbrl_only | 1 | 0 | +1 |", part)
 
     def test_write_compare(self):
         run = self.run_of(Manifest(filings=[Q2_PAIRED]), [self.pdf], [self.xbrl])

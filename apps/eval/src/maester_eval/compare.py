@@ -495,6 +495,10 @@ def _against_lines(run: CompareRun, against: CompareRun) -> list[str]:
     for label, rate in (("Agreement", agreement_tenths), ("Exact agreement", exact_agreement_tenths)):
         a, b = rate(now), rate(before)
         lines.append(_row([label, rate_text(a), rate_text(b), pp_change(a, b)]))
+    # A map change that moves an element to another concept turns a disagreement into `pdf_only`: the cell leaves the
+    # denominator and the rate rises, so the count is shown beside the rates.
+    a, b = _denominator(now), _denominator(before)
+    lines.append(_row(["Cells in the agreement denominator", a, b, count_change(a, b)]))
     for (label, a), (_, b) in zip(_filing_counts(run), _filing_counts(against)):
         lines.append(_row([label, a, b, count_change(a, b)]))
     for name in (*COMPARE_OUTCOMES, *GEMINI_COUNTS):

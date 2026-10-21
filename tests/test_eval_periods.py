@@ -28,6 +28,19 @@ class SpanOfLabelTests(unittest.TestCase):
         for label, span in cases:
             self.assertEqual(span_of_label(label), span, label)
 
+    def test_short_month_and_half_tokens_beside_fy_name_their_span(self):
+        # Version 2: 3M, 6M, 9M, 12M, 1H, 2H and HY are span words; FY beside one is the financial year, not the length.
+        cases = [("3M FY 2025-26", "quarter"), ("6M FY 2025-26", "half_year"), ("9M FY 2025-26", "nine_months"), ("12M FY 2025-26", "year"),
+                 ("1H FY 2025-26", "half_year"), ("2H FY 2025-26", "half_year"), ("HY FY 2025-26", "half_year"),
+                 ("6M FY26", "half_year"), ("1H FY26", "half_year"), ("3 M FY26", "quarter"), ("6 M FY 2025-26", "half_year")]
+        for label, span in cases:
+            self.assertEqual(span_of_label(label), span, label)
+
+    def test_an_unclear_span_token_beside_fy_is_not_the_year(self):
+        # A span-like token the rule does not recognise (4M, 10M, a lone "3H") must not fall through to the FY year rule.
+        for label in ("4M FY 2025-26", "10M FY 2025-26", "3H FY 2025-26", "5M FY26"):
+            self.assertIsNone(span_of_label(label), label)
+
     def test_tokens_run_together_stay_unknown(self):
         for label in ("9MFY26", "H1FY26", "H1FY2025-26"):
             self.assertIsNone(span_of_label(label), label)
