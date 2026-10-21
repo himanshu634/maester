@@ -3,8 +3,10 @@
 A cell is a source-rule slot (`source_rule.slot_key`) plus a concept. The slot carries the company, the filing kind,
 the statement, the basis, the period end and the span, so consolidated and standalone never meet, and a quarter never
 meets the half year that ends on the same day. A Gemini or gold fact takes its span from its column header
-(`periods.span_of_label`); an XBRL fact carries its own. A fact with no date or, off the balance sheet, no span is not
-placed (`no_period`, `no_span`): it is never keyed as an instant, and never counted outside a slot.
+(`periods.span_of_label`); an XBRL fact carries its own. A Gemini or gold fact with no date or, off the balance sheet,
+no span is not placed (`no_period`, `no_span`): it is never keyed as an instant, and never counted outside a slot. An
+XBRL fact with no date has no slot; one with a null span is keyed as `instant` whatever its statement, as the source
+rule's `slot_key` keys it.
 
 Two figures agree exactly, or at the coarser of their two precisions (rule `COMPARE_RULE_VERSION`), which is stitch's
 `sameFigure`: both values are rounded half away from zero to the coarser power of ten and compared. Decimal only.
@@ -18,6 +20,7 @@ from typing import Literal, cast
 from maester_eval.gold import GoldFact
 from maester_eval.periods import span_of_label
 from maester_eval.source_rule import Slot, Span, slot_key
+from pdf_financial_qa.xbrl.read import integer_decimals
 
 __all__ = [
     "COMPARE_RULE_VERSION", "Placed", "gemini_slot", "gold_slot", "printed_exponent", "same_figure", "xbrl_exponent",
@@ -110,15 +113,14 @@ def printed_exponent(reported_value: str | None, scale_factor: str | None) -> in
 
 def xbrl_exponent(decimals: str | None, normalized_value: str) -> int | None:
     """The power of ten an XBRL value is known to: `decimals="-6"` is 10^6; "INF" is exact, so the places of the
-    value as written; null, or anything else, gives None."""
+    value as written; null, anything else, or a `decimals` wider than three digits (phase 4's bounded
+    `integer_decimals`) gives None."""
     if decimals is None:
         return None
     if decimals == "INF":
         return _places_exponent(Decimal(normalized_value))
-    try:
-        return -int(decimals)
-    except ValueError:
-        return None
+    places = integer_decimals(decimals)
+    return None if places is None else -places
 
 
 def same_figure(a: Decimal, a_exp: int | None, b: Decimal, b_exp: int | None) -> Agreement:

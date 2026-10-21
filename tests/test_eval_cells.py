@@ -134,6 +134,13 @@ class FigureTests(unittest.TestCase):
         self.assertEqual(xbrl_exponent("INF", "12345000000"), 0)        # exact, to the rupee as written
         self.assertEqual(xbrl_exponent("2", "12.34"), -2)
 
+    def test_a_hostile_decimals_gives_an_unknown_exponent(self):
+        # Phase 4's bounded reader takes three digits at most: a longer `decimals` is unknown, never a huge exponent.
+        self.assertIsNone(xbrl_exponent("-9999999", "12345000000"))
+        self.assertIsNone(xbrl_exponent("9" * 5000, "12345000000"))
+        self.assertIsNone(xbrl_exponent("six", "12345000000"))
+        self.assertEqual(xbrl_exponent("-999", "12345000000"), 999)
+
     def test_same_figure(self):
         D = Decimal
         self.assertEqual(same_figure(D("12350000000"), 7, D("12345000000"), 6), "at_precision")    # 1,235 crore; 1,234.5 crore rounds away from zero to 1,235
