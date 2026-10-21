@@ -14,6 +14,8 @@ from typer.testing import CliRunner
 
 from maester_eval import cli
 from maester_eval.artefacts import read_artefacts, write_artefact
+from maester_eval.compare import SETTLE_COLUMNS
+from maester_eval.gold import read_sheet
 from maester_eval.manifest import Filing
 from maester_eval.paths import EvalPaths
 from maester_eval.runner import run_filing
@@ -235,6 +237,28 @@ class ExportRunTests(unittest.TestCase):
         with sheet_path(self.paths.sheets, OTHER.id).open(encoding="utf-8-sig", newline="") as handle:
             rows = list(csv.DictReader(handle))
         self.assertEqual([row["note"] for row in rows], ["extraction failed: NO_STATEMENTS_FOUND"])
+
+
+class SettleSheetTests(unittest.TestCase):
+    def test_a_settle_sheet_is_written_with_its_own_columns(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "settle.csv"
+            settle_row = {column: "" for column in SETTLE_COLUMNS}
+            settle_row.update(row="2", concept="revenue_from_operations", concept_from="own", xbrl_element="RevenueFromOperations",
+                              xbrl_value="10000.00", xbrl_unit="₹ lakh", xbrl_normalized="1000000000", outcome="disagree_value")
+            write_sheet(path, [settle_row], columns=SETTLE_COLUMNS)
+            self.assertTrue(path.read_bytes().startswith(b"\xef\xbb\xbf"))
+            with path.open(encoding="utf-8-sig", newline="") as handle:
+                self.assertEqual(next(csv.reader(handle)), SETTLE_COLUMNS)
+            (back,) = read_sheet(path)
+            self.assertEqual(back, settle_row)
+            # The labelling sheet's columns refuse a settle row: DictWriter raises on a key outside its fieldnames.
+            with self.assertRaises(ValueError):
+                write_sheet(Path(temp) / "labelling.csv", [settle_row])
+
+    def test_the_settle_columns_are_the_sheet_columns_and_the_xbrl_side(self):
+        self.assertEqual(SETTLE_COLUMNS, SHEET_COLUMNS + ["concept_from", "xbrl_element", "xbrl_value", "xbrl_unit",
+                                                          "xbrl_normalized", "outcome"])
 
 
 class ExportCommandTests(unittest.TestCase):

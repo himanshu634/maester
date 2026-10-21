@@ -103,13 +103,18 @@ def _strata_table(title: str, strata: dict[str, Summary]) -> list[str]:
     return lines + [""]
 
 
-def _pp(now: Summary, before: Summary, name: str) -> str:
-    """The change in a rate from one run to another in percentage points, such as `+33.3 pp`; a dash when either has no denominator."""
-    a, b = now.tenths(name), before.tenths(name)
+def pp_change(a: int | None, b: int | None) -> str:
+    """The change from rate `b` to rate `a`, both in tenths of a percent, in percentage points, such as `+33.3 pp`; a
+    dash when either is None."""
     if a is None or b is None:
         return "—"
     change = a - b
     return f"{'−' if change < 0 else '+'}{abs(change) // 10}.{abs(change) % 10} pp"
+
+
+def _pp(now: Summary, before: Summary, name: str) -> str:
+    """The change in a rate from one run to another in percentage points, such as `+33.3 pp`; a dash when either has no denominator."""
+    return pp_change(now.tenths(name), before.tenths(name))
 
 
 def _delta_table(now: Summary, before: Summary, earlier_run: str) -> list[str]:

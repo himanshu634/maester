@@ -18,6 +18,9 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 from maester_eval.artefacts import artefact_path, read_artefact, read_artefacts, read_run
+from maester_eval.compare import (
+    SETTLE_COLUMNS, agreement_tenths, compare_runs, exact_agreement_tenths, rate_text, settle_rows, write_compare,
+)
 from maester_eval.concepts import load_taxonomy
 from maester_eval.errors import EvalError
 from maester_eval.files import write_text_atomically
@@ -26,7 +29,7 @@ from maester_eval.manifest import SetChoice, load_manifest, missing_files, tag_v
 from maester_eval.paths import DEFAULT
 from maester_eval.report import score_run_dir, score_xbrl_run_dir, write_report
 from maester_eval.runner import gemini_model_factory, run_live, workflow_settings_from_env
-from maester_eval.sheets import export_run, sheet_path
+from maester_eval.sheets import export_run, sheet_path, write_sheet
 from maester_eval.scoring import RunScore, score_shown
 from maester_eval.tags import gold_coverage, gold_units, pick_gold, propose_units, set_tags, unit_against_gold
 from maester_eval.xbrl_pair import apply_pairs, check_copies, plan_pairs, read_xbrl_manifest, summary_lines
@@ -300,6 +303,74 @@ def report(
     if score.out_of_scope:
         console.print(f"out of scope: {len(score.out_of_scope)}", markup=False)
     console.print(f"report → {md}", markup=False)
+    if to is not None:
+        write_text_atomically(to, md.read_text(encoding="utf-8"))
+        console.print(f"published → {to}", markup=False)
+
+
+@app.command()
+@_reports_errors
+def compare(
+    run: Annotated[str, typer.Option(help="The PDF run: a run folder's name, a path, or `latest` (the latest PDF run).")] = "latest",
+    xbrl: Annotated[str, typer.Option(help="The XBRL run: a run folder's name, a path, or `latest` (the latest XBRL run).")] = "latest",
+    eval_set: Annotated[str, typer.Option("--set", help="dev, heldout or all. The held-out set needs --gate.")] = "dev",
+    gate: Annotated[bool, typer.Option(help="Compare the held-out set: only to decide whether a change lands.")] = False,
+    against: Annotated[Optional[list[str]], typer.Option(
+        help="An earlier run to show the change against, in place of the run of its source; repeat it for each source.")] = None,
+    to: Annotated[Optional[Path], typer.Option(help="Also copy the Markdown here, e.g. docs/eval/2026-10-21-compare.md.")] = None,
+    force: Annotated[bool, typer.Option(help="Overwrite a settle sheet that exists.")] = False,
+) -> None:
+    """Set Gemini against XBRL, cell by cell, on every selected results filing that has both. No model, no cost.
+
+    Writes compare-xbrl.md and compare-xbrl.json into the PDF run's folder, and a settle sheet per dev filing with a
+    disagreement to data/eval/settle. A settle sheet that exists is a person's work: kept unless --force. A held-out
+    filing never gets one."""
+    chosen = _set_choice(eval_set)
+    _gate(chosen, gate)
+    pdf_dir = DEFAULT.resolve_run(run, "pdf")
+    xbrl_dir = DEFAULT.resolve_run(xbrl, "xbrl")
+    earlier_runs = _resolve_runs(against) if against else {}
+    manifest = load_manifest(DEFAULT.manifest)
+    taxonomy = load_taxonomy()
+    generated_at = datetime.now(timezone.utc)
+
+    def compared(pdf_run: Path, xbrl_run: Path):
+        return compare_runs(read_artefacts(pdf_run), read_artefacts(xbrl_run), manifest, DEFAULT.sheets, taxonomy, chosen,
+                            pdf_run.name, xbrl_run.name, read_run(xbrl_run), generated_at)
+
+    pdf_artefacts = {a.filing_id: a for a in read_artefacts(pdf_dir)}
+    result = compared(pdf_dir, xbrl_dir)
+    earlier = None
+    if earlier_runs:
+        # Each earlier run in place of its source, compared on today's sheets, before anything is written.
+        earlier = compared(earlier_runs.get("pdf", (pdf_dir, {}))[0], earlier_runs.get("xbrl", (xbrl_dir, {}))[0])
+    md, _ = write_compare(pdf_dir, result, earlier)
+    written = kept = 0
+    for filing in result.filings:
+        if filing.set != "dev" or not filing.compared:
+            continue
+        rows = settle_rows(filing, pdf_artefacts[filing.filing_id])
+        if not rows:
+            continue
+        path = sheet_path(DEFAULT.settle, filing.filing_id)
+        if path.exists() and not force:
+            kept += 1
+            continue
+        write_sheet(path, rows, columns=SETTLE_COLUMNS)
+        written += 1
+    counts = result.counts()
+    done = sum(1 for f in result.filings if f.compared)
+    console.print(f"compared {done} filing(s), not compared {len(result.filings) - done}", markup=False)
+    agree = counts["agree"] + counts["agree_at_precision"] + counts["agree_dash_zero"]
+    disagree = counts["disagree_value"] + counts["disagree_scale"] + counts["disagree_status"]
+    console.print(f"cells: agree {agree}, disagree {disagree}, sign only {counts['disagree_sign']}, "
+                  f"instances differ {counts['instances_differ']}, PDF only {counts['pdf_only']}, "
+                  f"XBRL only {counts['xbrl_only']}, unlabelled {counts['unlabelled']}, "
+                  f"span unknown {counts['span_unknown']}, not read {counts['not_read']}", markup=False)
+    console.print(f"agreement {rate_text(agreement_tenths(counts))}, exact {rate_text(exact_agreement_tenths(counts))}",
+                  markup=False)
+    console.print(f"settle sheets: {written} written, {kept} kept", markup=False)
+    console.print(f"compare → {md}", markup=False)
     if to is not None:
         write_text_atomically(to, md.read_text(encoding="utf-8"))
         console.print(f"published → {to}", markup=False)

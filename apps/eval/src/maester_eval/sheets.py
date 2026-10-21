@@ -74,9 +74,11 @@ def sheet_path(sheets_dir: Path, filing_id: str) -> Path:
     return sheets_dir / f"{filing_id}.csv"
 
 
-def write_sheet(path: Path, rows: list[dict[str, str]]) -> None:
+def write_sheet(path: Path, rows: list[dict[str, str]], columns: list[str] = SHEET_COLUMNS) -> None:
+    """The rows as CSV under `columns`. A row with a key outside `columns` is a `ValueError` (DictWriter's default
+    `extrasaction`), so a settle sheet is written with its own columns, never trimmed into a labelling sheet's."""
     text = io.StringIO(newline="")
-    writer = csv.DictWriter(text, fieldnames=SHEET_COLUMNS)
+    writer = csv.DictWriter(text, fieldnames=columns)
     writer.writeheader()
     writer.writerows(rows)
     # A BOM so spreadsheet applications read the UTF-8 (₹ in unit notes) correctly.

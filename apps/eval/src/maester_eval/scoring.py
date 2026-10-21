@@ -432,7 +432,7 @@ def score_xbrl_filing(artefact: Artefact, gold: GoldFiling) -> FilingScore:
     return _filing_score(artefact, scores, "xbrl", outside, not_placed)
 
 
-def _unusable(artefact: Artefact) -> Unusable | None:
+def unusable_reason(artefact: Artefact) -> Unusable | None:
     """Why a filing has no used instance, from its first instance in pair order; None when one is used."""
     if any(i.used for i in artefact.instances):
         return None
@@ -453,7 +453,7 @@ def score_xbrl_run(run_name: str, artefacts: list[Artefact], gold: dict[str, Gol
     """An XBRL run against the gold set. A filing with no used instance is listed in `unusable`, not scored; every
     filing of the set, with gold or not, with pooled slots is counted in `pooled`. `record` is the run's `run.json`."""
     by_id = {a.filing_id: a for a in artefacts if eval_set == "all" or a.set == eval_set}
-    unusable = {i: reason for i in sorted(by_id) if (reason := _unusable(by_id[i])) is not None}
+    unusable = {i: reason for i in sorted(by_id) if (reason := unusable_reason(by_id[i])) is not None}
     pooled = {i: n for i in sorted(by_id) if (n := sum(1 for o in slot_owners(by_id[i]).values() if o.owner is None))}
     scored = [score_xbrl_filing(by_id[i], gold[i]) for i in sorted(by_id) if i in gold and i not in unusable]
     chosen_gold = {i for i, g in gold.items() if eval_set == "all" or g.set == eval_set}
