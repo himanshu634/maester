@@ -380,7 +380,7 @@ XBRL facts take their concept from the element map. The harness sets the Gemini 
 | `disagree_value` | The figures differ. |
 | `disagree_scale` | The printed values are equal, but the normalized values differ. |
 | `disagree_status` | Gemini read a dash and XBRL holds a figure that is not `0`, or Gemini read a figure that is not `0` and XBRL holds `0`. |
-| `disagree_sign` | The figures are equal in size and opposite in sign. This is a convention of the element, not a misread. |
+| `disagree_sign` | The figures are equal in size at the coarser of the two precisions and opposite in sign. This is a convention of the element, not a misread. |
 | `ambiguous` | Gemini or XBRL holds two different figures for the cell. The harness never picks one. |
 | `instances_differ` | The slot is a pooled slot, the instances hold the cell with different figures, and Gemini has a fact for the cell. |
 | `pdf_unknown` | XBRL holds a figure. The Gemini fact is not a dash and has no normalized value. |
@@ -542,7 +542,7 @@ The harness shows an error in red and stops with exit code 1. A message names a 
 | `not in the manifest: <ids>` | `--only` of `live` names an id that the manifest does not list. | Exit code 1. |
 | `<id> is in set <a>, not <b>` | `--only` of `live` names a filing of another set than `--set`. | Exit code 1. |
 | `missing under data/eval/corpus: <files>` | The corpus does not hold the PDF of a selected filing, or (`xbrl-read`) an instance of a selected filing. | Exit code 1. No run folder. |
-| `nothing to read: the selection is empty` | The set has no filing that is in scope. | Exit code 1. No run folder. |
+| `nothing to read: the selection is empty` | The set has no filing that is in scope, or `--paired` leaves no filing. | Exit code 1. No run folder. |
 | `GOOGLE_CLOUD_PROJECT is not set; …` | `live` runs and the variable has no value. | Exit code 1. No run folder. |
 | `EXTRACT_DEADLINE_SECONDS: <reason>` | The value is not a number. | Exit code 1. No run folder. |
 | `run label '<label>': use letters, digits, dot, dash or underscore` | `--label` has another character. | Exit code 1. No run folder. |
@@ -1117,12 +1117,44 @@ Note: The `xbrl-map` command of phase 4 is not in this version of the harness. S
    uv run --locked maester-eval compare --run <pdf run> --xbrl <new xbrl run> --against <old xbrl run> --set dev
    ```
 
-6. To decide if the change lands, read the held-out set one time.
-7. Add `--gate` to `xbrl-read` and to `compare` for this.
-8. Check that the exact match of `xbrl` has no regression on the held-out set.
-9. Check that the agreement of `compare` has no regression on the held-out set.
-10. Read the counts at precision, dash against `0` and sign only beside these two rates.
-11. Copy the reports to `docs/eval` with `--to`.
+6. Find the baseline: the held-out XBRL run under the old map.
+
+   Note: The baseline comes from an earlier `xbrl-read --set heldout --gate` with the old map. If there is none, run it before you change the map.
+
+7. Read the held-out instances with the new map, one time:
+
+   ```bash
+   uv run --locked maester-eval xbrl-read --set heldout --gate --label newmap-heldout
+   ```
+
+8. Find a held-out PDF run, or make one:
+
+   ```bash
+   uv run --locked maester-eval live --set heldout --paired
+   ```
+
+   WARNING: `live` calls the model and costs money. Ask the investor before you run it.
+
+   Note: If a held-out PDF run exists, use it and do not run `live`.
+
+9. Make a report of the held-out set:
+
+   ```bash
+   uv run --locked maester-eval report --set heldout --run <pdf run> --run <new xbrl run> --against <old xbrl run>
+   ```
+
+   Note: `report` has no `--gate`.
+
+10. Compare the held-out set:
+
+    ```bash
+    uv run --locked maester-eval compare --set heldout --gate --run <pdf run> --xbrl <new xbrl run> --against <old xbrl run>
+    ```
+
+11. Check that the exact match of `xbrl` has no regression on the held-out set.
+12. Check that the agreement of `compare` has no regression on the held-out set.
+13. Read the counts at precision, dash against `0` and sign only beside these two rates.
+14. Copy the reports to `docs/eval` with `--to`.
 
 Note: The exact match counts exact equality over the gold facts of origin `sheet`.
 

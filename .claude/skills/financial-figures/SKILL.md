@@ -78,7 +78,12 @@ Paths marked *(phase n)* arrive with that phase of the spec; until then they do 
 2. `maester-eval xbrl-read --set dev`: a new XBRL run, read under the new map.
 3. `maester-eval report --run <pdf run> --run <new xbrl run> --against <old xbrl run> --set dev`.
 4. `maester-eval compare --run <pdf run> --xbrl <new xbrl run> --against <old xbrl run>`.
-5. The held-out set once, to land: `xbrl-read --set heldout --gate`, then `report` and `compare --gate` on it. Only `xbrl-read` and `compare` take `--gate`.
+5. The held-out set once, to land, in this order. Only `xbrl-read` and `compare` take `--gate`.
+   - Baseline: the held-out XBRL run under the old map (an earlier `xbrl-read --set heldout --gate` with the old map, or run it before you change the map).
+   - `maester-eval xbrl-read --set heldout --gate`: the held-out XBRL run under the new map.
+   - `maester-eval live --set heldout --paired`: the held-out PDF run. It calls the model and costs money, so ask the investor first and reuse an existing held-out PDF run when there is one.
+   - `maester-eval report --set heldout --run <pdf run> --run <new xbrl run> --against <old xbrl run>`.
+   - `maester-eval compare --set heldout --gate --run <pdf run> --xbrl <new xbrl run> --against <old xbrl run>`.
 6. No regression on held-out in the `xbrl` exact match (exact equality only, over `origin "sheet"` gold) or in `compare`'s agreement. Read the at-precision, dash-as-`0` and sign-only counts beside them.
 7. The reports under `docs/eval/` (`--to`), committed with the change.
 

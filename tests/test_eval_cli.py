@@ -156,6 +156,7 @@ class LiveTests(CommandCase):
         self.assertTrue((run_dir / "run.json").is_file())
         self.assertFalse(artefact_path(run_dir, FILING.id).exists())
 
+
 class LivePairedTests(CommandCase):
     """`live --paired` reads only the filings that have XBRL instances. `run_live` is patched: no model is called."""
 
