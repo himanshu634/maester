@@ -12,6 +12,10 @@ import type {
 	XbrlReadWarning
 } from '$lib/documents/types';
 
+/** Said by the Numbers track and by the statement sources alike: one string each. */
+const noXbrlWords = 'No XBRL for this filing.';
+const xbrlUnreadableWords = 'The XBRL file couldn’t be read.';
+
 export const documentsContent = {
 	heading: 'Documents',
 	lede: 'Add a filing and Maester works out what it is, then reads it. Wrong guess? Change it and it’s read again.',
@@ -272,8 +276,8 @@ export const documentsContent = {
 			`${name ?? 'An XBRL file'} is being read. Gemini reads only what it doesn’t cover.`,
 		manyBeingRead: (count: number) =>
 			`${count} XBRL files are being read. Gemini reads only what they don’t cover.`,
-		noXbrl: 'No XBRL for this filing.',
-		xbrlUnreadable: 'The XBRL file couldn’t be read.',
+		noXbrl: noXbrlWords,
+		xbrlUnreadable: xbrlUnreadableWords,
 		xbrlFailedOne: 'Maester couldn’t read the XBRL file.',
 		xbrlFailedNamed: (name: string) => `${name} couldn’t be read.`,
 		xbrlFailedMany: (count: number) => `${count} XBRL files couldn’t be read.`,
@@ -400,8 +404,8 @@ export const documentsContent = {
 		notInFiling: 'Not in this filing',
 		notReadYet: 'Not read yet.',
 		readStopped: 'The read stopped.',
-		noXbrl: 'No XBRL for this filing.',
-		xbrlReadFailed: 'The XBRL file couldn’t be read.',
+		noXbrl: noXbrlWords,
+		xbrlReadFailed: xbrlUnreadableWords,
 		xbrlNotReadYet: 'The XBRL file isn’t read yet.',
 		/** "The quarter’s XBRL has no cash flow"; without a span, "The XBRL has no cash flow". */
 		lacks: (statement: string, span: string | null) =>

@@ -62,6 +62,37 @@ export function pdfNeeded(file: FilingFile, files: FilingFile[], sources: BasisS
 	return !statements.some((s) => s.source === 'xbrl');
 }
 
+/**
+ * Whether "Read it again" and "Try again" may send a PDF to `extract` (a paid Gemini read): its
+ * numbers are needed (`pdfNeeded`), and it is not held back for a free read. A PDF is held back
+ * when its only claim on its statements is `xbrl_read_failed` (the API fell back to it because the
+ * XBRL could not be read) and a failed XBRL file of each of those bases is in the same send set:
+ * the free XBRL read goes alone, and the PDF waits for its outcome.
+ */
+export function pdfWorthReading(
+	file: FilingFile,
+	files: FilingFile[],
+	sources: BasisSources[]
+): boolean {
+	if (!pdfNeeded(file, files, sources)) return false;
+	const claims = sources.flatMap((b) =>
+		b.statements
+			.filter((s) => s.source === 'pdf' && s.pdfDocumentId === file.documentId)
+			.map((s) => ({ basis: b.basis, reason: s.reason }))
+	);
+	const heldBack =
+		claims.length > 0 &&
+		claims.every(
+			(claim) =>
+				claim.reason === 'xbrl_read_failed' &&
+				files.some(
+					(f) =>
+						f.format === 'xbrl' && f.basis === claim.basis && f.pipeline.numbers.state === 'failed'
+				)
+		);
+	return !heldBack;
+}
+
 export function formatWords(kind: XbrlFormatKind): string {
 	return words.formats[kind];
 }
@@ -194,16 +225,25 @@ export function checkLine(sources: BasisSources[]): string | null {
 	return `${words.checkBases.prefix}${parts.join(', ')}.`;
 }
 
-/** A partial read is never a clean "done" in words: the first warning, or that part was not read. */
-function caveat(xbrl: FilingFile[]): string | null {
-	const read = xbrl.find(
-		(f) =>
-			f.pipeline.numbers.state === 'done' &&
-			(f.pipeline.numbers.partial || f.pipeline.numbers.warnings.length > 0)
-	);
-	if (!read) return null;
-	const [first] = read.pipeline.numbers.warnings;
+/**
+ * A caveat on the numbers of one XBRL file that was read: the first warning, or that part of it
+ * was not read. Null for a file not (yet) done and for a clean read.
+ */
+export function fileCaveat(file: FilingFile): string | null {
+	const numbers = file.pipeline.numbers;
+	if (numbers.state !== 'done') return null;
+	if (!numbers.partial && numbers.warnings.length === 0) return null;
+	const [first] = numbers.warnings;
 	return first ? warningWords(first) : words.partialRead;
+}
+
+/** A partial read is never a clean "done" in words: the first caveat of the XBRL files read. */
+function caveat(xbrl: FilingFile[]): string | null {
+	for (const file of xbrl) {
+		const said = fileCaveat(file);
+		if (said !== null) return said;
+	}
+	return null;
 }
 
 function joinLines(...lines: (string | null)[]): string | null {

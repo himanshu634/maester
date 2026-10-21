@@ -19,6 +19,8 @@ import {
 } from './testing';
 import type { ResultsSpan, StatementSource } from './types';
 
+const PARTIAL = 'Part of the XBRL file wasn’t read.';
+const XBRL_UNMAPPED_UNKNOWN = 'The XBRL is in a format Maester doesn’t know yet, not mapped yet.';
 const one = (statements: StatementSource[]) => [basisOf('consolidated', statements)];
 const q2Filing = filingOf({
 	kind: 'financial_results',
@@ -80,6 +82,36 @@ describe('sourceRows', () => {
 	it('a miss without the PDF’s statement pages has no link', () => {
 		const rows = sourceRows(q2Consolidated, q2Filing, null);
 		expect(rows[1].inPdf).toMatchObject({ strong: true, missed: '1 not found.', open: null });
+	});
+
+	it('the link opens the PDF the statement was checked against, at its own pages', () => {
+		const filing = filingOf({
+			files: [
+				xbrlDone('x1'),
+				fileOf({ documentId: 'pdf-old', createdAt: '2026-10-01T08:00:00Z' }),
+				fileOf({ documentId: 'pdf-new', createdAt: '2026-10-02T08:00:00Z' })
+			]
+		});
+		const basis = basisOf('consolidated', [
+			stmt({
+				statement: 'balance_sheet',
+				xbrlDocumentId: 'x1',
+				pdfDocumentId: 'pdf-new',
+				pdfPages: [9, 10],
+				inPdf: { found: 5, checked: 6, notFound: ['f-1'], notChecked: null }
+			})
+		]);
+		expect(sourceRows(basis, filing, null)[0].inPdf.open).toEqual({
+			documentId: 'pdf-new',
+			pageIndex: 9,
+			label: 'Open the results PDF at page 10'
+		});
+		// The classification's pages belong to the oldest PDF, so they are not used for it.
+		expect(
+			sourceRows(basis, filing, [
+				{ statement: 'balance_sheet', basis: 'consolidated', pages: [2] }
+			])[0].inPdf.open?.pageIndex
+		).toBe(9);
 	});
 
 	it('names the shortest span of the filing, and none without one', () => {
@@ -280,6 +312,55 @@ describe('sourceRows', () => {
 		});
 	});
 
+	it('a partial XBRL read with no warning says part was not read', () => {
+		const x = fileOf({
+			documentId: 'x-p',
+			format: 'xbrl',
+			pipeline: { numbers: { source: 'xbrl', state: 'done', partial: true, warnings: [] } }
+		});
+		const rows = sourceRows(
+			basisOf('consolidated', [stmt({ xbrlDocumentId: 'x-p', xbrlSpans: ['quarter'] })]),
+			filingOf({ files: [x] }),
+			null
+		);
+		expect(rows[0].from).toEqual({ text: 'XBRL · quarter', note: PARTIAL });
+	});
+
+	it('an unmapped statement names the format of the XBRL file of its own basis', () => {
+		const unmapped = (
+			id: string,
+			basis: 'consolidated' | 'standalone',
+			format: 'banking' | 'unknown'
+		) =>
+			fileOf({
+				documentId: id,
+				format: 'xbrl',
+				basis,
+				pipeline: {
+					numbers: { source: 'xbrl', state: 'not_read', reason: 'format_unmapped', format }
+				}
+			});
+		const rows = sourceRows(
+			basisOf('standalone', [
+				stmt({
+					source: 'pdf',
+					xbrlDocumentId: null,
+					pdfDocumentId: 'pdf-q2',
+					reason: 'xbrl_format_unmapped'
+				})
+			]),
+			filingOf({
+				files: [
+					unmapped('x-c', 'consolidated', 'banking'),
+					unmapped('x-s', 'standalone', 'unknown'),
+					fileOf({ documentId: 'pdf-q2' })
+				]
+			}),
+			null
+		);
+		expect(rows[0].from.note).toBe(XBRL_UNMAPPED_UNKNOWN);
+	});
+
 	it('a not-checked statement says why', () => {
 		const rows = sourceRows(
 			one([stmt({ inPdf: { found: 0, checked: 0, notFound: [], notChecked: 'scanned' } })])[0],
@@ -313,7 +394,7 @@ describe('sourceRows', () => {
 
 describe('readAgainIds', () => {
 	it('the XBRL only when it covers the PDF, even a PDF Gemini read first (no Gemini call)', () => {
-		const covered = one([stmt({ xbrlDocumentId: 'x1' })]);
+		const covered = one([stmt({ xbrlDocumentId: 'x1', pdfDocumentId: 'p1' })]);
 		expect(readAgainIds([xbrlDone('x1'), pdfNotNeeded('p1', ['x1'])], covered)).toEqual(['x1']);
 		// numbers { state: 'done', source: 'pdf' }, read before its XBRL arrived; every statement of
 		// `sources` is xbrl (Review Focus 1)
@@ -323,7 +404,7 @@ describe('readAgainIds', () => {
 	it('a PDF read by Gemini, and both when they split', () => {
 		expect(readAgainIds([pdfDone('p1')], [])).toEqual(['p1']);
 		const split = one([
-			stmt({ xbrlDocumentId: 'x1' }),
+			stmt({ xbrlDocumentId: 'x1', pdfDocumentId: 'p1' }),
 			stmt({
 				statement: 'cash_flow',
 				source: 'pdf',
@@ -341,11 +422,77 @@ describe('readAgainIds', () => {
 	});
 
 	it('a failed XBRL file is read again too, in file order', () => {
-		const sources = one([stmt({ xbrlDocumentId: 'x1' })]);
+		const sources = one([stmt({ xbrlDocumentId: 'x1', pdfDocumentId: 'p1' })]);
 		expect(readAgainIds([pdfDone('p1'), xbrlFailed('x2'), xbrlDone('x1')], sources)).toEqual([
 			'x2',
 			'x1'
 		]);
+	});
+
+	it('a PDF whose only claim is a failed XBRL read waits: the free XBRL read goes alone', () => {
+		const sources = one([
+			stmt({
+				source: 'pdf',
+				xbrlDocumentId: null,
+				pdfDocumentId: 'p1',
+				reason: 'xbrl_read_failed'
+			})
+		]);
+		expect(readAgainIds([xbrlFailed('x2'), pdfDone('p1')], sources)).toEqual(['x2']);
+		// Another basis the PDF owns outright still sends it, with the XBRL.
+		const owns = [
+			...sources,
+			basisOf('standalone', [
+				stmt({
+					source: 'pdf',
+					xbrlDocumentId: null,
+					pdfDocumentId: 'p1',
+					reason: 'xbrl_lacks_statement'
+				})
+			])
+		];
+		expect(readAgainIds([xbrlFailed('x2'), pdfDone('p1')], owns)).toEqual(['x2', 'p1']);
+		// A failed XBRL file of another basis does not hold the PDF back.
+		expect(readAgainIds([xbrlFailed('x2', 'standalone'), pdfDone('p1')], sources)).toEqual([
+			'x2',
+			'p1'
+		]);
+		// With no failed XBRL file in the send set, the PDF is the way to the numbers.
+		expect(readAgainIds([pdfDone('p1')], sources)).toEqual(['p1']);
+	});
+
+	it('two bases, one covered by XBRL and one owned by the PDF, send both', () => {
+		const sources = [
+			basisOf('consolidated', [stmt({ xbrlDocumentId: 'x1', pdfDocumentId: 'p1' })]),
+			basisOf('standalone', [
+				stmt({
+					source: 'pdf',
+					xbrlDocumentId: null,
+					pdfDocumentId: 'p1',
+					reason: 'xbrl_lacks_statement'
+				})
+			])
+		];
+		expect(readAgainIds([xbrlDone('x1'), pdfDone('p1')], sources)).toEqual(['x1', 'p1']);
+	});
+
+	it('while an XBRL file of the filing is waiting, nothing is read again', () => {
+		const x = fileOf({
+			documentId: 'x1',
+			format: 'xbrl',
+			pipeline: { numbers: { source: 'xbrl', state: 'waiting' } }
+		});
+		expect(readAgainIds([x, pdfDone('p1')], [])).toEqual([]);
+		expect(
+			retryIds(
+				[
+					x,
+					fileOf({ documentId: 'p2', pipeline: { numbers: { source: 'pdf', state: 'failed' } } })
+				],
+				[],
+				'numbers'
+			)
+		).toEqual([]);
 	});
 
 	it('while an XBRL file of the filing is read, a PDF is not read again', () => {
@@ -385,7 +532,11 @@ describe('retryIds', () => {
 			)
 		).toEqual(['p2']);
 		expect(
-			retryIds([xbrlFailed('x2'), failedPdf], one([stmt({ xbrlDocumentId: 'x1' })]), 'numbers')
+			retryIds(
+				[xbrlFailed('x2'), failedPdf],
+				one([stmt({ xbrlDocumentId: 'x1', pdfDocumentId: 'p1' })]),
+				'numbers'
+			)
 		).toEqual(['x2']);
 		expect(
 			retryIds(
@@ -404,6 +555,18 @@ describe('retryIds', () => {
 		expect(
 			retryIds([fileOf({ documentId: 'i1', pipeline: { identified: 'failed' } })], [], 'identify')
 		).toEqual(['i1']);
+	});
+
+	it('a PDF whose only claim is a failed XBRL read is not retried beside the XBRL', () => {
+		const sources = one([
+			stmt({
+				source: 'pdf',
+				xbrlDocumentId: null,
+				pdfDocumentId: 'p1',
+				reason: 'xbrl_read_failed'
+			})
+		]);
+		expect(retryIds([xbrlFailed('x2'), failedPdf], sources, 'numbers')).toEqual(['x2']);
 	});
 
 	it('numbers never retries a file whose numbers did not fail', () => {
@@ -467,5 +630,6 @@ describe('words', () => {
 			'Not checked: the XBRL file gives no value to look for.'
 		);
 		expect(notCheckedWords('not_yet')).toBe('Not checked yet.');
+		expect(notCheckedWords('no_unit')).toBe('Not checked: its unit isn’t known.');
 	});
 });

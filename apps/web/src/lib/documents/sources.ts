@@ -7,10 +7,12 @@
  * The one rule that costs money: a PDF is sent to `extract` (a paid Gemini read) only when the
  * filing's statement `sources` say its numbers are needed (`pdfNeeded`), never because the PDF's
  * own `numbers` say `done` or `failed`. A PDF Gemini read before its XBRL arrived still says
- * `source: pdf`, `done`, after XBRL owns every one of its slots.
+ * `source: pdf`, `done`, after XBRL owns every one of its slots. One more case holds a needed PDF
+ * back (`pdfWorthReading`): a PDF whose only claim is `xbrl_read_failed`, beside a failed XBRL
+ * file of that basis in the same send set. The free XBRL read goes alone.
  */
 import { documentsContent } from '$lib/content/documents';
-import { formatWords, pdfNeeded, warningWords } from './tracks';
+import { fileCaveat, formatWords, pdfWorthReading } from './tracks';
 import type {
 	BasisSources,
 	FactSpan,
@@ -87,23 +89,17 @@ function xbrlText(statement: StatementSource, filing: WorkspaceFiling): string {
 	return day === null ? words.xbrl : words.xbrlAt(day);
 }
 
-/** A caveat on the figures of an XBRL file the statement is read from. */
-function caveat(statement: StatementSource, filing: WorkspaceFiling): string | null {
-	const file = filing.files.find((f) => f.documentId === statement.xbrlDocumentId);
-	if (!file) return null;
-	const numbers = file.pipeline.numbers;
-	if (!numbers.partial && numbers.warnings.length === 0) return null;
-	const [first] = numbers.warnings;
-	return first ? warningWords(first) : trackWords.partialRead;
-}
-
 function pdfText(statement: StatementSource): string {
 	const pages = pagesWords(statement.pdfPages);
 	return pages === '' ? words.pdf : words.pdfPages(pages);
 }
 
 /** Why a statement is read from the PDF: what the filing's XBRL says. */
-function pdfNote(statement: StatementSource, filing: WorkspaceFiling): string | null {
+function pdfNote(
+	statement: StatementSource,
+	basis: ReportingBasis,
+	filing: WorkspaceFiling
+): string | null {
 	switch (statement.reason) {
 		case 'xbrl_lacks_statement': {
 			const shortest = SHORTEST_FIRST.find((span) => filing.spans.includes(span)) ?? null;
@@ -113,9 +109,8 @@ function pdfNote(statement: StatementSource, filing: WorkspaceFiling): string | 
 			);
 		}
 		case 'xbrl_format_unmapped': {
-			const xbrl = filing.files.filter((f) => f.format === 'xbrl');
-			const format = xbrl.find((f) => f.pipeline.numbers.format !== null)?.pipeline.numbers.format;
-			return trackWords.unmapped(formatWords(format ?? 'unknown'));
+			const xbrl = filing.files.find((f) => f.format === 'xbrl' && f.basis === basis);
+			return trackWords.unmapped(formatWords(xbrl?.pipeline.numbers.format ?? 'unknown'));
 		}
 		case 'no_xbrl':
 			return words.noXbrl;
@@ -130,6 +125,7 @@ function pdfNote(statement: StatementSource, filing: WorkspaceFiling): string | 
 
 function fromOf(
 	statement: StatementSource,
+	basis: ReportingBasis,
 	filing: WorkspaceFiling
 ): { text: string; note: string | null } {
 	if (statement.source !== 'xbrl') {
@@ -137,10 +133,11 @@ function fromOf(
 		if (statement.reason === 'read_failed') return { text: words.none, note: words.readStopped };
 	}
 	if (statement.source === 'xbrl') {
-		return { text: xbrlText(statement, filing), note: caveat(statement, filing) };
+		const file = filing.files.find((f) => f.documentId === statement.xbrlDocumentId);
+		return { text: xbrlText(statement, filing), note: file ? fileCaveat(file) : null };
 	}
 	if (statement.source === 'pdf') {
-		return { text: pdfText(statement), note: pdfNote(statement, filing) };
+		return { text: pdfText(statement), note: pdfNote(statement, basis, filing) };
 	}
 	// Nowhere. Only `not_in_filing` says it is absent: a failed or unread XBRL never does.
 	switch (statement.reason) {
@@ -174,12 +171,18 @@ function inPdfOf(
 	const text = words.found(count.found, count.checked);
 	if (count.notFound.length === 0) return { text, strong: false, missed: null, open: null };
 
-	const pages =
-		pdfStatements?.find((s) => s.statement === statement.statement && s.basis === basis)?.pages ??
-		[];
-	const pdf = filing.files.find(
-		(f) => f.format === 'pdf' && f.state === 'stored' && f.intakeState !== 'duplicate'
-	);
+	// The API checked the statement against the PDF that prints it; follow that PDF and its pages.
+	// Only a statement with no such PDF falls back to the filing's stored PDF and the classification.
+	const own = statement.pdfDocumentId !== null;
+	const pages = own
+		? statement.pdfPages
+		: (pdfStatements?.find((s) => s.statement === statement.statement && s.basis === basis)
+				?.pages ?? []);
+	const pdf = own
+		? filing.files.find((f) => f.documentId === statement.pdfDocumentId && f.state === 'stored')
+		: filing.files.find(
+				(f) => f.format === 'pdf' && f.state === 'stored' && f.intakeState !== 'duplicate'
+			);
 	const open =
 		pdf && pages.length > 0
 			? {
@@ -206,7 +209,7 @@ export function sourceRows(
 			.map((s) => ({
 				statement: kind,
 				label: documentsContent.statements[kind],
-				from: fromOf(s, filing),
+				from: fromOf(s, basis.basis, filing),
 				inPdf: inPdfOf(s, basis.basis, filing, pdfStatements)
 			}))
 	);
@@ -215,7 +218,7 @@ export function sourceRows(
 /**
  * The files "Read it again" sends to `extract`, in file order: XBRL files whose numbers are done or
  * failed (a free read), and PDFs whose numbers are done or failed AND that the filing's sources
- * still need. Never a PDF the XBRL covers, whatever its own `numbers.source` says: that would be
+ * still need (`pdfWorthReading`). Never a PDF the XBRL covers, whatever its own `numbers.source` says: that would be
  * a paid Gemini call for numbers XBRL already owns. An unsorted file passes `sources` `[]`.
  */
 export function readAgainIds(files: FilingFile[], sources: BasisSources[]): string[] {
@@ -223,7 +226,7 @@ export function readAgainIds(files: FilingFile[], sources: BasisSources[]): stri
 		.filter((f) => {
 			const state = f.pipeline.numbers.state;
 			if (state !== 'done' && state !== 'failed') return false;
-			return f.format === 'xbrl' || pdfNeeded(f, files, sources);
+			return f.format === 'xbrl' || pdfWorthReading(f, files, sources);
 		})
 		.map((f) => f.documentId);
 }
@@ -246,7 +249,7 @@ export function retryIds(
 			case 'numbers':
 				return (
 					f.pipeline.numbers.state === 'failed' &&
-					(f.format === 'xbrl' || pdfNeeded(f, files, sources))
+					(f.format === 'xbrl' || pdfWorthReading(f, files, sources))
 				);
 		}
 	};
