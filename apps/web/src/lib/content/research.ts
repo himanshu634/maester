@@ -83,8 +83,8 @@ export const researchContent = {
 		rangeNote: (low: string, high: string) =>
 			`Low on ${low}, high on ${high}. The block is the last close.`,
 		/** `basic`: the line is the basic earnings per share; otherwise it is named plainly. */
-		peNote: (close: string, eps: string, fy: string, page: number, basic: boolean) =>
-			`${close} ÷ ${eps}, the ${basic ? 'basic ' : ''}earnings per share for ${fy} (annual report, page ${page}).`,
+		peNote: (close: string, eps: string, fy: string, where: string, basic: boolean) =>
+			`${close} ÷ ${eps}, the ${basic ? 'basic ' : ''}earnings per share for ${fy} (${where}).`,
 		profitChange: (pct: string, fy: string) => `${pct} on ${fy}`,
 		profitNote: (basis: string, revenue: string | null, change: string | null) =>
 			[basis, revenue ? `Revenue ${revenue}${change ? `, ${change}` : ''}.` : null]
@@ -166,8 +166,12 @@ export const researchContent = {
 			reviewed: 'Reviewed'
 		},
 		from: (filing: string, page: string) => `${filing}, ${page}`,
+		/** A figure read from an XBRL file: its element, in place of a page. */
+		fromXbrl: (filing: string, element: string) => `${filing}, element ${element}`,
 		restated: (filing: string, printed: string, page: number) =>
 			`${filing} printed ${printed} for this year, on page ${page}. The newer filing’s figure is shown.`,
+		restatedXbrl: (filing: string, printed: string, element: string) =>
+			`${filing} printed ${printed} for this year, in the element ${element}. The newer filing’s figure is shown.`,
 		usedIn: 'Price to earnings, in the summary above',
 		reviewed: 'Not yet',
 		open: (page: number) => `Open the PDF at page ${page}`,
@@ -178,6 +182,10 @@ export const researchContent = {
 
 	words: {
 		page: (page: number, of: number) => `Page ${page} of ${of}`,
+		/** Where a price-to-earnings figure's earnings per share came from. */
+		wherePage: (page: number) => `annual report, page ${page}`,
+		whereXbrl: (element: string) => `XBRL file, element ${element}`,
+		whereUnknown: 'annual report',
 		found: 'Found in the page’s text',
 		scanned: (page: number) => `Page ${page} is scanned: not checked against its text`,
 		notFound: {
@@ -210,6 +218,10 @@ export const researchContent = {
 		},
 		missing: (filing: string) => `Not printed under this name in ${filing}.`,
 		dash: (page: number) => `A dash printed on page ${page}. Maester doesn’t read it as zero.`,
-		unparsed: (page: number) => `Maester couldn’t read what page ${page} prints here.`
+		unparsed: (page: number) => `Maester couldn’t read what page ${page} prints here.`,
+		nilXbrl: (element: string) =>
+			`The XBRL file marks ${element} as nil. Maester doesn’t read it as zero.`,
+		unparsedXbrl: (element: string) =>
+			`Maester couldn’t read the value of ${element} in the XBRL file.`
 	}
 } as const;

@@ -5,9 +5,16 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { JobTypes } from "@maester/contracts";
 import { schema } from "@maester/db";
 import { indexPipelineVersion } from "@maester/document-index";
+import * as jobs from "@maester/jobs";
 import { documentVerify } from "../src/jobs/document-verify.js";
 import { runJob } from "../src/run.js";
 import { createWorkerContext, seedJob, seedWorkspace } from "./context.js";
+
+// The stub's body is Task 12's; here it is a spy that calls through.
+vi.mock("@maester/jobs", async (importOriginal) => {
+  const original = await importOriginal<typeof jobs>();
+  return { ...original, redecidePdfsAfterXbrl: vi.fn(original.redecidePdfsAfterXbrl) };
+});
 
 let ctx: Awaited<ReturnType<typeof createWorkerContext>>;
 beforeAll(async () => { ctx = await createWorkerContext({ [JobTypes.DOCUMENT_VERIFY]: documentVerify }); });
@@ -282,5 +289,113 @@ describe("document.verify hands over to classification", () => {
     } finally {
       await chained.close();
     }
+  });
+});
+
+const INSTANCE = `<?xml version="1.0" encoding="UTF-8"?>
+<!--IFIndAs V1.0 (07-10-2025)-->
+<xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance"><xbrli:context id="OneD"/></xbrli:xbrl>`;
+
+async function seedXbrl(workspaceId: string, userId: string, name = "r.xml") {
+  const id = crypto.randomUUID();
+  const storageKey = `workspaces/${workspaceId}/documents/${id}/original.xml`;
+  await ctx.db.insert(schema.document).values({
+    id, workspaceId, originalName: name, declaredSize: 100, declaredMime: "application/xml", format: "xbrl", storageKey, state: "uploaded", createdByUserId: userId,
+  });
+  return { id, storageKey };
+}
+
+describe("document.verify of XBRL", () => {
+  afterEach(() => {
+    vi.mocked(jobs.redecidePdfsAfterXbrl).mockClear();
+  });
+
+  it("stores an instance and creates its classify and index jobs", async () => {
+    const { workspaceId, userId } = await seedWorkspace(ctx.db);
+    const { id, storageKey } = await seedXbrl(workspaceId, userId);
+    const bytes = new TextEncoder().encode(INSTANCE);
+    await ctx.store.put(storageKey, bytes, "application/xml");
+    const { job, doc } = await verify(workspaceId, id);
+    expect(job.state).toBe("succeeded");
+    expect(doc).toMatchObject({ state: "stored", format: "xbrl", intakeState: "identifying", sizeBytes: bytes.length });
+    expect(doc.contentSha256).toBe(createHash("sha256").update(bytes).digest("hex"));
+    const classify = await ctx.db.select().from(schema.job).where(eq(schema.job.type, JobTypes.DOCUMENT_CLASSIFY));
+    expect(classify.filter((j) => j.subjectId === id)).toHaveLength(1);
+    const index = await ctx.db.select().from(schema.job).where(eq(schema.job.type, JobTypes.DOCUMENT_INDEX));
+    expect(index.filter((j) => j.subjectId === id)).toHaveLength(1);
+    expect(jobs.redecidePdfsAfterXbrl).not.toHaveBeenCalled();
+  });
+
+  it("sniffs the head of an instance that is larger than the sniff window", async () => {
+    const { workspaceId, userId } = await seedWorkspace(ctx.db);
+    const { id, storageKey } = await seedXbrl(workspaceId, userId);
+    const filler = "<xbrli:context id=\"c\"/>".repeat(Math.ceil((ctx.env.XBRL_SNIFF_BYTES * 2) / 22));
+    const bytes = new TextEncoder().encode(INSTANCE.replace("</xbrli:xbrl>", `${filler}</xbrli:xbrl>`));
+    expect(bytes.length).toBeGreaterThan(ctx.env.XBRL_SNIFF_BYTES);
+    await ctx.store.put(storageKey, bytes, "application/xml");
+    const { doc } = await verify(workspaceId, id);
+    expect(doc).toMatchObject({ state: "stored", sizeBytes: bytes.length });
+    expect(doc.contentSha256).toBe(createHash("sha256").update(bytes).digest("hex"));
+  });
+
+  it("rejects a .xml document that holds a PDF as UNSUPPORTED_TYPE and settles it for the PDFs waiting on XBRL", async () => {
+    const { workspaceId, userId } = await seedWorkspace(ctx.db);
+    const { id, storageKey } = await seedXbrl(workspaceId, userId);
+    await ctx.store.put(storageKey, new TextEncoder().encode("%PDF-1.7\nrest"), "application/xml");
+    const { doc, job } = await verify(workspaceId, id);
+    expect(doc).toMatchObject({ state: "rejected", rejectionCode: "UNSUPPORTED_TYPE" });
+    expect(job.result).toEqual({ outcome: "rejected", code: "UNSUPPORTED_TYPE" });
+    expect(jobs.redecidePdfsAfterXbrl).toHaveBeenCalledTimes(1);
+    expect(jobs.redecidePdfsAfterXbrl).toHaveBeenCalledWith(ctx.db, ctx.dispatcher, workspaceId);
+  });
+
+  it("rejects a PDF document that holds XML as UNSUPPORTED_TYPE and does not redecide", async () => {
+    const { workspaceId, userId } = await seedWorkspace(ctx.db);
+    const { id, storageKey } = await seedDocument(workspaceId, userId);
+    await ctx.store.put(storageKey, new TextEncoder().encode(INSTANCE), "application/pdf");
+    const { doc } = await verify(workspaceId, id);
+    expect(doc).toMatchObject({ state: "rejected", rejectionCode: "UNSUPPORTED_TYPE" });
+    expect(jobs.redecidePdfsAfterXbrl).not.toHaveBeenCalled();
+  });
+
+  it("rejects an instance with a DOCTYPE as UNSUPPORTED_TYPE", async () => {
+    const { workspaceId, userId } = await seedWorkspace(ctx.db);
+    const { id, storageKey } = await seedXbrl(workspaceId, userId);
+    const hostile = INSTANCE.replace("<xbrli:xbrl", `<!DOCTYPE xbrli:xbrl [<!ENTITY a "aaaa">]><xbrli:xbrl`);
+    await ctx.store.put(storageKey, new TextEncoder().encode(hostile), "application/xml");
+    const { doc } = await verify(workspaceId, id);
+    expect(doc).toMatchObject({ state: "rejected", rejectionCode: "UNSUPPORTED_TYPE" });
+    expect(jobs.redecidePdfsAfterXbrl).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks a second copy of an instance a duplicate: no classify, no index job, and the PDFs are redecided", async () => {
+    const { workspaceId, userId } = await seedWorkspace(ctx.db);
+    const ids: string[] = [];
+    for (const name of ["one.xml", "two.xml"]) {
+      const { id, storageKey } = await seedXbrl(workspaceId, userId, name);
+      await ctx.store.put(storageKey, new TextEncoder().encode(INSTANCE), "application/xml");
+      await verify(workspaceId, id);
+      ids.push(id);
+    }
+    const [second] = await ctx.db.select().from(schema.document).where(eq(schema.document.id, ids[1]!));
+    expect(second).toMatchObject({ intakeState: "duplicate", duplicateOfDocumentId: ids[0] });
+    const mine = (type: string) => ctx.db.select().from(schema.job).where(eq(schema.job.type, type)).then((rows) => rows.filter((j) => ids.includes(j.subjectId)).map((j) => j.subjectId));
+    expect(await mine(JobTypes.DOCUMENT_CLASSIFY)).toEqual([ids[0]]);
+    expect(await mine(JobTypes.DOCUMENT_INDEX)).toEqual([ids[0]]);
+    expect(jobs.redecidePdfsAfterXbrl).toHaveBeenCalledTimes(1);
+  });
+
+  it("onFinalFailure on an xbrl document redecides the PDFs with the worker's dispatcher; on a PDF it does nothing", async () => {
+    const { workspaceId, userId } = await seedWorkspace(ctx.db);
+    const x = await seedXbrl(workspaceId, userId);
+    const p = await seedDocument(workspaceId, userId);
+    const jobFor = async (subjectId: string) =>
+      (await ctx.db.select().from(schema.job).where(eq(schema.job.id, await seedJob(ctx.db, workspaceId, { type: JobTypes.DOCUMENT_VERIFY, subjectType: "document", subjectId }))))[0]!;
+    const deps = { db: ctx.db, dispatcher: ctx.dispatcher };
+    await documentVerify.onFinalFailure!(await jobFor(p.id), deps);
+    expect(jobs.redecidePdfsAfterXbrl).not.toHaveBeenCalled();
+    await documentVerify.onFinalFailure!(await jobFor(x.id), deps);
+    expect(jobs.redecidePdfsAfterXbrl).toHaveBeenCalledTimes(1);
+    expect(jobs.redecidePdfsAfterXbrl).toHaveBeenCalledWith(ctx.db, ctx.dispatcher, workspaceId);
   });
 });

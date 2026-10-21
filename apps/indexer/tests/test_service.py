@@ -19,6 +19,8 @@ from maester_indexer.settings import DEFAULT_EMBEDDING_MODEL, Settings
 from tests.helpers import fixture_read, whitespace_tokenizer
 
 CHUNK_REQUEST = Path(__file__).resolve().parents[3] / "packages/contracts/fixtures/index/chunk-request.json"
+CHUNK_TEXT_REQUEST = CHUNK_REQUEST.with_name("chunk-text-request.json")
+CHUNK_TEXT_RESPONSE = CHUNK_REQUEST.with_name("chunk-text-response.json")
 SECRET = "test-secret"
 PDF = b"%PDF-1.7 not read by the fake"
 VERSIONS = IndexerVersions(
@@ -180,6 +182,41 @@ class Service(unittest.TestCase):
         mismatch = client.post("/v1/chunk", content=json.dumps({**request, "embeddingModel": "x/y"}), headers=headers())
         self.assertEqual(events(mismatch)[0].code, "INDEXER_MODEL_MISMATCH")
         self.assertEqual(client.post("/v1/chunk", content=b'{"read": 1}', headers=headers()).status_code, 400)
+
+    def test_chunk_text_answers_the_fixture(self):
+        request = json.loads(CHUNK_TEXT_REQUEST.read_text(encoding="utf-8"))
+        reader = FakeReader()
+        response = make(reader).post("/v1/chunk-text", content=json.dumps(request), headers=headers())
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.headers["content-type"].startswith("application/json"))
+        self.assertEqual(response.json(), json.loads(CHUNK_TEXT_RESPONSE.read_text(encoding="utf-8")))
+        self.assertEqual(reader.calls, [])
+
+    def test_chunk_text_refuses_a_model_that_is_not_the_loaded_tokenizers(self):
+        request = json.loads(CHUNK_TEXT_REQUEST.read_text(encoding="utf-8"))
+        response = make(FakeReader()).post(
+            "/v1/chunk-text", content=json.dumps({**request, "embeddingModel": "x/y"}), headers=headers())
+        self.assertEqual(response.status_code, 409)
+        body = response.json()
+        self.assertEqual(body["code"], "INDEXER_MODEL_MISMATCH")
+        self.assertIsInstance(body["message"], str)
+
+    def test_chunk_text_needs_the_secret_and_a_valid_body_and_keeps_text_out_of_logs(self):
+        request = json.loads(CHUNK_TEXT_REQUEST.read_text(encoding="utf-8"))
+        client = make(FakeReader())
+        self.assertEqual(
+            client.post("/v1/chunk-text", content=json.dumps(request), headers=headers(**{"x-indexer-secret": "no"})).status_code,
+            401)
+        with self.assertLogs("maester_indexer", level="INFO") as logs:
+            bad = client.post("/v1/chunk-text", content=json.dumps({**request, "blocks": "audit committee"}), headers=headers())
+            client.post("/v1/chunk-text", content=json.dumps(request), headers=headers())
+        self.assertEqual((bad.status_code, bad.json()["detail"]["code"]), (400, "BAD_REQUEST"))
+        self.assertNotIn("audit committee", bad.text)
+        self.assertNotIn("audit committee", "\n".join(logs.output))
+        self.assertNotIn("Cement", "\n".join(logs.output))
+        self.assertEqual(
+            make(FakeReader(), max_bytes=10).post("/v1/chunk-text", content=json.dumps(request), headers=headers()).status_code,
+            413)
 
     def test_a_client_that_disconnects_cancels_the_reader(self):
         reader = FakeReader(delay=30)

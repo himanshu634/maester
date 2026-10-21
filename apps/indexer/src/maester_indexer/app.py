@@ -24,12 +24,14 @@ from typing import Annotated, Any
 
 from docling_core.transforms.chunker.tokenizer.base import BaseTokenizer
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 
 from maester_indexer.chunker import chunk_range, load_tokenizer
 from maester_indexer.contracts import (
     ChunkRequest,
+    ChunkTextRequest,
+    ChunkTextResponse,
     ErrorEvent,
     HeartbeatEvent,
     IndexerVersions,
@@ -42,6 +44,7 @@ from maester_indexer.contracts import (
 from maester_indexer.errors import IndexingError
 from maester_indexer.reader import Reader, ReadCancelled
 from maester_indexer.settings import Settings
+from maester_indexer.text_chunker import chunk_text_blocks
 
 log = logging.getLogger("maester_indexer")
 
@@ -289,5 +292,40 @@ def create_app(settings: Settings | None = None, reader: Reader | None = None, t
             yield _line(ResultEvent(read=None, ocr_pages=0))
         except Exception as error:
             yield failure(document_id, error, started)
+
+    async def chunk_text_request(data: Annotated[bytes, Depends(body)]) -> ChunkTextRequest:
+        try:
+            return ChunkTextRequest.model_validate_json(data)
+        except ValidationError:
+            raise _bad_request() from None
+
+    @app.post("/v1/chunk-text", dependencies=[Depends(authenticate)])
+    async def chunk_text(request: Annotated[ChunkTextRequest, Depends(chunk_text_request)],
+                         x_document_id: Annotated[str | None, Header()] = None) -> JSONResponse:
+        """XBRL text blocks chunked with the loaded tokenizer; not streamed, because nothing is read."""
+        document_id = _safe_id(x_document_id)
+        started = time.monotonic()
+        if request.embedding_model != settings.embedding_model:
+            log.info("chunk-text refused document=%s code=INDEXER_MODEL_MISMATCH", document_id)
+            message = "The indexer's tokenizer is for another embedding model than the one asked for."
+            return JSONResponse(status_code=409, content={"code": "INDEXER_MODEL_MISMATCH", "message": message})
+        try:
+            tokenizer = await asyncio.to_thread(get_tokenizer)
+            chunks = await asyncio.to_thread(chunk_text_blocks, request.blocks, request.basis, tokenizer)
+        except IndexingError as error:
+            log.info("chunk-text failed document=%s code=%s retryable=%s", document_id, error.code, error.retryable)
+            return JSONResponse(
+                status_code=422 if not error.retryable else 503,
+                content={"code": error.code, "message": error.message, "retryable": error.retryable},
+            )
+        except Exception as error:
+            # The type only: an exception's message can carry the text.
+            log.error("chunk-text crashed document=%s error=%s", document_id, type(error).__name__)
+            return JSONResponse(
+                status_code=500, content={"code": "INDEX_FAILED", "message": f"unexpected {type(error).__name__}", "retryable": True}
+            )
+        log.info("chunk-text finished document=%s blocks=%d chunks=%d seconds=%.1f", document_id,
+                 len(request.blocks), len(chunks), time.monotonic() - started)
+        return JSONResponse(ChunkTextResponse(versions=reader.versions, chunks=chunks).to_wire())
 
     return app

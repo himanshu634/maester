@@ -2,7 +2,8 @@ import { z } from "zod";
 import { DecimalString, Uuid } from "./common.js";
 import { Company } from "./company.js";
 import { ClassificationKind, IntakeState } from "./classification.js";
-import { CheckType, IsoDate, ReportingBasis, StatementKind } from "./extraction.js";
+import { CheckStatus, CheckType, FactSpan, IsoDate, ReportingBasis, StatementKind } from "./extraction.js";
+import { XbrlPdfNotChecked } from "./xbrl.js";
 
 /**
  * A company's statements put together across its read annual reports, and its NSE closes.
@@ -32,24 +33,67 @@ export const CellCheck = z.object({
 });
 export type CellCheck = z.infer<typeof CellCheck>;
 
-export const CellSource = z.object({
-  documentId: Uuid,
-  /** 0-based page index of the original PDF. */
-  pageIndex: z.number().int().min(0),
-  pageCount: z.number().int().min(1),
-  /** Whether the printed value was found in the page's text layer; null for a page without one. */
-  textLayerMatch: z.boolean().nullable(),
+/**
+ * Whether an XBRL fact's value was found on its results PDF's statement pages (`xbrl_in_pdf`). `pdfDocumentId` is the
+ * PDF of the filing, null with none; `pageIndex` the 0-based page the value was found on; `statementPages` the PDF's
+ * pages for the fact's statement and basis, so the screen can open where they start; `reason` why it was not checked.
+ */
+export const XbrlInPdf = z.object({
+  status: CheckStatus,
+  pdfDocumentId: Uuid.nullable(),
+  pageIndex: z.number().int().min(0).nullable(),
+  statementPages: z.array(z.number().int().min(0)),
+  reason: XbrlPdfNotChecked.nullable(),
 });
+export type XbrlInPdf = z.infer<typeof XbrlInPdf>;
+
+export const CellSource = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("page"),
+    documentId: Uuid,
+    /** 0-based page index of the original PDF. */
+    pageIndex: z.number().int().min(0),
+    pageCount: z.number().int().min(1),
+    /** Whether the printed value was found in the page's text layer; null for a page without one. */
+    textLayerMatch: z.boolean().nullable(),
+  }),
+  z.strictObject({
+    kind: z.literal("xbrl"),
+    documentId: Uuid,
+    /** The XBRL file's name: it has no pages to open. */
+    originalName: z.string(),
+    element: z.string(),
+    contextId: z.string(),
+    /** The fact's `decimals` as written: `"INF"` or an integer. */
+    decimals: z.string().nullable(),
+    /** True when the fact is `xsi:nil`: the cell is unparsed, never zero. */
+    nil: z.boolean(),
+    periodStart: IsoDate.nullable(),
+    span: FactSpan.nullable(),
+    inPdf: XbrlInPdf,
+  }),
+]);
 export type CellSource = z.infer<typeof CellSource>;
 
-/** What an older filing printed for the same line and year, when it differs. */
-export const Restated = z.object({
-  documentId: Uuid,
-  filingPeriodEnd: IsoDate.nullable(),
-  pageIndex: z.number().int().min(0),
-  value: DecimalString.nullable(),
-  printed: z.string(),
-});
+/** What another filing printed for the same line and year, when it differs: a page of a PDF or an XBRL element. */
+export const Restated = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("page"),
+    documentId: Uuid,
+    filingPeriodEnd: IsoDate.nullable(),
+    pageIndex: z.number().int().min(0),
+    value: DecimalString.nullable(),
+    printed: z.string(),
+  }),
+  z.strictObject({
+    kind: z.literal("xbrl"),
+    documentId: Uuid,
+    filingPeriodEnd: IsoDate.nullable(),
+    element: z.string(),
+    value: DecimalString.nullable(),
+    printed: z.string(),
+  }),
+]);
 export type Restated = z.infer<typeof Restated>;
 
 export const FinancialCell = z.object({

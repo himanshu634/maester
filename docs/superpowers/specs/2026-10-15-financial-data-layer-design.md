@@ -459,7 +459,9 @@ Each phase is its own implementation plan from this document, lands on `staging`
 
 ## 14. Out of scope
 
-OCR for scanned pages (reader B is absent and the fact says `unverified`); the Analyst page and any chat UI; MCP over HTTP or any remote access; automated acceptance of a model's mapping as reviewed; sector-specific taxonomies (banks and insurers print different statements and are unmapped beyond the common lines until a later taxonomy version); XBRL ingestion; a materialised series; editing a fact's value other than through a review; shared reference companies.
+OCR for scanned pages (reader B is absent and the fact says `unverified`); the Analyst page and any chat UI; MCP over HTTP or any remote access; automated acceptance of a model's mapping as reviewed; sector-specific taxonomies (banks and insurers print different statements and are unmapped beyond the common lines until a later taxonomy version); a materialised series; editing a fact's value other than through a review; shared reference companies.
+
+XBRL ingestion, and OCR for search only, are in scope since 20 October 2026: see the [ingestion pipeline](2026-10-19-ingestion-pipeline-design.md) and [ADR 0007](../../decisions/0007-ingestion-pipeline.md).
 
 ## 15. Consequences
 

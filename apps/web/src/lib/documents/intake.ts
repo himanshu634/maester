@@ -53,7 +53,7 @@ function verifyFailed(doc: DocumentRecord): boolean {
 /** A read or identification started again, while the document still shows the last outcome. */
 const readingAgain = (doc: DocumentRecord) =>
 	(doc.intakeState === 'read' || doc.intakeState === 'read_failed') &&
-	running(doc, 'document.extract');
+	(running(doc, 'document.extract') || running(doc, 'document.xbrl'));
 const identifyingAgain = (doc: DocumentRecord) =>
 	doc.intakeState === 'identify_failed' && running(doc, 'document.classify');
 
@@ -83,6 +83,8 @@ function statuses(doc: DocumentRecord, opts: ViewOptions): StepStatus[] {
 			return ['done', 'done', 'not-read', 'not-read'];
 		case 'reading':
 			return ['done', 'done', 'now', 'next'];
+		case 'waiting_for_xbrl':
+			return ['done', 'done', 'next', 'next'];
 		case 'read':
 			return ['done', 'done', 'done', 'done'];
 		case 'read_failed':
@@ -130,6 +132,7 @@ export function isLive(doc: DocumentRecord): boolean {
 		doc.intakeState === null ||
 		doc.intakeState === 'identifying' ||
 		doc.intakeState === 'reading' ||
+		doc.intakeState === 'waiting_for_xbrl' ||
 		readingAgain(doc) ||
 		identifyingAgain(doc)
 	);
@@ -208,12 +211,15 @@ export function whatItIs(
 
 /**
  * Where an answer came from: "Page 3: “Annual Report 2025–26”" for an answer read from the
- * filing (pages counted from 1), "You said so" for the investor's, or null when there is no page
- * to point at. Never a confidence.
+ * filing (pages counted from 1), "ScripCode 500999" for one read from an XBRL file (its element
+ * and value), "You said so" for the investor's, or null when there is nothing to point at. Never
+ * a confidence.
  */
 export function sourceOf(evidence: Evidence[], field: EvidenceField): string | null {
 	const forField = evidence.filter((e) => e.field === field);
 	if (forField.some((e) => e.source === 'investor')) return copy.slip.youSaidSo;
+	const fromElement = forField.find((e) => e.element !== null);
+	if (fromElement?.element) return copy.slip.fromElement(fromElement.element, fromElement.quote);
 	const found = forField.find((e) => e.pageIndex !== null);
 	if (!found || found.pageIndex === null) return null;
 	const page =
@@ -221,6 +227,14 @@ export function sourceOf(evidence: Evidence[], field: EvidenceField): string | n
 			? copy.slip.scannedPage(found.pageIndex + 1)
 			: `Page ${found.pageIndex + 1}`;
 	return found.quote ? `${page}: “${found.quote}”` : page;
+}
+
+/**
+ * Whether the slip offers "Read it again". A PDF whose numbers come from its XBRL files has
+ * nothing of its own to read, and the API refuses a read of it.
+ */
+export function canReadAgain(doc: DocumentRecord): boolean {
+	return doc.pipeline?.numbers.state !== 'not_needed';
 }
 
 /** "Balance sheet (standalone), Profit and loss (standalone)", or "—" when none was found. */
@@ -315,28 +329,40 @@ export function normalizeCompanyName(name: string): string {
 
 /**
  * The workspace's companies this filing could belong to, as the worker matches them
- * (matchCompanies in packages/db): by the printed CIN, else the exchange codes, else the name.
+ * (matchCompanies in packages/db): by the printed CIN, else any of the exchange codes and the
+ * ISIN, else the name.
  * Several matches are why a document holds for the investor even when the company is known.
  */
 export function companyCandidates(
-	answer: Pick<Classification, 'companyNameAsPrinted' | 'cin' | 'bseCode' | 'nseSymbol'>,
+	answer: Pick<Classification, 'companyNameAsPrinted' | 'cin' | 'bseCode' | 'nseSymbol' | 'isin'>,
 	companies: Company[]
 ): Company[] {
 	if (answer.cin) {
 		const byCin = companies.filter((c) => c.cin === answer.cin);
 		if (byCin.length) return byCin;
 	}
-	if (answer.bseCode || answer.nseSymbol) {
+	if (answer.bseCode || answer.nseSymbol || answer.isin) {
 		const byCode = companies.filter(
 			(c) =>
 				(!!answer.bseCode && c.bseCode === answer.bseCode) ||
-				(!!answer.nseSymbol && c.nseSymbol === answer.nseSymbol)
+				(!!answer.nseSymbol && c.nseSymbol === answer.nseSymbol) ||
+				(!!answer.isin && c.isin === answer.isin)
 		);
 		if (byCode.length) return byCode;
 	}
 	if (!answer.companyNameAsPrinted) return [];
 	const wanted = normalizeCompanyName(answer.companyNameAsPrinted);
 	return companies.filter((c) => normalizeCompanyName(c.displayName) === wanted);
+}
+
+/**
+ * The answers "What is it?" offers. An XBRL instance is never an annual report: its results figures and
+ * columns that are not the year's end would fill the annual tables, so the API refuses it and it is not offered.
+ */
+export function kindChoices(format: DocumentRecord['format']): ChosenKind[] {
+	return format === 'xbrl'
+		? ['financial_results', 'other']
+		: ['annual_report', 'financial_results', 'other'];
 }
 
 /** The button that saves "what is it?": only the kinds Maester reads promise a read. */

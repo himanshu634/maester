@@ -18,7 +18,9 @@ export { listWorkspacesForUser, getWorkspaceForUser, ensurePersonalWorkspace } f
 export { getDocument, listDocuments } from "./queries/documents.js";
 export { getJob, getLatestJobForSubject } from "./queries/jobs.js";
 export { getCompany, listCompanies } from "./queries/companies.js";
-export { getLatestRevision, getRevision, listChecks, listFactsWithSources, type FactWithSource } from "./queries/extraction.js";
+export {
+  getLatestRevision, getRevision, listChecks, listFactsWithSources, listXbrlPdfChecks, XBRL_PDF_CHECK_VERSION_READ, type FactWithSource,
+} from "./queries/extraction.js";
 export { listCompanyFilings, listFactsWithSourcesForRevisions, listChecksForRevisions, type CompanyFilingRow } from "./queries/research.js";
 export { admitOrWaitlist, approveWaitlistEmail, normalizeEmail, type WaitlistSource } from "./queries/waitlist.js";
 export {
@@ -35,3 +37,6 @@ export {
   getPageRead, putPageRead, documentsNeedingIndex,
   type IndexVersions, type PageInput, type ChunkInput, type RangeCounts, type PageReadKey, type RangeReadJson,
 } from "./queries/document-index.js";
+export { loadWorkspaceXbrlDocs, companyIdentity, companyIdentities } from "./queries/xbrl.js";
+export { loadPipelineInputs, type PipelineInput, type PipelineRevision, type PipelineIndex } from "./queries/pipeline.js";
+export { listFilingRows, loadXbrlFilingData, lockHeldDocuments, type XbrlFilingFact, type XbrlFilingData, type PrintedIdentity } from "./queries/filings.js";

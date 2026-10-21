@@ -108,6 +108,17 @@ describe("document.extract", () => {
     expect(checks.map((c) => c.status).sort()).toEqual(["not_checked", "passed"]);
   });
 
+  it("never sends a company of another workspace to the extractor", async () => {
+    const doc = await seedStoredDocument();
+    const other = await seedWorkspace(ctx.db);
+    const foreign = crypto.randomUUID();
+    await ctx.db.insert(schema.company).values({ id: foreign, workspaceId: other.workspaceId, displayName: "Foreign Synthetic Ltd", country: "IN", createdByUserId: other.userId });
+    await ctx.db.update(schema.document).set({ companyId: foreign }).where(eq(schema.document.id, doc.id));
+    const { job } = await extract(doc.workspaceId, doc.id);
+    expect(job.state).toBe("succeeded");
+    expect(seen[0]!.headers["x-company-name"]).toBeUndefined();
+  });
+
   it("does not write a second revision when the same job runs again", async () => {
     const doc = await seedStoredDocument();
     const jobId = await seedJob(ctx.db, doc.workspaceId, { type: JobTypes.DOCUMENT_EXTRACT, subjectType: "document", subjectId: doc.id });
@@ -247,6 +258,21 @@ describe("document.extract", () => {
     expect(d!.intakeState).toBe("read_failed");
   });
 
+  it("refuses an XBRL instance for good without calling the extractor, and leaves its intake state as it is", async () => {
+    const doc = await seedStoredDocument();
+    await ctx.db.update(schema.document).set({ format: "xbrl", intakeState: "read" }).where(eq(schema.document.id, doc.id));
+    const cid = crypto.randomUUID();
+    await ctx.db.insert(schema.documentClassification).values({ id: cid, workspaceId: doc.workspaceId, documentId: doc.id, kind: "financial_results", setBy: "maester", companyId: doc.companyId, readsUnderId: cid });
+    const jobId = await seedJob(ctx.db, doc.workspaceId, { type: JobTypes.DOCUMENT_EXTRACT, subjectType: "document", subjectId: doc.id, idempotencyKey: `${JobTypes.DOCUMENT_EXTRACT}:${doc.id}:classification-${cid}` });
+    await runJob(ctx, JobTypes.DOCUMENT_EXTRACT, jobId);
+    const [job] = await ctx.db.select().from(schema.job).where(eq(schema.job.id, jobId));
+    expect(job).toMatchObject({ state: "failed", attempt: 1, lastErrorCode: "INVALID_STATE" });
+    expect(seen).toHaveLength(0);
+    // The XBRL read is document.xbrl's: a stray extract that fails never marks the instance read_failed.
+    const [d] = await ctx.db.select().from(schema.document).where(eq(schema.document.id, doc.id));
+    expect(d!.intakeState).toBe("read");
+    expect(await ctx.db.select().from(schema.extractionRevision).where(eq(schema.extractionRevision.documentId, doc.id))).toHaveLength(0);
+  });
 });
 
 describe("document.extract without an extractor", () => {

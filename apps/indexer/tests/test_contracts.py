@@ -12,6 +12,8 @@ from pydantic import ValidationError
 from maester_indexer.contracts import (
     INDEXER_EVENT,
     ChunkRequest,
+    ChunkTextRequest,
+    ChunkTextResponse,
     ErrorEvent,
     ResultEvent,
     contextualize,
@@ -58,6 +60,22 @@ class ChunkRequestTests(unittest.TestCase):
     def test_fixture_round_trips(self):
         raw = json.loads((FIXTURES / "chunk-request.json").read_text())
         self.assertEqual(ChunkRequest.from_wire(raw).to_wire(), raw)
+
+
+class ChunkTextFixtureTests(unittest.TestCase):
+    def test_request_and_response_round_trip(self):
+        for name, model in (("chunk-text-request.json", ChunkTextRequest), ("chunk-text-response.json", ChunkTextResponse)):
+            raw = json.loads((FIXTURES / name).read_text())
+            self.assertEqual(model.from_wire(raw).to_wire(), raw, name)
+
+    def test_an_unknown_field_and_a_negative_seq_are_refused(self):
+        raw = json.loads((FIXTURES / "chunk-text-response.json").read_text())
+        with self.assertRaises(ValidationError):
+            ChunkTextResponse.from_wire({**raw, "extra": 1})
+        with self.assertRaises(ValidationError):
+            ChunkTextResponse.from_wire({**raw, "chunks": [{**raw["chunks"][0], "seq": -1}]})
+        with self.assertRaises(ValidationError):
+            ChunkTextResponse.from_wire({**raw, "chunks": [{**raw["chunks"][0], "basis": "unknown"}]})
 
 
 class ContextualizeTests(unittest.TestCase):

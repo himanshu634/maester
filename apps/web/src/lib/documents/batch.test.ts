@@ -4,6 +4,7 @@ import {
 	endAloud,
 	folderOf,
 	looksLikePdf,
+	looksLikeXml,
 	pickedFrom,
 	refusedTitle,
 	screen,
@@ -131,9 +132,19 @@ describe('checkFile', () => {
 		expect(checkFile({ name: 'AR.PDF', size: 1000, type: '' })).toBeNull();
 	});
 
-	it('refuses XBRL until Maester reads it', () => {
-		expect(checkFile({ name: '500999_Q2.xml', size: 1000, type: 'text/xml' })).toBe(
-			'An XBRL file. Maester takes PDFs only for now.'
+	it('takes an XBRL instance: a .xml typed as XML, or left untyped', () => {
+		expect(checkFile({ name: 'q2.xml', size: 10, type: 'text/xml' })).toBeNull();
+		expect(checkFile({ name: 'q2.xml', size: 10, type: 'application/xml' })).toBeNull();
+		expect(checkFile({ name: 'Q2.XML', size: 10, type: '' })).toBeNull();
+	});
+
+	it('refuses an .xml of the wrong type, an empty one and one over the limit', () => {
+		expect(checkFile({ name: 'q2.xml', size: 10, type: 'application/pdf' })).toBe(
+			'Not a PDF or an XBRL file.'
+		);
+		expect(checkFile({ name: 'q2.xml', size: 0, type: 'text/xml' })).toBe('The file is empty.');
+		expect(checkFile({ name: 'q2.xml', size: MAX_UPLOAD_BYTES + 1, type: 'text/xml' })).toBe(
+			'50.1 MB, over the 50 MB limit.'
 		);
 	});
 
@@ -157,9 +168,11 @@ describe('checkFile', () => {
 			'A picture, not a PDF.'
 		);
 		expect(checkFile({ name: 'report.pdf.zip', size: 10, type: 'application/zip' })).toBe(
-			'Not a PDF.'
+			'Not a PDF or an XBRL file.'
 		);
-		expect(checkFile({ name: 'ar.pdf', size: 10, type: 'text/plain' })).toBe('Not a PDF.');
+		expect(checkFile({ name: 'ar.pdf', size: 10, type: 'text/plain' })).toBe(
+			'Not a PDF or an XBRL file.'
+		);
 	});
 });
 
@@ -172,22 +185,38 @@ describe('looksLikePdf', () => {
 	});
 });
 
+describe('looksLikeXml', () => {
+	it('is true when the first bytes, after a BOM and whitespace, start with <', () => {
+		const bytes = (text: string) => new TextEncoder().encode(text);
+		expect(looksLikeXml(bytes('\uFEFF\n<?xml'))).toBe(true);
+		expect(looksLikeXml(bytes('  \r\n\t<xbrl'))).toBe(true);
+		expect(looksLikeXml(bytes('%PDF'))).toBe(false);
+		expect(looksLikeXml(bytes('   '))).toBe(false);
+		expect(looksLikeXml(new Uint8Array())).toBe(false);
+	});
+});
+
 describe('screen', () => {
 	it('lets through the PDFs and names every other file with why, in the order chosen', async () => {
 		const picked = [
 			pick('bse/a.pdf'),
 			pick('bse/b.xml', 10, 'text/xml'),
 			pick('bse/fake.pdf'),
+			pick('bse/fake.xml', 10, 'text/xml'),
 			pick('bse/empty.pdf', 0),
 			pick('bse/c.pdf')
 		];
-		const read = async (f: File) =>
-			f.name === 'fake.pdf' ? new TextEncoder().encode('<html>') : PDF_HEAD;
+		const read = async (f: File) => {
+			if (f.name === 'fake.pdf') return new TextEncoder().encode('<html>');
+			if (f.name === 'fake.xml') return PDF_HEAD;
+			if (f.name === 'b.xml') return new TextEncoder().encode('<?xml version="1.0"?>');
+			return PDF_HEAD;
+		};
 		const { accepted, refused } = await screen(picked, 'bse', read);
-		expect(accepted.map((item) => item.path)).toEqual(['bse/a.pdf', 'bse/c.pdf']);
+		expect(accepted.map((item) => item.path)).toEqual(['bse/a.pdf', 'bse/b.xml', 'bse/c.pdf']);
 		expect(refused).toEqual([
-			{ name: 'b.xml', reason: 'An XBRL file. Maester takes PDFs only for now.' },
 			{ name: 'fake.pdf', reason: 'Named .pdf, but not a PDF inside.' },
+			{ name: 'fake.xml', reason: 'Named .xml, but not XML inside.' },
 			{ name: 'empty.pdf', reason: 'The file is empty.' }
 		]);
 	});
@@ -208,7 +237,7 @@ describe('sendFailure', () => {
 			stop: null
 		});
 		expect(sendFailure(new ApiError(415, 'UNSUPPORTED_MEDIA_TYPE', 'x'), size).reason).toBe(
-			'Not a PDF.'
+			'Not a PDF or an XBRL file.'
 		);
 		expect(sendFailure(new Error('boom'), size)).toEqual({
 			reason: 'The upload didn’t finish. Add it again.',
@@ -262,6 +291,21 @@ describe('sendAll', () => {
 		expect(result).toEqual({ sent: 10, refused: [], unsent: 0, stopped: null });
 	});
 
+	it('sends every XBRL file before any PDF, each kind in the order chosen, and names refusals in the order chosen', async () => {
+		const chosen = ['a.pdf', 'q1.xml', 'b.pdf', 'q2.XML', 'c.pdf', 'd.pdf', 'q3.xml'].map((p) =>
+			pick(p)
+		);
+		const started: string[] = [];
+		const result = await sendAll(chosen, null, async (item) => {
+			started.push(item.path);
+			if (item.path === 'q3.xml' || item.path === 'a.pdf')
+				throw new ApiError(415, 'UNSUPPORTED_MEDIA_TYPE', 'x');
+		});
+		expect(started).toEqual(['q1.xml', 'q2.XML', 'q3.xml', 'a.pdf', 'b.pdf', 'c.pdf', 'd.pdf']);
+		expect(result.refused.map((r) => r.name)).toEqual(['a.pdf', 'q3.xml']);
+		expect(result.sent).toBe(5);
+	});
+
 	it('names each file the API refused, in the order chosen, and carries on', async () => {
 		const result = await sendAll(many(5), null, async (item) => {
 			if (item.path === 'f3.pdf' || item.path === 'f1.pdf')
@@ -270,8 +314,8 @@ describe('sendAll', () => {
 		expect(result).toEqual({
 			sent: 3,
 			refused: [
-				{ name: 'f1.pdf', reason: 'Not a PDF.' },
-				{ name: 'f3.pdf', reason: 'Not a PDF.' }
+				{ name: 'f1.pdf', reason: 'Not a PDF or an XBRL file.' },
+				{ name: 'f3.pdf', reason: 'Not a PDF or an XBRL file.' }
 			],
 			unsent: 0,
 			stopped: null

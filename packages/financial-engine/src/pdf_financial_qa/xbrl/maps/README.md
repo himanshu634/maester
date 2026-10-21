@@ -82,16 +82,17 @@ named real instances fails on a failed sum that has no row here.
 
 | File | Sum id | Period | PDF page |
 | --- | --- | --- | --- |
+| `2025-06-12_MC2024-2025_standalone_Integrated_Finance_Ind_As_533273_1262025142556.xml` | `adjustments_to_reconcile_profit` | Year ended 31 Mar 2025 | Page 19 of the results PDF announced on 28 Apr 2025: the associates line is printed with the opposite sign to the one filed, and the sum passes with the filed sign turned round |
 
 ### Failing, not yet confirmed against the PDF
 
 Task 5's read over the 724 Ind AS instances on hand (21 October 2026): 20,257 subtotal checks and 369 balance
 identities pass, 16 subtotals are not checked (every part absent), and 5 subtotals fail, all
-`adjustments_to_reconcile_profit`, none in a named instance:
+`adjustments_to_reconcile_profit`, none in a named instance. Task 20's report ([`docs/eval/2026-10-21-xbrl-map-v1.md`](../../../../../../docs/eval/2026-10-21-xbrl-map-v1.md))
+confirms the first against its PDF (it moved to the table above). The other four stay here:
 
 | File | Period |
 | --- | --- |
-| `2025-06-12_MC2024-2025_standalone_Integrated_Finance_Ind_As_533273_1262025142556.xml` | Year ended 31 Mar 2025 |
 | `2024-11-12_SQ2024-2025_consolidated_Main_Ind_As_543358_12112024122644.xml` | Half year ended 30 Sep 2024 |
 | `2025-06-12_MH2024-2025_consolidated_Integrated_Finance_Ind_As_543358_1262025203126.xml` | Year ended 31 Mar 2025 |
 | `2025-06-24_MC2024-2025_consolidated_Integrated_Finance_Ind_As_543358_2462025185912.xml` | Year ended 31 Mar 2025 |

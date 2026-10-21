@@ -107,6 +107,8 @@ export const ExtractionRevision = z.object({
   id: Uuid,
   documentId: Uuid,
   jobId: Uuid,
+  /** What the revision was read from: a PDF through the model, or an XBRL instance through the parser. */
+  source: z.enum(["pdf", "xbrl"]),
   state: ExtractionState,
   pipelineVersion: z.string(),
   model: z.string(),
@@ -125,21 +127,39 @@ export type ExtractionCheck = z.infer<typeof ExtractionCheck>;
 export const DocumentExtraction = z.object({ revision: ExtractionRevision, checks: z.array(ExtractionCheck) });
 export type DocumentExtraction = z.infer<typeof DocumentExtraction>;
 
-export const SourceReference = z.object({
-  documentId: Uuid,
-  /** 0-based page index of the original PDF. */
-  pageIndex: z.number().int().min(0),
-  /** Whether the printed value was found in the page's text layer; null for a page without one. */
-  textLayerMatch: z.boolean().nullable(),
-});
-export type SourceReference = z.infer<typeof SourceReference>;
+/** Where a fact was read: a page of a PDF, or an element and context of an XBRL instance. */
+export const FactSource = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("page"),
+    documentId: Uuid,
+    /** 0-based page index of the original PDF. */
+    pageIndex: z.number().int().min(0),
+    /** Whether the printed value was found in the page's text layer; null for a page without one. */
+    textLayerMatch: z.boolean().nullable(),
+  }),
+  z.strictObject({
+    kind: z.literal("xbrl"),
+    documentId: Uuid,
+    element: z.string(),
+    contextId: z.string(),
+    /** The fact's `decimals` as written: `"INF"` or an integer; null when the instance gave none. */
+    decimals: z.string().nullable(),
+    /** True when the fact is `xsi:nil`: its value is unknown, never zero. */
+    nil: z.boolean(),
+  }),
+]);
+export type FactSource = z.infer<typeof FactSource>;
 
 export const FinancialFact = z.object({
   id: Uuid,
   revisionId: Uuid,
   companyId: Uuid.nullable(),
   ...factFields,
-  source: SourceReference,
+  /** The first day of a duration; null for an instant or when the filing does not say. */
+  periodStart: IsoDate.nullable(),
+  span: FactSpan.nullable(),
+  /** Null only for a fact stored without its source row. */
+  source: FactSource.nullable(),
 });
 export type FinancialFact = z.infer<typeof FinancialFact>;
 

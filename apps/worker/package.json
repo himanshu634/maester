@@ -17,8 +17,8 @@
     "@google-cloud/tasks": "^7.1.0",
     "@hono/node-server": "^2.1.0",
     "@maester/contracts": "workspace:*",
-    "@maester/document-index": "workspace:*",
     "@maester/db": "workspace:*",
+    "@maester/document-index": "workspace:*",
     "@maester/jobs": "workspace:*",
     "@maester/market": "workspace:*",
     "@maester/storage": "workspace:*",
@@ -27,6 +27,7 @@
     "hono": "^4.13.0",
     "pg": "^8.16.0",
     "pino": "^10.0.0",
+    "saxes": "6.0.0",
     "zod": "^4.1.0"
   },
   "devDependencies": {

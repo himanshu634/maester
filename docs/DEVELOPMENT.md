@@ -18,7 +18,7 @@ docker compose up --build
 | Indexer | `apps/indexer` | Python | Running: stateless page reader and chunker the worker calls ([README](../apps/indexer/README.md), [description](systems/indexer.md)) |
 | Web client | `apps/web` | SvelteKit, static | Running: public pages at `/`, sign-in and recovery pages (`/login`, `/signup`, `/verify-email`, `/forgot-password`, `/reset-password`), `/terminal`; investor journeys planned ([README](../apps/web/README.md)) |
 | CLI | `apps/cli` | Python, Typer | Running: `maester ingest`, `list-docs`, `ask` |
-| Evaluation harness | `apps/eval` | Python, Typer | Running: `maester-eval live`, `export`, `freeze`, `report` ([README](../apps/eval/README.md)) |
+| Evaluation harness | `apps/eval` | Python, Typer | Running: `maester-eval live`, `export`, `freeze`, `report`, `xbrl-elements`, `xbrl-map` ([README](../apps/eval/README.md)) |
 | Document engine | `packages/financial-engine` | Python | Running: the LangGraph extraction workflow ([spec](EXTRACTION.md)), plus the CLI's extraction, checks, cache and Q&A |
 | API contracts | `packages/contracts` | TypeScript, Zod | Running: shared request and response shapes ([README](../packages/contracts/README.md)) |
 | Database | `packages/db` | TypeScript, Drizzle | Running: schema, queries, migrations |

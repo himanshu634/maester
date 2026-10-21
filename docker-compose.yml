@@ -52,6 +52,9 @@ x-api-env: &api-env
   CONNECTIONS_KEY: ${CONNECTIONS_KEY:-}
   DHAN_REQUESTS_PER_SECOND: ${DHAN_REQUESTS_PER_SECOND:-4}
   MARKET_REFRESH_MINUTES: ${MARKET_REFRESH_MINUTES:-30}
+  # XBRL: whether each XBRL figure is looked for on its results PDF's statement pages (xbrl_in_pdf). The API and the
+  # worker share this anchor on purpose: if they differ, the checks the worker skips read as "not yet" for ever.
+  XBRL_PDF_CHECK: ${XBRL_PDF_CHECK:-true}
   # Search embeds the query with the embedder; unanswered, the search route says 503.
   EMBEDDER_URL: http://embedder
   EMBEDDING_MODEL: ${EMBEDDING_MODEL:-Snowflake/snowflake-arctic-embed-l-v2.0}
@@ -125,6 +128,8 @@ services:
       EXTRACTOR_SECRET: local-extractor-secret
       INDEXER_URL: http://indexer:8791
       INDEXER_SECRET: local-indexer-secret
+      # Bytes from the start of an XML upload that verify keeps, to tell an XBRL instance from any other XML.
+      XBRL_SNIFF_BYTES: ${XBRL_SNIFF_BYTES:-65536}
     cpus: 2
     # On stop the worker waits up to 25 s for running jobs; Docker's default 10 s would kill it mid-wait.
     stop_grace_period: 30s
@@ -157,6 +162,10 @@ services:
       VERTEX_LOCATION: ${VERTEX_LOCATION:-us-central1}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-pro}
       GEMINI_CLASSIFY_MODEL: ${GEMINI_CLASSIFY_MODEL:-gemini-2.5-flash}
+      # XBRL limits. A file over any of them is refused XBRL_UNREADABLE and never retried.
+      XBRL_MAX_BYTES: ${XBRL_MAX_BYTES:-20971520}
+      XBRL_MAX_FACTS: ${XBRL_MAX_FACTS:-100000}
+      XBRL_DEADLINE_SECONDS: ${XBRL_DEADLINE_SECONDS:-30}
       GOOGLE_APPLICATION_CREDENTIALS: /var/lib/maester/gcloud/application_default_credentials.json
     cpus: 2
     volumes:

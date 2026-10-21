@@ -6,8 +6,10 @@ import {
 	companyCandidates,
 	identifiers,
 	isLive,
+	kindChoices,
 	kindSaveLabel,
 	anyLive,
+	canReadAgain,
 	mergeList,
 	normalizeCompanyName,
 	ladder,
@@ -18,7 +20,7 @@ import {
 	whatItIs
 } from './intake';
 import { ApiError } from './client';
-import type { Classification, Company, DocumentRecord, Evidence, Job } from './types';
+import type { Classification, Company, DocumentRecord, Evidence, Job, NumbersState } from './types';
 
 function job(type: string, state: Job['state']): Job {
 	return { id: `job-${type}-${state}`, type, state, lastErrorCode: null };
@@ -29,6 +31,7 @@ function doc(over: Partial<DocumentRecord> = {}): DocumentRecord {
 		id: 'd-1',
 		companyId: null,
 		originalName: 'synthetic-cements-ar-2025-26.pdf',
+		format: 'pdf',
 		declaredSize: 1077,
 		state: 'stored',
 		rejectionCode: null,
@@ -55,6 +58,7 @@ const annualReport: Classification = {
 	cin: 'L26940MH2001PLC123456',
 	bseCode: null,
 	nseSymbol: null,
+	isin: null,
 	statementsFound: [{ basis: 'standalone', pages: [1], statement: 'balance_sheet' }],
 	setBy: 'maester'
 };
@@ -64,28 +68,36 @@ const annualEvidence: Evidence[] = [
 		source: 'rule',
 		pageIndex: 0,
 		quote: 'Integrated Annual Report 2025-26',
-		textLayerMatch: true
+		textLayerMatch: true,
+		element: null,
+		context: null
 	},
 	{
 		field: 'company',
 		source: 'rule',
 		pageIndex: 0,
 		quote: 'Synthetic Cements Limited',
-		textLayerMatch: true
+		textLayerMatch: true,
+		element: null,
+		context: null
 	},
 	{
 		field: 'identifier',
 		source: 'rule',
 		pageIndex: 0,
 		quote: 'CIN: L26940MH2001PLC123456',
-		textLayerMatch: true
+		textLayerMatch: true,
+		element: null,
+		context: null
 	},
 	{
 		field: 'period',
 		source: 'rule',
 		pageIndex: 1,
 		quote: 'Standalone Balance Sheet as at 31 March 2026',
-		textLayerMatch: true
+		textLayerMatch: true,
+		element: null,
+		context: null
 	}
 ];
 
@@ -116,6 +128,32 @@ describe('ladder', () => {
 		expect(words(doc({ intakeState: 'identifying' }))).toEqual(['done', 'now', 'next', 'next']);
 		expect(words(doc({ intakeState: 'reading' }))).toEqual(['done', 'done', 'now', 'next']);
 		expect(words(doc({ intakeState: 'read' }))).toEqual(['done', 'done', 'done', 'done']);
+	});
+
+	it('shows a PDF waiting for its XBRL as Next on reading the statements', () => {
+		expect(words(doc({ intakeState: 'waiting_for_xbrl' }))).toEqual([
+			'done',
+			'done',
+			'next',
+			'next'
+		]);
+	});
+
+	it('shows a re-read of an XBRL document, which runs document.xbrl, as Now on reading', () => {
+		const again = doc({
+			format: 'xbrl',
+			intakeState: 'read',
+			latestJob: job('document.xbrl', 'running')
+		});
+		expect(words(again)).toEqual(['done', 'done', 'now', 'next']);
+		expect(stateLabel(again)).toBe('Reading the statements');
+		expect(isLive(again)).toBe(true);
+		const failedAgain = doc({
+			format: 'xbrl',
+			intakeState: 'read_failed',
+			latestJob: job('document.xbrl', 'queued')
+		});
+		expect(words(failedAgain)).toEqual(['done', 'done', 'now', 'next']);
 	});
 
 	it('stops at the step that needs the investor', () => {
@@ -169,7 +207,8 @@ describe('stateLabel', () => {
 			['needs_kind', 'Needs you: what is it?'],
 			['duplicate', 'Added before'],
 			['identify_failed', 'Couldn’t work out what it is'],
-			['read_failed', 'Couldn’t read the statements']
+			['read_failed', 'Couldn’t read the statements'],
+			['waiting_for_xbrl', 'Waiting for its XBRL file.']
 		];
 		for (const [intakeState, label] of cases) {
 			expect(stateLabel(doc({ intakeState }))).toBe(label);
@@ -197,6 +236,10 @@ describe('stateLabel', () => {
 });
 
 describe('isLive', () => {
+	it('keeps polling a PDF waiting for its XBRL, so its release shows without a reload', () => {
+		expect(isLive(doc({ intakeState: 'waiting_for_xbrl' }))).toBe(true);
+	});
+
 	it('polls only while work is running', () => {
 		expect(isLive(doc({ state: 'uploaded', intakeState: null }))).toBe(true);
 		expect(isLive(doc({ intakeState: 'identifying' }))).toBe(true);
@@ -286,7 +329,15 @@ describe('sourceOf', () => {
 
 	it('says so when the answer is the investor’s', () => {
 		const changed: Evidence[] = [
-			{ field: 'company', source: 'investor', pageIndex: null, quote: null, textLayerMatch: null },
+			{
+				field: 'company',
+				source: 'investor',
+				pageIndex: null,
+				quote: null,
+				textLayerMatch: null,
+				element: null,
+				context: null
+			},
 			...annualEvidence
 		];
 		expect(sourceOf(changed, 'company')).toBe('You said so');
@@ -295,13 +346,33 @@ describe('sourceOf', () => {
 	it('gives the page alone without a quote, and nothing without either', () => {
 		expect(
 			sourceOf(
-				[{ field: 'kind', source: 'model', pageIndex: 4, quote: null, textLayerMatch: true }],
+				[
+					{
+						field: 'kind',
+						source: 'model',
+						pageIndex: 4,
+						quote: null,
+						textLayerMatch: true,
+						element: null,
+						context: null
+					}
+				],
 				'kind'
 			)
 		).toBe('Page 5');
 		expect(
 			sourceOf(
-				[{ field: 'kind', source: 'model', pageIndex: null, quote: 'x', textLayerMatch: true }],
+				[
+					{
+						field: 'kind',
+						source: 'model',
+						pageIndex: null,
+						quote: 'x',
+						textLayerMatch: true,
+						element: null,
+						context: null
+					}
+				],
 				'kind'
 			)
 		).toBe(null);
@@ -317,7 +388,9 @@ describe('sourceOf', () => {
 						source: 'model',
 						pageIndex: 2,
 						quote: 'Year ended',
-						textLayerMatch: null
+						textLayerMatch: null,
+						element: null,
+						context: null
 					}
 				],
 				'period'
@@ -331,12 +404,66 @@ describe('sourceOf', () => {
 						source: 'model',
 						pageIndex: 2,
 						quote: 'Year ended',
-						textLayerMatch: false
+						textLayerMatch: false,
+						element: null,
+						context: null
 					}
 				],
 				'period'
 			)
 		).toBe('Page 3: “Year ended”');
+	});
+});
+
+describe('sourceOf for XBRL evidence', () => {
+	it('names the element and its value in place of a page', () => {
+		const evidence: Evidence[] = [
+			{
+				field: 'identifier',
+				source: 'rule',
+				pageIndex: null,
+				quote: '500999',
+				textLayerMatch: null,
+				element: 'ScripCode',
+				context: 'OneD'
+			}
+		];
+		expect(sourceOf(evidence, 'identifier')).toBe('ScripCode 500999');
+	});
+
+	it('names the element alone without a quote, and keeps the page form for a PDF', () => {
+		expect(
+			sourceOf(
+				[
+					{
+						field: 'period',
+						source: 'rule',
+						pageIndex: null,
+						quote: null,
+						textLayerMatch: null,
+						element: 'DateOfEndOfReportingPeriod',
+						context: null
+					}
+				],
+				'period'
+			)
+		).toBe('DateOfEndOfReportingPeriod');
+		expect(sourceOf(annualEvidence, 'kind')).toBe('Page 1: “Integrated Annual Report 2025-26”');
+	});
+});
+
+describe('canReadAgain', () => {
+	const pipeline = (state: NumbersState) => ({ numbers: { state, coveredByXbrl: [] as string[] } });
+
+	it('is false for a PDF whose numbers come from its XBRL files', () => {
+		expect(canReadAgain(doc({ intakeState: 'read', pipeline: pipeline('not_needed') }))).toBe(
+			false
+		);
+	});
+
+	it('is true for a read PDF whose numbers it read itself, and with no pipeline', () => {
+		expect(canReadAgain(doc({ intakeState: 'read', pipeline: pipeline('done') }))).toBe(true);
+		expect(canReadAgain(doc({ intakeState: 'read' }))).toBe(true);
 	});
 });
 
@@ -356,6 +483,7 @@ describe('companyCandidates', () => {
 		cin: null,
 		bseCode: null,
 		nseSymbol: null,
+		isin: null,
 		...over
 	});
 	const cement = company({
@@ -366,6 +494,29 @@ describe('companyCandidates', () => {
 	const cementCopy = company({ id: 'co-2', displayName: 'The Synthetic Cements Ltd' });
 	const listed = company({ id: 'co-3', displayName: 'Coastal Power', bseCode: '500123' });
 	const other = company({ id: 'co-4', displayName: 'Meridian Bank', nseSymbol: 'MERIDIAN' });
+
+	it('matches the ISIN with the exchange codes, after the CIN and before the name', () => {
+		const isinCo = company({ id: 'co-5', displayName: 'Unrelated Name', isin: 'INE123A01012' });
+		const byIsin = { ...annualReport, cin: null, isin: 'INE123A01012' };
+		expect(companyCandidates(byIsin, [cement, isinCo]).map((c) => c.id)).toEqual(['co-5']);
+		// A CIN match wins over an ISIN match.
+		expect(
+			companyCandidates({ ...byIsin, cin: 'L26940MH2001PLC123456' }, [isinCo, cement]).map(
+				(c) => c.id
+			)
+		).toEqual(['co-1']);
+		// An ISIN joins the BSE and NSE codes in one step: any of them matches.
+		expect(
+			companyCandidates({ ...byIsin, bseCode: '500123' }, [listed, isinCo]).map((c) => c.id)
+		).toEqual(['co-3', 'co-5']);
+		// An ISIN match wins over a name match.
+		expect(
+			companyCandidates({ ...byIsin, companyNameAsPrinted: 'The Synthetic Cements Ltd' }, [
+				cementCopy,
+				isinCo
+			]).map((c) => c.id)
+		).toEqual(['co-5']);
+	});
 
 	it('matches the printed CIN first', () => {
 		expect(companyCandidates(annualReport, [other, cementCopy, cement]).map((c) => c.id)).toEqual([
@@ -524,5 +675,15 @@ describe('mergeList', () => {
 			'other',
 			'sending'
 		]);
+	});
+});
+
+describe('kindChoices', () => {
+	it('offers every kind for a PDF', () => {
+		expect(kindChoices('pdf')).toEqual(['annual_report', 'financial_results', 'other']);
+	});
+
+	it('never offers an annual report for an XBRL instance', () => {
+		expect(kindChoices('xbrl')).toEqual(['financial_results', 'other']);
 	});
 });

@@ -14,7 +14,8 @@ This document describes `apps/indexer`, the Python service that reads the pages 
 | range | A group of pages of one PDF, for example pages 21 to 40. One request reads one range. |
 | read | The output of Docling for one range. It holds the document structure, the text of each page and the source of each item. |
 | chunk | One piece of text for search. A chunk is on one page only. |
-| text source | The origin of the text of a chunk: `text_layer`, `ocr` or `mixed`. |
+| text source | The origin of the text of a chunk: `text_layer`, `ocr`, `mixed` or `xbrl`. |
+| text block | A long note in an XBRL instance. The extractor turns it into plain text. The worker sends it to `/v1/chunk-text`. |
 | section path | The list of headings above a chunk. |
 | event | One line of the NDJSON stream that the indexer returns. |
 | secret | The value of `INDEXER_SECRET`. The worker sends it in the `x-indexer-secret` header. |
@@ -23,10 +24,11 @@ This document describes `apps/indexer`, the Python service that reads the pages 
 
 ## Function
 
-The indexer reads financial documents in PDF format for the worker. It does two tasks:
+The indexer reads financial documents in PDF format for the worker. It does three tasks:
 
 - It reads a range of pages with Docling and RapidOCR, and cuts the pages into chunks.
 - It cuts a read that the worker kept before into chunks again, and reads no page.
+- It cuts the text blocks of an XBRL instance into chunks, with the tokenizer of the embedding model. It reads no page.
 
 The indexer stores nothing. It has no access to the database or to object storage. The worker sends the PDF in the request body, writes the pages and the chunks to the database, and sends the chunks to the embedder. The indexer fetches no model while it runs.
 
@@ -40,6 +42,7 @@ The indexer stores nothing. It has no access to the database or to object storag
 | Reader | `apps/indexer/src/maester_indexer/reader.py` | Runs Docling on one range. |
 | Sources | `apps/indexer/src/maester_indexer/sources.py` | Finds the text source of each item. |
 | Chunker | `apps/indexer/src/maester_indexer/chunker.py` | Cuts the pages of a read into chunks. |
+| Text chunker | `apps/indexer/src/maester_indexer/text_chunker.py` | `chunk_text_blocks` cuts the text blocks of an XBRL instance into chunks. |
 | Errors | `apps/indexer/src/maester_indexer/errors.py` | Defines `IndexingError`, which has a code, a message and a `retryable` value. |
 | Entry point | `apps/indexer/src/maester_indexer/__main__.py` | Starts `uvicorn` on `PORT`. The command `maester-indexer` runs it. |
 | Model fetch | `apps/indexer/src/maester_indexer/fetch_models.py` | The command `maester-indexer-fetch-models`. It gets the weights. |
@@ -57,6 +60,7 @@ The indexer stores nothing. It has no access to the database or to object storag
 | `GET /v1/versions` | Returns the versions of the indexer. |
 | `POST /v1/index` | Reads one range of the PDF in the body and returns an event stream. |
 | `POST /v1/chunk` | Cuts a read from the request body into chunks and returns an event stream. |
+| `POST /v1/chunk-text` | Cuts the text blocks of an XBRL instance into chunks and returns one JSON body. It sends no stream. |
 
 Each `/v1` route needs the header `x-indexer-secret`. If `INDEXER_SECRET` has no value, the indexer does not check the header.
 
@@ -70,6 +74,19 @@ Each `/v1` route needs the header `x-indexer-secret`. If `INDEXER_SECRET` has no
 6. The header `x-embedding-model` names the model whose tokenizer counts the tokens.
 7. The indexer reads the range in batches of `INDEX_PAGE_BATCH` pages.
 8. The indexer sends the events while it reads.
+
+### Request to `/v1/chunk-text`
+
+1. The worker sends a JSON body. It has `blocks`, `basis` and `embeddingModel`. A block has the `element`, a `heading` and the plain `text`.
+2. The header `x-document-id` names the document. It goes in the log only.
+3. If `embeddingModel` is not `EMBEDDING_MODEL` of the indexer, the response is status 409 with the code `INDEXER_MODEL_MISMATCH`.
+4. The indexer loads the tokenizer. It cuts each block into chunks. The heading of the block is the section path of its chunks.
+5. The indexer packs paragraphs into chunks up to the token limit. It cuts a paragraph that is too long at a line, then at a word, then at a character.
+6. Each chunk has the `element` of its block and its kind. It also has its section path, the `basis`, its text and its token count. The `seq` of the chunks counts from 0 across all the blocks.
+7. A chunk has at most as many tokens as a chunk of a PDF. The chunk has no page.
+8. The response has the versions of the indexer and the list of chunks.
+
+If the cut fails for a cause that a retry cannot change, the response is status 422. If a retry can help, the response is status 503. An unexpected error gives status 500 with the code `INDEX_FAILED` and `retryable` `true`.
 
 ### Events
 
@@ -105,6 +122,8 @@ These errors come before the stream. The body is `{ "detail": { "code": ... } }`
 | 400 `EMPTY_BODY` | The body has no bytes. | The route does not run. |
 | 401 `INDEXER_UNAUTHORIZED` | The secret is not correct. | The route does not run. |
 | 413 `TOO_LARGE_FOR_INDEX` | The body is larger than `INDEX_MAX_BYTES`. | The route does not run. |
+| 409 `INDEXER_MODEL_MISMATCH` | `/v1/chunk-text` gets an `embeddingModel` that is not `EMBEDDING_MODEL`. | The route cuts nothing. |
+| 422 or 503, 500 | `/v1/chunk-text` cuts a block and fails. The body is `{ code, message, retryable }`. | The worker reads the code and `retryable`. |
 
 ### Error events
 
@@ -151,7 +170,9 @@ The indexer reads these environment variables.
 
 ### Pinned versions
 
-`apps/indexer/pyproject.toml` pins Docling, docling-core, RapidOCR and onnxruntime to exact versions. `apps/indexer/uv.lock` pins all other packages. `versions.py` reads the versions from the installed packages, so the recorded versions agree with the lock. The Docling version (`doclingVersion`) has the versions of docling, docling-core, docling-ibm-models and docling-parse, and a hash of the `docling` section of `models.lock.json`, for example `docling=2.134.0;docling-core=2.103.0;docling-ibm-models=4.0.3;docling-parse=7.22.3;models=6a701a655efc`. The worker uses this value in the key of a cached page read. Thus, when one of these packages or one Docling artifact changes, the worker reads the pages again. The table of versions and the reason for each version are in the [README of the indexer](../../apps/indexer/README.md).
+`apps/indexer/pyproject.toml` pins Docling, docling-core, RapidOCR and onnxruntime to exact versions. `apps/indexer/uv.lock` pins all other packages. `versions.py` reads the versions from the installed packages, so the recorded versions agree with the lock. The Docling version (`doclingVersion`) has the versions of docling, docling-core, docling-ibm-models and docling-parse, and a hash of the `docling` section of `models.lock.json`, for example `docling=2.134.0;docling-core=2.103.0;docling-ibm-models=4.0.3;docling-parse=7.22.3;models=6a701a655efc`. The worker uses this value in the key of a cached page read. Thus, when one of these packages or one Docling artifact changes, the worker reads the pages again.
+
+The table of versions and the reason for each version are in the [README of the indexer](../../apps/indexer/README.md).
 
 `models.lock.json` records the embedding model with a commit and the commit of each Docling artifact. RapidOCR gets its models at the tag that has the version of the `rapidocr` package.
 
@@ -227,7 +248,8 @@ CAUTION: Docling needs much memory. The container limit is 2304 MiB. If the cont
 ## Limits
 
 - The indexer reads one range for each request. It reads no whole PDF in one request.
-- The indexer reads PDF files only. It does not read XBRL.
+- The indexer reads PDF files only. It does not read an XBRL instance. The extractor turns the text blocks of an instance into text. The indexer only cuts that text.
+- A change of the chunker version or of the text version does not rebuild the index of an XBRL document through the backfill. The backfill judges an index as stale by its revision.
 - RapidOCR is the only OCR engine.
 - The indexer runs on the CPU only.
 
@@ -242,6 +264,7 @@ CAUTION: Docling needs much memory. The container limit is 2304 MiB. If the cont
 - [apps/indexer/src/maester_indexer/fetch_models.py](../../apps/indexer/src/maester_indexer/fetch_models.py)
 - [apps/indexer/Dockerfile](../../apps/indexer/Dockerfile)
 - [apps/indexer/src/maester_indexer/chunker.py](../../apps/indexer/src/maester_indexer/chunker.py)
+- [apps/indexer/src/maester_indexer/text_chunker.py](../../apps/indexer/src/maester_indexer/text_chunker.py)
 - [apps/worker/src/indexer.ts](../../apps/worker/src/indexer.ts)
 - [docker-compose.yml](../../docker-compose.yml)
 - [.github/workflows/indexer.yml](../../.github/workflows/indexer.yml)

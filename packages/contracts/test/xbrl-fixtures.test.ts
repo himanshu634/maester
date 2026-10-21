@@ -7,7 +7,8 @@ import { XbrlEvent, XbrlPdfCheckRequest, XbrlPdfCheckResult } from "../src/index
 const dir = new URL("../fixtures/xbrl/", import.meta.url);
 const streams = readdirSync(dir).filter((f) => f.endsWith(".ndjson"));
 const json = (file: string) => JSON.parse(readFileSync(new URL(file, dir), "utf8"));
-const lines = (file: string): any[] => readFileSync(new URL(file, dir), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+type Line = { result: { checks: { checkType: string }[]; facts: { span: string | null }[] } };
+const lines = (file: string): Line[] => readFileSync(new URL(file, dir), "utf8").trim().split("\n").map((l) => JSON.parse(l) as Line);
 const TERMINAL = ["classification", "read", "text", "error"];
 
 describe("xbrl stream fixtures", () => {
@@ -59,14 +60,14 @@ describe("pdf check fixtures", () => {
 
 describe("refusals", () => {
   it("a read whose check is xbrl_in_pdf", () => {
-    const line = lines("stream-read.ndjson").at(-1);
-    line.result.checks[0].checkType = "xbrl_in_pdf";
+    const line = lines("stream-read.ndjson").at(-1)!;
+    line.result.checks[0]!.checkType = "xbrl_in_pdf";
     expect(XbrlEvent.safeParse(line).success).toBe(false);
   });
 
   it("a fact with the span full_year", () => {
-    const line = lines("stream-read.ndjson").at(-1);
-    line.result.facts[0].span = "full_year";
+    const line = lines("stream-read.ndjson").at(-1)!;
+    line.result.facts[0]!.span = "full_year";
     expect(XbrlEvent.safeParse(line).success).toBe(false);
   });
 

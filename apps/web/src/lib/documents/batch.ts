@@ -3,7 +3,7 @@
  * a folder, or a drop of either), which files can go and why the rest cannot, sending the rest a
  * few at a time through the upload flow, and what the drop strip says about a batch.
  *
- * PDF only until XBRL lands (ingestion phase 4): an .xml file is refused in the browser.
+ * A file is a PDF (.pdf) or an XBRL instance (.xml); the server checks the XML is XBRL.
  */
 import { documentsContent as copy } from '$lib/content/documents';
 import { ApiError } from './client';
@@ -132,14 +132,16 @@ const FILE_KINDS: [RegExp, keyof typeof copy.refusals.kinds][] = [
 
 /**
  * Why a file cannot go, from its name, type and size, or null when it may. A PDF is a .pdf whose
- * type is PDF (or that the browser left untyped). Its first bytes are checked by `screen`.
+ * type is PDF (or that the browser left untyped); an XBRL instance is a .xml whose type is XML
+ * (or untyped). The first bytes are checked by `screen`.
  */
 export function checkFile(file: { name: string; size: number; type: string }): string | null {
 	const said = copy.refusals;
-	if (/\.xml$/i.test(file.name)) return said.xbrl;
 	const pdfName = /\.pdf$/i.test(file.name);
 	const pdfType = file.type === 'application/pdf' || file.type === '';
-	if (!pdfName || !pdfType) {
+	const xmlName = /\.xml$/i.test(file.name);
+	const xmlType = ['application/xml', 'text/xml', ''].includes(file.type);
+	if (!(pdfName && pdfType) && !(xmlName && xmlType)) {
 		const known = FILE_KINDS.find(([pattern]) => pattern.test(file.name));
 		return known ? said.notPdfKnown(said.kinds[known[1]]) : said.notPdf;
 	}
@@ -155,6 +157,16 @@ export const HEAD_BYTES = 1024;
 export function looksLikePdf(head: Uint8Array): boolean {
 	const text = String.fromCharCode(...head.subarray(0, HEAD_BYTES));
 	return text.includes('%PDF-');
+}
+
+/**
+ * True when the first bytes, after an optional byte order mark and whitespace, start with "<".
+ * Decoded as UTF-8, so a UTF-8 mark is skipped; a UTF-16 file has NULs between its characters,
+ * is not found here, and is refused.
+ */
+export function looksLikeXml(head: Uint8Array): boolean {
+	const text = new TextDecoder('utf-8').decode(head.subarray(0, HEAD_BYTES));
+	return /^\uFEFF?\s*</.test(text);
 }
 
 /** Reads a file's first bytes. */
@@ -175,7 +187,10 @@ export async function screen(
 		let reason = checkFile(item.file);
 		if (!reason) {
 			try {
-				if (!looksLikePdf(await read(item.file))) reason = copy.refusals.notPdfInside;
+				const head = await read(item.file);
+				if (/\.xml$/i.test(item.file.name)) {
+					if (!looksLikeXml(head)) reason = copy.refusals.notXmlInside;
+				} else if (!looksLikePdf(head)) reason = copy.refusals.notPdfInside;
 			} catch {
 				reason = copy.refusals.unreadable;
 			}
@@ -211,8 +226,10 @@ export function sendFailure(
 
 /**
  * Send the accepted files, `SEND_AT_ONCE` at a time, each through `send`, and say after each
- * one how many are settled. A refusal that would refuse the rest too (signed out, offline)
- * stops the batch: files already started finish, nothing new starts.
+ * one how many are settled. Every XBRL instance goes before any PDF, each kind in the order
+ * chosen, so a results PDF whose instances are already in is not given to a paid read. A
+ * refusal that would refuse the rest too (signed out, offline) stops the batch: files already
+ * started finish, nothing new starts.
  */
 export async function sendAll(
 	accepted: Picked[],
@@ -225,10 +242,14 @@ export async function sendAll(
 	let sent = 0;
 	let stopped: Stop | null = null;
 	const refused: { at: number; refusal: Refusal }[] = [];
+	// The order sent, as positions in the order chosen: what is reported stays in the order chosen.
+	const positions = accepted.map((_, at) => at);
+	const isXml = (at: number) => /\.xml$/i.test(accepted[at].file.name);
+	const queue = [...positions.filter(isXml), ...positions.filter((at) => !isXml(at))];
 
 	async function lane() {
-		while (!stopped && next < accepted.length) {
-			const at = next++;
+		while (!stopped && next < queue.length) {
+			const at = queue[next++];
 			const item = accepted[at];
 			try {
 				await send(item);

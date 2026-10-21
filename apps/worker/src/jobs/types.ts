@@ -24,9 +24,15 @@ export interface JobContext {
   heartbeat(): Promise<void>;
 }
 
+/** What a final-failure hook gets: the dispatcher, so a job it creates is dispatched too. */
+export interface FinalFailureDeps {
+  db: Db;
+  dispatcher: Dispatcher;
+}
+
 export type JobHandler = ((job: JobRow, ctx: JobContext) => Promise<unknown>) & {
   /** Runs once when the job fails for good, to leave its subject in a stated failure. */
-  onFinalFailure?: (job: JobRow, db: Db) => Promise<void>;
+  onFinalFailure?: (job: JobRow, deps: FinalFailureDeps) => Promise<void>;
 };
 
 /**

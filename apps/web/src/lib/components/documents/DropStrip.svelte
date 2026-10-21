@@ -1,6 +1,6 @@
 <!--
 	Where files come in: a 2px dashed box (the dashed outline already marks "not there yet" on
-	the sector bars) saying "Drop PDFs here", or "Choose files" and "Choose a folder", which open
+	the sector bars) saying "Drop PDFs or XBRL files here", or "Choose files" and "Choose a folder", which open
 	the system pickers. Dragging is never the only way. The limit is stated before anything is
 	chosen. While a batch is checked and sent, one line in the box says how far it has got, with
 	the ruler; the page announces the start and the end, so the line itself is not live. Files
@@ -145,7 +145,7 @@
 			class="visually-hidden"
 			type="file"
 			multiple
-			accept="application/pdf,.pdf"
+			accept="application/pdf,.pdf,.xml,application/xml,text/xml"
 			tabindex="-1"
 			aria-hidden="true"
 			onchange={chosen}

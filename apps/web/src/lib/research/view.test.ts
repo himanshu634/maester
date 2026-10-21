@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { CellCheck, FinancialCell, StatementTable } from './types';
+import type { CellCheck, CellSource, FinancialCell, StatementTable } from './types';
 import {
 	addsUp,
 	cellReason,
@@ -8,11 +8,16 @@ import {
 	figure,
 	filingShort,
 	fyLabel,
+	fromWords,
 	fyWords,
 	onPage,
+	pageWords,
+	pdfPageOf,
+	restatedWords,
 	standing,
 	unitShort,
 	unitWords,
+	whereWords,
 	yearsRead
 } from './view';
 
@@ -89,6 +94,72 @@ describe('cells', () => {
 			'Maester couldn’t read what page 213 prints here.'
 		);
 		expect(cellReason(cell(), 'AR 2025–26')).toBeNull();
+	});
+});
+
+const XBRL_SOURCE: CellSource = {
+	kind: 'xbrl',
+	documentId: 'x',
+	originalName: '500999_Q2.xml',
+	element: 'RevenueFromOperations',
+	contextId: 'OneD',
+	decimals: '-5',
+	nil: false,
+	periodStart: '2025-07-01',
+	span: 'quarter'
+};
+
+describe('an XBRL source has an element and no page', () => {
+	it('names the element, never a page, in the reasons and the page words', () => {
+		const nil = cell({ status: 'unparsed', value: null, source: { ...XBRL_SOURCE, nil: true } });
+		expect(cellReason(nil, 'Q2 2025–26')).toBe(
+			'The XBRL file marks RevenueFromOperations as nil. Maester doesn’t read it as zero.'
+		);
+		const unread = cell({ status: 'unparsed', value: null, source: XBRL_SOURCE });
+		expect(cellReason(unread, 'Q2 2025–26')).toBe(
+			'Maester couldn’t read the value of RevenueFromOperations in the XBRL file.'
+		);
+		expect(cellReason(cell({ source: XBRL_SOURCE }), 'Q2 2025–26')).toBeNull();
+		expect(pageWords(cell({ source: XBRL_SOURCE }))).toBe('RevenueFromOperations');
+		for (const said of [cellReason(nil, 'x'), cellReason(unread, 'x'), pageWords(nil)]) {
+			expect(said).not.toMatch(/NaN|page/i);
+		}
+	});
+
+	it('says what the panel’s From and Restated rows say, for a page and for an element', () => {
+		expect(fromWords(cell(), '2026-03-31')).toBe('Annual report 2025–26, page 213 of 286');
+		expect(fromWords(cell({ source: XBRL_SOURCE }), '2026-03-31')).toBe(
+			'Annual report 2025–26, element RevenueFromOperations'
+		);
+		expect(fromWords(cell({ source: null }), '2026-03-31')).toBeNull();
+		const restated = {
+			documentId: 'd',
+			filingPeriodEnd: '2025-03-31',
+			value: '1',
+			printed: '11,000'
+		};
+		expect(restatedWords({ ...restated, pageIndex: 100 })).toContain('on page 101');
+		const fromXbrl = restatedWords({ ...restated, kind: 'xbrl', element: 'RevenueFromOperations' });
+		expect(fromXbrl).toContain('in the element RevenueFromOperations');
+		expect(fromXbrl).not.toMatch(/NaN|page/i);
+	});
+
+	it('offers a PDF to open at a page only for a page source', () => {
+		expect(pdfPageOf(cell())).toEqual({ documentId: 'd', pageIndex: 212 });
+		expect(pdfPageOf(cell({ source: XBRL_SOURCE }))).toBeNull();
+		expect(pdfPageOf(cell({ source: null }))).toBeNull();
+	});
+
+	it('has no text layer to say anything about', () => {
+		expect(onPage(cell({ source: XBRL_SOURCE }))).toEqual({ text: '—' });
+	});
+
+	it('words where a figure came from, for a page and for an element', () => {
+		expect(whereWords(cell())).toBe('annual report, page 213');
+		expect(whereWords(cell({ source: XBRL_SOURCE }))).toBe(
+			'XBRL file, element RevenueFromOperations'
+		);
+		expect(whereWords(cell({ source: null }))).toBe('annual report');
 	});
 });
 

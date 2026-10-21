@@ -55,6 +55,29 @@ export const ChunkRequest = z.strictObject({
 });
 export type ChunkRequest = z.infer<typeof ChunkRequest>;
 
+/** XBRL text blocks to chunk with the embedding model's tokenizer (`POST /v1/chunk-text`). */
+export const ChunkTextRequest = z.strictObject({
+  blocks: z.array(z.strictObject({ element: z.string(), heading: z.string(), text: z.string() })),
+  basis: z.enum(["consolidated", "standalone"]).nullable(),
+  embeddingModel: z.string(),
+});
+export type ChunkTextRequest = z.infer<typeof ChunkTextRequest>;
+
+/** A chunk of one XBRL text block; `seq` counts from 0 across all the request's blocks. */
+export const TextChunk = z.strictObject({
+  element: z.string(),
+  seq: z.number().int().min(0),
+  kind: ChunkKind,
+  sectionPath: z.array(z.string()),
+  basis: z.enum(["consolidated", "standalone"]).nullable(),
+  text: z.string(),
+  tokenCount: z.number().int().min(0),
+});
+export type TextChunk = z.infer<typeof TextChunk>;
+
+export const ChunkTextResponse = z.strictObject({ versions: IndexerVersions, chunks: z.array(TextChunk) });
+export type ChunkTextResponse = z.infer<typeof ChunkTextResponse>;
+
 /** One line of the indexer's NDJSON response stream. */
 export const IndexerEvent = z.discriminatedUnion("type", [
   z.strictObject({

@@ -16,6 +16,12 @@ describe("env", () => {
     expect(env.MAX_UPLOAD_BYTES).toBe(52428800);
   });
 
+  it("shows the XBRL-in-PDF check unless XBRL_PDF_CHECK is false", () => {
+    expect(testEnv().XBRL_PDF_CHECK).toBe(true);
+    expect(testEnv({ XBRL_PDF_CHECK: "false" }).XBRL_PDF_CHECK).toBe(false);
+    expect(() => testEnv({ XBRL_PDF_CHECK: "no" })).toThrow(/XBRL_PDF_CHECK/);
+  });
+
   it("parses and trims ALLOWED_ORIGINS", () => {
     const env = testEnv({
       ALLOWED_ORIGINS: " http://a.test , http://b.test ,, ",

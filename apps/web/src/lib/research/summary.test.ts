@@ -83,6 +83,7 @@ const company = {
 	cin: null,
 	bseCode: null,
 	nseSymbol: 'SYNCEM',
+	isin: null,
 	createdAt: ''
 };
 const canvas = (
@@ -443,6 +444,36 @@ describe('the lines summarize reads', () => {
 		expect(s.figures[2]!.note).toBe(
 			'1,284.50 ÷ 61.98, the earnings per share for 2025–26 (annual report, page 213).'
 		);
+	});
+
+	it('names the element, not a page, when the earnings per share came from an XBRL file', () => {
+		const eps = r('Basic', '48.6', '61.98', {
+			section: 'Earnings per equity share',
+			perShare: true
+		});
+		const xbrl = eps.cells.map((c) =>
+			c.source
+				? {
+						...c,
+						source: {
+							kind: 'xbrl' as const,
+							documentId: 'x',
+							originalName: '500999_AR.xml',
+							element: 'BasicEarningsLossPerShareFromContinuingOperations',
+							contextId: 'OneD',
+							decimals: '2',
+							nil: false,
+							periodStart: '2025-04-01',
+							span: 'year' as const
+						}
+					}
+				: c
+		);
+		const s = run([rev, profit, { ...eps, cells: xbrl }]);
+		expect(s.figures[2]!.note).toBe(
+			'1,284.50 ÷ 61.98, the basic earnings per share for 2025–26 (XBRL file, element BasicEarningsLossPerShareFromContinuingOperations).'
+		);
+		expect(s.figures[2]!.note).not.toMatch(/NaN|page/);
 	});
 
 	it('works out no price to earnings for a filing in another currency', () => {
