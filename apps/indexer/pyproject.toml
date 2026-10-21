@@ -20,6 +20,7 @@ dependencies = [
 [project.scripts]
 maester-indexer = "maester_indexer.__main__:main"
 maester-indexer-fetch-models = "maester_indexer.fetch_models:main"
+maester-indexer-ocr-sample = "maester_indexer.ocr_sample:main"
 
 [dependency-groups]
 dev = ["httpx", "reportlab", "pillow"]
