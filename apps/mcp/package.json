@@ -1,0 +1,32 @@
+{
+  "name": "@maester/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx --env-file=../../.env src/main.ts",
+    "build": "tsup",
+    "start": "node dist/main.js",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@maester/api": "workspace:*",
+    "@maester/contracts": "workspace:*",
+    "@maester/db": "workspace:*",
+    "@maester/document-index": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "pino": "^10.3.1",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@maester/config": "workspace:*",
+    "@types/node": "^22.0.0",
+    "eslint": "^10.4.1",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.8"
+  }
+}
