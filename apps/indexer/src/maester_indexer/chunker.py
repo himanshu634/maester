@@ -168,19 +168,23 @@ def load_tokenizer(path: str, expected_model: str) -> HuggingFaceTokenizer:
 
 
 def _locked_model(folder: Path) -> str | None:
-    """The lock's model when the folder is named after it, else None. No lock at all is
-    INDEXER_NOT_CONFIGURED: the fetch writes the lock last, so the models are not all there."""
+    """The lock's embedding model, or one of its candidates, when the folder is named after it,
+    else None. No lock at all is INDEXER_NOT_CONFIGURED: the fetch writes the lock last, so the
+    models are not all there."""
     for directory in (folder, *folder.parents):
         lock = directory / LOCK_FILE
         if lock.is_file():
             try:
-                model_id = json.loads(lock.read_text(encoding="utf-8")).get("embedding", {}).get("id")
-            except (OSError, UnicodeDecodeError, ValueError, AttributeError):
+                content = json.loads(lock.read_text(encoding="utf-8"))
+                model_ids = [content.get("embedding", {}).get("id")]
+                model_ids += [entry.get("id") for entry in content.get("candidates", []) if isinstance(entry, dict)]
+            except (OSError, UnicodeDecodeError, ValueError, AttributeError, TypeError):
                 raise IndexingError(
                     "INDEXER_NOT_CONFIGURED", f"The {LOCK_FILE} above INDEX_TOKENIZER_PATH could not be read.", False
                 ) from None
-            if isinstance(model_id, str) and folder.parts[-len(model_id.split("/")) :] == tuple(model_id.split("/")):
-                return model_id
+            for model_id in model_ids:
+                if isinstance(model_id, str) and folder.parts[-len(model_id.split("/")) :] == tuple(model_id.split("/")):
+                    return model_id
             return None
     raise IndexingError(
         "INDEXER_NOT_CONFIGURED",

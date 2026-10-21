@@ -24,6 +24,8 @@ maester-indexer-ocr-sample = "maester_indexer.ocr_sample:main"
 
 [dependency-groups]
 dev = ["httpx", "reportlab", "pillow"]
+# scripts/embedding_parity.py only: the reference vectors a candidate model is checked against. Not in the image.
+parity = ["sentence-transformers==6.1.0"]
 
 [build-system]
 requires = ["hatchling"]

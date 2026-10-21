@@ -28,7 +28,23 @@ LOCK = {
 }
 
 
+FIXTURE = Path(__file__).resolve().parents[3] / "packages" / "contracts" / "fixtures" / "index" / "embedding-models.json"
+
+
 class Versions(unittest.TestCase):
+    def test_candidates_do_not_change_the_reader_hash(self):  # live page_read keys stay valid
+        self.assertEqual(
+            models_hash({**LOCK, "candidates": [{"id": "Qwen/Qwen3-Embedding-0.6B", "revision": "b" * 40}]}),
+            models_hash(LOCK),
+        )
+
+    def test_the_lock_names_every_registry_model(self):
+        lock = json.loads(shipped_lock().read_text(encoding="utf-8"))
+        ids = [lock["embedding"]["id"], *[c["id"] for c in lock["candidates"]]]
+        self.assertEqual(sorted(ids), sorted(m["id"] for m in json.loads(FIXTURE.read_text(encoding="utf-8"))))
+        for entry in [lock["embedding"], *lock["candidates"]]:
+            self.assertRegex(entry["revision"], r"^[0-9a-f]{40}$")
+
     def test_versions_come_from_the_installed_packages_and_the_shipped_lock(self):
         lock = json.loads(shipped_lock().read_text(encoding="utf-8"))
         self.assertEqual(
