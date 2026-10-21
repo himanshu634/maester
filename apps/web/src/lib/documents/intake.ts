@@ -360,7 +360,9 @@ export function companyCandidates(
  * columns that are not the year's end would fill the annual tables, so the API refuses it and it is not offered.
  */
 export function kindChoices(format: DocumentRecord['format']): ChosenKind[] {
-	return format === 'xbrl' ? ['financial_results', 'other'] : ['annual_report', 'financial_results', 'other'];
+	return format === 'xbrl'
+		? ['financial_results', 'other']
+		: ['annual_report', 'financial_results', 'other'];
 }
 
 /** The button that saves "what is it?": only the kinds Maester reads promise a read. */

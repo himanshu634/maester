@@ -292,7 +292,9 @@ describe('sendAll', () => {
 	});
 
 	it('sends every XBRL file before any PDF, each kind in the order chosen, and names refusals in the order chosen', async () => {
-		const chosen = ['a.pdf', 'q1.xml', 'b.pdf', 'q2.XML', 'c.pdf', 'd.pdf', 'q3.xml'].map((p) => pick(p));
+		const chosen = ['a.pdf', 'q1.xml', 'b.pdf', 'q2.XML', 'c.pdf', 'd.pdf', 'q3.xml'].map((p) =>
+			pick(p)
+		);
 		const started: string[] = [];
 		const result = await sendAll(chosen, null, async (item) => {
 			started.push(item.path);
