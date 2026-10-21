@@ -98,7 +98,7 @@ def read_questions(path: Path) -> list[RetrievalQuestion]:
 def _question(cells: dict[str, str], line: int) -> RetrievalQuestion:
     question_id = cells["id"]
     if not _QUESTION_ID.fullmatch(question_id):
-        raise RetrievalSetError(f"sheet row {line}: id {question_id!r} is not q and three digits, such as q007")
+        raise RetrievalSetError(f"sheet row {line}: id is not q and three digits, such as q007")
     filing = cells["filing"]
     if not filing:
         raise RetrievalSetError(f"sheet row {line}: filing is blank")
@@ -109,7 +109,7 @@ def _question(cells: dict[str, str], line: int) -> RetrievalQuestion:
         raise RetrievalSetError(f"sheet row {line}: query is over {_MAX_QUERY} characters")
     status = cells["status"].lower()
     if status not in _STATUSES:
-        raise RetrievalSetError(f"sheet row {line}: status {cells['status']!r} is not draft or verified")
+        raise RetrievalSetError(f"sheet row {line}: status is not draft or verified")
     return RetrievalQuestion(id=question_id, filing=filing, query=query, answers=_answers(cells["pages"], filing, line),
                              status=status)  # type: ignore[arg-type]
 
@@ -125,13 +125,13 @@ def _answers(pages: str, own_filing: str, line: int) -> tuple[tuple[str, int], .
         filing = filing_part.strip() if colon else own_filing
         page_part = page_part.strip()
         if colon and not filing:
-            raise RetrievalSetError(f"sheet row {line}: pages {entry!r} has no filing before the colon")
+            raise RetrievalSetError(f"sheet row {line}: pages has an entry with no filing before the colon")
         # The page part alone is read: a filing id holds dashes, a page range such as 12-13 must still be refused.
         if not _PAGE.fullmatch(page_part):
-            raise RetrievalSetError(f"sheet row {line}: pages {entry!r} is not a whole page number")
+            raise RetrievalSetError(f"sheet row {line}: pages is not a list of whole page numbers")
         page = int(page_part.partition(".")[0])
         if page < 1:
-            raise RetrievalSetError(f"sheet row {line}: pages {entry!r} is below page 1")
+            raise RetrievalSetError(f"sheet row {line}: pages has a page below 1")
         answers.add((filing, page))
     return tuple(sorted(answers))
 

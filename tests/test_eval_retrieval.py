@@ -105,10 +105,20 @@ class ReadQuestionsTests(TempCase):
         self.assertNotIn("auditor", repr(qs[0]))
 
     def test_a_page_range_a_spreadsheet_might_read_as_a_date_is_refused(self):
-        with self.assertRaisesRegex(RetrievalSetError, "sheet row 2: pages '12-13'"):
+        with self.assertRaisesRegex(RetrievalSetError, "sheet row 2: pages is not a list of whole page numbers"):
             read_questions(self.write(sheet(row(pages="12-13"))))
-        with self.assertRaisesRegex(RetrievalSetError, "sheet row 2: pages 'aether-industries/q1-2025-26:12-13'"):
+        with self.assertRaisesRegex(RetrievalSetError, "sheet row 2: pages is not a list of whole page numbers"):
             read_questions(self.write(sheet(row(pages=f"{Q1}:12-13"))))
+
+    def test_a_query_with_an_unquoted_comma_shifts_the_cells_and_no_message_holds_its_text(self):
+        # The comma moves later cells one column to the right, so the question's words land in pages, status or id.
+        for query in ("Net debt, and the fee paid?", "Net debt, fee, paid, and the auditor: Walker?", "Who audits, the company"):
+            with self.subTest(query=query), self.assertRaises(RetrievalSetError) as caught:
+                read_questions(self.write(sheet(row(query=query))))
+            message = str(caught.exception)
+            self.assertTrue(message.startswith("sheet row 2: "), message)
+            for fragment in ("and the fee", "paid", "auditor", "Walker", "the company", "fee"):
+                self.assertNotIn(fragment, message)
 
     def test_a_page_below_one_is_refused(self):
         for bad in ("0", "0.0", f"{AR}:0"):
@@ -121,7 +131,7 @@ class ReadQuestionsTests(TempCase):
                 read_questions(self.write(sheet(row(pages=bad))))
 
     def test_an_empty_filing_part_is_refused(self):
-        with self.assertRaisesRegex(RetrievalSetError, "sheet row 2: pages ':3'"):
+        with self.assertRaisesRegex(RetrievalSetError, "sheet row 2: pages has an entry with no filing before the colon"):
             read_questions(self.write(sheet(row(pages=":3"))))
 
     def test_empty_pages_are_refused(self):
@@ -152,7 +162,7 @@ class ReadQuestionsTests(TempCase):
                 read_questions(self.write(sheet(row(id=bad))))
 
     def test_an_unknown_status_is_refused(self):
-        with self.assertRaisesRegex(RetrievalSetError, "sheet row 2: status 'maybe'"):
+        with self.assertRaisesRegex(RetrievalSetError, "sheet row 2: status is not draft or verified"):
             read_questions(self.write(sheet(row(status="maybe"))))
 
     def test_a_status_in_capitals_is_read(self):
@@ -169,7 +179,7 @@ class ReadQuestionsTests(TempCase):
             read_questions(path)
 
     def test_the_row_number_counts_a_blank_row(self):
-        with self.assertRaisesRegex(RetrievalSetError, "sheet row 4: status 'maybe'"):
+        with self.assertRaisesRegex(RetrievalSetError, "sheet row 4: status is not draft or verified"):
             read_questions(self.write(sheet(row(), ",,,,,", row(id="q002", status="maybe"))))
 
 
@@ -380,7 +390,7 @@ class RetrievalCheckCommandTests(RetrievalCommandCase):
     def test_check_names_the_sheet_row_and_not_the_question(self):
         self.set_questions(question_rows(2, status="maybe"))
         result = self.run_command("retrieval", "check")
-        self.assert_refused(result, "sheet row 2: status 'maybe'")
+        self.assert_refused(result, "sheet row 2: status is not draft or verified")
         self.assertNotIn("Secret", plain(result.output))
 
     def test_check_with_no_sheet_is_a_message_and_not_a_traceback(self):
