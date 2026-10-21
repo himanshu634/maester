@@ -84,7 +84,11 @@ Paths marked *(phase n)* arrive with that phase of the spec; until then they do 
    - `maester-eval live --set heldout --paired`: the held-out PDF run. It calls the model and costs money, so ask the investor first and reuse an existing held-out PDF run when there is one.
    - `maester-eval report --set heldout --run <pdf run> --run <new xbrl run> --against <old xbrl run>`.
    - `maester-eval compare --set heldout --gate --run <pdf run> --xbrl <new xbrl run> --against <old xbrl run>`.
-6. No regression on held-out in the `xbrl` exact match (exact equality only, over `origin "sheet"` gold) or in `compare`'s agreement. Read the at-precision, dash-as-`0` and sign-only counts beside them.
+6. No regression on held-out in the `xbrl` exact match (exact equality only, over `origin "sheet"` gold) or in `compare`'s agreement. A rise in any count that decides their denominator also stops the change, because it moves gold facts or cells out of the rates while the rates hold:
+   - in `report`'s `Against <old xbrl run>` counts, for `xbrl` and `shown`: Outside, Not placed, filings with no used instance, instances not used;
+   - in `compare`'s `Against`: filings not compared, instances not used, `outside_instance`.
+
+   Read the at-precision, dash-as-`0` and sign-only counts beside them.
 7. The reports under `docs/eval/` (`--to`), committed with the change.
 
 A change of sign convention in the map (an element whose figure is to be read as negative) is a map change like any other. It goes through these seven steps, and its report states which elements changed sign. Never flip a sign anywhere else, and never to make a number match.
