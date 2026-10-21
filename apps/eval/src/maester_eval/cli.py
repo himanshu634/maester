@@ -29,6 +29,8 @@ from maester_eval.ocr import read_run as read_ocr_run
 from maester_eval.paths import DEFAULT, EvalPaths
 from maester_eval.report import score_run_dir, write_report
 from maester_eval.retrieval import build_request, check_set, corpus_filings, read_corpus, read_questions
+from maester_eval.retrieval_report import read_lock_revisions, read_retrieval_run, render_retrieval_report
+from maester_eval.retrieval_scoring import choose_model, needs_granite
 from maester_eval.runner import gemini_model_factory, run_live, workflow_settings_from_env
 from maester_eval.sheets import export_run, sheet_path
 
@@ -43,7 +45,7 @@ ocr_app = typer.Typer(
 )
 app.add_typer(ocr_app, name="ocr")
 retrieval_app = typer.Typer(
-    help="The retrieval set: check the question sheet, then write the request the ranker reads.",
+    help="The retrieval set: check the question sheet, write the request the ranker reads, then score the rankings and choose the model.",
     no_args_is_help=True,
 )
 app.add_typer(retrieval_app, name="retrieval")
@@ -282,3 +284,36 @@ def retrieval_request(
     write_text_atomically(run_dir / "request.json", request.model_dump_json(indent=2) + "\n")
     console.print(f"{len(request.documents)} filing(s), {len(request.questions)} question(s)", markup=False)
     console.print(str(run_dir), markup=False)
+
+
+@retrieval_app.command("report")
+@_reports_errors
+def retrieval_report(
+    run: Annotated[str, typer.Option(help="A retrieval run folder's name, a path, or `latest`.")] = "latest",
+    to: Annotated[Optional[Path], typer.Option(help="Also copy the Markdown here, e.g. docs/eval/2026-11-05-retrieval.md.")] = None,
+) -> None:
+    """Score a run's rankings, apply the model rule and write report.md into the run folder. Names questions by id only."""
+    paths = EvalPaths(DEFAULT.retrieval)
+    run_dir = paths.resolve_run(run)
+    manifest = load_manifest(DEFAULT.manifest)
+    corpus = read_corpus(paths.base / "corpus.json")
+    questions = read_questions(paths.base / "questions.csv")
+    check_set(questions, corpus, manifest)
+    verified = [question for question in questions if question.status == "verified"]
+    revisions = read_lock_revisions()
+    found = read_retrieval_run(run_dir, verified, revisions)
+    current = found.run_json.current
+    choice = choose_model(found.scores, found.benches, current)
+    granite = needs_granite(choice, found.benches, current)
+    md = render_retrieval_report(run_dir.name, verified, found.scores, found.benches, found.parities, found.run_json, choice,
+                                 granite, revisions=revisions, kinds={f.id: f.kind for f in manifest.filings},
+                                 generated_at=datetime.now(timezone.utc))
+    written = run_dir / "report.md"
+    write_text_atomically(written, md)
+    console.print(f"{run_dir.name}: {len(found.scores)} model(s), {len(verified)} verified question(s)", markup=False)
+    console.print(f"model: {choice.model} ({choice.reason})", markup=False)
+    console.print(f"granite: {'measured' if granite else 'not measured'}", markup=False)
+    console.print(f"report → {written}", markup=False)
+    if to is not None:
+        write_text_atomically(to, md)
+        console.print(f"published → {to}", markup=False)

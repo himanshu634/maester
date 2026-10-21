@@ -7,6 +7,7 @@ retrieval set exists, the questions to rank. The worker reads it with a Zod twin
 `maester-eval retrieval request` fills the questions. The worker's `eval sources`, `eval rank` and `eval bench` write
 `EvalRankingsModel` and `EvalBenchModel` (the twins of `retrieval-eval.ts`), and the shared fixtures `rankings.json` and
 `bench.json` pin them the same way. Their fields are camelCase on the wire.
+`EvalParityModel` reads the record the indexer's parity check writes for a candidate model.
 
 A question holds text from a filing's reader, so a request is a file under data/eval and never console output.
 """
@@ -146,3 +147,14 @@ class EvalBenchModel(_WireModel):
     seconds: Seconds
     queries: WholeNumber
     query_millis_median: Seconds
+
+
+class EvalParityModel(_WireModel):
+    """What the indexer's `scripts/embedding_parity.py` writes: the lowest cosine between TEI's vectors and the
+    reference's, whether every cosine reached 0.999, and whether the registry's prefixes are the model card's prompts."""
+
+    model: str
+    revision: str
+    min_cosine: Annotated[float, Field(allow_inf_nan=False)]
+    passed: bool
+    prompts_match_card: bool
