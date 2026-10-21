@@ -11,3 +11,4 @@ export * from "./connection.js";
 export * from "./research.js";
 export * from "./document-index.js";
 export * from "./search.js";
+export * from "./retrieval-eval.js";

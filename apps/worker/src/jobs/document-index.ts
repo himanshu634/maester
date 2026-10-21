@@ -5,7 +5,7 @@ import {
   chunksWithoutEmbedding, completeRevision, getPageRead, insertEmbeddings, lastStoredPage, putPageRead, schema, startOrResumeRevision,
   writeRange, type ChunkInput, type Db, type IndexRevisionRow, type IndexVersions, type PageInput, type PageReadKey,
 } from "@maester/db";
-import { EmbedderError, INDEX_PIPELINE_VERSION, type Embedder } from "@maester/document-index";
+import { EmbedderError, INDEX_PIPELINE_VERSION, indexPipelineVersion, servesModel, type Embedder } from "@maester/document-index";
 import { ObjectNotFoundError } from "@maester/storage";
 import type { IndexResult } from "../indexer.js";
 import { readAll } from "./document-extract.js";
@@ -146,9 +146,18 @@ async function embedPending(ctx: JobContext, embedder: Embedder, revision: Index
   }
 }
 
-async function index(job: { id: string; workspaceId: string; subjectId: string }, ctx: JobContext): Promise<DocumentIndexResult> {
+async function index(
+  job: { id: string; workspaceId: string; subjectId: string; idempotencyKey: string },
+  ctx: JobContext,
+): Promise<DocumentIndexResult> {
   const { indexer, embedder } = ctx;
   if (!indexer || !embedder) throw new JobFailure("INDEXER_NOT_CONFIGURED", "INDEXER_URL or EMBEDDER_URL is not set on the worker", false);
+  // A job's key ends with the index version and the model it was made for (`indexPipelineVersion`). A job for another
+  // model or version (one queued before a switch, or a candidate's job that reached this worker) is not built here:
+  // it would index with this worker's model under another model's key.
+  if (!job.idempotencyKey.endsWith(`:${indexPipelineVersion(ctx.env.EMBEDDING_MODEL)}`)) {
+    throw new JobFailure("INDEX_MODEL_NOT_SERVED", "the job is for another embedding model or index version than this worker's", false);
+  }
   const startedAt = Date.now();
   const deadline = startedAt + ctx.env.INDEX_TIMEOUT_SECONDS * 1000;
   const timeLeft = (): number => {
@@ -195,6 +204,17 @@ async function index(job: { id: string; workspaceId: string; subjectId: string }
   }
   if (versions.tokenizer !== model || embedder.model !== model) {
     throw new JobFailure("INDEXER_MODEL_MISMATCH", "the indexer's tokenizer or the embedder's model is not EMBEDDING_MODEL", false);
+  }
+  // Two models can serve vectors of one length, so the length check cannot tell them apart: the embedder is asked.
+  let served: string;
+  try {
+    served = await embedder.servedModel();
+  } catch (err) {
+    if (err instanceof EmbedderError) throw new JobFailure("EMBEDDING_FAILED", `the embedder failed with ${err.code}`, true);
+    throw err;
+  }
+  if (!servesModel(served, model)) {
+    throw new JobFailure("INDEXER_MODEL_MISMATCH", `the embedder serves ${served}, not EMBEDDING_MODEL`, false);
   }
   const indexVersions: IndexVersions = { ...versions, indexVersion: INDEX_PIPELINE_VERSION, embeddingModel: model };
 

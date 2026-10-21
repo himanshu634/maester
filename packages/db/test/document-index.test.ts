@@ -264,21 +264,31 @@ describe("document index", () => {
     const otherModel = await seedDocument(ws, userId);
     await completeRevision(db, ws, (await newRevision(ws, otherModel, { ...versions, embeddingModel: "m2" })).id);
 
-    const rows = await documentsNeedingIndex(db, { workspaceId: ws, model: MODEL, pipelineVersion: PIPELINE });
+    const rows = await documentsNeedingIndex(db, { workspaceId: ws, model: MODEL, pipelineVersion: PIPELINE, indexVersion: "1" });
     expect(rows.map((r) => r.documentId).sort()).toEqual([needs, withJob, building, otherModel].sort());
     expect(rows.find((r) => r.documentId === needs)!.job).toBeNull();
     expect(rows.find((r) => r.documentId === withJob)!.job?.id).toBe(jobId);
     expect(rows.every((r) => r.workspaceId === ws)).toBe(true);
 
-    const only = await documentsNeedingIndex(db, { workspaceId: ws, documentIds: [needs, indexed], model: MODEL, pipelineVersion: PIPELINE });
+    const only = await documentsNeedingIndex(db, { workspaceId: ws, documentIds: [needs, indexed], model: MODEL, pipelineVersion: PIPELINE, indexVersion: "1" });
     expect(only.map((r) => r.documentId)).toEqual([needs]);
-    expect(await documentsNeedingIndex(db, { documentIds: [], model: MODEL, pipelineVersion: PIPELINE })).toEqual([]);
+    expect(await documentsNeedingIndex(db, { documentIds: [], model: MODEL, pipelineVersion: PIPELINE, indexVersion: "1" })).toEqual([]);
+  });
+
+  it("a revision of an older index version is not current", async () => {
+    const { ws, userId } = await seedWorkspace("a");
+    const doc = await seedDocument(ws, userId);
+    const rev = await completeRevision(db, ws, (await newRevision(ws, doc, { ...versions, indexVersion: "1" })).id);
+    expect(rev).toMatchObject({ state: "complete", indexVersion: "1" });
+    const bumped = await documentsNeedingIndex(db, { workspaceId: ws, model: MODEL, pipelineVersion: PIPELINE, indexVersion: "2" });
+    expect(bumped.map((r) => r.documentId)).toEqual([doc]);
+    expect(await documentsNeedingIndex(db, { workspaceId: ws, model: MODEL, pipelineVersion: PIPELINE, indexVersion: "1" })).toEqual([]);
   });
 
   it("documentsNeedingIndex includes a stored document whose intake_state is null", async () => {
     const { ws, userId } = await seedWorkspace("a");
     const id = await seedDocument(ws, userId, { intakeState: null });
-    const rows = await documentsNeedingIndex(db, { model: MODEL, pipelineVersion: PIPELINE });
+    const rows = await documentsNeedingIndex(db, { model: MODEL, pipelineVersion: PIPELINE, indexVersion: "1" });
     expect(rows.map((r) => r.documentId)).toEqual([id]);
   });
 
@@ -290,7 +300,7 @@ describe("document index", () => {
     expect(await lastStoredPage(db, a.ws, rev.id)).toBeNull();
     expect(await chunksWithoutEmbedding(db, a.ws, rev.id, MODEL, 10)).toEqual([]);
     expect(await getPageRead(db, a.ws, { contentSha256: "x", firstPage: 1, lastPage: 2, doclingVersion: "d", ocrEngine: "o", readerOptions: "r" })).toBeNull();
-    const need = await documentsNeedingIndex(db, { workspaceId: a.ws, model: "m3", pipelineVersion: PIPELINE });
+    const need = await documentsNeedingIndex(db, { workspaceId: a.ws, model: "m3", pipelineVersion: PIPELINE, indexVersion: "1" });
     expect(need).toEqual([]);
     await expect(completeRevision(db, a.ws, rev.id)).rejects.toThrow("INDEX_REVISION_NOT_FOUND");
     await expect(writeRange(db, a.ws, rev.id, documentId, [page(9)], [], counts)).rejects.toThrow("INDEX_REVISION_NOT_FOUND");

@@ -6,8 +6,13 @@ export const JobTypes = {
   DOCUMENT_CLASSIFY: "document.classify",
   DOCUMENT_EXTRACT: "document.extract",
   DOCUMENT_INDEX: "document.index",
+  /**
+   * A candidate embedding model's index, built only by the worker's `index:candidate` runner. The live worker has no
+   * handler for it, so it never claims one.
+   */
+  DOCUMENT_INDEX_EVAL: "document.index.eval",
 } as const;
-/** The job subject type for `document.index`; the subject id is the document id. */
+/** The job subject type for `document.index` and `document.index.eval`; the subject id is the document id. */
 export const DOCUMENT_INDEX_SUBJECT = "document_index";
 export type JobType = (typeof JobTypes)[keyof typeof JobTypes];
 
