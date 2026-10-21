@@ -89,6 +89,9 @@ export function toClassification(row: ClassificationRow): Classification {
     cin: row.cin,
     bseCode: row.bseCode,
     nseSymbol: row.nseSymbol,
+    isin: row.isin,
+    xbrlFormat: row.xbrlFormat,
+    basis: row.basis,
     statementsFound: row.statementsFound as Classification["statementsFound"],
     setBy: row.setBy,
     readsUnderId: row.readsUnderId,
@@ -112,7 +115,10 @@ export function toClassificationSummary(row: ClassificationRow): ClassificationS
 }
 
 export function toEvidence(row: EvidenceRow): Evidence {
-  return { field: row.field, source: row.source, ruleId: row.ruleId, pageIndex: row.pageIndex, quote: row.quote, textLayerMatch: row.textLayerMatch };
+  return {
+    field: row.field, source: row.source, ruleId: row.ruleId, pageIndex: row.pageIndex, quote: row.quote, textLayerMatch: row.textLayerMatch,
+    element: row.element, context: row.context,
+  };
 }
 
 export function toRevision(row: ExtractionRevisionRow): ExtractionRevision {

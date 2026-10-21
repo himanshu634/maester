@@ -91,6 +91,40 @@ describe("classification", () => {
     expect(read!.idempotencyKey).toBe(`${JobTypes.DOCUMENT_EXTRACT}:${doc}:classification-${body.classification.id}`);
   });
 
+  it("the investor's change to an XBRL document's company keeps isin, xbrlFormat and basis, and the evidence's element and context", async () => {
+    const a = await ctx.signUp("xbrl-change@example.com");
+    const doc = await seedDocument(a.workspaceId, a.userId);
+    const cid = await seedClassification(a.workspaceId, doc, {
+      kind: "financial_results", resultsSpan: "quarter", cin: null, bseCode: "500998", nseSymbol: "SYNBANK", isin: "INE998Z01012",
+      xbrlFormat: "in-capmkt/banking", basis: "standalone", statementsFound: [], rulesVersion: "xbrl-1", model: null, promptVersion: "in-capmkt/banking@1",
+    });
+    await ctx.db.insert(schema.classificationEvidence).values({
+      id: crypto.randomUUID(), workspaceId: a.workspaceId, classificationId: cid, field: "period", source: "rule", ruleId: "xbrl.identity.period_end",
+      pageIndex: null, quote: "2025-09-30", textLayerMatch: null, element: "DateOfEndOfReportingPeriod", context: "OneD",
+    });
+    const res = await ctx.app.request(url(a.workspaceId, doc), send("POST", a.cookie, {
+      basedOn: cid, company: { new: { displayName: "Synthetic Bank Limited", country: "IN", bseCode: "500998" } },
+    }));
+    expect(res.status).toBe(200);
+    const body = ClassificationChanged.parse(await res.json());
+    expect(body.classification).toMatchObject({ setBy: "investor", isin: "INE998Z01012", xbrlFormat: "in-capmkt/banking", basis: "standalone" });
+    const [row] = await ctx.db.select().from(schema.documentClassification).where(eq(schema.documentClassification.id, body.classification.id));
+    expect(row).toMatchObject({ isin: "INE998Z01012", xbrlFormat: "in-capmkt/banking", basis: "standalone" });
+    expect(body.evidence.find((e) => e.field === "period")).toMatchObject({ element: "DateOfEndOfReportingPeriod", context: "OneD" });
+    const read = await ctx.app.request(url(a.workspaceId, doc), { headers: { cookie: a.cookie } });
+    expect(DocumentClassification.parse(await read.json()).classification).toMatchObject({ isin: "INE998Z01012", xbrlFormat: "in-capmkt/banking", basis: "standalone" });
+  });
+
+  it("a PDF's classification has no isin, format or basis", async () => {
+    const a = await ctx.signUp("pdf-null@example.com");
+    const doc = await seedDocument(a.workspaceId, a.userId);
+    await seedClassification(a.workspaceId, doc);
+    const res = await ctx.app.request(url(a.workspaceId, doc), { headers: { cookie: a.cookie } });
+    const body = DocumentClassification.parse(await res.json());
+    expect(body.classification).toMatchObject({ isin: null, xbrlFormat: null, basis: null });
+    expect(body.evidence.every((e) => e.element === null && e.context === null)).toBe(true);
+  });
+
   it("a company name that already exists is a 409", async () => {
     const a = await ctx.signUp("clash@example.com");
     await ctx.createCompany(a.workspaceId, a.cookie, "Synthetic Cements Limited");

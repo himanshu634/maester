@@ -96,6 +96,22 @@ describe("classification queries", () => {
     expect(await matchCompanies(db, crypto.randomUUID(), { cin: "L26940MH2001PLC123456" })).toEqual([]);
   });
 
+  it("finds a company by ISIN alone, and any of the three codes counts", async () => {
+    const { workspaceId } = await seed();
+    const add = async (displayName: string, extra: Partial<typeof schema.company.$inferInsert>) => {
+      const id = crypto.randomUUID();
+      await db.insert(schema.company).values({ id, workspaceId, displayName, country: "IN", createdByUserId: "u1", ...extra });
+      return id;
+    };
+    const bank = await add("Synthetic Bank Ltd", { isin: "INE998Z01012" });
+    const power = await add("Synthetic Power Limited", { bseCode: "532123" });
+    expect((await matchCompanies(db, workspaceId, { isin: "INE998Z01012" })).map((c) => c.id)).toEqual([bank]);
+    expect((await matchCompanies(db, workspaceId, { bseCode: "000000", isin: "INE998Z01012" })).map((c) => c.id)).toEqual([bank]);
+    expect((await matchCompanies(db, workspaceId, { bseCode: "532123", isin: "INE000000000" })).map((c) => c.id)).toEqual([power]);
+    expect(await matchCompanies(db, workspaceId, { isin: "INE111A01011" })).toEqual([]);
+    expect(await matchCompanies(db, crypto.randomUUID(), { isin: "INE998Z01012" })).toEqual([]);
+  });
+
   it("finds the older stored copy of the same content, and the oldest copy finds none", async () => {
     const { workspaceId, documentId } = await seed();
     const second = crypto.randomUUID();

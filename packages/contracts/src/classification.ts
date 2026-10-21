@@ -75,6 +75,10 @@ export const Evidence = z.object({
   pageIndex: z.number().int().min(0).nullable(),
   quote: z.string().nullable(),
   textLayerMatch: z.boolean().nullable(),
+  /** The XBRL element the answer was read from; null for a PDF, and for an answer that names no element. */
+  element: z.string().nullable(),
+  /** The XBRL context that element was read in; null for a PDF. */
+  context: z.string().nullable(),
 });
 export type Evidence = z.infer<typeof Evidence>;
 export const Classification = z.object({
@@ -90,6 +94,12 @@ export const Classification = z.object({
   cin: z.string().nullable(),
   bseCode: z.string().nullable(),
   nseSymbol: z.string().nullable(),
+  /** From an XBRL instance's `ISIN`; null for a PDF. */
+  isin: z.string().nullable(),
+  /** The instance's format id, such as `in-capmkt/ind_as`; null for a PDF. */
+  xbrlFormat: z.string().nullable(),
+  /** An XBRL instance's basis, `unknown` included; null for a PDF, whose bases are in `statementsFound`. */
+  basis: ReportingBasis.nullable(),
   statementsFound: z.array(StatementFound),
   setBy: z.enum(["maester", "investor"]),
   readsUnderId: Uuid.nullable(),

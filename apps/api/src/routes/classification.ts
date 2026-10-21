@@ -112,6 +112,9 @@ export function classificationRoutes(deps: AppDeps) {
             cin: prev.cin,
             bseCode: prev.bseCode,
             nseSymbol: prev.nseSymbol,
+            isin: prev.isin,
+            xbrlFormat: prev.xbrlFormat,
+            basis: prev.basis,
             statementsFound: prev.statementsFound,
             setBy: "investor",
             setByUserId: userId,
@@ -150,6 +153,8 @@ export function classificationRoutes(deps: AppDeps) {
             pageIndex: null,
             quote: null,
             textLayerMatch: null,
+            element: null,
+            context: null,
           })),
         ];
         if (rows.length) await tx.insert(schema.classificationEvidence).values(rows);

@@ -56,11 +56,11 @@ export function normalizeCompanyName(name: string): string {
     .replace(/ (?:pvt |private )?(?:ltd|limited)$/, "");
 }
 
-/** Companies a document's identity points at: by CIN, else exchange code, else name. */
+/** Companies a document's identity points at: by CIN, else any of the BSE code, NSE symbol and ISIN, else name. */
 export async function matchCompanies(
   db: Db,
   workspaceId: string,
-  ids: { cin?: string | null; bseCode?: string | null; nseSymbol?: string | null; name?: string | null },
+  ids: { cin?: string | null; bseCode?: string | null; nseSymbol?: string | null; isin?: string | null; name?: string | null },
 ): Promise<CompanyRow[]> {
   if (ids.cin) {
     const rows = await db.select().from(company).where(and(eq(company.workspaceId, workspaceId), eq(company.cin, ids.cin)));
@@ -69,6 +69,7 @@ export async function matchCompanies(
   const codes = [
     ids.bseCode ? eq(company.bseCode, ids.bseCode) : undefined,
     ids.nseSymbol ? eq(company.nseSymbol, ids.nseSymbol) : undefined,
+    ids.isin ? eq(company.isin, ids.isin) : undefined,
   ].filter((c) => c !== undefined);
   if (codes.length) {
     const rows = await db.select().from(company).where(and(eq(company.workspaceId, workspaceId), or(...codes)));
