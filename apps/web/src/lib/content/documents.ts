@@ -249,6 +249,9 @@ export const documentsContent = {
 	 * "Stopped" are bold, which the component decides from the track's state (Decision 18).
 	 */
 	tracks: {
+		/** The two tracks' labels, in a filing's row and in the opened filing. */
+		numbersLabel: 'Numbers',
+		textLabel: 'Text',
 		/** A track with nothing to say yet. */
 		none: '—',
 		sending: 'Sending',
@@ -503,6 +506,16 @@ export const documentsContent = {
 			`${files === 1 ? '1 file' : `${files} files`} confirmed as ${name}.`,
 		nothingWaiting: 'Nothing was waiting for this company any more.',
 		/** A file that prints no code: its Notice, and the action on it. */
+		/** The picker of the companies already added, and the way to it from an "Add" row. */
+		pickerLabel: 'Your companies',
+		oneOfMine: 'It’s one of mine',
+		/** A row's action is running: its buttons are disabled and this line says why. */
+		saving: 'Saving…',
+		/** The companies read has not settled, so no row can say whether it matches one. */
+		checkingCompanies: 'Checking which of your companies match…',
+		/** An unnamed file's form could not open because its answers did not load. */
+		answersFailed: 'What Maester read didn’t load. Try again.',
+		loadingAnswers: 'Opening…',
 		unnamedAction: 'Say which company',
 		unnamedNoName: (file: string) => `${file}: which company is this?`,
 		unnamedNoNameDetail:

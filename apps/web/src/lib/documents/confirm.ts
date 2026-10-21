@@ -75,6 +75,23 @@ export function confirmRows(
 	};
 }
 
+/**
+ * The rows to draw. Until the companies read has settled, a row cannot know whether it matches
+ * one of them (it reads as an add), so none is drawn.
+ */
+export function rowsToDraw(rows: ConfirmRow[], companiesLoaded: boolean): ConfirmRow[] {
+	return companiesLoaded ? rows : [];
+}
+
+/**
+ * Whether an unnamed file's "Say which company" is the screen's filled button: only the first
+ * one, only while there are no confirm rows, and only while its form is closed (an open form
+ * holds the filled button instead).
+ */
+export function openerFilled(at: { rows: number; index: number; open: boolean }): boolean {
+	return at.rows === 0 && at.index === 0 && !at.open;
+}
+
 /** "31 companies. Their 214 files wait until you confirm each company, once." */
 export function sectionLede(held: HeldIdentity[]): string {
 	return c.lede(

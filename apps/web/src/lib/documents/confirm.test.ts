@@ -7,6 +7,8 @@ import {
 	confirmedAloud,
 	confirmRequest,
 	confirmRows,
+	openerFilled,
+	rowsToDraw,
 	sectionLede,
 	unnamedNotice
 } from './confirm';
@@ -195,5 +197,26 @@ describe('companies to confirm', () => {
 				'No company code is printed beside the name, so Maester can’t match it. Add it, or say which of your companies it is.'
 		});
 		expect(copy.confirm.unnamedAction).toBe('Say which company');
+	});
+
+	it('draws no confirm row until the companies have loaded', () => {
+		const { rows } = confirmRows([heldOf({ matches: ['co-1'] })], [], false);
+		// Without the companies read, a row that matches one reads as an add (the match is not found).
+		expect(rows[0].mode).toBe('add');
+		expect(rowsToDraw(rows, false)).toEqual([]);
+		expect(rowsToDraw(rows, true)).toBe(rows);
+	});
+
+	it('one opener is filled, only while there are no rows and its form is closed', () => {
+		expect(openerFilled({ rows: 0, index: 0, open: false })).toBe(true);
+		expect(openerFilled({ rows: 0, index: 0, open: true })).toBe(false);
+		expect(openerFilled({ rows: 0, index: 1, open: false })).toBe(false);
+		expect(openerFilled({ rows: 2, index: 0, open: false })).toBe(false);
+	});
+
+	it('the words of the section’s own controls', () => {
+		expect(copy.confirm.pickerLabel).toBe('Your companies');
+		expect(copy.confirm.oneOfMine).toBe('It’s one of mine');
+		expect(copy.confirm.saving).toBe('Saving…');
 	});
 });
