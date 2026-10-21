@@ -363,6 +363,15 @@ describe("buildFilings: held and unsorted", () => {
     expect(result.companies[0]!.filings).toEqual([]);
   });
 
+  it("lists a duplicate of a held file among the held identity's documents, counting only the original", () => {
+    const original = file(1, { companyId: null, doc: { intakeState: "needs_company" }, cls: { bseCode: "532999", companyNameAsPrinted: "Coastline Bank Limited" } });
+    const dup = file(2, { cls: null, doc: { intakeState: "duplicate", duplicateOfDocumentId: ID(1) } });
+    const result = build({ files: [original, dup] });
+    expect(result.held).toHaveLength(1);
+    expect(result.held[0]).toMatchObject({ key: "bse:532999", files: 1, filings: 1, documentIds: [ID(1), ID(2)] });
+    expect(result.unsorted).toEqual([]);
+  });
+
   it("sends files with no company that are not held, and files with no classification, to unsorted", () => {
     const files = [
       file(1, { companyId: null, cls: { kind: "other", otherType: "announcement", bseCode: "500999" }, doc: { intakeState: "kept" } }),

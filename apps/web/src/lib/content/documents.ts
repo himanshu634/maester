@@ -466,11 +466,6 @@ export const documentsContent = {
 		other: (type: string, day: string) => `${type}, ${day}`,
 		/** "Synthetic Cements · results, quarter to 30 Sep 2026". */
 		heading: (company: string, title: string) => `${company} · ${title}`,
-		/** The bases a filing holds: "Consolidated and standalone". */
-		bases: (names: string[]) =>
-			names.length <= 1
-				? (names[0] ?? '')
-				: `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`,
 		files: (count: number) => (count === 1 ? '1 file' : `${count} files`),
 		filings: (count: number) => (count === 1 ? '1 filing' : `${count} filings`),
 		added: (when: string) => `added ${when}`,
@@ -526,8 +521,7 @@ export const documentsContent = {
 		/** A held company that prints neither a name nor a code; the API always gives one of them. */
 		someCompany: 'A company',
 		companies: (count: number) => (count === 1 ? '1 company' : `${count} companies`),
-		files: (count: number) => (count === 1 ? '1 file' : `${count} files`),
-		/** "31 companies and 2 files need you." */
+		/** "31 companies and 2 files need you"; the files are counted by `titles.files`. */
 		many: (parts: string[]) => `${parts.join(' and ')} need you.`
 	},
 

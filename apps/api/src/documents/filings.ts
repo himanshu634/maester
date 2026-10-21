@@ -315,7 +315,12 @@ export function buildFilings(input: FilingsInput): WorkspaceFilings {
       ? [{ documentId: c.documentId, kind: c.kind, otherType: c.otherType, periodEnd: c.periodEnd, nameAsPrinted: c.companyNameAsPrinted, cin: c.cin, bseCode: c.bseCode, isin: c.isin, nseSymbol: c.nseSymbol }]
       : [];
   });
-  const held = groupHeld(heldRows, input.companies);
+  // A duplicate of a held file waits with it: listed among its documents, so the page finds it,
+  // but not counted in its files or filings.
+  const held = groupHeld(heldRows, input.companies).map((h) => ({
+    ...h,
+    documentIds: [...h.documentIds, ...h.documentIds.flatMap((id) => duplicates.get(id) ?? [])],
+  }));
   const isHeld = new Set(held.flatMap((h) => h.documentIds));
 
   const filingsOf = new Map<string, WorkspaceFiling[]>();

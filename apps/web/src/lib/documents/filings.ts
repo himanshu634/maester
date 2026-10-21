@@ -4,12 +4,16 @@
  * tracks, which filing is open and where it goes when its file moves, how a poll and a read merge,
  * and which questions are new. Free of Svelte and of the page: every function takes what it
  * reads. Counts of files and filings are counts, not figures; no figure value is read here.
+ *
+ * `keepFresher` takes the ids written since a filings read began: the files the open filing's
+ * own poll wrote, and the uploads `withUpload` added (Task 10 counts both), so a read that lands
+ * late neither rolls a file back nor loses a file just added.
  */
 import { documentsContent } from '$lib/content/documents';
 import { shortName } from '$lib/research/summary';
 import { fyLabel } from '$lib/research/view';
 import { addedAt as addedAtWords, whatItIs } from './intake';
-import { dayWords } from './sources';
+import { dayWords, joinList } from './sources';
 import {
 	abandonedUpload,
 	numbersTrack,
@@ -107,22 +111,27 @@ function lowerFirst(text: string): string {
 	return text.charAt(0).toLowerCase() + text.slice(1);
 }
 
-/** The day an instant falls on in the reader's time zone, as "14 Aug 2026". */
-function localDay(iso: string): string | null {
+/** The day an instant falls on in `timeZone` (the reader's by default), as "14 Aug 2026". */
+function localDay(iso: string, timeZone?: string): string | null {
 	const date = new Date(iso);
 	if (Number.isNaN(date.getTime())) return null;
 	const parts = new Intl.DateTimeFormat('en-GB', {
 		year: 'numeric',
 		month: '2-digit',
-		day: '2-digit'
+		day: '2-digit',
+		timeZone
 	}).formatToParts(date);
 	const part = (type: Intl.DateTimeFormatPartTypes) =>
 		parts.find((p) => p.type === type)?.value ?? '';
 	return dayWords(`${part('year')}-${part('month')}-${part('day')}`);
 }
 
-/** A filing's title: "Results, quarter to 30 Sep 2026", "Annual report 2025–26", a file name. */
-export function filingTitle(f: WorkspaceFiling, files: FilingFile[]): string {
+/**
+ * A filing's title: "Results, quarter to 30 Sep 2026", "Annual report 2025–26", a file name. An
+ * other filing with no period is dated by the day it was added in `timeZone` (the reader's by
+ * default).
+ */
+export function filingTitle(f: WorkspaceFiling, files: FilingFile[], timeZone?: string): string {
 	switch (f.kind) {
 		case 'financial_results': {
 			const day = dayWords(f.periodEnd);
@@ -139,7 +148,7 @@ export function filingTitle(f: WorkspaceFiling, files: FilingFile[]): string {
 		}
 		case 'other': {
 			const type = whatItIs({ kind: 'other', otherType: f.otherType, resultsSpan: null });
-			const day = dayWords(f.periodEnd) ?? localDay(f.addedAt);
+			const day = dayWords(f.periodEnd) ?? localDay(f.addedAt, timeZone);
 			return day === null ? type : t.other(type, day);
 		}
 		case 'not_sure':
@@ -167,7 +176,7 @@ export function filingMeta(view: FilingView, now: Date = new Date(), timeZone?: 
 		(b) => copy.bases[b]
 	);
 	return [
-		bases.length > 0 ? sentenceCase(t.bases(bases)) : null,
+		bases.length > 0 ? sentenceCase(joinList(bases)) : null,
 		t.files(view.files.length),
 		t.added(addedAtWords(view.addedAt, now, timeZone))
 	]
@@ -200,11 +209,16 @@ export function heldCodes(h: HeldIdentity): string {
 	return h.cin ? copy.company.printed('CIN', h.cin) : '';
 }
 
-function companyFiling(companyId: string, filing: WorkspaceFiling, ctx: TrackContext): FilingView {
+function companyFiling(
+	companyId: string,
+	filing: WorkspaceFiling,
+	ctx: TrackContext,
+	timeZone?: string
+): FilingView {
 	return {
 		key: filing.key,
 		companyId,
-		title: filingTitle(filing, filing.files),
+		title: filingTitle(filing, filing.files, timeZone),
 		files: filing.files,
 		numbers: numbersTrack(filing.files, filing.sources, ctx),
 		text: textTrack(filing.files, ctx),
@@ -255,12 +269,13 @@ function countFiles(groups: CompanyGroup[]): number {
  * The page's sections. Company filings go by the server's `settled` and keep the server's order
  * (newest period first), never sorted again; unsorted files go by `unsortedSettled`, newest first,
  * in "Company not known yet", which comes last. A `needs_company` unsorted file goes to `unnamed`.
+ * `timeZone` dates the titles that need one (the reader's by default).
  */
-export function buildView(read: WorkspaceFilings, ctx: TrackContext): PageView {
+export function buildView(read: WorkspaceFilings, ctx: TrackContext, timeZone?: string): PageView {
 	const working: CompanyGroup[] = [];
 	const done: CompanyGroup[] = [];
 	for (const { company, filings } of read.companies) {
-		const views = filings.map((filing) => companyFiling(company.id, filing, ctx));
+		const views = filings.map((filing) => companyFiling(company.id, filing, ctx, timeZone));
 		const group = { companyId: company.id, name: company.displayName, codes: codesOf(company) };
 		const workingViews = views.filter((v) => !v.settled);
 		const doneViews = views.filter((v) => v.settled);
@@ -315,9 +330,14 @@ function allFilings(view: PageView): FilingView[] {
 	return [...view.working, ...view.done].flatMap((g) => g.filings);
 }
 
-/** Whether a filing lists the document, as a file or as a duplicate of one (spec section 3). */
+/** Whether a file is the document, or lists it as a duplicate of itself (spec section 3). */
+function lists(file: FilingFile, documentId: string): boolean {
+	return file.documentId === documentId || file.duplicates.includes(documentId);
+}
+
+/** Whether a filing lists the document, as a file or as a duplicate of one. */
 function holds(filing: FilingView, documentId: string): boolean {
-	return filing.files.some((f) => f.documentId === documentId || f.duplicates.includes(documentId));
+	return filing.files.some((f) => lists(f, documentId));
 }
 
 function newest(groups: CompanyGroup[]): FilingView | null {
@@ -330,15 +350,15 @@ function newest(groups: CompanyGroup[]): FilingView | null {
 
 /**
  * The opened document waits under "Not in your workspace yet": held for its company, or a file
- * that prints no identifier. Null when it is not there.
+ * that prints no identifier, or a duplicate of either. An unnamed one is given by the file that
+ * waits (the first copy, for a duplicate), whose Notice "Go to it" opens. Null when it is not there.
  */
 export function waitingAbove(view: PageView, opened: Opened | null): WaitingAbove | null {
 	if (opened === null) return null;
 	const held = view.held.find((h) => h.documentIds.includes(opened.documentId));
 	if (held) return { kind: 'held', key: held.key, name: opened.name };
-	if (view.unnamed.some((f) => f.documentId === opened.documentId)) {
-		return { kind: 'unnamed', documentId: opened.documentId, name: opened.name };
-	}
+	const unnamed = view.unnamed.find((f) => lists(f, opened.documentId));
+	if (unnamed) return { kind: 'unnamed', documentId: unnamed.documentId, name: opened.name };
 	return null;
 }
 
@@ -383,14 +403,14 @@ export function pin(view: PageView, opened: Opened | null): Opened | null {
 	return same ? opened : next;
 }
 
-/** The filing that holds `documentId` now, after the investor's own Change; null when none does. */
-export function follow(view: PageView, documentId: string): Opened | null {
+/**
+ * The filing that holds `documentId` now, after the investor's own Change; null when none does.
+ * `name` is that document's own file name: once it is a duplicate the read lists only its id, and
+ * the first copy's name is not its name.
+ */
+export function follow(view: PageView, documentId: string, name: string): Opened | null {
 	const holder = allFilings(view).find((f) => holds(f, documentId));
-	if (!holder) return null;
-	const file =
-		holder.files.find((f) => f.documentId === documentId) ??
-		holder.files.find((f) => f.duplicates.includes(documentId));
-	return { key: holder.key, documentId, name: file?.originalName ?? holder.title };
+	return holder ? { key: holder.key, documentId, name } : null;
 }
 
 /**
@@ -452,8 +472,9 @@ export function listWatched(view: PageView, openedKey: string | null, ctx: Track
 }
 
 /**
- * `read` with each file `replace` gives a new copy for swapped, wherever it sits; the parts not
- * touched are the same objects, and `read` itself comes back when nothing is.
+ * `read` with every file for which `replace` returns a copy swapped for that copy, wherever the
+ * file sits (null keeps it). Parts with no swapped file stay the same objects, and `read` itself
+ * comes back when no file is swapped.
  */
 function replaceFiles(
 	read: WorkspaceFilings,
@@ -487,24 +508,36 @@ function replaceFiles(
 	return { ...read, companies: touched ? companies : read.companies, unsorted };
 }
 
+/** The fields of a file that a document poll writes; the read alone writes the rest. */
+type Polled = Pick<
+	FilingFile,
+	'pipeline' | 'intakeState' | 'state' | 'rejectionCode' | 'companyNameAsPrinted'
+>;
+
+function polled(from: Polled): Polled {
+	return {
+		pipeline: from.pipeline,
+		intakeState: from.intakeState,
+		state: from.state,
+		rejectionCode: from.rejectionCode,
+		companyNameAsPrinted: from.companyNameAsPrinted
+	};
+}
+
+function polledOf(doc: DocumentRecord): Polled {
+	return polled({
+		...doc,
+		companyNameAsPrinted: doc.classification?.companyNameAsPrinted ?? null
+	});
+}
+
 /**
  * A polled document's state, intake state, pipeline and printed name, written into its file
  * wherever it sits. It never moves a file between filings; `shapeChanged` asks for the read that
  * does. The same read comes back when no file matches.
  */
 export function applyDocument(read: WorkspaceFilings, doc: DocumentRecord): WorkspaceFilings {
-	return replaceFiles(read, (f) =>
-		f.documentId === doc.id
-			? {
-					...f,
-					pipeline: doc.pipeline,
-					intakeState: doc.intakeState,
-					state: doc.state,
-					rejectionCode: doc.rejectionCode,
-					companyNameAsPrinted: doc.classification?.companyNameAsPrinted ?? null
-				}
-			: null
-	);
+	return replaceFiles(read, (f) => (f.documentId === doc.id ? { ...f, ...polledOf(doc) } : null));
 }
 
 /** A document this page is sending, as an unsorted file: added, or written in where it is. */
@@ -516,19 +549,19 @@ export function withUpload(read: WorkspaceFilings, doc: DocumentRecord): Workspa
 		format: doc.format,
 		basis: null,
 		createdAt: doc.createdAt,
-		state: doc.state,
-		rejectionCode: doc.rejectionCode,
-		intakeState: doc.intakeState,
-		companyNameAsPrinted: doc.classification?.companyNameAsPrinted ?? null,
 		duplicates: [],
-		pipeline: doc.pipeline
+		...polledOf(doc)
 	};
 	return { ...read, unsorted: [file, ...read.unsorted] };
 }
 
 /**
- * `next`, with `current`'s copies of the files `ids` names: those the open filing's own poll wrote
- * after `next` was asked for, so a read that lands late never puts a file back to an older state.
+ * `next`, merged with `current` for the files `ids` names: those written after `next` was asked
+ * for (by the open filing's poll, or added by `withUpload`). Each such file keeps `current`'s
+ * polled fields on `next`'s copy, so a read that lands late never puts a file back to an older
+ * state, while what only the read knows (its duplicates, its basis) stays `next`'s. A file `next`
+ * lists nowhere (not as a file, a duplicate or a held document) is carried into `next.unsorted`
+ * whole, so an upload the read began before is not lost.
  */
 export function keepFresher(
 	current: WorkspaceFilings,
@@ -542,7 +575,16 @@ export function keepFresher(
 			.filter((f) => wanted.has(f.documentId))
 			.map((f) => [f.documentId, f])
 	);
-	return replaceFiles(next, (f) => fresh.get(f.documentId) ?? null);
+	const merged = replaceFiles(next, (f) => {
+		const mine = fresh.get(f.documentId);
+		return mine ? { ...f, ...polled(mine) } : null;
+	});
+	const listed = new Set([
+		...filesOf(next).flatMap((f) => [f.documentId, ...f.duplicates]),
+		...next.held.flatMap((h) => h.documentIds)
+	]);
+	const carried = [...fresh.values()].filter((f) => !listed.has(f.documentId));
+	return carried.length === 0 ? merged : { ...merged, unsorted: [...carried, ...merged.unsorted] };
 }
 
 /** Every question the read asks the investor, by a key that stays the same while it is asked. */
@@ -554,7 +596,7 @@ export function questionKeys(read: WorkspaceFilings): Map<string, Question> {
 	}
 	for (const f of read.unsorted) {
 		if (f.intakeState !== 'needs_company') continue;
-		keys.set(`doc:${f.documentId}`, {
+		keys.set(`doc:${f.documentId}:company`, {
 			kind: 'file',
 			aloud: f.companyNameAsPrinted
 				? q.isThis(f.originalName, f.companyNameAsPrinted)
@@ -563,7 +605,7 @@ export function questionKeys(read: WorkspaceFilings): Map<string, Question> {
 	}
 	for (const f of filesOf(read)) {
 		if (f.intakeState === 'needs_kind') {
-			keys.set(`doc:${f.documentId}`, { kind: 'file', aloud: q.whatIsIt(f.originalName) });
+			keys.set(`doc:${f.documentId}:kind`, { kind: 'file', aloud: q.whatIsIt(f.originalName) });
 		}
 	}
 	return keys;
@@ -586,7 +628,7 @@ export function newQuestions(
 	const files = fresh.length - companies;
 	const parts = [
 		companies > 0 ? q.companies(companies) : null,
-		files > 0 ? q.files(files) : null
+		files > 0 ? t.files(files) : null
 	].filter((part) => part !== null);
 	return { aloud: q.many(parts), seen: nextSeen };
 }

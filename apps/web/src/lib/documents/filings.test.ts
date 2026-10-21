@@ -104,11 +104,28 @@ describe('words for a filing', () => {
 					kind: 'other',
 					otherType: 'board_meeting',
 					periodEnd: null,
-					addedAt: '2026-08-14T08:00:00Z'
+					addedAt: '2026-08-14T12:00:00Z'
 				}),
-				[]
+				[],
+				'UTC'
 			)
 		).toBe('Board meeting, 14 Aug 2026');
+	});
+
+	it('an other filing dated by when it was added takes the day in the time zone given', () => {
+		const late = filingOf({
+			key: 'co-1:other:board_meeting',
+			kind: 'other',
+			otherType: 'board_meeting',
+			periodEnd: null,
+			addedAt: '2026-08-14T20:00:00Z'
+		});
+		expect(filingTitle(late, [], 'America/New_York')).toBe('Board meeting, 14 Aug 2026');
+		expect(filingTitle(late, [], 'Asia/Kolkata')).toBe('Board meeting, 15 Aug 2026');
+		const read = readWith({ companies: [{ company: co, filings: [late] }] });
+		expect(buildView(read, ctx, 'America/New_York').done[0].filings[0].title).toBe(
+			'Board meeting, 14 Aug 2026'
+		);
 	});
 
 	it('heading and meta', () => {
@@ -311,6 +328,30 @@ describe('buildView', () => {
 		});
 	});
 
+	it('a file whose check failed sits in Done under "Company not known yet", stopped, with why', () => {
+		const failed = fileOf({
+			documentId: 'v1',
+			state: 'verifying',
+			intakeState: null,
+			pipeline: {
+				stored: 'failed',
+				identified: 'waiting',
+				numbers: { source: null, state: 'waiting', reason: 'not_identified' },
+				text: { state: 'waiting' }
+			}
+		});
+		const view = buildView(readWith({ unsorted: [failed] }), ctx);
+		expect(view.working).toEqual([]);
+		expect(view.done).toHaveLength(1);
+		expect(view.done[0]).toMatchObject({ companyId: null, name: 'Company not known yet' });
+		expect(view.done[0].filings.map((f) => f.key)).toEqual(['file:v1']);
+		expect(view.done[0].filings[0].numbers).toEqual({
+			state: 'stopped',
+			first: 'Stopped',
+			second: 'Maester couldn’t check this file.'
+		});
+	});
+
 	it('a file this page is sending stays in Working on', () => {
 		const view = buildView(readWith({ unsorted: [abandoned('up-1')] }), ctx);
 		expect(view.done).toEqual([]);
@@ -466,6 +507,70 @@ describe('the opened filing', () => {
 		expect(waitingAbove(unnamed, { key: 'x', documentId: 'z1', name: 'z1.pdf' })).toBeNull();
 	});
 
+	it('a duplicate of a file that waits unnamed keeps the open filing on it, never an unrelated one', () => {
+		const unrelated = {
+			company: companyOf({ id: 'co-2' }),
+			filings: [
+				filingOf({
+					key: 'co-2:annual_report:2026-03-31',
+					settled: false,
+					files: [fileOf({ documentId: 'z1' })]
+				})
+			]
+		};
+		const view = buildView(
+			readWith({
+				companies: [unrelated],
+				unsorted: [
+					fileOf({
+						documentId: 'orig',
+						intakeState: 'needs_company',
+						pipeline: { identified: 'needs_you' },
+						duplicates: ['d1']
+					})
+				]
+			}),
+			ctx
+		);
+		const opened = { key: 'file:d1', documentId: 'd1', name: 'ar.pdf' };
+		expect(pickFiling(view, opened)).toBeNull();
+		expect(pin(view, opened)).toBe(opened);
+		expect(waitingAbove(view, opened)).toEqual({
+			kind: 'unnamed',
+			documentId: 'orig',
+			name: 'ar.pdf'
+		});
+	});
+
+	it('follow names a duplicate by its own name, never its first copy’s', () => {
+		const view = buildView(
+			readWith({
+				companies: [
+					{
+						company: co,
+						filings: [
+							filingOf({
+								key: 'K',
+								files: [fileOf({ documentId: 'orig', originalName: 'ar.pdf', duplicates: ['d1'] })]
+							})
+						]
+					}
+				]
+			}),
+			ctx
+		);
+		expect(follow(view, 'd1', 'ar (1).pdf')).toEqual({
+			key: 'K',
+			documentId: 'd1',
+			name: 'ar (1).pdf'
+		});
+		expect(follow(view, 'orig', 'ar.pdf')).toEqual({
+			key: 'K',
+			documentId: 'orig',
+			name: 'ar.pdf'
+		});
+	});
+
 	it('one file of a filing moves: the filing stays open; after the investor’s own Change it follows', () => {
 		const view = buildView(
 			readWith({
@@ -490,8 +595,8 @@ describe('the opened filing', () => {
 			documentId: 'd1',
 			name: 'd1.pdf'
 		});
-		expect(follow(view, 'd2')).toEqual({ key: 'K2', documentId: 'd2', name: 'd2.pdf' });
-		expect(follow(view, 'nowhere')).toBeNull();
+		expect(follow(view, 'd2', 'd2.pdf')).toEqual({ key: 'K2', documentId: 'd2', name: 'd2.pdf' });
+		expect(follow(view, 'nowhere', 'x.pdf')).toBeNull();
 	});
 
 	it('with nothing opened, the newest unsettled filing opens', () => {
@@ -726,7 +831,59 @@ describe('merging reads', () => {
 		const next = readWith({
 			companies: [{ company: co, filings: [filingOf({ files: [staleFile] })] }]
 		});
-		expect(keepFresher(current, next, ['d1']).companies[0].filings[0].files[0]).toBe(polledFile);
+		const kept = keepFresher(current, next, ['d1']).companies[0].filings[0].files[0];
+		expect(kept.pipeline).toEqual(polledFile.pipeline);
+	});
+
+	it('keepFresher keeps the poll’s fields only: a duplicate or basis the read adds stays', () => {
+		const polledFile = fileOf({
+			documentId: 'd1',
+			basis: null,
+			intakeState: 'reading',
+			pipeline: { numbers: { source: 'pdf', state: 'now' } }
+		});
+		const readFile = fileOf({
+			documentId: 'd1',
+			basis: 'standalone',
+			intakeState: 'identifying',
+			duplicates: ['d9'],
+			pipeline: { numbers: { source: null, state: 'waiting', reason: 'not_identified' } }
+		});
+		const merged = keepFresher(
+			readWith({ unsorted: [polledFile] }),
+			readWith({ unsorted: [readFile] }),
+			['d1']
+		).unsorted[0];
+		expect(merged.duplicates).toEqual(['d9']);
+		expect(merged.basis).toBe('standalone');
+		expect(merged.pipeline).toEqual(polledFile.pipeline);
+		expect(merged.intakeState).toBe('reading');
+	});
+
+	it('a read that began before an upload keeps the upload, in unsorted', () => {
+		const upload = fileOf({ documentId: 'u9', pipeline: { stored: 'now' } });
+		const current = readWith({ unsorted: [upload, fileOf({ documentId: 'd1' })] });
+		const stale = readWith({ unsorted: [fileOf({ documentId: 'd1' })] });
+		const merged = keepFresher(current, stale, ['u9']);
+		expect(merged.unsorted.map((f) => f.documentId)).toEqual(['u9', 'd1']);
+		expect(merged.unsorted[0]).toBe(upload);
+		const view = buildView(merged, ctx);
+		expect(pin(view, { key: 'file:u9', documentId: 'u9', name: 'u9.pdf' })).toEqual({
+			key: 'file:u9',
+			documentId: 'u9',
+			name: 'u9.pdf'
+		});
+	});
+
+	it('a file the read now holds, or lists as a duplicate, is not carried back into unsorted', () => {
+		const polled = fileOf({ documentId: 'd1', pipeline: { identified: 'now' } });
+		const current = readWith({ unsorted: [polled] });
+		const held = readWith({ held: [heldOf({ key: 'bse:532999', documentIds: ['d1'] })] });
+		expect(keepFresher(current, held, ['d1']).unsorted).toEqual([]);
+		const duplicate = readWith({ unsorted: [fileOf({ documentId: 'orig', duplicates: ['d1'] })] });
+		expect(keepFresher(current, duplicate, ['d1']).unsorted.map((f) => f.documentId)).toEqual([
+			'orig'
+		]);
 	});
 
 	it('applyDocument returns the same read when no file matches', () => {
@@ -843,8 +1000,8 @@ describe('questions', () => {
 				'held:bse:532999',
 				{ kind: 'company', aloud: 'BSE 532999 · NSE CSTL needs you: confirm the company.' }
 			],
-			['doc:m1', { kind: 'file', aloud: 'nameless.pdf needs you: which company is this?' }],
-			['doc:m2', { kind: 'file', aloud: 'scan.pdf needs you: what is it?' }]
+			['doc:m1:company', { kind: 'file', aloud: 'nameless.pdf needs you: which company is this?' }],
+			['doc:m2:kind', { kind: 'file', aloud: 'scan.pdf needs you: what is it?' }]
 		]);
 	});
 
@@ -868,6 +1025,34 @@ describe('questions', () => {
 		});
 		expect(newQuestions(new Set(), read).aloud).toBe('31 companies and 2 files need you.');
 		expect(newQuestions(newQuestions(new Set(), read).seen, read).aloud).toBeNull();
+	});
+
+	it('a file asked what it is, then which company, has the second question said too', () => {
+		const asKind = readWith({
+			unsorted: [
+				fileOf({
+					documentId: 'm1',
+					originalName: 'scan.pdf',
+					intakeState: 'needs_kind',
+					pipeline: { identified: 'needs_you' }
+				})
+			]
+		});
+		const asCompany = readWith({
+			unsorted: [
+				fileOf({
+					documentId: 'm1',
+					originalName: 'scan.pdf',
+					intakeState: 'needs_company',
+					pipeline: { identified: 'needs_you' }
+				})
+			]
+		});
+		const first = newQuestions(new Set(), asKind);
+		expect(first.aloud).toBe('scan.pdf needs you: what is it?');
+		expect(newQuestions(first.seen, asCompany).aloud).toBe(
+			'scan.pdf needs you: which company is this?'
+		);
 	});
 
 	it('a count leaves out a part at 0 and is singular at 1', () => {
