@@ -23,11 +23,12 @@ from maester_eval.errors import EvalError
 from maester_eval.eval_wire import EvalRequestModel, document_refs
 from maester_eval.files import write_text_atomically
 from maester_eval.gold import count_unverified, freeze_sheet, read_gold, read_sheet, write_gold
-from maester_eval.manifest import SetChoice, load_manifest, missing_files
+from maester_eval.manifest import FilingKind, SetChoice, load_manifest, missing_files
 from maester_eval.ocr import check_scores, choose_cell_matching, choose_engine, read_pages, read_scores, render_ocr_report
 from maester_eval.ocr import read_run as read_ocr_run
 from maester_eval.paths import DEFAULT, EvalPaths
 from maester_eval.report import score_run_dir, write_report
+from maester_eval.retrieval import build_request, check_set, corpus_filings, read_corpus, read_questions
 from maester_eval.runner import gemini_model_factory, run_live, workflow_settings_from_env
 from maester_eval.sheets import export_run, sheet_path
 
@@ -41,6 +42,11 @@ ocr_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(ocr_app, name="ocr")
+retrieval_app = typer.Typer(
+    help="The retrieval set: check the question sheet, then write the request the ranker reads.",
+    no_args_is_help=True,
+)
+app.add_typer(retrieval_app, name="retrieval")
 # soft_wrap: a path or an id stays on one line, also where no terminal gives a width (`live` in the background).
 console = Console(soft_wrap=True)
 Params = ParamSpec("Params")
@@ -240,3 +246,39 @@ def ocr_report(
     if to is not None:
         write_text_atomically(to, md)
         console.print(f"published → {to}", markup=False)
+
+
+@retrieval_app.command("check")
+@_reports_errors
+def retrieval_check() -> None:
+    """Check the question sheet against the corpus and the manifest, and print counts. No question text is shown."""
+    paths = EvalPaths(DEFAULT.retrieval)
+    manifest = load_manifest(DEFAULT.manifest)
+    corpus = read_corpus(paths.base / "corpus.json")
+    questions = read_questions(paths.base / "questions.csv")
+    check_set(questions, corpus, manifest)
+    kinds = {f.id: f.kind for f in manifest.filings}
+    verified = [q for q in questions if q.status == "verified"]
+    by_kind = ", ".join(f"{kind} {sum(1 for q in verified if kinds[q.filing] == kind)}" for kind in get_args(FilingKind))
+    console.print(f"questions: {len(questions)}", markup=False)
+    console.print(f"verified: {len(verified)}", markup=False)
+    console.print(f"verified by filing kind: {by_kind}", markup=False)
+    console.print(f"corpus filings: {len(corpus_filings(corpus, manifest))}", markup=False)
+
+
+@retrieval_app.command("request")
+@_reports_errors
+def retrieval_request(
+    label: Annotated[Optional[str], typer.Option(help="A word for the run folder's name: letters, digits, dot, dash or underscore.")] = None,
+) -> None:
+    """Write request.json, the corpus and the verified questions, into a new run folder under data/eval/retrieval/runs."""
+    paths = EvalPaths(DEFAULT.retrieval)  # its runs are apart from the extraction runs in data/eval/runs
+    manifest = load_manifest(DEFAULT.manifest)
+    corpus = read_corpus(paths.base / "corpus.json")
+    questions = read_questions(paths.base / "questions.csv")
+    check_set(questions, corpus, manifest)
+    request = build_request(questions, corpus, manifest, DEFAULT.corpus)
+    run_dir = paths.new_run(label)  # after every check: a refused set leaves no empty folder
+    write_text_atomically(run_dir / "request.json", request.model_dump_json(indent=2) + "\n")
+    console.print(f"{len(request.documents)} filing(s), {len(request.questions)} question(s)", markup=False)
+    console.print(str(run_dir), markup=False)
