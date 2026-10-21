@@ -19,6 +19,16 @@ export const DocumentExtractResult = z.object({
 });
 export type DocumentExtractResult = z.infer<typeof DocumentExtractResult>;
 
+/**
+ * An automatic `document.extract` of a results PDF that stood down before any model call, because the source rule,
+ * asked again, said XBRL covers it (`skip`: the PDF is `read` with no revision) or may yet (`wait`: `waiting_for_xbrl`).
+ */
+export const DocumentExtractNotRead = z.object({
+  outcome: z.literal("not_read"),
+  plan: z.enum(["skip", "wait"]),
+});
+export type DocumentExtractNotRead = z.infer<typeof DocumentExtractNotRead>;
+
 export const DocumentClassifyResult = z.object({
   outcome: z.literal("classified"),
   classificationId: Uuid,

@@ -1,10 +1,10 @@
 import { and, eq, sql } from "drizzle-orm";
 import { JobTypes, XBRL_CHECK_SUBJECT, XBRL_PDF_CHECK_VERSION, type IntakeState } from "@maester/contracts";
 import {
-  companyIdentity, getCurrentClassification, loadWorkspaceXbrlDocs, schema, type ClassificationRow, type Db,
+  companyIdentity, getCurrentClassification, loadWorkspaceXbrlDocs, schema, type ClassificationRow, type Db, type JobRow,
 } from "@maester/db";
 import { planPdfNumbers, type Basis, type CompanyIdentity, type PdfNumbersInput, type Statement } from "@maester/financial-engine";
-import { createJob } from "./create.js";
+import { createJob, maxAttemptsFor } from "./create.js";
 import type { Dispatcher } from "./dispatch.js";
 
 export const READ_KINDS: ReadonlySet<string> = new Set(["annual_report", "financial_results"]);
@@ -58,6 +58,67 @@ export interface DecideOptions {
 }
 
 type Decision = { state: IntakeState | null; jobType: string | null };
+
+/**
+ * A read job that `document.extract` stood down (`recheckPdfRead` said skip or wait when it ran) owns the read's key,
+ * so `createJob` hands it back finished when intake decides to read under the same classification again (the XBRL that
+ * held the PDF failed, or was confirmed for another company). Queue it again, with its type's attempts, in the
+ * decision's transaction; any other job is returned as it is.
+ */
+async function rerunStoodDownRead(t: Db, job: JobRow): Promise<JobRow> {
+  if (job.type !== JobTypes.DOCUMENT_EXTRACT || job.state !== "succeeded") return job;
+  const [again] = await t
+    .update(schema.job)
+    .set({
+      state: "queued",
+      leaseToken: null,
+      leaseExpiresAt: null,
+      maxAttempts: sql`${schema.job.attempt} + ${maxAttemptsFor(job.type)}`,
+      result: null,
+      finishedAt: null,
+      progress: {},
+      runAfter: sql`now()`,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(
+        eq(schema.job.id, job.id),
+        eq(schema.job.workspaceId, job.workspaceId),
+        eq(schema.job.state, "succeeded"),
+        sql`${schema.job.result}->>'outcome' = 'not_read'`,
+      ),
+    )
+    .returning();
+  return again ?? job;
+}
+
+/**
+ * Before `document.extract` makes a paid read of a results PDF, the source rule again, under the locks `decideIntake`
+ * takes (the document row, then the XBRL-wait lock): XBRL that arrived after the decision to read may now cover the
+ * PDF, or be still settling. `skip` writes `read` (no revision), `wait` writes `waiting_for_xbrl`; a release that runs
+ * later decides it again. Acts only on a PDF whose current answers are `financial_results` with a company and read
+ * under `classificationId`. Null: go on with the read.
+ */
+export async function recheckPdfRead(db: Db, workspaceId: string, documentId: string, classificationId: string): Promise<"skip" | "wait" | null> {
+  return db.transaction(async (tx) => {
+    const t = tx as unknown as Db;
+    const where = and(eq(schema.document.id, documentId), eq(schema.document.workspaceId, workspaceId));
+    const [locked] = await tx.select({ format: schema.document.format }).from(schema.document).where(where).for("update");
+    if (locked?.format !== "pdf") return null;
+    const c = await getCurrentClassification(t, workspaceId, documentId);
+    if (!c || c.readsUnderId !== classificationId || c.kind !== "financial_results" || !c.companyId) return null;
+    await lockXbrlWait(t, workspaceId);
+    const pdf = pdfNumbersInput(c, await companyIdentity(t, workspaceId, c.companyId));
+    if (!pdf) return null;
+    const plan = planPdfNumbers(pdf, await loadWorkspaceXbrlDocs(t, workspaceId, { companyIds: [c.companyId] }));
+    if (plan.action === "read") return null;
+    await tx
+      .update(schema.document)
+      .set({ intakeState: plan.action === "skip" ? "read" : "waiting_for_xbrl", updatedAt: sql`now()` })
+      .where(where);
+    return plan.action;
+  });
+}
 
 /**
  * A read kind with a company. An XBRL instance is read by `document.xbrl`. A PDF follows the source rule:
@@ -115,7 +176,7 @@ export async function decideIntake(db: Db, dispatcher: Dispatcher, c: Classifica
       .update(schema.document)
       .set({ companyId: c.companyId, ...(decision.state ? { intakeState: decision.state } : {}), updatedAt: sql`now()` })
       .where(where);
-    const job = decision.jobType
+    const created = decision.jobType
       ? await createJob(t, HOLD, {
           workspaceId: c.workspaceId,
           type: decision.jobType,
@@ -126,6 +187,7 @@ export async function decideIntake(db: Db, dispatcher: Dispatcher, c: Classifica
           pipelineVersion: readVersion(c.readsUnderId ?? c.id),
         })
       : null;
+    const job = created ? await rerunStoodDownRead(t, created) : null;
     return { state: decision.state, job, format: locked.format };
   });
   if (!decided) return null;
