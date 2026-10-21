@@ -7,10 +7,10 @@
 | Worker | The `apps/worker` service. It runs jobs. |
 | API | The `apps/api` service. It creates the first job for each uploaded document. |
 | Job | One row in the `job` table. A job tells the worker to do one task on one subject. |
-| Job type | The `type` column of a job: `document.verify`, `document.classify`, `document.extract` or `document.index`. |
+| Job type | The `type` column of a job: `document.verify`, `document.classify`, `document.extract`, `document.index`, `document.xbrl` or `document.xbrl_check`. |
 | Handler | The function that does the work for one job type. |
 | `attempt` | The `attempt` column of a job. The worker adds 1 to it each time that it starts the job. |
-| `maxAttempts` | The `max_attempts` column of a job. The value is 2 for `document.classify` and `document.extract`, because these jobs call a paid model. The value is 5 for all other types. |
+| `maxAttempts` | The `max_attempts` column of a job. The value is 2 for `document.classify` and `document.extract`, because these jobs can call a paid model. The value is 5 for all other types. |
 | Lease | A time limit in which only one worker process can run a job. The `lease_token` and `lease_expires_at` columns hold the lease. |
 | Lease token | A random UUID that `acquireLease` writes to `lease_token`. Only the process with this token can change the job. |
 | Dispatch request | The HTTP request `POST /tasks/:type` with the JSON body `{ "jobId": "<uuid>" }`. It tells the worker to run a job. Only the `cloud-tasks` mode uses it. |
@@ -29,6 +29,15 @@
 | Object store | The storage for uploaded files: a local directory (`disk`) or a Google Cloud Storage bucket (`gcs`). |
 | Classification | One row in the `document_classification` table. It holds the answers about what a document is: kind, company and period. |
 | Read kind | The classification kind `annual_report` or `financial_results`. The worker reads the statements only for these two kinds. |
+| Document format | The `format` column of a `document` row: `pdf` or `xbrl`. The API sets it at upload. |
+| XBRL instance | A document with the format `xbrl`: an XML file with XBRL facts. The extractor reads it with no model. |
+| Sniff | The check of `sniffXbrl` on the first `XBRL_SNIFF_BYTES` bytes of an XML upload. It finds out if the file is an XBRL instance. |
+| Settled | An XBRL document is settled when its read or its classification ends, so no read of it is still to come. |
+| Results PDF | A PDF with the kind `financial_results`. |
+| Source rule | The function `planPdfNumbers` in `@maester/financial-engine`. It says if a results PDF waits for XBRL, is read, or is skipped. |
+| `waiting_for_xbrl` | The intake state of a results PDF that waits for an XBRL document that can cover it. |
+| Release | The new decision about each PDF that waits for XBRL. `redecidePdfsAfterXbrl` does it after an XBRL document settles. |
+| Pair | One XBRL document and one results PDF of the same company and period end. A `document.xbrl_check` job checks one pair. |
 | Evidence | The rows in the `classification_evidence` table. Each row tells where one answer came from: a rule, the model or the investor. |
 | Read job | A `document.extract` job for one classification. A read job is current when `reads_under_id` of the current classification is the classification of the read job. |
 | Revision | One row in the `extraction_revision` table, with its facts, source references and checks. |
@@ -58,7 +67,7 @@
 
 The worker runs the background jobs for document intake. In `queue` mode, the worker claims each job from the database, takes the lease and runs the handler for the job type. In `cloud-tasks` mode, it receives a dispatch request instead.
 
-The four handlers verify an uploaded PDF, classify it, read its financial statements and index its text for search. The worker writes all results to the Postgres database. The API creates the first job. The worker creates the next jobs. For the full system, see the [Maester overview](maester.md).
+The six handlers verify an uploaded PDF or XBRL instance, classify it, read its financial statements and index its text for search. For an instance, `document.xbrl` reads the facts with no model. The handler `document.xbrl_check` looks for each XBRL value in the results PDF of the same filing. The worker writes all results to the Postgres database. The API creates the first job and the worker creates the next jobs. For the full system, see the [Maester overview](maester.md).
 
 The worker also refreshes the market data for the market mood page. When `CONNECTIONS_KEY` has a value, the market refresher starts a pass 30 minutes after the end of the previous pass. The pass reads daily values from FRED and Dhan with the keys that the investor saved in Settings. It writes the values and the breadth to the database.
 
@@ -78,6 +87,10 @@ The worker also refreshes the market data for the market mood page. When `CONNEC
 | Verify handler | `apps/worker/src/jobs/document-verify.ts` | `documentVerify`. |
 | Classify handler | `apps/worker/src/jobs/document-classify.ts` | `documentClassify` and `writeClassification`. |
 | Extract handler | `apps/worker/src/jobs/document-extract.ts` | `documentExtract`, `writeRevision` and `readAll`. |
+| XBRL handler | `apps/worker/src/jobs/document-xbrl.ts` | `documentXbrl` and `writeXbrlRevision`. |
+| XBRL check handler | `apps/worker/src/jobs/document-xbrl-check.ts` | `documentXbrlCheck` and `unitOf`. |
+| Revision rows | `apps/worker/src/jobs/revision-rows.ts` | The fact row and the check rows that `document.extract` and `document.xbrl` share. |
+| XML sniff | `apps/worker/src/sniff.ts` | `sniffXbrl` reads the start of a file with `saxes`. It answers `xbrl`, `doctype` or `not_xbrl`. |
 | Extractor client | `apps/worker/src/extractor.ts` | `HttpExtractorClient` sends the PDF to the extractor and reads the answer. |
 | Dispatcher factory | `apps/worker/src/dispatch.ts` | `createDispatcher` makes `QueueNotifier` or `CloudTasksDispatcher` for the dispatch mode. |
 | Store factory | `apps/worker/src/store.ts` | `createStore` makes a `DiskObjectStore` or a `GcsObjectStore`. |
@@ -93,11 +106,12 @@ The worker also refreshes the market data for the market mood page. When `CONNEC
 | Tests | `apps/worker/test/` | Vitest tests. They use a real Postgres database. |
 | Container image | `apps/worker/Dockerfile` | Builds the worker on Node 22. The image runs `node dist/server.js` as the user `app`. It also holds the `apps/worker/data` folder in `/app/data`. |
 
-The worker uses five shared packages. For more information, see [shared packages](packages.md):
+The worker uses these shared packages. For more information, see [shared packages](packages.md):
 
 - `@maester/contracts`: the job type names, the result types and the extractor answer schemas.
 - `@maester/db`: the database client, the table schema and the queries `matchCompanies`, `findStoredDuplicate` and `getCurrentClassification`. For the market refresher: `startMarketFetch`, `finishMarketFetch`, `upsertMarketPoints`, `latestMarketDay`, `saveConnection` and `markConnectionError`.
-- `@maester/jobs`: `createJob`, `decideIntake`, `classificationIdOfReadJob` and the dispatchers `QueueNotifier` and `CloudTasksDispatcher`.
+- `@maester/jobs`: `createJob`, `decideIntake`, `classificationIdOfReadJob`, `enqueueXbrlPdfChecks`, `redecidePdfsAfterXbrl`, `xbrlCheckKeyOf` and the dispatchers `QueueNotifier` and `CloudTasksDispatcher`.
+- `@maester/financial-engine`: `planPdfNumbers`, the source rule.
 - `@maester/market`: `HttpDhanSource`, `HttpFredSource`, `MarketSourceError`, `loadConnections`, `encryptSecret` and the Dhan instrument IDs.
 - `@maester/storage`: the object store classes and `ObjectNotFoundError`.
 
@@ -168,13 +182,18 @@ At start, `logUnhandledQueued` writes one log line for each job type with queued
 4. The handler sets the document state to `verifying`.
 5. The handler reads the object from the object store as a stream. If the object does not exist, the handler rejects the document with `OBJECT_MISSING`.
 6. The handler calculates the SHA-256 hash and the size of the object. If the size becomes more than `MAX_UPLOAD_BYTES`, the handler rejects the document with `TOO_LARGE`.
-7. If the first 5 bytes are not `%PDF-`, the handler rejects the document with `NOT_A_PDF`. If they are `%PDF-`, the handler sets the document state to `stored` and writes the hash and the size.
-8. If the intake state is empty, the handler looks for an older `stored` document with the same hash in the same workspace.
-9. If an older copy exists, the handler sets the intake state to `duplicate` and writes `duplicate_of_document_id`. The handler then stops.
-10. If no older copy exists, the handler sets the intake state to `identifying`.
-11. If the intake state is `identifying`, the handler creates a `document.classify` job. Its idempotency key is `document.classify:<documentId>:auto`.
+7. The handler keeps the start of the object. For a PDF, it keeps 5 bytes. For an XBRL instance, it keeps `XBRL_SNIFF_BYTES` bytes.
+8. If the document has the format `pdf` and the first 5 bytes are not `%PDF-`, the handler rejects the document with `UNSUPPORTED_TYPE`.
+9. If the document has the format `xbrl`, `sniffXbrl` reads the kept bytes. If it does not answer `xbrl`, the handler rejects the document with `UNSUPPORTED_TYPE`. A DOCTYPE gives `doctype`, and the handler rejects the file.
+10. If the type is correct, the handler sets the document state to `stored` and writes the hash and the size.
+11. If the intake state is empty, the handler looks for an older `stored` document with the same hash in the same workspace.
+12. If an older copy exists, the handler sets the intake state to `duplicate` and writes `duplicate_of_document_id`. The handler then stops.
+13. If no older copy exists, the handler sets the intake state to `identifying`.
+14. For each stored document that is not a duplicate, the handler creates a `document.index` job.
+15. If the intake state is `identifying`, the handler creates a `document.classify` job. Its idempotency key is `document.classify:<documentId>:auto`.
+16. If the document is an XBRL instance and it is a duplicate or rejected, the handler calls `redecidePdfsAfterXbrl`. A document that does not come into the `stored` state holds no PDF back.
 
-A rejected document does not make the job fail. The job is `succeeded`, and its result has the outcome `rejected` and the rejection code. The handler creates the `document.classify` job also when the worker has no extractor client.
+A rejected document does not make the job fail. The job is `succeeded`, and its result has the outcome `rejected` and the rejection code. The handler creates the `document.classify` job also when the worker has no extractor client. If `document.verify` gets a final failure for an XBRL instance, `onFinalFailure` calls `redecidePdfsAfterXbrl`.
 
 ### `document.classify`
 
@@ -182,14 +201,15 @@ A rejected document does not make the job fail. The job is `succeeded`, and its 
 2. The handler reads the document. If the document does not exist, the handler throws `DOCUMENT_NOT_FOUND`.
 3. If the document state is not `stored`, the handler throws `INVALID_STATE`.
 4. If a classification for this job exists, the handler calls `decideIntake` again and returns. It does this only from the intake state `identifying`.
-5. If `size_bytes` is more than `EXTRACT_MAX_BYTES`, the handler throws `TOO_LARGE_FOR_EXTRACTION`.
-6. The handler reads the full PDF from the object store into memory. If the object does not exist, the handler throws `OBJECT_MISSING`.
-7. The handler sends the PDF to `POST /v1/classify` on the extractor. The answer has the kind, the company name as printed, the company identifiers, the period and the evidence.
-8. The handler finds the company. See [Company match](#company-match).
-9. `writeClassification` writes one classification and its evidence in one transaction. It locks the `document` row first.
-10. The classification gets `set_by` = `maester` and `created_at` = `clock_timestamp()`. Thus the classification that the database writes last is the current classification.
-11. For a read kind with a company, `writeClassification` sets `reads_under_id` to the ID of the new classification.
-12. `decideIntake` sets the company and the next intake state of the document. The table below shows the rules.
+5. If the document is a PDF and `size_bytes` is more than `EXTRACT_MAX_BYTES`, the handler throws `TOO_LARGE_FOR_EXTRACTION`. An instance has only the limit of the extractor.
+6. The handler reads the full file from the object store into memory. If the object does not exist, the handler throws `OBJECT_MISSING`.
+7. For a PDF, the handler sends the file to `POST /v1/classify` on the extractor. The answer has the kind, the company name as printed, the company identifiers, the period and the evidence.
+8. For an XBRL instance, the handler sends the file to `POST /v1/xbrl` with the mode `classify`. The extractor calls no model. The answer has the kind `financial_results` or `not_sure`, the format, the identifiers, the basis, the period, the span and the evidence. The evidence has an element and a context instead of a page.
+9. The handler finds the company. See [Company match](#company-match).
+10. `writeClassification` writes one classification and its evidence in one transaction. It locks the `document` row first.
+11. The classification gets `set_by` = `maester` and `created_at` = `clock_timestamp()`. Thus the classification that the database writes last is the current classification.
+12. For a read kind with a company, `writeClassification` sets `reads_under_id` to the ID of the new classification.
+13. `decideIntake` sets the company and the next intake state of the document. The table below shows the rules.
 
 | Classification | New intake state | Next job |
 | --- | --- | --- |
@@ -198,7 +218,17 @@ A rejected document does not make the job fail. The job is `succeeded`, and its 
 | Read kind, no company | `needs_company` | No job. The investor must give the company. |
 | Read kind, with a company | `reading` | `document.extract`, with the key `document.extract:<documentId>:classification-<classificationId>` |
 
-`decideIntake` changes the document only if this classification is the current classification. It writes the new state and the `document.extract` job in one transaction. The dispatcher tells the worker about the new job after the commit.
+`decideIntake` changes the document only if this classification is the current classification. It writes the new state and the read job in one transaction. The dispatcher tells the worker about the new job after the commit.
+
+For an XBRL instance, the read job is `document.xbrl`. The key is `document.xbrl:<documentId>:classification-<classificationId>`. An instance with the warning `XBRL_MIXED_BASIS` has the kind `not_sure`, so it waits for the investor in `needs_kind`. If the investor then says "financial results", the read writes its facts with the basis `unknown`. A fact with the basis `unknown` covers no slot.
+
+For a results PDF, `decideIntake` applies the source rule before it starts `document.extract`. It does this under the XBRL-wait lock of the workspace:
+
+1. A PDF that is not a results PDF, or that has no company, goes to `document.extract`.
+2. Some XBRL documents can match the PDF: the company is the same or not known, and the period end is the same. If one of them is not settled, the plan is `wait`. The intake state becomes `waiting_for_xbrl`. No job starts.
+3. If settled XBRL of the same company and period end covers each statement and basis that the PDF prints, the plan is `skip`. The intake state becomes `read`. No job starts, and the model never reads the PDF.
+4. In all other cases, the plan is `read`. The state is `reading` and `document.extract` starts.
+5. A PDF statement with the basis `unknown` is never covered.
 
 ### Company match
 
@@ -227,6 +257,41 @@ A rejected document does not make the job fail. The job is `succeeded`, and its 
 14. If `reads_under_id` of the current classification is equal to the classification ID of this job, the handler sets the intake state to `read`.
 15. If a newer classification replaced the classification of this job, the handler does not change the document.
 
+### `document.xbrl`
+
+The handler is in `apps/worker/src/jobs/document-xbrl.ts`. It reads an XBRL instance into a revision with the source `xbrl`. It calls no model. The limit is 2 jobs at the same time.
+
+1. If the worker has no extractor client, the handler throws `EXTRACTOR_NOT_CONFIGURED`.
+2. The handler reads the document. If the document does not exist, is not `stored`, is a duplicate, or does not have the format `xbrl`, the handler throws `INVALID_STATE`.
+3. If a revision for this job exists, the handler sets the intake state to `read` and goes to step 9. It does not call the extractor.
+4. The handler reads the instance from the object store. If the object does not exist, the handler throws `OBJECT_MISSING`.
+5. The handler sends the instance to `POST /v1/xbrl` with the mode `read`. For each event, it calls `heartbeat`.
+6. An `error` event stops the job. `XBRL_UNREADABLE` has `retryable` `false`, so the job gets a final failure.
+7. `writeXbrlRevision` writes the revision, the facts, the `xbrl_source` rows and the checks in one transaction. The revision has `source` `xbrl`, `model` `xbrl-parser-1`, `pipeline_version` `xbrl-1` and `page_count` 0. The `prompt_version` is `<format id>@<map version>`, for example `in-capmkt/ind_as@1`. It is `<format id>@-` for a format with no map.
+8. Each fact has its span, its period start and one `xbrl_source` row with the element, the context, the `decimals`, the nil flag and the concept. A fact has no `source_reference`, because an instance has no page. The coverage lists each statement and basis that has facts.
+9. The handler sets the intake state to `read`. It does this only if this job reads under the current classification.
+10. The handler calls `enqueueXbrlPdfChecks` for the instance. It then calls `redecidePdfsAfterXbrl`. Thus each PDF that waited for this instance gets a new decision.
+
+If the job gets a final failure, `onFinalFailure` sets the intake state to `read_failed`. It then calls `redecidePdfsAfterXbrl`, so a failed instance holds no PDF back.
+
+### `document.xbrl_check`
+
+The handler is in `apps/worker/src/jobs/document-xbrl-check.ts`. It looks for each fact of an XBRL revision on the statement pages of a results PDF. It writes one `extraction_check` row with the type `xbrl_in_pdf` for each fact. It calls no model. The limit is 2 jobs at the same time.
+
+The job subject is the XBRL document. The key has the check version, the PDF classification and the XBRL revision: `v1:pdf-<classificationId>:xbrl-<revisionId>`. Thus a new revision or a new PDF classification gets its own job.
+
+1. The handler reads the three values from the key with `xbrlCheckKeyOf`.
+2. The revision in the key must be current for the XBRL document. The PDF classification in the key must be current. If not, the handler returns the outcome `stale`.
+3. If the revision has no facts, the handler returns `not_mapped`.
+4. If `XBRL_PDF_CHECK` is `false`, the handler returns `disabled` and writes no row.
+5. `unitOf` finds the scale that the monetary facts share and the fewest places in their reported values.
+6. If the instance declares no rounding, the monetary facts get the reason `no_unit` with no call to the extractor.
+7. The handler reads the PDF from the object store. It sends the PDF, the scale, the places, the statement pages of the PDF classification and the facts to `POST /v1/xbrl/pdf-check`.
+8. If the extractor leaves a fact with no answer, the handler throws `CHECK_INCOMPLETE` and writes nothing.
+9. The handler writes the rows in groups of 500. A row has the fact, the PDF document, the PDF classification, the page index, the reason and the check version. A row is never updated. A conflict with the unique index skips the row.
+
+`enqueueXbrlPdfChecks` creates the jobs. It runs after an XBRL read and after a results PDF is classified. It makes a pair from an XBRL document and a stored PDF. Neither is a duplicate. They have the same company and period end. The XBRL revision has facts.
+
 ### `document.index`
 
 The handler is in `apps/worker/src/jobs/document-index.ts`. It cuts a stored PDF into chunks, keeps the chunks and the pages in the database, and adds a vector to each chunk.
@@ -240,11 +305,21 @@ The handler is in `apps/worker/src/jobs/document-index.ts`. It cuts a stored PDF
 7. The handler reads the ranges in order. A range has `INDEX_PAGE_RANGE` pages (default 20). The first range starts at page 1. Each range starts at a multiple of `INDEX_PAGE_RANGE` from page 1.
 8. If the database has the read of a range, the handler sends it to `POST /v1/chunk`. The read is the cache. The key of the cache has the hash of the PDF, the range, the version of Docling, the OCR engine and the reader options.
 9. If the database has no read of the range, the handler sends the PDF to `POST /v1/index`. The handler keeps the read in the cache. It does not keep a read made with OCR off. It does not keep a read with a page that has the reason `PAGE_UNREADABLE`. A later try can succeed.
-10. The handler compares the page count in the `started` event of the indexer with the page count that it used for the range. The handler gets this value from the revision, or from the newest cached read of the PDF. If the two values are different and the revision has no stored pages, the handler keeps the page count of the indexer in the revision. If the range is then different, the handler reads the range again. It does not keep the first read. If the two values are different and the revision has stored pages, the handler throws `INVALID_INDEXER_RESULT`.
+10. The handler compares the page count in the `started` event of the indexer with the page count that it used for the range. The handler gets this value from the revision, or from the newest cached read of the PDF. If the two values are different and the revision holds no pages, the handler keeps the page count of the indexer in the revision. If the range is then different, the handler reads the range again. It does not keep the first read. If the two values are different and the revision holds pages, the handler throws `INVALID_INDEXER_RESULT`.
 11. The handler removes the NUL characters (U+0000) from the text, because Postgres refuses them. It then writes the pages and the chunks of the range in one transaction.
 12. After each range, the handler embeds the chunks that have no vector. It sends them to the embedder in batches of `EMBED_BATCH`, longest text first.
 13. After the last range, the handler completes the revision. The revision is `complete`. If a page has the reason `OCR_FAILED`, `OCR_BUDGET` or `PAGE_UNREADABLE`, the revision is `partial`.
 14. The handler calls `heartbeat` for each event, and writes the progress of the job.
+
+#### XBRL text blocks
+
+For a document with the format `xbrl`, `indexXbrl` replaces the Docling steps.
+
+1. The handler sends the instance to `POST /v1/xbrl` with the mode `text`. The extractor returns the text blocks.
+2. The handler sends the blocks to `POST /v1/chunk-text` on the indexer. The indexer cuts them with the tokenizer of the embedding model.
+3. The revision has the reader versions `none`, and the reader options `xbrl-text=<text version>`.
+4. Each chunk has `text_source` `xbrl`, the `element` of its block and no page number.
+5. The handler stores the chunks in one range, then embeds them as it does for a PDF.
 
 #### Resume
 
@@ -414,13 +489,16 @@ The breadth uses the current member list for all past days. Thus the past breadt
 | `EXTRACTOR_UNAUTHORIZED` | With `EXTRACTOR_AUTH` = `oidc`, the worker cannot get an ID token. | Retry. |
 | `EXTRACTOR_UNAVAILABLE` | The request to the extractor fails before an answer, or the time limit ends first. | Retry. |
 | `EXTRACTOR_HTTP_<status>` | The extractor sends a different error status. | Retry for status 500 or more. Final failure for other status codes. |
+| `XBRL_UNREADABLE` | The extractor refuses the instance: too large, a DOCTYPE, malformed, too many facts or too slow. | Final failure. The intake state becomes `read_failed`. |
+| `XBRL_FAILED` | The extractor has an unexpected error on an instance. | Retry. |
+| `CHECK_INCOMPLETE` | The extractor left facts with no answer in a PDF check. | Final failure. The handler writes no row. |
 | `INDEXER_NOT_CONFIGURED` | `INDEXER_URL` or `EMBEDDER_URL` has no value, and a `document.index` job runs. The indexer can also send this code when it has no tokenizer. | Final failure. The backfill creates the job again after the configuration. |
 | `INDEXER_UNAVAILABLE` | The request to the indexer fails before an answer, or the answer to `/v1/versions` is not JSON. | Retry. |
 | `INDEXER_UNAUTHORIZED` | The indexer sends status 401 or 403. | Final failure. |
 | `INDEXER_HTTP_<status>` | The indexer sends a different error status. | Retry for status 500 or more. Final failure for other status codes. |
 | `INDEX_STREAM_INTERRUPTED` | The stream stops before a `result` event, ends in the middle of a line, or breaks. | Retry. |
 | `INDEX_TIMEOUT` | The call to the indexer or the whole job ran longer than `INDEX_TIMEOUT_SECONDS`, or the call was cancelled. | Retry. |
-| `INVALID_INDEXER_RESULT` | The versions or an event do not agree with the schema, or the pages of a range are not exactly the pages asked for. Or the page count of the indexer changes after the revision has stored pages, or changes two times. | Final failure. |
+| `INVALID_INDEXER_RESULT` | The versions or an event do not agree with the schema, or the pages of a range are not exactly the pages asked for. Or the page count of the indexer changes after the revision holds pages, or changes two times. | Final failure. |
 | `INDEXER_MODEL_MISMATCH` | The tokenizer of the indexer or the model of the embedder is not `EMBEDDING_MODEL`. The indexer can also send this code. | Final failure. |
 | `INDEXER_VERSIONS_CHANGED` | The versions in the events of a range are not the versions of the revision. | Retry. |
 | `EMBEDDING_FAILED` | The embedder fails, or it sends a wrong number of vectors. | Retry. The revision stays `building`. The next attempt resumes it. |
@@ -443,7 +521,7 @@ These codes do not make the job fail. The document state becomes `rejected`, and
 | --- | --- | --- |
 | `OBJECT_MISSING` | The object store has no object for the document. | The document is `rejected`. |
 | `TOO_LARGE` | The object is larger than `MAX_UPLOAD_BYTES`. | The document is `rejected`. The worker stops the stream. |
-| `NOT_A_PDF` | The first 5 bytes are not `%PDF-`. | The document is `rejected`. |
+| `UNSUPPORTED_TYPE` | A PDF does not start with `%PDF-`, or a file with the format `xbrl` is not an XBRL instance. A DOCTYPE in an instance also gives this code. | The document is `rejected`. |
 
 ### Intake states
 
@@ -455,10 +533,11 @@ These codes do not make the job fail. The document state becomes `rejected`, and
 | `needs_kind` | The classification kind is `not_sure`. | The document waits for the investor. |
 | `needs_company` | A read kind with no company. | The document waits for the investor. |
 | `kept` | The classification kind is `other`. | The worker keeps the document and does not read it. |
-| `reading` | A read kind with a company. | A `document.extract` job starts. |
-| `read` | `document.extract` wrote the revision for the current classification. | The revision gives the current figures. |
+| `reading` | A read kind with a company. | A `document.extract` job starts for a PDF. A `document.xbrl` job starts for an XBRL instance. |
+| `waiting_for_xbrl` | A results PDF with a company, and an XBRL document that is not settled can cover it. | No job. `redecidePdfsAfterXbrl` decides again after each XBRL document settles. |
+| `read` | `document.extract` or `document.xbrl` wrote the revision for the current classification. Or XBRL covers each statement of a results PDF, so the worker does not read the PDF. | The revision gives the current figures. A skipped PDF has no revision. |
 | `identify_failed` | `document.classify` got a final failure. | No `document.extract` job. |
-| `read_failed` | The current `document.extract` job got a final failure. | No new revision. |
+| `read_failed` | The current `document.extract` or `document.xbrl` job got a final failure. | No new revision. |
 
 ### Market refresh
 
@@ -497,7 +576,8 @@ These codes do not make the job fail. The document state becomes `rejected`, and
 | `extraction_revision` | The revision of a job. | One new row for each `document.extract` job. |
 | `financial_fact` | The facts of a revision, for the summary. | The facts of a new revision. |
 | `source_reference` | Nothing. | One row for each fact: the document and the page. |
-| `extraction_check` | The failed checks of a revision, for the summary. | The checks of a new revision. |
+| `extraction_check` | The failed checks of a revision, for the summary. | The checks of a new revision. For `xbrl_in_pdf`, one row for each fact and PDF classification. |
+| `xbrl_source` | Nothing. | One row for each XBRL fact: the document, the element, the context, the `decimals`, the nil flag and the concept. |
 | `market_point` | The last stored day of each series. The `nifty50` days and the member closes, for the breadth. | One row for each series and day. A row that exists gets the new value, `source` and `fetched_at`. |
 | `market_fetch` | The `running` run rows of the last hour. | One run row for each pass that is not `skipped`. |
 | `market_connection` | The saved connections. | `last_error_code`. A renewed Dhan token, with its last 4 characters and its expiry time. |
@@ -525,7 +605,7 @@ The `jobId` column is unique in `document_classification` and in `extraction_rev
 | Data | Direction | Details |
 | --- | --- | --- |
 | Object store | Read | The worker reads the object at `storage_key`. It never writes to the object store. |
-| Extractor | Write and read | `POST /v1/classify` and `POST /v1/extract`, with the PDF as the body and `content-type: application/pdf`. |
+| Extractor | Write and read | `POST /v1/classify` and `POST /v1/extract`, with the PDF as the body and `content-type: application/pdf`. `POST /v1/xbrl` with the instance as the body and the header `x-xbrl-mode`. `POST /v1/xbrl/pdf-check` with a multipart body. |
 | Cloud Tasks | Write | In `cloud-tasks` mode, the worker creates one task for each new job. The task name ends with `<jobId>-<attempt>`. |
 | Postgres notifications | Write and read | In `queue` mode, `QueueNotifier` sends `job_ready` with the job type. The queue runner listens for it. |
 | Log | Write | JSON lines from pino, with a `severity` field. |
@@ -551,6 +631,8 @@ The `jobId` column is unique in `document_classification` and in `extraction_rev
 | `WORKER_URL` | No default. Necessary. | The URL of this worker. In `cloud-tasks` mode, it is the OIDC audience and the target for new jobs. |
 | `API_SERVICE_ACCOUNT_EMAIL` | No default | The `email` that the OIDC token must have. Necessary in `cloud-tasks` mode. |
 | `MAX_UPLOAD_BYTES` | `52428800` (50 MiB) | The largest object that `document.verify` accepts. |
+| `XBRL_SNIFF_BYTES` | `65536` | The number of bytes from the start of an XML upload that `document.verify` keeps for `sniffXbrl`. |
+| `XBRL_PDF_CHECK` | `true` | `false`: each `document.xbrl_check` job answers `disabled` and writes no row. Set the same value for the API. If the API says `true` and the worker says `false`, the checks stay `not_yet` for ever. |
 | `LEASE_SECONDS` | `600` | The length of a lease. |
 | `JOB_HEARTBEAT_MS` | `15000` | The time between two renewals of the lease of a running job. The worker does not start if this value is more than half of `LEASE_SECONDS`. |
 | `JOB_CONCURRENCY` | No default | The limits, in the form `type=n,type=n`. They replace the default limits. The next table gives the defaults. |
@@ -589,6 +671,8 @@ The `jobId` column is unique in `document_classification` and in `extraction_rev
 | `document.classify` | 2 |
 | `document.extract` | 2 |
 | `document.index` | 1 |
+| `document.xbrl` | 2 |
+| `document.xbrl_check` | 2 |
 
 The worker does not start in these conditions:
 
@@ -720,7 +804,10 @@ CAUTION: Do not change `CONNECTIONS_KEY` after the investor saves a connection. 
 
 ## Limits
 
-- `document.verify` has no `onFinalFailure` function. After a final failure, the document can stay `verifying`.
+- `document.verify` has an `onFinalFailure` function only for an XBRL instance. It releases the PDFs that wait. After a final failure, a PDF or an instance can stay `verifying`.
+- A text or chunker version change does not rebuild the index of an XBRL document through the backfill or `verify`. They judge an index as stale by its revision, so an XBRL revision is never stale for them.
+- A change of the period end of an XBRL document after a pair is made leaves the queued check of the old pair in place.
+- Only a results PDF waits for XBRL. An annual report never does.
 - In `cloud-tasks` mode, `loadWorkerEnv` checks `GOOGLE_CLOUD_PROJECT` and `WORKER_INVOKER_SA` only when `EXTRACTOR_URL` has a value. Without them, the `document.classify` job stays `queued`.
 - The worker command in `infra/deploy.sh` sets none of `EXTRACTOR_URL`, `GOOGLE_CLOUD_PROJECT` and `WORKER_INVOKER_SA`. With that configuration, the limit above applies.
 - The classify and extract handlers read the full PDF into memory. `EXTRACT_MAX_BYTES` limits the size.
@@ -758,6 +845,12 @@ CAUTION: Do not change `CONNECTIONS_KEY` after the investor saves a connection. 
 - [apps/worker/src/jobs/document-classify.ts](../../apps/worker/src/jobs/document-classify.ts)
 - [apps/worker/src/jobs/document-extract.ts](../../apps/worker/src/jobs/document-extract.ts)
 - [apps/worker/src/jobs/document-index.ts](../../apps/worker/src/jobs/document-index.ts)
+- [apps/worker/src/jobs/document-xbrl.ts](../../apps/worker/src/jobs/document-xbrl.ts)
+- [apps/worker/src/jobs/document-xbrl-check.ts](../../apps/worker/src/jobs/document-xbrl-check.ts)
+- [apps/worker/src/jobs/revision-rows.ts](../../apps/worker/src/jobs/revision-rows.ts)
+- [apps/worker/src/sniff.ts](../../apps/worker/src/sniff.ts)
+- [packages/financial-engine-ts/src/sources.ts](../../packages/financial-engine-ts/src/sources.ts)
+- [packages/db/drizzle/0008_xbrl.sql](../../packages/db/drizzle/0008_xbrl.sql)
 - [apps/worker/src/indexer.ts](../../apps/worker/src/indexer.ts)
 - [apps/worker/src/market/refresh.ts](../../apps/worker/src/market/refresh.ts)
 - [apps/worker/src/market/breadth.ts](../../apps/worker/src/market/breadth.ts)
