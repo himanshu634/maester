@@ -20,7 +20,12 @@ The investor's (ADR 0006, the data-layer spec, and this conversation):
 - The server covers facts, metrics and search.
 - The XBRL-in-PDF check shows as "Not checked" until a stronger check passes the decoy gate (decided 21 October 2026 for the web; this design applies it to agents too).
 
-The designer's (open to change, marked "my call" where it matters): the tool set, the two milestones, the output shapes, where the shared functions live, the read-only enforcement and the tests.
+The designer's (open to change, marked "my call" where it matters): the tool set, the two milestones, the output shapes, where the shared functions live, the read-only enforcement and the tests. After the builder check, also:
+
+- `get_statement` serves the table exactly as the Research page gets it, `stitch`'s placing in the table's unit included; the server adds no arithmetic of its own (§3).
+- A failed check's sentence names the two sides and not their difference (§7.3).
+- Results filings' figures are reached through a new `get_filing_facts`, not left out (§7.4).
+- `get_fact` gives the value in the filing's own unit, and the table's value only labelled with the table's unit (§7.5).
 
 ## 3. Goals, non-goals, anti-goals
 
@@ -36,11 +41,11 @@ The designer's (open to change, marked "my call" where it matters): the tool set
 - Any write: no review, override, upload, re-read or job.
 - MCP over HTTP, personal access tokens, several workspaces, several users.
 - A chat screen or the Analyst page.
-- Quarterly tables. The statement table is annual reports only today; results filings reach agents through `get_fact` and search until data-layer phase 4.
+- Quarterly tables. The statement table is annual reports only today; a results filing's figures reach agents as that filing's facts (`get_filing_facts`) until data-layer phase 4 gives them a table.
 
 **Anti-goals** (a failure even if everything else works)
 
-- A number the server computed, converted or rounded outside `@maester/financial-engine`.
+- A number the server works out itself. The server's figures are the facts and what the API's own read functions make of them (today `stitch`, which places a filing's figures in the table's unit, exactly as the Research page shows them; once data-layer phase 1 lands, on the engine's decimals). `apps/mcp` adds, subtracts, divides, rounds and converts nothing.
 - A passage's number presented as a figure, in a field or in a tool description.
 - A fact, chunk or company of another workspace visible through any tool, including by guessing an id.
 - A write to Postgres from this process, by any path.
@@ -67,7 +72,7 @@ So facts, statements, filings and search can be served now. Metrics cannot: ther
 
 ## 5. Two milestones
 
-**M1 · Facts and search** (buildable on #19): `list_companies`, `list_filings`, `get_statement`, `get_fact`, `search_filings`, and `list_metrics`, which answers an empty registry and says why. The CLI's `ask` is marked deprecated.
+**M1 · Facts and search** (buildable on #19): `list_companies`, `list_filings`, `get_statement`, `get_filing_facts`, `get_fact`, `search_filings`, and `list_metrics`, which answers an empty registry and says why. The CLI's `ask` is marked deprecated.
 
 **M2 · Metrics** (needs data-layer phase 1 on `staging`): `list_metrics` returns the registry; `compute` returns one calculation result (data-layer §7.3); `list_concepts` and `get_series` arrive with the series; `get_statement` rows gain their concept; `get_fact` gains mapping, agreement and reviews; `list_open_issues` arrives once its issue kinds exist. The CLI's `ask` is removed.
 
@@ -117,16 +122,22 @@ One statement table: `statement` is `income_statement`, `balance_sheet` or `cash
 
 - The table: company, statement, basis, unit (label, scale, currency), columns (period end, label, the filing each comes from), the note that each year comes whole from the newest filing that prints it, and the figures left out with why (no date, other currency, other unit).
 - A row: the printed line name, section, subtotal, per share. It is a printed line, not a concept: the row says `"line": "as printed; no concept mapping yet"` until M2.
-- A cell: `value` (decimal string or null), `printed` (as on the page), `status` in words (value, a dash printed, not readable, not printed), the unit and currency, `period_end`, `span` (`year`), `fact_id`, and `source`: the filing's name and document id, then `page` (1-based) with `of` pages for a PDF, or `element`, `context` and `decimals` for XBRL. Then `check` in a sentence (the same words as the figure panel's "Adds up"), `restated` in words when it was, and `reviewed: "not yet"` (no reviews exist until data-layer phase 3).
+- A cell: `value` (decimal string or null), `printed` (as on the page), `status` in words (value, a dash printed, not readable, not printed), the unit and currency, `period_end`, `span` (`year`), `fact_id`, and `source`: the filing's name and document id, then `page` (1-based) with `of` pages for a PDF, or `element`, `context` and `decimals` for XBRL. Then `check` in a sentence (the figure panel's "Adds up" words, without the difference: "No. The lines add up to {lines}; the page prints {page}." The web works the difference out in the browser, which the server does not do, and the description tells the agent not to work it out either), `restated` in words when it was, and `reviewed: "not yet"` (no reviews exist until data-layer phase 3).
 - No cell says how confident anything is.
 
 When the company has no annual report read, the answer says so; when the basis has no table, it says which bases exist.
 
-### 7.4 `get_fact(fact_id)`
+### 7.4 `get_filing_facts(document_id, statement?, basis?)`
 
-Everything a citation needs for one fact, from `getFactWithSource`: the line as printed, the value and printed text, unit, currency, basis, period start and end, span, the filing (name, kind, period) and its source (page 1-based of N, or element and context), the revision's checks that name this fact, in sentences, and whether this fact is the one the statement table shows for its line and year or was superseded by a newer filing. Results filings' facts (quarters, half years) are reachable here even though no table shows them yet.
+One filing's facts from its current revision (the `GET /documents/:id/facts` read, through `listFactsWithSources`), filtered by statement and basis when given: each fact in the fact shape of §7.5. This is how an agent reaches a results filing's quarter, half-year and nine-month figures in M1; an annual report's facts come this way too, as printed in that one filing. A document that is not a read filing answers so in words.
 
-### 7.5 `search_filings(query, company_id?, limit?)`
+### 7.5 `get_fact(fact_id)`
+
+Everything a citation needs for one fact, from `getFactWithSource`: the line as printed, `reported_value` and `printed` in the filing's own unit (`unit_label`, `scale`, `currency`), basis, period start and end, span, the filing (name, kind, period) and its source (page 1-based of N, or element and context).
+
+When the fact is the cell the statement table shows for its line and year, it also carries `in_table`: that cell's value in the table's unit (labelled with it), its check sentence and restated words, as `get_statement` gives them. When a newer filing's figure fills that year, `in_table` says which filing does; for a results filing it says no table shows results yet. The two values of one fact are always each labelled with their unit, so an agent never sees one id with two unlabelled numbers.
+
+### 7.6 `search_filings(query, company_id?, limit?)`
 
 Passages from the text index: `searchChunks` behind the served-model gate. `limit` defaults to 8 and is at most 20 (my call: an agent's context, not the API's 50). A hit: the passage text, the filing's name and document id, the company, the page (1-based) or the XBRL element, the section path, whether the text came from the text layer or OCR, and the chunk kind.
 
@@ -134,11 +145,11 @@ The result carries a fixed `figures` field: "Passages are context. A number in a
 
 When search is unavailable (no `EMBEDDER_URL`, the embedder is down, or it serves another model than the index was built with), the tool returns an error result, `SEARCH_UNAVAILABLE`, with one sentence, and the other tools keep working.
 
-### 7.6 `list_metrics()`
+### 7.7 `list_metrics()`
 
 In M1: an empty list and the sentence "Maester has no named calculations yet. Do not work out growth, margins, ratios or any other figure from the facts; say that Maester cannot calculate it yet." In M2: the registry (id, version, what it measures, inputs, spans, unit).
 
-### 7.7 Errors
+### 7.8 Errors
 
 Tool errors are MCP error results (`isError: true`) with `code` and one sentence: `NOT_FOUND`, `INVALID_INPUT` (the schema's message), `SEARCH_UNAVAILABLE`, `UNAVAILABLE` (the database did not answer). A thrown error is caught, logged by code and returned as `UNAVAILABLE`; no stack, query or text goes to the agent or the log.
 
@@ -148,7 +159,7 @@ Tool descriptions ask; the server makes sure. Each line below has a test.
 
 | Rule | How |
 | --- | --- |
-| Figures only from facts or calculations | Figures leave only through `get_statement` and `get_fact`, which read facts. No tool adds, divides, rounds or converts; `present/` copies decimal strings and never parses them into numbers. |
+| Figures only from facts or calculations | Figures leave only through `get_statement`, `get_filing_facts` and `get_fact`, which read facts through the API's read functions. `present/` copies decimal strings and never parses them into numbers; a lint rule bans `Number(`, `parseFloat` and `decimal.js` in `apps/mcp/src`. |
 | No passage as a figure | `search_filings` returns passages in a `passages` list with the fixed `figures` field; no field of a hit is a number but its page and ranks. |
 | Unknown stays unknown | A missing value is `null` with its reason in words, never `0` or `""`. |
 | Lineage on every figure | The cell and fact shapes make `fact_id`, `source`, basis, unit, currency, span and period required. |
@@ -187,7 +198,7 @@ Named, not bent:
   | `compute(…)` | M2. |
   | `get_fact(fact_id)` | M1 without mapping, agreement, alternate reading and reviews (none exist yet); M2 adds them. |
   | `list_open_issues(company_id?)` | M2, once the issue kinds exist (data-layer phases 1 and 3). |
-  | new: `get_statement`, `list_filings`, `search_filings` | M1. |
+  | new: `get_statement`, `get_filing_facts`, `list_filings`, `search_filings` | M1. |
 
 - **Data-layer §11, phase 2** is split into M1 and M2 (§5). M2 keeps phase 2's done-when.
 - **Ingestion spec §3**, which put "MCP tools over the index" out of scope for that spec: this spec takes them in, as `search_filings`, under its anti-goal that a number from a chunk is never handed to an agent as a figure.
