@@ -302,11 +302,12 @@
 		/** Each sent file's document, so the batch can open the first one chosen. */
 		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping for one batch, never drawn
 		const sentAs = new Map<Picked, string>();
-		let result: Pick<Outcome, 'sent' | 'refused' | 'unsent' | 'stopped'> = {
+		let result: Pick<Outcome, 'sent' | 'refused' | 'unsent' | 'stopped' | 'rest'> = {
 			sent: 0,
 			refused: [],
 			unsent: 0,
-			stopped: null
+			stopped: null,
+			rest: []
 		};
 		if (accepted.length > 0) {
 			busy = sendingLine(0, accepted, folder);
@@ -447,6 +448,7 @@
 
 	<DropStrip
 		onfiles={addFiles}
+		onresend={addFiles}
 		{busy}
 		{outcome}
 		waitingNote={load === 'ready' ? undefined : `${id}-waiting`}

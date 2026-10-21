@@ -31,11 +31,13 @@
 		busy?: string | null;
 		/** How the last batch went. */
 		outcome?: Outcome | null;
+		/** Sends the files a batch stopped offline before sending, in the order chosen. */
+		onresend?: (rest: Picked[]) => void;
 		/** No file can be taken yet; `waitingNote` is the id of the visible line that says why. */
 		waitingNote?: string;
 	}
 
-	let { onfiles, busy = null, outcome = null, waitingNote }: Props = $props();
+	let { onfiles, busy = null, outcome = null, onresend, waitingNote }: Props = $props();
 
 	const id = $props.id();
 	const signInHref = resolve(signInAgainHref('/terminal/documents'));
@@ -177,11 +179,14 @@
 			{:else if refused.refused.length > 0}
 				<div class="refused">{@render list(refused.refused)}</div>
 			{/if}
-			{#if refused.stopped}
-				<p>{copy.drop.stopped[refused.stopped](refused.unsent)}</p>
-			{/if}
 			{#if refused.stopped === 'signed-out'}
+				<p>{copy.drop.stopped[refused.stopped](refused.unsent)}</p>
 				<a href={signInHref}>{copy.drop.signIn}</a>
+			{:else if refused.stopped === 'offline' && refused.rest.length > 0 && onresend}
+				<button class="button outline" type="button" onclick={() => onresend(refused.rest)}>
+					{copy.drop.sendRest}
+				</button>
+				<p class="rest-note">{copy.drop.restNote}</p>
 			{:else}
 				<button class="button outline" type="button" onclick={() => filesInput?.click()}>
 					{copy.drop.chooseAgain}
@@ -233,6 +238,10 @@
 	}
 
 	.note {
+		color: var(--ink-muted);
+	}
+
+	.rest-note {
 		color: var(--ink-muted);
 	}
 

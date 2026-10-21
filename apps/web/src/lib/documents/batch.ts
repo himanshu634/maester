@@ -39,6 +39,12 @@ export interface Outcome {
 	/** Files never tried because the batch stopped. */
 	unsent: number;
 	stopped: Stop | null;
+	/**
+	 * What "Send the rest" sends: the files refused because the connection dropped, then the files
+	 * never tried, in the order chosen. Empty unless the batch stopped offline. A file the API or
+	 * the browser refused for itself, and a file that went, are never in it.
+	 */
+	rest: Picked[];
 }
 
 // --- What was chosen ------------------------------------------------------------------------
@@ -234,12 +240,14 @@ export async function sendAll(
 	folder: string | null,
 	send: (item: Picked) => Promise<unknown>,
 	onSettled: (settled: number) => void = () => {}
-): Promise<Pick<Outcome, 'sent' | 'refused' | 'unsent' | 'stopped'>> {
+): Promise<Pick<Outcome, 'sent' | 'refused' | 'unsent' | 'stopped' | 'rest'>> {
 	let next = 0;
 	let settled = 0;
 	let sent = 0;
 	let stopped: Stop | null = null;
 	const refused: { at: number; refusal: Refusal }[] = [];
+	/** Indexes of the files refused because the connection dropped. */
+	const droppedAt: number[] = [];
 
 	async function lane() {
 		while (!stopped && next < accepted.length) {
@@ -251,6 +259,7 @@ export async function sendAll(
 			} catch (error) {
 				const failure = sendFailure(error, item.file);
 				refused.push({ at, refusal: { name: shownName(item, folder), reason: failure.reason } });
+				if (failure.stop === 'offline') droppedAt.push(at);
 				stopped ??= failure.stop;
 			}
 			settled += 1;
@@ -259,12 +268,21 @@ export async function sendAll(
 	}
 
 	await Promise.all(Array.from({ length: Math.min(SEND_AT_ONCE, accepted.length) }, lane));
+	// Lanes take files in order, so every index from `next` on was never tried.
+	const rest =
+		stopped === 'offline'
+			? [
+					...droppedAt.sort((a, b) => a - b),
+					...Array.from({ length: accepted.length - next }, (_, i) => next + i)
+				].map((at) => accepted[at])
+			: [];
 	return {
 		sent,
 		// In the order the files were chosen, not the order they failed in.
 		refused: refused.sort((a, b) => a.at - b.at).map(({ refusal }) => refusal),
 		unsent: accepted.length - settled,
-		stopped
+		stopped,
+		rest
 	};
 }
 
@@ -299,7 +317,16 @@ export function endAloud(outcome: Outcome): string {
 	return missed === 0 ? sent : `${sent} ${copy.drop.notAddedAloud(missed)}`;
 }
 
-/** The refusal Notice's first line: "3 of the 806 files weren’t added." */
+/** The first line when the connection dropped: "The upload didn’t finish. 214 of 806 files were sent." */
+export function unfinishedTitle(outcome: Outcome): string {
+	return copy.drop.unfinishedTitle(outcome.sent, outcome.total);
+}
+
+/**
+ * The refusal Notice's first line: "3 of the 806 files weren’t added.", or, when the connection
+ * dropped, how many went.
+ */
 export function refusedTitle(outcome: Outcome): string {
+	if (outcome.stopped === 'offline') return unfinishedTitle(outcome);
 	return copy.drop.refusedTitle(notAdded(outcome), outcome.total);
 }

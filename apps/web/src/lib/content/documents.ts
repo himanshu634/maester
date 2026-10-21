@@ -44,11 +44,18 @@ export const documentsContent = {
 					? `None of the ${total} files were added.`
 					: `${count} of the ${total} files ${count === 1 ? 'wasn’t' : 'weren’t'} added.`,
 		refusedListLabel: 'Files not added, and why',
+		/** The Notice's first line when the connection dropped: how many went of how many chosen. */
+		unfinishedTitle: (sent: number, total: number) =>
+			total === 1
+				? 'The upload didn’t finish. The file wasn’t sent.'
+				: `The upload didn’t finish. ${sent} of ${total} files ${sent === 1 ? 'was' : 'were'} sent.`,
+		/** Under "Send the rest": a file that had started may be left unfinished (Decision 11). */
+		restNote:
+			'A file that had started sending may also show under “Company not known yet” as unfinished. Documents can’t be removed yet.',
+		sendRest: 'Send the rest',
 		stopped: {
 			'signed-out': (count: number) =>
-				`You’re signed out, so the other ${count === 1 ? 'file wasn’t' : `${count} files weren’t`} sent. Sign in and add ${count === 1 ? 'it' : 'them'} again.`,
-			offline: (count: number) =>
-				`The connection dropped, so the other ${count === 1 ? 'file wasn’t' : `${count} files weren’t`} sent. Check your connection and add ${count === 1 ? 'it' : 'them'} again.`
+				`You’re signed out, so the other ${count === 1 ? 'file wasn’t' : `${count} files weren’t`} sent. Sign in and add ${count === 1 ? 'it' : 'them'} again.`
 		},
 		chooseAgain: 'Choose files to add',
 		signIn: 'Sign in'

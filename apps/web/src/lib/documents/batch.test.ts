@@ -15,6 +15,7 @@ import {
 	sentLine,
 	shownName,
 	startAloud,
+	unfinishedTitle,
 	walkEntries,
 	type DropEntry,
 	type Outcome,
@@ -38,7 +39,16 @@ const pick = (path: string, size = 1000, type = 'application/pdf'): Picked => ({
 });
 
 function outcome(over: Partial<Outcome> = {}): Outcome {
-	return { total: 12, folder: null, sent: 12, refused: [], unsent: 0, stopped: null, ...over };
+	return {
+		total: 12,
+		folder: null,
+		sent: 12,
+		refused: [],
+		unsent: 0,
+		stopped: null,
+		rest: [],
+		...over
+	};
 }
 
 /** A promise settled from outside, so a test decides when each upload finishes. */
@@ -288,7 +298,7 @@ describe('sendAll', () => {
 		expect(most).toBe(4);
 		expect(new Set(started).size).toBe(10);
 		expect(settled).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-		expect(result).toEqual({ sent: 10, refused: [], unsent: 0, stopped: null });
+		expect(result).toEqual({ sent: 10, refused: [], unsent: 0, stopped: null, rest: [] });
 	});
 
 	it('names each file the API refused, in the order chosen, and carries on', async () => {
@@ -303,7 +313,8 @@ describe('sendAll', () => {
 				{ name: 'f3.pdf', reason: 'Not a PDF or an XBRL file.' }
 			],
 			unsent: 0,
-			stopped: null
+			stopped: null,
+			rest: []
 		});
 	});
 
@@ -326,8 +337,67 @@ describe('sendAll', () => {
 			sent: 0,
 			refused: [],
 			unsent: 0,
-			stopped: null
+			stopped: null,
+			rest: []
 		});
+	});
+
+	it('offline at the third file: the rest is the offline failures and the untried, in order', async () => {
+		const result = await sendAll(many(10), null, async (item) => {
+			if (item.path >= 'f2.pdf') throw new ApiError(0, 'NETWORK', 'offline');
+		});
+		expect(result.stopped).toBe('offline');
+		expect(result.sent).toBe(2);
+		expect(result.rest.map((p) => p.path)).toEqual([
+			'f2.pdf',
+			'f3.pdf',
+			'f4.pdf',
+			'f5.pdf',
+			'f6.pdf',
+			'f7.pdf',
+			'f8.pdf',
+			'f9.pdf'
+		]);
+		// f0 and f1 go; f2–f5 fail offline (the f0 and f1 lanes start f4 and f5 before the f2 and f3 lanes catch); f6–f9 are never tried
+	});
+
+	it('the files that went are never in the rest', async () => {
+		const went: string[] = [];
+		const result = await sendAll(many(10), null, async (item) => {
+			if (item.path >= 'f2.pdf') throw new ApiError(0, 'NETWORK', 'offline');
+			went.push(item.path);
+		});
+		expect(went).toEqual(['f0.pdf', 'f1.pdf']);
+		expect(result.rest.filter((p) => went.includes(p.path))).toEqual([]);
+	});
+
+	it('a file the API refused for itself is not in the rest', async () => {
+		const result = await sendAll(many(6), null, async (item) => {
+			if (item.path === 'f0.pdf') throw new ApiError(413, 'UPLOAD_TOO_LARGE', 'big');
+			if (item.path >= 'f3.pdf') throw new ApiError(0, 'NETWORK', 'offline');
+		});
+		expect(result.rest.map((p) => p.path)).toEqual(['f3.pdf', 'f4.pdf', 'f5.pdf']);
+	});
+
+	it('signed out has no rest', async () => {
+		const result = await sendAll(many(6), null, async () => {
+			throw new ApiError(401, 'UNAUTHENTICATED', 'signed out');
+		});
+		expect(result.stopped).toBe('signed-out');
+		expect(result.rest).toEqual([]);
+	});
+
+	it('sending the rest again sends exactly those, and a second drop has only what is left', async () => {
+		const first = await sendAll(many(10), null, async (item) => {
+			if (item.path >= 'f2.pdf') throw new ApiError(0, 'NETWORK', 'offline');
+		});
+		const again: string[] = [];
+		const second = await sendAll(first.rest, null, async (item) => {
+			again.push(item.path);
+			if (item.path >= 'f6.pdf') throw new ApiError(0, 'NETWORK', 'offline');
+		});
+		expect([...again].sort()).toEqual(first.rest.map((p) => p.path).sort());
+		expect(second.rest.map((p) => p.path)).toEqual(['f6.pdf', 'f7.pdf', 'f8.pdf', 'f9.pdf']);
 	});
 });
 
@@ -354,6 +424,12 @@ describe('what the strip says', () => {
 		expect(endAloud(outcome({ sent: 10, refused: two }))).toBe('10 files sent. 2 weren’t added.');
 		expect(endAloud(outcome({ sent: 11, refused: two.slice(1) }))).toBe(
 			'11 files sent. 1 wasn’t added.'
+		);
+	});
+
+	it('titles a batch that stopped offline by how many went', () => {
+		expect(unfinishedTitle(outcome({ total: 806, sent: 214, stopped: 'offline' }))).toBe(
+			'The upload didn’t finish. 214 of 806 files were sent.'
 		);
 	});
 
