@@ -491,6 +491,15 @@ class ReadRunTests(RunFolderCase):
             self.read()
 
 
+    def test_benches_of_another_batch_chunks_or_queries_are_refused_naming_the_models(self):
+        for field, value in (("batch", 8), ("chunks", 500), ("queries", 20)):
+            with self.subTest(field=field):
+                bench = b(1200, QWEN).model_copy(update={field: value})
+                self.run.joinpath(f"{slug(QWEN)}.bench.json").write_text(bench.model_dump_json(by_alias=True), encoding="utf-8")
+                with self.assertRaisesRegex(RetrievalReportError, f"the benches differ in {field} .*{ARCTIC}.*{QWEN}"):
+                    self.read()
+
+
 class RetrievalReportCommandTests(RunFolderCase):
     def setUp(self):
         super().setUp()

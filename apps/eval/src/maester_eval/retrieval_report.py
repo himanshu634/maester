@@ -168,7 +168,19 @@ def read_retrieval_run(run: Path, questions: Sequence[RetrievalQuestion], revisi
         check_same_reads({model: rankings[model] for model in ordered})
     except RetrievalScoreError as error:
         raise RetrievalReportError(str(error)) from None
+    _check_same_bench(benches)
     return RetrievalRun(run_json, scores, benches, parities)
+
+
+def _check_same_bench(benches: Mapping[str, EvalBenchModel]) -> None:
+    """Refuse models whose benches embedded different work: seconds per 1,000 chunks is only comparable at one `batch`,
+    one `chunks` and one `queries`, and the model rule and the granite rule both compare it."""
+    models = list(benches)
+    for field in ("batch", "chunks", "queries"):
+        values = {model: getattr(benches[model], field) for model in models}
+        if len(set(values.values())) > 1:
+            held = ", ".join(f"{model} {value}" for model, value in values.items())
+            raise RetrievalReportError(f"the benches differ in {field} ({held}); bench every model again with the same settings")
 
 
 def _read_sibling(run: Path, model: str, kind: str, shape: type[BaseModel], required: bool) -> BaseModel | None:
