@@ -56,3 +56,42 @@ export const EvalDocument = z.strictObject({
   pages: z.array(z.strictObject({ page: z.number().int().min(1), source: PageSource })),
 });
 export type EvalDocument = z.infer<typeof EvalDocument>;
+
+/** What `eval sources` writes: the request's filings as the workspace holds them for one model. */
+export const EvalSources = z.strictObject({
+  version: z.literal(1),
+  model: z.string(),
+  documents: z.array(EvalDocument),
+});
+export type EvalSources = z.infer<typeof EvalSources>;
+
+/** A page of a filing: PDF pages, counted from 1. */
+export const PageRef = z.strictObject({ filing: z.string(), page: z.number().int().min(1) });
+export type PageRef = z.infer<typeof PageRef>;
+
+/**
+ * What `eval rank` writes: the sources, and for each question the pages of each branch's ranking, one entry per
+ * chunk in rank order (a page with two chunks shows twice), with no text. Empty when a scope filing has no revision.
+ */
+export const EvalRankings = EvalSources.extend({
+  rankings: z.array(
+    z.strictObject({ questionId: z.string(), vector: z.array(PageRef), keyword: z.array(PageRef), hybrid: z.array(PageRef) }),
+  ),
+});
+export type EvalRankings = z.infer<typeof EvalRankings>;
+
+/**
+ * What `eval bench` writes: the time to embed `chunks` chunks (the batches after the warm-up) in batches of `batch`,
+ * and the median time of one query sent alone.
+ */
+export const EvalBench = z.strictObject({
+  version: z.literal(1),
+  model: z.string(),
+  batch: z.number().int().min(1),
+  chunks: z.number().int().min(0),
+  warmupChunks: z.number().int().min(0),
+  seconds: z.number().min(0),
+  queries: z.number().int().min(0),
+  queryMillisMedian: z.number().min(0),
+});
+export type EvalBench = z.infer<typeof EvalBench>;

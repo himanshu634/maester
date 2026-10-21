@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { EvalDocument, EvalRequest } from "../src/index.js";
+import { EvalBench, EvalDocument, EvalRankings, EvalRequest, EvalSources, PageRef } from "../src/index.js";
 
 // The same file is read by apps/eval's EvalRequestModel (eval_wire.py), so a change to one side fails the other.
 const request = () => JSON.parse(readFileSync(new URL("../fixtures/eval/request.json", import.meta.url), "utf8")) as Record<string, unknown>;
@@ -25,6 +25,43 @@ describe("EvalRequest", () => {
     expect(EvalRequest.safeParse({ ...r, documents: [{ ...r.documents[0]!, extra: 1 }] }).success).toBe(false);
     expect(EvalRequest.safeParse({ ...r, questions: [{ ...r.questions[0]!, scope: [] }] }).success).toBe(false);
     expect(EvalRequest.safeParse({ ...r, version: 2 }).success).toBe(false);
+  });
+});
+
+const fixture = (name: string) => JSON.parse(readFileSync(new URL(`../fixtures/eval/${name}`, import.meta.url), "utf8")) as Record<string, unknown>;
+
+describe("EvalRankings", () => {
+  it("parses the shared fixture, one document with no revision among them", () => {
+    const parsed = EvalRankings.parse(fixture("rankings.json"));
+    expect(parsed.documents.every((d) => typeof d.chunks === "number")).toBe(true);
+    expect(parsed.documents.filter((d) => d.revisionId === null).map((d) => d.chunks)).toEqual([0]);
+    expect(parsed.rankings.map((r) => r.questionId)).toEqual(["q001"]);
+    // Sources alone are the same file without its rankings.
+    const sources = fixture("rankings.json");
+    delete sources.rankings;
+    expect(EvalSources.safeParse(sources).success).toBe(true);
+  });
+
+  it("refuses a page of 0, a negative chunk count, a field the twin does not know and another version", () => {
+    const r = fixture("rankings.json") as { documents: object[]; rankings: { vector: object[] }[] };
+    const withRanking = (vector: object[]) => ({ ...r, rankings: [{ ...r.rankings[0]!, vector }] });
+    expect(EvalRankings.safeParse(withRanking([{ filing: "x", page: 0 }])).success).toBe(false);
+    expect(PageRef.safeParse({ filing: "x", page: 0 }).success).toBe(false);
+    expect(PageRef.safeParse({ filing: "x", page: 1 }).success).toBe(true);
+    expect(EvalRankings.safeParse({ ...r, documents: [{ ...r.documents[0]!, chunks: -1 }] }).success).toBe(false);
+    expect(EvalRankings.safeParse({ ...r, extra: 1 }).success).toBe(false);
+    expect(EvalRankings.safeParse({ ...r, version: 2 }).success).toBe(false);
+    expect(EvalRankings.safeParse({ ...r, rankings: [{ ...r.rankings[0]!, text: "q" }] }).success).toBe(false);
+  });
+});
+
+describe("EvalBench", () => {
+  it("parses the shared fixture and refuses a missing field and another version", () => {
+    const b = fixture("bench.json");
+    expect(EvalBench.parse(b)).toMatchObject({ batch: 16, chunks: 464, warmupChunks: 16 });
+    expect(EvalBench.safeParse({ ...b, queries: undefined }).success).toBe(false);
+    expect(EvalBench.safeParse({ ...b, version: 2 }).success).toBe(false);
+    expect(EvalBench.safeParse({ ...b, batch: 0 }).success).toBe(false);
   });
 });
 

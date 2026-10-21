@@ -136,6 +136,34 @@ export function keywordBranchSql(input: Omit<BranchInput, "vector"> & { query: s
 
 const idsOf = (rows: Record<string, unknown>[]): string[] => rows.map((r) => String(r.id));
 
+/**
+ * The two branch rankings of chunk ids, best first, read on `tx`: the product's own read. That is the HNSW settings
+ * (a filtered search runs the exact scan and sets nothing), the exact check of a short HNSW answer, and the keyword
+ * branch. It takes a transaction so that `searchChunks` can load its hits in the same snapshot.
+ */
+async function rankBranches(tx: Pick<Db, "execute">, input: BranchInput & { query: string }): Promise<{ vector: string[]; keyword: string[] }> {
+  let vector: string[];
+  if (isFiltered(input)) {
+    vector = idsOf((await tx.execute(vectorBranchSql(input))).rows);
+  } else {
+    await tx.execute(sql`set local hnsw.ef_search = 100`);
+    await tx.execute(sql`set local hnsw.iterative_scan = relaxed_order`);
+    vector = idsOf((await tx.execute(vectorBranchSql(input))).rows);
+    // An iterative scan stops at hnsw.max_scan_tuples, so a model or workspace with few vectors among many can get
+    // a short answer. A short answer is checked exactly (the workspace's own chunks are few in that case).
+    if (vector.length < BRANCH_LIMIT) vector = idsOf((await tx.execute(vectorBranchSql(input, true))).rows);
+  }
+  const keyword = idsOf((await tx.execute(keywordBranchSql(input))).rows);
+  return { vector, keyword };
+}
+
+const READ_ONLY_SNAPSHOT = { isolationLevel: "repeatable read", accessMode: "read only" } as const;
+
+/** The vector and keyword rankings of chunk ids (best first, at most 50 each) for a query and its vector. */
+export function rankChunks(db: Db, input: BranchInput & { query: string }): Promise<{ vector: string[]; keyword: string[] }> {
+  return db.transaction((tx) => rankBranches(tx, input), READ_ONLY_SNAPSHOT);
+}
+
 export async function searchChunks(db: Db, embedder: Embedder, input: SearchInput): Promise<SearchHit[]> {
   const limit = Math.min(MAX_LIMIT, Math.max(1, Math.trunc(Number.isFinite(input.limit) ? input.limit! : DEFAULT_LIMIT)));
   const [vector] = await embedder.embed([input.query], "query");
@@ -151,19 +179,7 @@ export async function searchChunks(db: Db, embedder: Embedder, input: SearchInpu
   // read-only transaction under repeatable read never fails with a serialization error.
   const { top, rows } = await db.transaction(
     async (tx) => {
-      let vectorIds: string[];
-      if (isFiltered(input)) {
-        vectorIds = idsOf((await tx.execute(vectorBranchSql(branch))).rows);
-      } else {
-        await tx.execute(sql`set local hnsw.ef_search = 100`);
-        await tx.execute(sql`set local hnsw.iterative_scan = relaxed_order`);
-        vectorIds = idsOf((await tx.execute(vectorBranchSql(branch))).rows);
-        // An iterative scan stops at hnsw.max_scan_tuples, so a model or workspace with few vectors among many can get
-        // a short answer. A short answer is checked exactly (the workspace's own chunks are few in that case).
-        if (vectorIds.length < BRANCH_LIMIT) vectorIds = idsOf((await tx.execute(vectorBranchSql(branch, true))).rows);
-      }
-      const keywordIds = idsOf((await tx.execute(keywordBranchSql({ ...branch, query: input.query }))).rows);
-
+      const { vector: vectorIds, keyword: keywordIds } = await rankBranches(tx, { ...branch, query: input.query });
       const top = fuse(vectorIds, keywordIds).slice(0, limit);
       if (top.length === 0) return { top, rows: [] };
       const ids = sql.join(top.map((t) => sql`${t.id}::uuid`), sql`, `);
@@ -177,7 +193,7 @@ export async function searchChunks(db: Db, embedder: Embedder, input: SearchInpu
       ).rows;
       return { top, rows };
     },
-    { isolationLevel: "repeatable read", accessMode: "read only" },
+    READ_ONLY_SNAPSHOT,
   );
   if (top.length === 0) return [];
   const byId = new Map(rows.map((r) => [String(r.id), r]));

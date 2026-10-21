@@ -6,7 +6,7 @@ import {
   runMigrations, schema, startOrResumeRevision, writeRange, type ChunkInput, type Db,
 } from "@maester/db";
 import { SearchHit } from "@maester/contracts";
-import { FakeEmbedder, fuse, searchChunks, vectorBranchSql } from "../src/index.js";
+import { FakeEmbedder, fuse, rankChunks, searchChunks, vectorBranchSql } from "../src/index.js";
 
 // A database of its own, so this file never truncates the tables another package's tests are using.
 const base = process.env.DATABASE_URL_TEST_DB ?? "postgres://maester:maester@localhost:5433/maester_test_db";
@@ -261,6 +261,18 @@ describe("searchChunks", () => {
     await seedDocument(ws, userId, { chunks: Array.from({ length: 70 }, (_, i) => ({ text: `row ${i} of the schedule` })) });
     expect(await searchChunks(db, embedder, { workspaceId: ws, query: "schedule", limit: 60 })).toHaveLength(50);
     expect(await searchChunks(db, embedder, { workspaceId: ws, query: "schedule" })).toHaveLength(10);
+  });
+});
+
+describe("rankChunks", () => {
+  it("rankChunks gives each branch's own ranking", async () => {
+    const { ws, userId } = await seedWorkspace("a");
+    const d = await seedDocument(ws, userId, { chunks: [{ text: "alpha one" }, { text: "alpha two" }, { text: "delta three" }] });
+    const [vector] = await embedder.embed(["delta three"], "query");
+    const { vector: byVector, keyword } = await rankChunks(db, { workspaceId: ws, model: MODEL, vector: vector!, query: "alpha" });
+    expect(byVector[0]).toBe(d.chunkIds[2]);
+    expect(byVector).toHaveLength(3);
+    expect([...keyword].sort()).toEqual([d.chunkIds[0]!, d.chunkIds[1]!].sort());
   });
 });
 
