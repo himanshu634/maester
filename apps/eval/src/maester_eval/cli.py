@@ -103,8 +103,13 @@ def live(
     eval_set: Annotated[str, typer.Option("--set", help="dev, heldout or all.")] = "dev",
     only: Annotated[Optional[list[str]], typer.Option("--only", help="A filing id; repeatable.")] = None,
     label: Annotated[Optional[str], typer.Option(help="A word for the run folder's name: letters, digits, dot, dash or underscore.")] = None,
+    paired: Annotated[bool, typer.Option(
+        "--paired", help="Read only the selected filings that have XBRL instances paired with them.")] = False,
 ) -> None:
-    """Read the set's filings with the real model and keep an artefact per filing. Costs model calls."""
+    """Read the set's filings with the real model and keep an artefact per filing. Costs model calls.
+
+    With --paired, only the selected filings that `xbrl-pair` paired with XBRL instances are read, so that every filing
+    read can be compared with XBRL. It prints `paired: <n> of <m>` before the run."""
     chosen = _set_choice(eval_set)
     manifest = load_manifest(DEFAULT.manifest)
     filings = manifest.select(chosen, only)
@@ -112,6 +117,10 @@ def live(
         left_out = len(manifest.out_of_scope(chosen))
         if left_out:
             console.print(f"left out as out of scope: {left_out}")
+    if paired:
+        selected = len(filings)
+        filings = [f for f in filings if f.xbrl]
+        console.print(f"paired: {len(filings)} of {selected}", markup=False)
     absent = missing_files(filings, DEFAULT.corpus)
     if absent:
         _fail("missing under data/eval/corpus: " + ", ".join(absent))
