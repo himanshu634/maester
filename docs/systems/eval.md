@@ -58,7 +58,7 @@ This document describes the Python command-line application in `apps/eval`. For 
 | rounding | The level of rounding that an instance declares, for example Crores or Lakhs. The reader finds the unit of the instance from it. |
 | refiling | One period token and basis that has two pairs in the manifest. BSE received two instances for it. |
 | stamp | The digits at the end of the file name of an instance, before `.xml`. BSE writes the day, the month, the year, the hour, the minute and the second in it. |
-| slot | One column of one statement of one company: the company, the kind of filing, the statement, the basis, the period end and the span. A balance sheet slot, and a fact with no span, have the span word `instant` in the key of the slot. |
+| slot | One column of one statement of one company: the company, the kind of filing, the statement, the basis, the period end and the span. A balance sheet slot, and an XBRL fact with no span, have the span word `instant` in the key of the slot. |
 | owner | The one instance that holds the facts of a slot for the harness, when two or more instances have facts in the slot. |
 | pooled slot | A slot that has two or more instances and no owner, because the harness cannot put the instances in order. |
 | cell | A slot and a concept. `compare` sets one figure from Gemini against one figure from XBRL for each cell. |
@@ -179,12 +179,12 @@ The harness reads an instance for its format only. It writes no figure.
 Usage: `maester-eval xbrl-read [--set <set>] [--only <filing id>] [--label <word>] [--gate]`. You can repeat `--only`. The command makes no model call.
 
 1. The harness loads `.env` and checks `--set`. The default is `dev`. If the set is `heldout` or `all` and you did not give `--gate`, the harness stops with `held-out is read only to decide whether a change lands; pass --gate`.
-2. It selects the filings as `live` does, and keeps those that have pairs. If no filing is left, it stops with `nothing to read: no selected filing has XBRL instances`.
+2. It selects the filings as `live` does, and keeps those that have pairs. If it keeps no filing, it stops with `nothing to read: no selected filing has XBRL instances`.
 3. If the corpus does not hold an instance of a kept filing, the harness stops and names the files. It makes no run folder.
 4. It makes the run folder. The default label is `xbrl`. It writes `run.json` with the source `xbrl`, the pipeline version `xbrl-1`, the model `xbrl-parser-1`, `parser_version`, `map_version` and the filing ids.
 5. For each filing, in order, it reads each instance with `parse_instance`. It gives the limits of the constant `XBRL_LIMITS`: 20971520 bytes, 100000 facts and 30 seconds.
 6. It uses an instance only if all these conditions are true:
-   - The instance can be read.
+   - The reader can read the instance.
    - The BSE code that the instance states is the BSE code of the filing.
    - The period end that the instance states is the period end of the filing.
    - The basis that the instance states is the basis of the pair.
@@ -231,8 +231,8 @@ The command `tags` has four subcommands. A tag that nobody set is `not tagged`. 
 
 1. The set is `dev` or `heldout`. The default is `dev`. The value `all` stops the command, because a pick over both sets would mix them.
 2. The count is a whole number from 10 to 15. The default is 12.
-3. A filing can be picked if it is not out of scope. A results filing must also have a pair whose format has an element map.
-4. The harness takes the filings of `--include` first. It stops if one is not in the set, is also in `--exclude`, cannot be picked, or if there are more of them than `--count`.
+3. The harness picks a filing only if the filing is not out of scope. A results filing must also have a pair whose format has an element map.
+4. The harness takes the filings of `--include` first. It stops if one of them is not in the set, is also in `--exclude`, or is a filing that the harness cannot pick. It also stops if there are more of them than `--count`.
 5. Then it takes, one at a time, the filing that advances the most unmet requirements. If two filings tie, it takes the filing of the company that has fewer picks. If the tie stays, it takes the earlier filing of the manifest.
 6. It shows `<n>. <filing id>` and the requirements that the pick advanced, as `<dimension>=<value>`.
 7. At the end, it shows `unmet:` with each requirement and its shortage, or `every requirement met`.
@@ -284,7 +284,7 @@ Usage: `maester-eval freeze <filing id> [--run <run>] [--force]`.
 13. It writes `data/eval/gold/<filing id>.json`. If the file exists, it stops. With `--force`, it replaces the file. If it cannot write the file, it shows `cannot write <path>: <reason>` and stops. A gold file that exists stays as it was.
 14. With `--force`, the harness reads the gold file that exists before it replaces the file. The gold facts of origin `settled` and the settled records stay in the new file, after the facts of the sheet.
 15. With `--force`, if a verified row is the same cell as a settled gold fact, the harness stops and names the sheet row. A sheet never writes over a settled cell.
-16. With `--force`, if the gold file that exists cannot be read, the harness stops with `GoldError` and the message `<path> is not a readable gold file`. It writes nothing. To start again, delete the gold file.
+16. With `--force`, if the harness cannot read the gold file that exists, it stops with `GoldError` and the message `<path> is not a readable gold file`. It writes nothing. To start again, delete the gold file.
 17. It shows `froze <n> fact(s), <m> expected check(s); <k> row(s) not verified → <path>`. Each fact that it writes has the origin `sheet`.
 
 A sheet row number is the row number in a spreadsheet application. The header is row 1.
@@ -375,15 +375,15 @@ XBRL facts take their concept from the element map. The harness sets the Gemini 
 | Cell outcome | Meaning |
 | --- | --- |
 | `agree` | The normalized values are equal. |
-| `agree_at_precision` | The values are equal after both are rounded half away from zero to the coarser of the two precisions. |
+| `agree_at_precision` | The values are equal when the harness rounds both half away from zero to the coarser of the two precisions. |
 | `agree_dash_zero` | Gemini read a dash and XBRL holds `0`. A filer tags a printed dash as `0`. |
 | `disagree_value` | The figures differ. |
 | `disagree_scale` | The printed values are equal, but the normalized values differ. |
-| `disagree_status` | Gemini read a dash and XBRL holds another figure, or Gemini read a figure and XBRL holds `0`. |
+| `disagree_status` | Gemini read a dash and XBRL holds a figure that is not `0`, or Gemini read a figure that is not `0` and XBRL holds `0`. |
 | `disagree_sign` | The figures are equal in size and opposite in sign. This is a convention of the element, not a misread. |
 | `ambiguous` | Gemini or XBRL holds two different figures for the cell. The harness never picks one. |
-| `instances_differ` | The slot is pooled, the instances hold the cell with different figures, and Gemini has a fact for the cell. |
-| `pdf_unknown` | XBRL holds a figure. The Gemini fact is neither a figure nor a dash. |
+| `instances_differ` | The slot is a pooled slot, the instances hold the cell with different figures, and Gemini has a fact for the cell. |
+| `pdf_unknown` | XBRL holds a figure. The Gemini fact is not a dash and has no normalized value. |
 | `xbrl_unknown` | The XBRL fact is nil: it holds no figure. |
 | `pdf_only` | Gemini has a fact for the cell and XBRL has none. A dash against no XBRL fact is also `pdf_only`. |
 | `xbrl_only` | XBRL has a fact for the cell. Gemini read the slot but has no fact for the cell. |
@@ -428,7 +428,7 @@ The harness compares the values of facts as `Decimal` values. It never uses a fl
 
 **The new outcomes.** Only a figure from XBRL gives these three outcomes:
 
-- `match_at_precision`: the values are equal after both are rounded half away from zero to the coarser of the two precisions. A PDF can print whole crore where an instance holds lakh. The harness counts this outcome apart from `match`.
+- `match_at_precision`: the values are equal when the harness rounds both half away from zero to the coarser of the two precisions. A PDF can print whole crore where an instance holds lakh. The harness counts this outcome apart from `match`.
 - `match_dash_zero`: the gold fact is a printed dash and the XBRL fact is `0`. XBRL cannot write a dash, so a filer tags a printed dash as `0`.
 - `wrong_sign`: the figures are equal in size and opposite in sign. XBRL stores many payment lines as positive amounts, and the PDF prints them in brackets. This is a convention, not a misread. The harness never changes a sign.
 
@@ -466,10 +466,10 @@ The harness compares the values of facts as `Decimal` values. It never uses a fl
 
 **The rule for `shown`.** The source `shown` is the figure that the product shows. The harness builds it for each gold fact of the PDF run:
 
-1. A gold fact with no period end is not placed. A gold fact with another period end than the period end of the filing is counted under "Outside". The product shows such a fact from another filing.
+1. The harness does not place a gold fact that has no period end. It counts a gold fact with another period end than the period end of the filing under "Outside". The product shows such a fact from another filing.
 2. If the filing has no used instance, the PDF gives the figure. An annual report is never paired, so the PDF always gives its figures.
 3. If an instance owns the slot of the gold fact, XBRL gives every figure of the slot. A line that XBRL lacks is `missing`.
-4. In any other slot, the harness asks the source rule (`plan_pdf_numbers`) if the PDF is read. If yes, the PDF gives the figure. If no, the outcome is `missing` and the detail is `not_in_xbrl`.
+4. In any other slot, the harness asks the source rule (`plan_pdf_numbers`) if it reads the PDF. If yes, the PDF gives the figure. If no, the outcome is `missing` and the detail is `not_in_xbrl`.
 5. The word "Outside" has two meanings in the report. For `xbrl`, it is a gold fact in a slot that no used instance holds. For `shown`, it is a gold fact of another period than the period of the filing.
 
 **The rule for the rates.** Every headline rate is over the gold facts of origin `sheet`. This holds for the rates by source, the rates by format tag and the held-out gate. A person labelled these facts from a sheet, as a sample of the lines of the filing. A settled fact exists only where Gemini and XBRL disagreed, and a person labelled it with the XBRL figure in view. Thus the report scores the settled facts in a table of their own.
@@ -489,11 +489,11 @@ The harness shows an error in red and stops with exit code 1. A message names a 
 | Outcome `match_at_precision` | The XBRL value and the gold value are equal at the coarser of the two precisions, but not exactly equal. | Counted apart. Not an exact match. Not listed under Mismatches. |
 | Outcome `match_dash_zero` | The gold fact is a printed dash and the XBRL fact is `0`. | Counted apart. Not an exact match. Not listed under Mismatches. |
 | Outcome `wrong_sign` | The XBRL value and the gold value are equal in size and opposite in sign. | Counted apart. Listed under Mismatches. The element map section lists the element. |
-| Instance not used | The harness cannot read an instance, or its BSE code, period end or basis is not that of the pair, or its format has no element map. | The artefact keeps the reason as a code. The harness reads no fact of the instance. A filing with no used instance is listed as not used and is not scored. |
+| Instance not used | The harness cannot read an instance, or its BSE code, period end or basis is not that of the pair, or its format has no element map. | The artefact keeps the reason as a code. The harness reads no fact of the instance. The harness lists a filing with no used instance as not used. It does not score the filing. |
 | Gold fact not placed | The gold fact has no period end, or it has no span and is not on the balance sheet. | Counted under "Not placed". Not scored for `xbrl`. |
 | Gold fact outside | The gold fact is in a slot that no used instance holds (`xbrl`), or has another period than the filing (`shown`). | Counted under "Outside". Not scored. |
 | Pooled slot | Two or more instances hold the slot and the harness cannot put them in order. | A cell that the instances hold with different figures is `ambiguous` against gold and `instances_differ` in `compare`. |
-| Filing not compared | `compare` cannot compare a filing. The next table gives the reasons. | The filing is listed in the summary of `compare-xbrl.md` with the reason. It has no cell. |
+| Filing not compared | `compare` cannot compare a filing. The next table gives the reasons. | `compare` lists the filing in the summary of `compare-xbrl.md` with the reason. The filing has no cell. |
 | Held-out set sealed | `xbrl-read` or `compare` reads the held-out set without `--gate`. `settle` gets a held-out filing. | The harness stops. |
 | Filing failed | The artefact holds an error code and no result. | Each gold fact of the filing is `missing`. The report shows the error code in the Outcome column. |
 | Not run | The filing is in the set, has a gold file and has a manifest entry. It is not out of scope, and the run has no artefact for it. | Listed under Not run. Not scored. |
@@ -511,8 +511,8 @@ The harness shows an error in red and stops with exit code 1. A message names a 
 | `no_pdf_artefact` | The PDF run has no artefact for the filing. |
 | `pdf_failed` | The artefact of the PDF run holds an error and no result. |
 | `no_xbrl_artefact` | The XBRL run has no artefact for the filing. |
-| `no_mapped_instance` | No instance of the filing is used, because the file cannot be read or its format has no element map. |
-| `pair_mismatch` | No instance of the filing is used, because its BSE code, period end or basis is not that of the pair. |
+| `no_mapped_instance` | The harness uses no instance of the filing, because it cannot read the file or the format has no element map. |
+| `pair_mismatch` | The harness uses no instance of the filing, because its BSE code, period end or basis differs from the pair. |
 | `no_concepts` | No Gemini fact of the filing has a concept from the sheets of the company. |
 
 | Error | Cause | Result |
@@ -523,7 +523,7 @@ The harness shows an error in red and stops with exit code 1. A message names a 
 | `held-out is read only to decide whether a change lands; pass --gate` | `xbrl-read` or `compare` has `--set heldout` or `--set all`, without `--gate`. | Exit code 1. No run folder and no file. |
 | `held-out gold is sealed` | `settle` gets a filing of the held-out set. | Exit code 1. |
 | `nothing to read: no selected filing has XBRL instances` | No selected filing of `xbrl-read` has a pair. | Exit code 1. No run folder. |
-| `<run> is an XBRL run; label the PDF run` | `export` or `freeze --run` gets an XBRL run. | Exit code 1. Nothing is written. |
+| `<run> is an XBRL run; label the PDF run` | `export` or `freeze --run` gets an XBRL run. | Exit code 1. The harness writes nothing. |
 | `run <name> is not a <source> run` | A run that you name has another source than the command accepts. | Exit code 1. |
 | `two <source> runs; name one run per source` | `report --run` or `--against` gives two runs of one source. | Exit code 1. |
 | `name a pdf run: the report is made on the PDF run` | `report` gets no PDF run. | Exit code 1. |
@@ -535,7 +535,7 @@ The harness shows an error in red and stops with exit code 1. A message names a 
 | `no settle sheet at <path>; …` | `settle` finds no settle sheet for the filing. | Exit code 1. The message tells you to run `compare`. |
 | `gold already has <concept> for <basis> <period end> with another figure; nothing was written` | A settled row is the same cell as a gold fact with another figure. | Exit code 1. The gold file stays as it was. |
 | `sheet row <n>: gold already has <concept> for <basis> <period end> from a settled disagreement` | `freeze --force` gets a row for a cell that a settled fact holds. | Exit code 1. The gold file stays as it was. |
-| A message of `tags set` or `tags pick` | An option is wrong: for example `nothing to set: give --unit, --brackets or --restated`, `--unit must be one of <units>` or `--brackets must be yes or no`. Or a filing id is wrong: it is not in the manifest or the set, it cannot be picked, or it is in both `--include` and `--exclude`. | Exit code 1. The message names the option or the filing id. |
+| A message of `tags set` or `tags pick` | An option is wrong: for example `nothing to set: give --unit, --brackets or --restated`, `--unit must be one of <units>` or `--brackets must be yes or no`. Or a filing id is wrong: it is not in the manifest or the set, the harness cannot pick it, or it is in both `--include` and `--exclude`. | Exit code 1. The message names the option or the filing id. |
 | A message of `xbrl-pair` | The CSV has no column or has a bad row (`<path> line <n>: <column> is not valid`). A company has more than one BSE code. A source file is not there. A corpus file holds other bytes. The pairs of a filing are not valid. | Exit code 1. The harness copies no file and writes no manifest. |
 | `<folder> is not a folder` or `no .xml files under <folder>` | `--instances` of `xbrl-elements` does not lead to instances. | Exit code 1. |
 | A manifest message | The manifest does not exist (`no manifest at <path>`), is not valid JSON, has a wrong or unknown field, repeats a filing id (`duplicate filing ids: …`), or puts one company or folder in two sets (`each company and corpus folder must be in one set only: …`). | Exit code 1. The message names the problem. |
@@ -570,7 +570,7 @@ The harness shows an error in red and stops with exit code 1. A message names a 
 ### What the harness reads
 
 - The file `.env`. The command line loads it with `load_dotenv()` before each command.
-- The manifest, for every command except `xbrl-elements`.
+- The manifest, for `live`, `xbrl-read`, `xbrl-pair`, `freeze`, `settle`, `report`, `compare` and the four subcommands of `tags`.
 - The PDFs under `data/eval/corpus`, for `live`.
 - The instances under `data/eval/corpus`, for `xbrl-read` and `tags propose`.
 - The file `xbrl-manifest.csv` and the instances in the folder that `--from` names, for `xbrl-pair`.
@@ -633,7 +633,7 @@ A pair is an object with these fields. The harness refuses any other field.
 | `basis` | Required. `consolidated` or `standalone`. |
 | `period` | Required. The period token of BSE, for example `SQ2025-2026`. The period token must end on the `period_end` of the filing. |
 | `filed` | Required. The date on which BSE received the instance, written `YYYY-MM-DD`. |
-| `format` | The format id that the engine finds in the instance, for example `in-capmkt/ind_as`. It is empty if the instance cannot be read. |
+| `format` | The format id that the engine finds in the instance, for example `in-capmkt/ind_as`. It is empty if the harness cannot read the instance. |
 
 The period token has two letters and two years. The second year is the first year plus one. The two letters give the period end:
 
@@ -747,7 +747,7 @@ An artefact holds these fields:
 An artefact of an XBRL run has the same fields. These fields have another meaning:
 
 - `source` is `xbrl`. A PDF artefact has the default `pdf`.
-- `pipeline_version` is `xbrl-1` and `model` is `xbrl-parser-1`. `prompt_version` lists the format ids of the used instances, each as `<format id>@<map version>`. It is `-` if no instance is used.
+- `pipeline_version` is `xbrl-1` and `model` is `xbrl-parser-1`. `prompt_version` lists the format ids of the used instances, each as `<format id>@<map version>`. It is `-` if the harness uses no instance.
 - `seconds` is `0`, `model_calls` are all `0` and `pages_without_text` is empty. `bytes` is the total size of the instances.
 - `result` holds `state`, `facts`, `checks` and `warnings`. `state` is `partial` if the reader of a used instance gave `partial`. Each entry has the field `instance`, the file of the instance that it came from. An XBRL fact also holds `element`, `concept`, `span`, `decimals` and `unitLabel`.
 - `error` is empty.
@@ -772,7 +772,7 @@ A gold fact holds `concept`, `statement`, `basis`, `section`, `label`, `period_l
 
 A gold file also has the list `settled`. `settle` adds one record to it each time that it adds facts. A record holds `pdf_run`, `xbrl_run`, `map_version`, `compare_rule`, `settled_at` and `facts`, the count of facts that this run added.
 
-A null `span` in a gold fact on the balance sheet is normal, because a balance sheet fact is an instant. For another statement, a null `span` means that the span is not known. The harness never places such a fact in a slot.
+A null `span` in a gold fact on the balance sheet is normal, because a balance sheet fact is an instant. For another statement, a null `span` means that the harness does not know the span. The harness never places such a fact in a slot.
 
 ### The report
 
@@ -880,8 +880,10 @@ WARNING: Read one filing first. `live` sends the PDFs to Google and can cause ch
    uv run --locked maester-eval live --set dev --label baseline
    ```
 
-5. To read only the filings that have pairs, add `--paired`. The harness shows `paired: <n> of <m>` before the run.
+5. To read only the filings that have pairs, add `--paired`.
 6. Read the state or the error code in the line of each filing.
+
+Note: With `--paired`, the harness shows `paired: <n> of <m>` before the run.
 
 ### To correct a sheet
 
@@ -923,8 +925,11 @@ WARNING: Read one filing first. `live` sends the PDFs to Google and can cause ch
 4. If the message says "no longer matches the artefact", put the cell back as it was.
 5. If the cell has a `gold_` column, write the correction there.
 6. For `statement`, `basis`, `section`, `label` or `period_label`, leave the row unverified and add the corrected row by hand.
-7. To replace a gold file, run the command again with `--force`. The settled facts of the file stay.
-8. If the message says that the gold file is not readable, delete the file and run the command again. The settled facts of the file are then lost.
+7. To replace a gold file, run the command again with `--force`.
+8. If the message says that the gold file is not readable, delete the file.
+9. Run the command again.
+
+Note: `--force` keeps the settled facts of the gold file. If you delete the file, you lose them.
 
 ### To make a report
 
@@ -936,8 +941,9 @@ WARNING: Read one filing first. `live` sends the PDFs to Google and can cause ch
 
 2. Open `report.md` in the run folder.
 3. To see the change against an earlier run, add `--against` and the name of that run.
-4. To score an XBRL run, add a second `--run` with the name of the XBRL run. Add one `--against` for each source that you compare.
-5. To copy the report to a path, add `--to` and the path:
+4. To score an XBRL run, add a second `--run` with the name of the XBRL run.
+5. Add one `--against` for each source that you compare.
+6. To copy the report to a path, add `--to` and the path:
 
    ```bash
    uv run --locked maester-eval report --run latest --set dev --to docs/eval/2026-10-16-baseline.md
@@ -970,34 +976,43 @@ Do this procedure in the checkout that holds `data/eval/corpus`.
    uv run --locked maester-eval tags propose
    ```
 
-9. Commit the manifest. Git ignores the instances in the corpus.
+9. Commit the manifest.
+
+Note: Git ignores the instances in the corpus.
 
 ### To pick the first gold filings
 
 1. Do the procedure "To pair the XBRL files".
-2. Set the tags that no instance gives: the unit of an annual report, negatives in brackets and restated columns. Run `tags set` for each filing:
+2. Set the tags that no instance gives: the unit of an annual report, negatives in brackets and restated columns.
+3. Run `tags set` for each filing:
 
    ```bash
    uv run --locked maester-eval tags set synthetic-cements/results-2025-09 --brackets yes --restated no
    ```
 
-3. Pick the filings:
+4. Pick the filings:
 
    ```bash
    uv run --locked maester-eval tags pick --set dev --count 12
    ```
 
-4. Read the lines. Each line names a filing and the requirements that the filing advances.
-5. If the last line starts with `unmet:`, change `--count`, or use `--include` and `--exclude`, and run the command again.
-6. Read the picked filings with `live`. Give one `--only` for each filing and a label. Do not give `--paired` for an annual report, because an annual report has no pair.
-7. Label and freeze each filing. Do the procedures "To correct a sheet" and "To freeze a sheet".
-8. Count the gold by tag value:
+5. Read the line of each pick.
+6. If the last line starts with `unmet:`, change `--count`, or use `--include` and `--exclude`.
+7. Run `tags pick` again.
+8. Read the picked filings with `live`, with one `--only` for each filing and a label.
+9. Do the procedure "To correct a sheet" for each filing.
+10. Do the procedure "To freeze a sheet" for each filing.
+11. Count the gold by tag value:
 
-   ```bash
-   uv run --locked maester-eval tags coverage --set dev
-   ```
+    ```bash
+    uv run --locked maester-eval tags coverage --set dev
+    ```
 
-9. If the line `unit tag against gold` lists a filing, correct its unit tag with `tags set <filing id> --unit <unit>`.
+12. If the line `unit tag against gold` lists a filing, correct its unit tag with `tags set <filing id> --unit <unit>`.
+
+Note: Each line of `tags pick` names a filing and the requirements that the filing advances.
+
+Note: Do not give `--paired` for an annual report. An annual report has no pair.
 
 Each requirement is a minimum count of picked filings with one tag value:
 
@@ -1015,79 +1030,105 @@ Each requirement is a minimum count of picked filings with one tag value:
 
 ### To compare Gemini with XBRL
 
+WARNING: `live` costs model calls. State the count of filings before you run it.
+
 1. Do the procedure "To pair the XBRL files".
-2. Read the filings that have pairs with `live`. State the count of filings first, because this costs model calls:
+2. Read the filings that have pairs with `live`:
 
    ```bash
    uv run --locked maester-eval live --set dev --paired --label gemini
    ```
 
-3. Make sure that each company has a sheet with the column `concept` filled for its lines. `compare` takes the concept of a Gemini fact from the sheets of the same company. Do the procedure "To correct a sheet".
-4. Read the instances:
+3. Make sure that each company has a sheet with the column `concept` filled for its lines.
+4. If a company has no such sheet, do the procedure "To correct a sheet" for it.
+5. Read the instances:
 
    ```bash
    uv run --locked maester-eval xbrl-read --set dev
    ```
 
-5. Run `compare`. Give the names of the two runs, and not `latest`:
+6. Run `compare` with the names of the two runs:
 
    ```bash
    uv run --locked maester-eval compare --run 20261021T090000Z-gemini --xbrl 20261021T100000Z-xbrl --set dev
    ```
 
-6. Open `compare-xbrl.md` in the folder of the PDF run.
-7. In the Summary, read the filings that `compare` left out, and the reason for each.
-8. Read the agreement and the exact agreement. Read the counts at precision, dash against `0` and sign only beside them.
-9. To copy the file to a path, add `--to` and the path.
-10. To read the held-out set, give `--gate`. Do this one time only, when a change must land.
+7. Open `compare-xbrl.md` in the folder of the PDF run.
+8. In the Summary, read the filings that `compare` left out.
+9. Read the reason for each of these filings.
+10. Read the agreement and the exact agreement.
+11. Read the counts at precision, dash against `0` and sign only beside them.
+12. To copy the file to a path, add `--to` and the path.
+13. To read the held-out set, add `--gate`.
 
-If Gemini did not read some filings, or some companies have no sheet with concepts, the comparison is partial. The summary names the filings that it did not compare.
+Note: `compare` takes the concept of a Gemini fact from the sheets of the same company.
+
+Note: Give the names of the runs, and not `latest`.
+
+Note: Read the held-out set one time only, when a change must land.
+
+Note: If Gemini did not read some filings, or some companies have no sheet with concepts, the comparison is partial. The summary names the filings that `compare` left out.
 
 ### To settle a disagreement
 
-1. Run `compare`. Open the settle sheet `data/eval/settle/<filing id>.csv`.
-2. For each row, open the PDF at the page in `page`. The columns `xbrl_element`, `xbrl_value`, `xbrl_unit` and `xbrl_normalized` show the XBRL side.
-3. If `printed` is not the figure on the page, write the figure in `gold_text`. If the page prints a dash, write the dash.
-4. Check `scale_factor`, `period_end` and `span`, as in the procedure "To correct a sheet". Write a correction in the `gold_` column.
-5. Write `yes` in `verified` for each cell that you settled. Leave the other rows unverified.
-6. Run `settle` with the filing id and the name of the PDF run:
+1. Run `compare`.
+2. Open the settle sheet `data/eval/settle/<filing id>.csv`.
+3. For each row, open the PDF at the page in `page`.
+4. Read the XBRL side in the columns `xbrl_element`, `xbrl_value`, `xbrl_unit` and `xbrl_normalized`.
+5. If `printed` is not the figure on the page, write the figure in `gold_text`.
+6. If the page prints a dash, write the dash in `gold_text`.
+7. Check `scale_factor`, `period_end` and `span`, as in the procedure "To correct a sheet".
+8. Write each correction in the `gold_` column of the cell.
+9. Write `yes` in `verified` for each cell that you settled.
+10. Leave the other rows unverified.
+11. Run `settle` with the filing id and the name of the PDF run:
 
-   ```bash
-   uv run --locked maester-eval settle synthetic-cements/results-2025-09 --run 20261021T090000Z-gemini
-   ```
+    ```bash
+    uv run --locked maester-eval settle synthetic-cements/results-2025-09 --run 20261021T090000Z-gemini
+    ```
 
-7. If the message says that gold already has the cell with another figure, find which figure is right. `settle` never replaces a gold fact.
-8. Run `report` with the PDF run and the XBRL run. The part Settled disagreements shows the settled facts.
+12. If the message says that gold already has the cell with another figure, find which figure is right.
+13. Run `report` with the PDF run and the XBRL run.
+14. Read the part Settled disagreements.
+
+Note: `settle` never replaces a gold fact.
 
 ### To measure a change of the element map
 
-The `xbrl-map` command of phase 4 is not in this version of the harness. Step 1 uses it when it is there.
+Note: The `xbrl-map` command of phase 4 is not in this version of the harness. Step 1 uses it when it is there.
 
-1. Run `xbrl-map` with `--against` the earlier map, and read its report.
-2. Read the instances of the `dev` set with the new map:
+1. Run `xbrl-map` with `--against` the earlier map.
+2. Read the report of `xbrl-map`.
+3. Read the instances of the `dev` set with the new map:
 
    ```bash
    uv run --locked maester-eval xbrl-read --set dev --label newmap
    ```
 
-3. Make a report with the PDF run, the new XBRL run and the earlier XBRL run:
+4. Make a report with the PDF run, the new XBRL run and the earlier XBRL run:
 
    ```bash
    uv run --locked maester-eval report --run <pdf run> --run <new xbrl run> --against <old xbrl run> --set dev
    ```
 
-4. Run `compare` with the same runs:
+5. Run `compare` with the same runs:
 
    ```bash
    uv run --locked maester-eval compare --run <pdf run> --xbrl <new xbrl run> --against <old xbrl run> --set dev
    ```
 
-5. To decide if the change lands, read the held-out set one time. Give `--gate` to `xbrl-read` and to `compare`. `report` has no gate, thus run it on the held-out set for this one decision only.
-6. Check that the exact match of `xbrl` has no regression on the held-out set. The exact match counts exact equality over the gold facts of origin `sheet`. Check also that the agreement of `compare` has no regression.
-7. Read the counts at precision, dash against `0` and sign only beside these two rates.
-8. Copy the reports to `docs/eval` with `--to`.
+6. To decide if the change lands, read the held-out set one time.
+7. Add `--gate` to `xbrl-read` and to `compare` for this.
+8. Check that the exact match of `xbrl` has no regression on the held-out set.
+9. Check that the agreement of `compare` has no regression on the held-out set.
+10. Read the counts at precision, dash against `0` and sign only beside these two rates.
+11. Copy the reports to `docs/eval` with `--to`.
 
-A change of the sign convention in the map is a change of the map like any other. It goes through these steps. Its report names the elements that changed sign.
+Note: The exact match counts exact equality over the gold facts of origin `sheet`.
+
+Note: `report` has no gate. Run it on the held-out set for this one decision only.
+
+Note: A change of the sign convention in the map is a change of the map like any other. It goes through these steps. Its report names the elements that changed sign.
 
 ### To list the elements of the instances
 
@@ -1097,7 +1138,9 @@ A change of the sign convention in the map is a change of the map like any other
    uv run --locked maester-eval xbrl-elements --instances ~/Personal/maester-filings/xbrl --out data/eval/xbrl
    ```
 
-2. Open `elements-<format id>.csv` in the output folder. Git ignores `data/eval/xbrl`.
+2. Open `elements-<format id>.csv` in the output folder.
+
+Note: Git ignores `data/eval/xbrl`.
 
 ### To take a baseline
 
@@ -1146,7 +1189,7 @@ CAUTION: Do not tune a prompt, a rule or an element map on the `heldout` set. Ru
 - The concept of a Gemini fact in `compare` comes from the sheets of the same company (the concept carry, rule version 1).
   - The key is the statement, the section and the label. Without the section, the key is the statement and the label, but only if the label has one concept in the sheets of the company.
   - The harness never takes a concept from a value, and never from a match between a label and the label of the element map.
-  - A Gemini fact with no concept is not a line that Gemini missed. A filing with no such concept is not compared.
+  - A Gemini fact with no concept is not a line that Gemini missed. `compare` does not compare a filing that has no such concept.
   - Phase 1 replaces this rule with a mapping rule.
 - The span of a Gemini fact or a gold fact comes from the words of its column head (the span rule, version 1).
   - A "year to date" head takes its span from the month of the period end, under the financial year that starts on 1 April. June gives `quarter`, September gives `half_year`, December gives `nine_months` and March gives `year`. Any other month gives no span.
@@ -1156,7 +1199,7 @@ CAUTION: Do not tune a prompt, a rule or an element map on the `heldout` set. Ru
 - Results only: the harness pairs results filings only. An annual report is never paired with the instance of a March quarter. The harness does not compare an annual report with XBRL.
 - An instance holds its own slots only. A comparative column of a PDF is outside the instance. Thus the format tag `restated` has almost no cell in `compare`, because restated figures are in comparative columns.
 - A slot with two `other` durations of different lengths that end on one day has no Gemini fact, because the span rule never gives `other`. Its cells are `not_read` or `span_unknown`.
-- A slot with two instances that have no order is pooled. The investor cannot name an owner yet.
+- A slot with two instances that have no order is a pooled slot. The investor cannot name an owner yet.
 - A sign convention is the choice of the investor. `compare` and the report count a figure that differs only in sign apart, and never change a sign.
 - The unit tag comes from the declared rounding of the instances. This assumes that the PDF prints in the unit that the instance declares. `tags coverage` and `report` check the tag against the scales of the gold facts.
 - The harness does not measure the check `xbrl_in_pdf`.
