@@ -293,12 +293,16 @@ A candidate revision has the model of the candidate. Search reads the revisions 
 
 #### `index:candidate`
 
+Run the command in the worker container. The container can read the `blobs` volume and has `INDEXER_SECRET`.
+
 ```bash
-pnpm --filter @maester/worker index:candidate --workspace <id> --model <candidate> --request <file> [--embedder-url <url>] [--indexer-url <url>]
+docker compose --profile eval run --rm --no-deps -v "$PWD/data/eval:/eval:ro" worker node dist/index-candidate.js --workspace <id> --model <candidate> --request /eval/retrieval/runs/<run>/request.json [--embedder-url <url>] [--indexer-url <url>]
 ```
 
+Build the images `maester/worker:local` and `maester/indexer:local` again before the first candidate run. A command that runs on the host (`pnpm --filter @maester/worker index:candidate`) cannot read the `blobs` volume, and the jobs fail with `OBJECT_MISSING`. It also needs `INDEXER_SECRET` in its environment.
+
 1. The command refuses a `--model` that `EMBEDDING_MODELS` does not know. It also refuses the live `EMBEDDING_MODEL`.
-2. It reads the request file. A relative path starts at the folder where you started `pnpm`.
+2. It reads the request file. In the container, the file is under `/eval`, the mounted folder `data/eval`.
 3. It asks the embedder at `--embedder-url` which model it serves. If this is not `--model`, the command stops before it makes a job. The default is `http://embedder-candidate`.
 4. It asks the indexer at `--indexer-url` for its versions. If the tokenizer is not `--model`, the command stops. The default is `http://indexer-candidate:8791`.
 5. It finds the stored document of each filing of the request. If the workspace does not hold a filing, the command stops and names the filings.
@@ -335,7 +339,7 @@ pnpm --filter @maester/worker eval <sources|rank|bench> --workspace <id> --reque
 
 1. For `rank` and `bench`, the command first asks the embedder which model it serves. If it is not `--model`, the command stops with exit code 1.
 2. `rank` searches each question in the filings of its scope only. The pages are PDF pages, counted from 1. They are not the page numbers that the filing prints.
-3. If a filing has no complete or partial revision of the model, `rank` and `bench` exit with code 2. `rank` still writes the sources. The command does not count the filing as "not retrieved".
+3. If a filing has no complete or partial revision of the model, `rank` and `bench` exit with code 2. `rank` still writes the rankings file. The command does not count the filing as "not retrieved".
 
 CAUTION: Do not upload documents while a candidate run uses the stack. An upload starts a classification that calls a paid model, and its jobs use the same CPU and memory as the candidate run.
 
@@ -811,7 +815,7 @@ CAUTION: Do not change `CONNECTIONS_KEY` after the investor saves a connection. 
 - `nifty_pcr_oi` has no past days. Dhan gives the option chain live only.
 - If a pass takes more than 1 hour, a second pass can start at the same time. A run row from a process that stopped stays `running`.
 - Token renewal works only for a token that the investor made on the Dhan web site. This comes from the comment on `renewToken` in `packages/market/src/sources.ts`.
-- `market:refresh` runs only from the source. The container image has only `dist/server.js`.
+- `market:refresh` runs only from the source. The container image has `dist/server.js` and `dist/index-candidate.js` only.
 - Not known: whether the Dhan endpoints, codes and fields in `packages/market` agree with the live Dhan API. The code comments say that they come from the Dhan documents and that nobody called them live.
 
 ## Sources

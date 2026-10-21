@@ -176,7 +176,7 @@ The indexer reads these environment variables.
 3. Tesseract reads English only. The text source of a chunk is the same for both engines.
 4. The key of a cached page read also has the reader options. They have the form `table=accurate;cell_matching=<value>;ocr=<engine>`.
 
-The report of the OCR spot check in `docs/eval/` gives the measurement of the two engines.
+The run of the OCR spot check will write its report in `docs/eval/<date>-ocr-spot-check.md` after the run. This report does not exist yet. It will give the measurement of the two engines.
 
 ### Pinned versions
 

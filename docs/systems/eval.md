@@ -258,7 +258,7 @@ For the embedding model, the rule goes on in this order:
 3. Otherwise the tied model with the lowest seconds for 1,000 chunks wins.
 4. The model `granite-embedding-english-r2` is measured only if the winner is a challenger that takes more than 3,600 seconds for 1,500 chunks.
 
-A change of the OCR engine, of the cell matching or of the model makes the worker read or embed the documents again. This takes days. This is the reason for the bands.
+A change of the OCR engine, of the cell matching or of the model makes the worker read or embed the documents again. This is expected to take days. Phase 3 has not measured it. This is the reason for the bands.
 
 ### How the harness finds a run
 
@@ -635,7 +635,7 @@ Read the plan [evaluation baseline](../superpowers/plans/2026-10-15-eval-baselin
 
 The live steps run from the main checkout, with the go-ahead of the investor. See "Measure the index" in [DEVELOPMENT.md](../DEVELOPMENT.md).
 
-1. Run `maester-eval ocr request` and `maester-indexer-ocr-sample`. Score the sheet by hand. Run `maester-eval ocr report`.
+1. Run `maester-eval ocr request --out data/eval/ocr/request.json` and `maester-indexer-ocr-sample`. Score the sheet by hand. Run `maester-eval ocr report`.
 2. Write the question sheet and `corpus.json`. Run `maester-eval retrieval check`.
 3. Run `maester-eval retrieval request`.
 4. Make the index of each candidate model with the worker command `index:candidate`. Run one `index:candidate` at a time.
