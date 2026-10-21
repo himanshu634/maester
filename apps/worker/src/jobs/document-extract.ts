@@ -1,11 +1,9 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { DocumentExtractResult, ExtractionResult } from "@maester/contracts";
 import { getCurrentClassification, schema, type Db, type ExtractionRevisionRow, type JobRow } from "@maester/db";
-import { classificationIdOfReadJob } from "@maester/jobs";
 import { ObjectNotFoundError, type ObjectStore } from "@maester/storage";
+import { INSERT_BATCH, factRow, insertRevisionChecks, readClassificationId } from "./revision-rows.js";
 import { JobFailure, type FinalFailureDeps, type JobContext, type JobHandler } from "./types.js";
-
-const INSERT_BATCH = 500;
 
 export async function readAll(store: ObjectStore, key: string): Promise<Uint8Array> {
   const chunks: Buffer[] = [];
@@ -68,31 +66,7 @@ export async function writeRevision(
     const facts = result.facts.map((f) => ({ id: crypto.randomUUID(), source: f }));
     for (let i = 0; i < facts.length; i += INSERT_BATCH) {
       const batch = facts.slice(i, i + INSERT_BATCH);
-      await tx.insert(schema.financialFact).values(
-        batch.map(({ id, source: f }) => ({
-          id,
-          workspaceId: job.workspaceId,
-          revisionId: revision.id,
-          companyId: document.companyId,
-          statement: f.statement,
-          basis: f.basis,
-          section: f.section,
-          lineOrder: f.lineOrder,
-          reportedLabel: f.reportedLabel,
-          isSubtotal: f.isSubtotal,
-          componentLabels: f.componentLabels,
-          periodLabel: f.periodLabel,
-          periodEnd: f.periodEnd,
-          asOfDate: f.asOfDate,
-          reportedText: f.reportedText,
-          reportedValue: f.reportedValue,
-          valueStatus: f.valueStatus,
-          unitLabel: f.unitLabel,
-          scaleFactor: f.scaleFactor,
-          currency: f.currency,
-          normalizedValue: f.normalizedValue,
-        })),
-      );
+      await tx.insert(schema.financialFact).values(batch.map(({ id, source: f }) => factRow(job.workspaceId, revision.id, document.companyId, id, f)));
       await tx.insert(schema.sourceReference).values(
         batch.map(({ id, source: f }) => ({
           id: crypto.randomUUID(),
@@ -104,25 +78,7 @@ export async function writeRevision(
         })),
       );
     }
-    for (let i = 0; i < result.checks.length; i += INSERT_BATCH) {
-      await tx.insert(schema.extractionCheck).values(
-        result.checks.slice(i, i + INSERT_BATCH).map((c) => ({
-          id: crypto.randomUUID(),
-          workspaceId: job.workspaceId,
-          revisionId: revision.id,
-          checkType: c.checkType,
-          statement: c.statement,
-          basis: c.basis,
-          section: c.section,
-          periodLabel: c.periodLabel,
-          subjectLabel: c.subjectLabel,
-          status: c.status,
-          expected: c.expected,
-          actual: c.actual,
-          detail: c.detail,
-        })),
-      );
-    }
+    await insertRevisionChecks(tx as unknown as Db, job.workspaceId, revision.id, result.checks);
     return summary(revision, facts.length, result.checks.filter((c) => c.status === "failed").length);
   });
 }
@@ -179,8 +135,7 @@ async function extract(job: JobRow, ctx: JobContext): Promise<DocumentExtractRes
     if (event.type === "progress") await ctx.progress({ stage: event.stage, percent: event.percent });
   });
 
-  const classificationId =
-    classificationIdOfReadJob(job.idempotencyKey) ?? (await getCurrentClassification(ctx.db, job.workspaceId, doc.id))?.readsUnderId ?? null;
+  const classificationId = await readClassificationId(ctx.db, job, doc.id);
   const written = await writeRevision(ctx.db, job, doc, result, classificationId);
   await setIntakeIfCurrent(ctx.db, job.workspaceId, doc.id, classificationId, "read");
   await ctx.progress({ stage: "stored", percent: 100 });
@@ -197,8 +152,7 @@ export const documentExtract: JobHandler = Object.assign(extract, {
       .where(and(eq(schema.document.id, job.subjectId), eq(schema.document.workspaceId, job.workspaceId)))
       .limit(1);
     if (doc?.format === "xbrl") return;
-    const classificationId =
-      classificationIdOfReadJob(job.idempotencyKey) ?? (await getCurrentClassification(db, job.workspaceId, job.subjectId))?.readsUnderId ?? null;
+    const classificationId = await readClassificationId(db, job, job.subjectId);
     await setIntakeIfCurrent(db, job.workspaceId, job.subjectId, classificationId, "read_failed");
   },
 });

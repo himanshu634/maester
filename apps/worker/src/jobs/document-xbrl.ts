@@ -1,12 +1,11 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { DocumentXbrlResult, XbrlReadResult } from "@maester/contracts";
-import { getCurrentClassification, schema, type Db, type ExtractionRevisionRow, type JobRow } from "@maester/db";
-import { classificationIdOfReadJob, enqueueXbrlPdfChecks, redecidePdfsAfterXbrl, type Dispatcher } from "@maester/jobs";
+import { schema, type Db, type ExtractionRevisionRow, type JobRow } from "@maester/db";
+import { enqueueXbrlPdfChecks, redecidePdfsAfterXbrl, type Dispatcher } from "@maester/jobs";
 import { ObjectNotFoundError } from "@maester/storage";
 import { readAll, setIntakeIfCurrent } from "./document-extract.js";
+import { INSERT_BATCH, factRow, insertRevisionChecks, readClassificationId } from "./revision-rows.js";
 import { JobFailure, type FinalFailureDeps, type JobContext, type JobHandler } from "./types.js";
-
-const INSERT_BATCH = 500;
 
 /**
  * The revision's format, read back from its prompt version `<format id>@<map version>`: `@-` is a format no map
@@ -83,40 +82,19 @@ export async function writeXbrlRevision(
       .onConflictDoNothing({ target: schema.extractionRevision.jobId })
       .returning();
     if (!revision) {
-      const [existing] = await tx.select().from(schema.extractionRevision).where(eq(schema.extractionRevision.jobId, job.id));
+      const [existing] = await tx
+        .select()
+        .from(schema.extractionRevision)
+        .where(and(eq(schema.extractionRevision.jobId, job.id), eq(schema.extractionRevision.workspaceId, job.workspaceId)));
       return summary(t, existing!);
     }
 
     const facts = result.facts.map((f) => ({ id: crypto.randomUUID(), fact: f }));
     for (let i = 0; i < facts.length; i += INSERT_BATCH) {
       const batch = facts.slice(i, i + INSERT_BATCH);
-      await tx.insert(schema.financialFact).values(
-        batch.map(({ id, fact: f }) => ({
-          id,
-          workspaceId: job.workspaceId,
-          revisionId: revision.id,
-          companyId: doc.companyId,
-          statement: f.statement,
-          basis: f.basis,
-          section: f.section,
-          lineOrder: f.lineOrder,
-          reportedLabel: f.reportedLabel,
-          isSubtotal: f.isSubtotal,
-          componentLabels: f.componentLabels,
-          periodLabel: f.periodLabel,
-          periodEnd: f.periodEnd,
-          periodStart: f.periodStart,
-          span: f.span,
-          asOfDate: f.asOfDate,
-          reportedText: f.reportedText,
-          reportedValue: f.reportedValue,
-          valueStatus: f.valueStatus,
-          unitLabel: f.unitLabel,
-          scaleFactor: f.scaleFactor,
-          currency: f.currency,
-          normalizedValue: f.normalizedValue,
-        })),
-      );
+      await tx
+        .insert(schema.financialFact)
+        .values(batch.map(({ id, fact: f }) => ({ ...factRow(job.workspaceId, revision.id, doc.companyId, id, f), periodStart: f.periodStart, span: f.span })));
       await tx.insert(schema.xbrlSource).values(
         batch.map(({ id, fact: f }) => ({
           id: crypto.randomUUID(),
@@ -131,32 +109,9 @@ export async function writeXbrlRevision(
         })),
       );
     }
-    for (let i = 0; i < result.checks.length; i += INSERT_BATCH) {
-      await tx.insert(schema.extractionCheck).values(
-        result.checks.slice(i, i + INSERT_BATCH).map((c) => ({
-          id: crypto.randomUUID(),
-          workspaceId: job.workspaceId,
-          revisionId: revision.id,
-          checkType: c.checkType,
-          statement: c.statement,
-          basis: c.basis,
-          section: c.section,
-          periodLabel: c.periodLabel,
-          subjectLabel: c.subjectLabel,
-          status: c.status,
-          expected: c.expected,
-          actual: c.actual,
-          detail: c.detail,
-        })),
-      );
-    }
+    await insertRevisionChecks(t, job.workspaceId, revision.id, result.checks);
     return summary(t, revision);
   });
-}
-
-/** The classification this read is for: the one in its key, else the one the current answers read under. */
-async function classificationOf(db: Db, job: JobRow): Promise<string | null> {
-  return classificationIdOfReadJob(job.idempotencyKey) ?? (await getCurrentClassification(db, job.workspaceId, job.subjectId))?.readsUnderId ?? null;
 }
 
 /** After the read is marked: pair it with the results PDFs it may check, then release the PDFs that waited for it. */
@@ -180,8 +135,11 @@ async function read(job: JobRow, ctx: JobContext): Promise<DocumentXbrlResult> {
   }
   if (doc.format !== "xbrl") throw new JobFailure("INVALID_STATE", `document is ${doc.format}; document.xbrl reads XBRL instances only`, false);
 
-  const classificationId = await classificationOf(ctx.db, job);
-  const [done] = await ctx.db.select().from(schema.extractionRevision).where(eq(schema.extractionRevision.jobId, job.id));
+  const classificationId = await readClassificationId(ctx.db, job, job.subjectId);
+  const [done] = await ctx.db
+    .select()
+    .from(schema.extractionRevision)
+    .where(and(eq(schema.extractionRevision.jobId, job.id), eq(schema.extractionRevision.workspaceId, job.workspaceId)));
   if (done) {
     // A crash after the revision committed: mark the document, pair and release again (each is idempotent).
     await setIntakeIfCurrent(ctx.db, job.workspaceId, doc.id, done.classificationId, "read");
@@ -219,7 +177,7 @@ export const documentXbrl: JobHandler = Object.assign(read, {
       .where(and(eq(schema.document.id, job.subjectId), eq(schema.document.workspaceId, job.workspaceId)))
       .limit(1);
     if (doc?.format !== "xbrl") return;
-    await setIntakeIfCurrent(db, job.workspaceId, job.subjectId, await classificationOf(db, job), "read_failed");
+    await setIntakeIfCurrent(db, job.workspaceId, job.subjectId, await readClassificationId(db, job, job.subjectId), "read_failed");
     // A failed instance holds no PDF back.
     await redecidePdfsAfterXbrl(db, dispatcher, job.workspaceId);
   },
