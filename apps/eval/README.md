@@ -10,6 +10,8 @@
 | `maester-eval export --run latest` | Writes a labelling sheet per filing to `data/eval/sheets/`, pre-filled with what the pipeline read. Never overwrites a sheet without `--force`. |
 | `maester-eval freeze <filing-id> --run latest` | Turns a checked sheet into `data/eval/gold/<filing-id>.json`, reading the machine columns back from the run's artefact. Only rows marked `verified` are kept, and each needs a concept from the taxonomy or the freeze stops. Never overwrites gold without `--force`. |
 | `maester-eval report --run latest` | Scores the run against the gold set and writes `report.md` and `report.json` into the run folder; `--to docs/eval/<date>-<label>.md` publishes the Markdown; `--against <run>` adds the delta. |
+| `maester-eval ocr request --out data/eval/ocr/request.json` | Writes the `dev` filings that are in the corpus (out-of-scope ones included), with the sha256 of each PDF and no questions, as the request the worker's eval commands read. |
+| `maester-eval ocr report --run latest` | Scores the OCR spot check's `scores.csv` (`maester-indexer-ocr-sample` writes it and a person fills in the counts), applies the engine and cell-matching rules and writes `report.md` into the run folder under `data/eval/ocr/runs/`; `--to docs/eval/<date>-ocr-spot-check.md` publishes the Markdown. |
 
 A filing id is its path under the corpus without `.pdf`: `synthetic-cements/ar-2025-26`.
 
@@ -21,6 +23,7 @@ data/eval/corpus/         the PDFs (git-ignored)
 data/eval/sheets/         labelling sheets (yours to commit or not)
 data/eval/gold/           the gold set (committed)
 data/eval/runs/           artefacts and reports per run (git-ignored)
+data/eval/ocr/            the OCR spot check: pages.json, the page list (committed); request.json and runs/ (git-ignored)
 docs/eval/                published reports (committed)
 packages/contracts/concepts.json   the concepts the gold set is labelled with
 ```

@@ -59,6 +59,11 @@ class EvalPaths:
     def runs(self) -> Path:
         return self.base / "runs"
 
+    @property
+    def ocr(self) -> Path:
+        """The OCR spot check's folder. `EvalPaths(paths.ocr)` has its run folders in `ocr/runs`, apart from the extraction runs."""
+        return self.base / "ocr"
+
     def new_run(self, label: str | None = None, now: datetime | None = None) -> Path:
         """A fresh run folder named by UTC time, `20261016T093005Z[-label]`. Never reuses one.
 
