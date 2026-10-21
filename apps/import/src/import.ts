@@ -56,8 +56,11 @@ export async function importFolder(opts: ImportOptions): Promise<ImportResult> {
   const base = `${api}/v1/workspaces/${opts.workspaceId}/documents`;
   const result: ImportResult = { sent: 0, refused: [], failed: [], stopped: null };
 
-  const files: FoundFile[] = [];
-  for await (const f of walk(opts.folder)) files.push(f);
+  const found: FoundFile[] = [];
+  for await (const f of walk(opts.folder)) found.push(f);
+  // XBRL first: a results PDF whose instances are already in is not sent to a paid read. Each kind keeps the walk's order.
+  const isXml = (f: FoundFile) => f.name.toLowerCase().endsWith(".xml");
+  const files = [...found.filter(isXml), ...found.filter((f) => !isXml(f))];
 
   /** One request. A 5xx is tried again after 1 s and then 2 s; a network error is not retried. */
   async function call(url: string, init: RequestInit): Promise<Response> {
@@ -107,7 +110,13 @@ export async function importFolder(opts: ImportOptions): Promise<ImportResult> {
     } catch {
       throw new StepError(0, "READ_FAILED");
     }
-    await checked(await call(new URL(url, `${api}/`).href, { method: "PUT", headers, body }));
+    let signed: string;
+    try {
+      signed = new URL(url, `${api}/`).href;
+    } catch {
+      throw new StepError(0, "BAD_RESPONSE");
+    }
+    await checked(await call(signed, { method: "PUT", headers, body }));
     await checked(await call(`${base}/${id}/finalize`, { method: "POST", headers: apiHeaders, body: "{}" }));
   }
 
