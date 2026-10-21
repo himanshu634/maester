@@ -18,7 +18,9 @@ export { listWorkspacesForUser, getWorkspaceForUser, ensurePersonalWorkspace } f
 export { getDocument, listDocuments } from "./queries/documents.js";
 export { getJob, getLatestJobForSubject } from "./queries/jobs.js";
 export { getCompany, listCompanies } from "./queries/companies.js";
-export { getLatestRevision, getRevision, listChecks, listFactsWithSources, type FactWithSource } from "./queries/extraction.js";
+export {
+  getLatestRevision, getRevision, listChecks, listFactsWithSources, listXbrlPdfChecks, XBRL_PDF_CHECK_VERSION_READ, type FactWithSource,
+} from "./queries/extraction.js";
 export { listCompanyFilings, listFactsWithSourcesForRevisions, listChecksForRevisions, type CompanyFilingRow } from "./queries/research.js";
 export { admitOrWaitlist, approveWaitlistEmail, normalizeEmail, type WaitlistSource } from "./queries/waitlist.js";
 export {

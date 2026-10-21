@@ -23,7 +23,9 @@ export interface CellCheck {
 	actual: string | null;
 }
 
+/** The page variant of the API's CellSource; the XBRL variant reaches the web with phase 6. */
 export interface CellSource {
+	kind?: 'page';
 	documentId: string;
 	/** 0-based; pages are shown counted from 1. */
 	pageIndex: number;
@@ -31,7 +33,9 @@ export interface CellSource {
 	textLayerMatch: boolean | null;
 }
 
+/** The page variant of the API's Restated; the XBRL variant reaches the web with phase 6. */
 export interface Restated {
+	kind?: 'page';
 	documentId: string;
 	filingPeriodEnd: string | null;
 	pageIndex: number;

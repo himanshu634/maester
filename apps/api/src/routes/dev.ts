@@ -62,7 +62,9 @@ async function showExtraction(docId) {
   log('coverage ' + JSON.stringify(x.revision.coverage));
   log('checks ' + x.checks.map((c) => c.status).join(','));
   const f = await j(base + '/facts');
-  for (const fact of f.facts.slice(0, 25)) log('  p' + (fact.source.pageIndex + 1) + ' ' + fact.statement + ' | ' + fact.reportedLabel + ' | ' + fact.periodLabel + ' | ' + fact.reportedText + ' -> ' + fact.normalizedValue);
+  const where = (s) => !s ? '-' : s.kind === 'page' ? 'p' + (s.pageIndex + 1) : s.element + '@' + s.contextId;
+  log('source ' + x.revision.source);
+  for (const fact of f.facts.slice(0, 25)) log('  ' + where(fact.source) + ' ' + fact.statement + ' | ' + fact.reportedLabel + ' | ' + fact.periodLabel + ' | ' + fact.reportedText + ' -> ' + fact.normalizedValue);
   log(f.facts.length + ' facts');
 }
 document.getElementById('upload').onclick = async () => {

@@ -1,29 +1,47 @@
-import type { CellCheck, FinancialCell, FinancialColumn, FinancialRow, StatementTable } from "@maester/contracts";
+import type { CellCheck, CellSource, FinancialCell, FinancialColumn, FinancialRow, Restated, StatementTable, XbrlInPdf } from "@maester/contracts";
 import type { ExtractionCheckRow, FactWithSource } from "@maester/db";
+import { annualSlotOf, rankSlotCandidates, type FilingKind, type SlotCandidate } from "@maester/financial-engine";
 
 /**
- * Puts a company's years together from the facts of its read annual reports
+ * Puts a company's years together from the facts of its read annual reports, PDF or XBRL
  * (docs/superpowers/specs/2026-10-13-company-financials-design.md, "The table").
- * Each column comes whole from the newest filing that prints its period, so a column never
- * mixes filings; an older filing that printed a different figure for the same line and year marks
- * the cell restated (compared at the coarser of the two printed precisions, so a change of unit alone
- * is not a restatement). Lines match across filings by printed name. Pure: no database.
+ * A fact fills the annual table only when the source rule gives it an annual slot (`annualSlotOf`): a results
+ * filing adds nothing, and an XBRL quarter, year to date or off-date instant never shares a year's column.
+ * Each column comes whole from the one filing that owns its period by the source rule (`rankSlotCandidates`:
+ * XBRL first, then the newest filing), so a column never mixes filings; another filing that printed a different
+ * figure for the same line and year marks the cell restated (compared at the coarser of the two printed
+ * precisions, so a change of unit alone is not a restatement). Lines match across filings by printed name.
+ * Pure: no database.
  */
 
 export type Filing = {
   documentId: string;
+  /** The revision the facts are of. */
+  revisionId: string;
+  companyId: string;
+  /** What the revision was read from. */
+  source: "pdf" | "xbrl";
+  filingKind: FilingKind;
+  /** The document's file name: an XBRL cell names it, since an instance has no page to open. */
+  originalName: string;
   /** The filing's own period end (its classification's): the newest filing is the latest. */
   periodEnd: string | null;
   revisionCreatedAt: Date;
   pageCount: number;
   facts: FactWithSource[];
   checks: ExtractionCheckRow[];
+  /** XBRL facts only: each fact's check against its results PDF, by fact id. */
+  inPdf: Map<string, XbrlInPdf>;
 };
 
 const STATEMENTS = ["income_statement", "balance_sheet", "cash_flow"] as const;
 const BASES = ["consolidated", "standalone", "unknown"] as const;
 /** Earnings per share, singular or plural, "equity" or not, or "EPS" as a word. Matched on normalised text. */
 const PER_SHARE = /earnings? per (equity )?share|\beps\b/;
+/** The unit `document.xbrl` gives a per-share fact: an XBRL fact is per share by its unit alone, whatever its label. */
+const PER_SHARE_UNIT = "₹ a share";
+/** An XBRL fact the route gave no check outcome for: nothing is claimed about the PDF. */
+const NOT_YET: XbrlInPdf = { status: "not_checked", pdfDocumentId: null, pageIndex: null, statementPages: [], reason: "not_yet" };
 
 export function normalise(text: string): string {
   return text
@@ -87,14 +105,40 @@ function newestFirst(a: Filing, b: Filing): number {
   return b.revisionCreatedAt.getTime() - a.revisionCreatedAt.getTime();
 }
 
+/** The candidate a filing is for the source rule's ranking of one period. */
+const candidateOf = (f: Filing): SlotCandidate => ({
+  revisionId: f.revisionId,
+  documentId: f.documentId,
+  source: f.source,
+  filingPeriodEnd: f.periodEnd,
+  revisionCreatedAt: f.revisionCreatedAt.toISOString(),
+});
+
 const dateOf = (f: FactWithSource) => f.fact.periodEnd ?? f.fact.asOfDate;
-const perShare = (f: FactWithSource) => PER_SHARE.test(normalise(f.fact.section)) || PER_SHARE.test(normalise(f.fact.reportedLabel));
+
+/** An XBRL fact is per share when its unit says so exactly; a PDF fact when its section or label names earnings per share. */
+const perShare = (f: FactWithSource, filing: Filing) =>
+  filing.source === "xbrl"
+    ? f.fact.unitLabel === PER_SHARE_UNIT
+    : PER_SHARE.test(normalise(f.fact.section)) || PER_SHARE.test(normalise(f.fact.reportedLabel));
+
+/**
+ * Whether a fact goes into the annual table: when the source rule gives it an annual slot, or, for a fact of an
+ * annual filing with no date to place it by, to be counted as unplaced. A results filing adds nothing at all.
+ */
+function admitted(f: FactWithSource, filing: Filing): boolean {
+  const slot = annualSlotOf(
+    { companyId: filing.companyId, kind: filing.filingKind, source: filing.source, periodEnd: filing.periodEnd },
+    { statement: f.fact.statement, basis: f.fact.basis, span: f.fact.span, periodEnd: f.fact.periodEnd, asOfDate: f.fact.asOfDate },
+  );
+  return slot !== null || (filing.filingKind !== "financial_results" && dateOf(f) === null);
+}
 
 type Unit = { label: string | null; scale: string | null; currency: string | null };
 
 /** How to bring a filing's figures into the table's unit, or why it can't. */
-function converter(facts: FactWithSource[], unit: Unit): { move: number | null; reason: "other_currency" | "other_unit" | null } {
-  const plain = facts.filter((f) => !perShare(f));
+function converter(facts: FactWithSource[], filing: Filing, unit: Unit): { move: number | null; reason: "other_currency" | "other_unit" | null } {
+  const plain = facts.filter((f) => !perShare(f, filing));
   const currency = plain.find((f) => f.fact.currency)?.fact.currency ?? null;
   if (currency && unit.currency && currency !== unit.currency) return { move: null, reason: "other_currency" };
   // A filing with no unit (scale null) is not "the same unit" as a table that has one.
@@ -172,9 +216,10 @@ function checkFor(f: FactWithSource, filing: Filing, siblings: FactWithSource[],
   return NO_CHECK;
 }
 
-function valueOf(f: FactWithSource, move: number, unit: Unit): string | null {
+function valueOf(f: FactWithSource, placed: Placed, unit: Unit): string | null {
+  const { move } = placed;
   if (f.fact.valueStatus !== "value" || f.fact.reportedValue === null) return null;
-  if (perShare(f)) return moveDecimal(f.fact.reportedValue, 0);
+  if (perShare(f, placed.filing)) return moveDecimal(f.fact.reportedValue, 0);
   if (move === 0) return moveDecimal(f.fact.reportedValue, 0);
   const to = exponent(unit.scale);
   if (f.fact.normalizedValue !== null && to !== null) return moveDecimal(f.fact.normalizedValue, -to);
@@ -186,8 +231,8 @@ function valueOf(f: FactWithSource, move: number, unit: Unit): string | null {
  * moved ("12,10,543.21" lakh is 12105.4321 crore: 4 places). Negative when it is known only to tens or more
  * (whole crore moved into lakh). A per-share figure never moves.
  */
-function precisionOf(f: FactWithSource, move: number): number {
-  return places(f.fact.reportedValue ?? "") - (perShare(f) ? 0 : move);
+function precisionOf(f: FactWithSource, placed: Placed): number {
+  return places(f.fact.reportedValue ?? "") - (perShare(f, placed.filing) ? 0 : placed.move);
 }
 
 /**
@@ -200,36 +245,70 @@ function sameFigure(a: string | null, aPlaces: number, b: string | null, bPlaces
   return roundTo(a, coarser) === roundTo(b, coarser);
 }
 
+/** Where a cell's figure was read, by its filing's source; null for a fact stored without its source row. */
+function sourceOf(f: FactWithSource, filing: Filing): CellSource | null {
+  if (filing.source === "xbrl") {
+    if (!f.xbrl) return null;
+    return {
+      kind: "xbrl", documentId: f.xbrl.documentId, originalName: filing.originalName, element: f.xbrl.element, contextId: f.xbrl.contextId,
+      decimals: f.xbrl.decimals, nil: f.xbrl.nil, periodStart: f.fact.periodStart, span: f.fact.span, inPdf: filing.inPdf.get(f.fact.id) ?? NOT_YET,
+    };
+  }
+  if (!f.source) return null;
+  return { kind: "page", documentId: f.source.documentId, pageIndex: f.source.pageIndex, pageCount: filing.pageCount, textLayerMatch: f.source.textLayerMatch };
+}
+
+/**
+ * What another filing printed for the cell, by that filing's source: its page, or its XBRL element. Null when the
+ * other fact was stored without its source row, since there is then nowhere to point to.
+ */
+function restatedOf(g: FactWithSource, other: Placed, value: string | null): Restated | null {
+  const { documentId, periodEnd: filingPeriodEnd } = other.filing;
+  if (other.filing.source === "xbrl") {
+    return g.xbrl ? { kind: "xbrl", documentId, filingPeriodEnd, element: g.xbrl.element, value, printed: g.fact.reportedText } : null;
+  }
+  return g.source ? { kind: "page", documentId, filingPeriodEnd, pageIndex: g.source.pageIndex, value, printed: g.fact.reportedText } : null;
+}
+
 function cellOf(f: FactWithSource, placed: Placed, unit: Unit, siblings: FactWithSource[]): FinancialCell {
   return {
     status: f.fact.valueStatus,
-    value: valueOf(f, placed.move, unit),
+    value: valueOf(f, placed, unit),
     printed: f.fact.reportedText,
     factId: f.fact.id,
     revisionId: f.fact.revisionId,
-    source: { documentId: f.source.documentId, pageIndex: f.source.pageIndex, pageCount: placed.filing.pageCount, textLayerMatch: f.source.textLayerMatch },
+    source: sourceOf(f, placed.filing),
     check: checkFor(f, placed.filing, siblings, placed.move),
     restated: null,
   };
+}
+
+/** One period's filings, owner first, by the source rule: XBRL first, then the newer filing period and revision. */
+function ranked(placed: Placed[]): Placed[] {
+  const byRevision = new Map(placed.map((p) => [p.filing.revisionId, p]));
+  return rankSlotCandidates(placed.map((p) => candidateOf(p.filing))).map((c) => byRevision.get(c.revisionId)!);
 }
 
 const MISSING: FinancialCell = { status: "missing", value: null, printed: null, factId: null, revisionId: null, source: null, check: NO_CHECK, restated: null };
 
 function stitchOne(ordered: Filing[], statement: (typeof STATEMENTS)[number], basis: (typeof BASES)[number]): StatementTable | null {
   const mine = ordered
-    .map((filing) => ({ filing, facts: filing.facts.filter((f) => f.fact.statement === statement && f.fact.basis === basis) }))
+    .map((filing) => ({
+      filing,
+      facts: filing.facts.filter((f) => f.fact.statement === statement && f.fact.basis === basis && admitted(f, filing)),
+    }))
     .filter((x) => x.facts.length > 0);
   if (mine.length === 0) return null;
 
-  const head = mine[0]!.facts.find((f) => !perShare(f)) ?? mine[0]!.facts[0]!;
+  const head = mine[0]!.facts.find((f) => !perShare(f, mine[0]!.filing)) ?? mine[0]!.facts[0]!;
   const unit: Unit = { label: head.fact.unitLabel, scale: head.fact.scaleFactor, currency: head.fact.currency };
 
   let unplaced = 0;
   const leftOut: StatementTable["leftOut"] = [];
-  /** period → filings that print it, newest first. */
+  /** period → filings that print it, owner first once ranked. */
   const byPeriod = new Map<string, Placed[]>();
   for (const { filing, facts } of mine) {
-    const { move, reason } = converter(facts, unit);
+    const { move, reason } = converter(facts, filing, unit);
     if (move === null) {
       leftOut.push({ documentId: filing.documentId, reason: reason! });
       continue;
@@ -251,6 +330,7 @@ function stitchOne(ordered: Filing[], statement: (typeof STATEMENTS)[number], ba
   }
   // Read, but nothing to place by year: a table with no columns still says how many figures were left out.
   if (byPeriod.size === 0) return { statement, basis, unit, columns: [], rows: [], unplaced, leftOut };
+  for (const [day, placed] of byPeriod) byPeriod.set(day, ranked(placed));
 
   const periods = [...byPeriod.keys()].sort();
   const owners = periods.map((p) => byPeriod.get(p)![0]!);
@@ -269,7 +349,7 @@ function stitchOne(ordered: Filing[], statement: (typeof STATEMENTS)[number], ba
       order.splice(after + 1, 0, key);
       after += 1;
       const f = owner.byKey.get(key)!;
-      meta.set(key, { section: f.fact.section, label: f.fact.reportedLabel, isSubtotal: f.fact.isSubtotal, perShare: perShare(f) });
+      meta.set(key, { section: f.fact.section, label: f.fact.reportedLabel, isSubtotal: f.fact.isSubtotal, perShare: perShare(f, owner.filing) });
     }
   }
 
@@ -288,11 +368,9 @@ function stitchOne(ordered: Filing[], statement: (typeof STATEMENTS)[number], ba
       for (const other of byPeriod.get(period)!.slice(1)) {
         const g = other.byKey.get(key);
         if (!g) continue;
-        const theirs = valueOf(g, other.move, unit);
-        const same = sameFigure(cell.value, precisionOf(f, owner.move), theirs, precisionOf(g, other.move));
-        if (g.fact.valueStatus !== f.fact.valueStatus || !same) {
-          cell.restated = { documentId: other.filing.documentId, filingPeriodEnd: other.filing.periodEnd, pageIndex: g.source.pageIndex, value: theirs, printed: g.fact.reportedText };
-        }
+        const theirs = valueOf(g, other, unit);
+        const same = sameFigure(cell.value, precisionOf(f, owner), theirs, precisionOf(g, other));
+        if (g.fact.valueStatus !== f.fact.valueStatus || !same) cell.restated = restatedOf(g, other, theirs);
         break;
       }
       return cell;
@@ -304,6 +382,7 @@ function stitchOne(ordered: Filing[], statement: (typeof STATEMENTS)[number], ba
 }
 
 export function stitch(filings: Filing[]): StatementTable[] {
+  // Newest filing first: it sets each table's unit. Who owns a period is the source rule's ranking, not this order.
   const ordered = [...filings].sort(newestFirst);
   const tables: StatementTable[] = [];
   for (const statement of STATEMENTS) {

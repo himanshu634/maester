@@ -126,6 +126,7 @@ export function toRevision(row: ExtractionRevisionRow): ExtractionRevision {
     id: row.id,
     documentId: row.documentId,
     jobId: row.jobId,
+    source: row.source,
     state: row.state,
     pipelineVersion: row.pipelineVersion,
     model: row.model,
@@ -154,7 +155,15 @@ export function toCheck(row: ExtractionCheckRow): ExtractionCheck {
   };
 }
 
-export function toFact({ fact, source }: FactWithSource): FinancialFact {
+/** Where a fact was read, by the row stored with it: a page, an XBRL element, or null when neither was stored. */
+export function toFactSource({ source, xbrl }: Pick<FactWithSource, "source" | "xbrl">): FinancialFact["source"] {
+  if (xbrl) return { kind: "xbrl", documentId: xbrl.documentId, element: xbrl.element, contextId: xbrl.contextId, decimals: xbrl.decimals, nil: xbrl.nil };
+  if (source) return { kind: "page", documentId: source.documentId, pageIndex: source.pageIndex, textLayerMatch: source.textLayerMatch };
+  return null;
+}
+
+export function toFact(row: FactWithSource): FinancialFact {
+  const { fact } = row;
   return {
     id: fact.id,
     revisionId: fact.revisionId,
@@ -168,6 +177,8 @@ export function toFact({ fact, source }: FactWithSource): FinancialFact {
     componentLabels: fact.componentLabels,
     periodLabel: fact.periodLabel,
     periodEnd: fact.periodEnd,
+    periodStart: fact.periodStart,
+    span: fact.span,
     asOfDate: fact.asOfDate,
     reportedText: fact.reportedText,
     reportedValue: fact.reportedValue,
@@ -176,7 +187,7 @@ export function toFact({ fact, source }: FactWithSource): FinancialFact {
     scaleFactor: fact.scaleFactor,
     currency: fact.currency,
     normalizedValue: fact.normalizedValue,
-    source: { documentId: source.documentId, pageIndex: source.pageIndex, textLayerMatch: source.textLayerMatch },
+    source: toFactSource(row),
   };
 }
 

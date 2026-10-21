@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { CompanyFinancials, CompanyStock, JobTypes, ResearchCompanies } from "@maester/contracts";
+import { CompanyFinancials, CompanyStock, JobTypes, ResearchCompanies, XBRL_PDF_CHECK_VERSION } from "@maester/contracts";
 import { schema, upsertMarketPoints } from "@maester/db";
 import { moveDecimal } from "../src/financials/stitch.js";
 import { createTestContext, type TestContext } from "./context.js";
@@ -12,11 +12,33 @@ afterAll(() => ctx.close());
 type Line = { label: string; period: string; printed: string; page?: number; section?: string; order?: number };
 
 /** A read annual report for a company: document, classification read under itself, revision, facts. */
-async function seedFiling(ws: string, userId: string, companyId: string, periodEnd: string, lines: Line[], opts: { kind?: "annual_report" | "financial_results"; intakeState?: "read" | "kept" } = {}) {
+type SeedOpts = {
+  kind?: "annual_report" | "financial_results"; intakeState?: "read" | "kept"; source?: "pdf" | "xbrl";
+  statementsFound?: { statement: string; basis: string; pages: number[] }[];
+};
+
+/** A stored document with a classification, and nothing read: the results PDF an XBRL filing is checked against. */
+async function seedPdf(ws: string, userId: string, companyId: string, periodEnd: string, opts: SeedOpts = {}) {
   const documentId = crypto.randomUUID();
   await ctx.db.insert(schema.document).values({
-    id: documentId, workspaceId: ws, companyId, originalName: `ar-${periodEnd}.pdf`, declaredSize: 10, declaredMime: "application/pdf",
-    storageKey: `workspaces/${ws}/documents/${documentId}/original.pdf`, state: "stored", intakeState: opts.intakeState ?? "read", createdByUserId: userId,
+    id: documentId, workspaceId: ws, companyId, originalName: `results-${periodEnd}.pdf`, declaredSize: 10, declaredMime: "application/pdf",
+    storageKey: `workspaces/${ws}/documents/${documentId}/original.pdf`, state: "stored", intakeState: "read", createdByUserId: userId,
+  });
+  const classificationId = crypto.randomUUID();
+  await ctx.db.insert(schema.documentClassification).values({
+    id: classificationId, workspaceId: ws, documentId, kind: opts.kind ?? "financial_results", periodEnd, companyId, setBy: "maester",
+    statementsFound: opts.statementsFound ?? [],
+  });
+  return { documentId, classificationId };
+}
+
+async function seedFiling(ws: string, userId: string, companyId: string, periodEnd: string, lines: Line[], opts: SeedOpts = {}) {
+  const documentId = crypto.randomUUID();
+  const xbrl = opts.source === "xbrl";
+  await ctx.db.insert(schema.document).values({
+    id: documentId, workspaceId: ws, companyId, originalName: xbrl ? `results-${periodEnd}.xml` : `ar-${periodEnd}.pdf`, declaredSize: 10,
+    declaredMime: xbrl ? "application/xml" : "application/pdf", format: xbrl ? "xbrl" : "pdf",
+    storageKey: `workspaces/${ws}/documents/${documentId}/original.${xbrl ? "xml" : "pdf"}`, state: "stored", intakeState: opts.intakeState ?? "read", createdByUserId: userId,
   });
   const classificationId = crypto.randomUUID();
   await ctx.db.insert(schema.documentClassification).values({
@@ -28,8 +50,8 @@ async function seedFiling(ws: string, userId: string, companyId: string, periodE
   await ctx.db.insert(schema.job).values({ id: jobId, workspaceId: ws, type: JobTypes.DOCUMENT_EXTRACT, subjectType: "document", subjectId: documentId, idempotencyKey: `seed-${jobId}`, state: "succeeded" });
   const revisionId = crypto.randomUUID();
   await ctx.db.insert(schema.extractionRevision).values({
-    id: revisionId, workspaceId: ws, documentId, jobId, classificationId, state: "complete", pipelineVersion: "extract-1", model: "m", promptVersion: "p",
-    pageCount: 286, companyNameAsPrinted: "Synthetic Cements Limited", coverage: { statements: [] },
+    id: revisionId, workspaceId: ws, documentId, jobId, classificationId, source: xbrl ? "xbrl" : "pdf", state: "complete", pipelineVersion: "extract-1", model: "m",
+    promptVersion: "p", pageCount: xbrl ? 1 : 286, companyNameAsPrinted: "Synthetic Cements Limited", coverage: { statements: [] },
   });
   for (const line of lines) {
     const factId = crypto.randomUUID();
@@ -37,12 +59,22 @@ async function seedFiling(ws: string, userId: string, companyId: string, periodE
     await ctx.db.insert(schema.financialFact).values({
       id: factId, workspaceId: ws, revisionId, companyId, statement: "income_statement", basis: "consolidated", section: line.section ?? "Income",
       lineOrder: line.order ?? 0, reportedLabel: line.label, isSubtotal: false, componentLabels: [], periodLabel: `Year ended ${line.period}`,
-      periodEnd: line.period, reportedText: line.printed, reportedValue: reported, valueStatus: "value", unitLabel: "₹ in crore",
-      scaleFactor: "10000000", currency: "INR", normalizedValue: moveDecimal(reported, 7),
+      periodEnd: line.period, ...(xbrl ? { span: "year" as const } : {}), reportedText: line.printed, reportedValue: reported, valueStatus: "value",
+      unitLabel: "₹ in crore", scaleFactor: "10000000", currency: "INR", normalizedValue: moveDecimal(reported, 7),
     });
-    await ctx.db.insert(schema.sourceReference).values({ id: crypto.randomUUID(), workspaceId: ws, factId, documentId, pageIndex: (line.page ?? 213) - 1, textLayerMatch: true });
+    if (xbrl) {
+      await ctx.db.insert(schema.xbrlSource).values({ id: crypto.randomUUID(), workspaceId: ws, factId, documentId, element: "RevenueFromOperations", contextId: "FourD", decimals: "-5" });
+    } else {
+      await ctx.db.insert(schema.sourceReference).values({ id: crypto.randomUUID(), workspaceId: ws, factId, documentId, pageIndex: (line.page ?? 213) - 1, textLayerMatch: true });
+    }
   }
   return documentId;
+}
+
+async function factIdsOf(documentId: string) {
+  const revisions = await ctx.db.select().from(schema.extractionRevision).where(eq(schema.extractionRevision.documentId, documentId));
+  const facts = await ctx.db.select().from(schema.financialFact).where(eq(schema.financialFact.revisionId, revisions[0]!.id));
+  return { revisionId: revisions[0]!.id, factIds: facts.map((f) => f.id) };
 }
 
 describe("GET /companies/:id/financials", () => {
@@ -64,7 +96,7 @@ describe("GET /companies/:id/financials", () => {
     expect(body.filings.filter((f) => f.counted).map((f) => f.documentId).sort()).toEqual([ar25, ar26].sort());
     const t = body.tables.find((x) => x.statement === "income_statement" && x.basis === "consolidated")!;
     expect(t.columns.map((c) => [c.periodEnd, c.documentId])).toEqual([["2025-03-31", ar26], ["2026-03-31", ar26]]);
-    expect(t.rows[0]!.cells[0]).toMatchObject({ value: "2401.6", restated: { documentId: ar25, value: "2389.1", pageIndex: 197 } });
+    expect(t.rows[0]!.cells[0]).toMatchObject({ value: "2401.6", restated: { kind: "page", documentId: ar25, value: "2389.1", pageIndex: 197 } });
   });
 
   it("keeps a figure's printed decimals through the database, so 2,401.60 is not read as 2,401.6", async () => {
@@ -75,6 +107,59 @@ describe("GET /companies/:id/financials", () => {
     await seedFiling(a.workspaceId, a.userId, company, "2026-03-31", [{ label: "Other income", period: "2025-03-31", printed: "2,401.63" }]);
     const body = CompanyFinancials.parse(await (await ctx.app.request(`/v1/workspaces/${a.workspaceId}/companies/${company}/financials`, { headers: { cookie: a.cookie } })).json());
     expect(body.tables[0]!.rows[0]!.cells[0]).toMatchObject({ value: "2401.63", restated: { documentId: ar25, value: "2401.6", printed: "2,401.60" } });
+  });
+
+  it("shows only the annual report's columns next to a read results XBRL", async () => {
+    const a = await ctx.signUp("fin-x1@example.com");
+    const company = await ctx.createCompany(a.workspaceId, a.cookie, "Synthetic Cements Limited");
+    const xbrl = await seedFiling(a.workspaceId, a.userId, company, "2026-03-31", [{ label: "Freight and forwarding", period: "2026-03-31", printed: "2700.00" }], {
+      kind: "financial_results", source: "xbrl",
+    });
+    const ar26 = await seedFiling(a.workspaceId, a.userId, company, "2026-03-31", [
+      { label: "Freight and forwarding", period: "2026-03-31", printed: "2,602.15" },
+      { label: "Freight and forwarding", period: "2025-03-31", printed: "2,401.60" },
+    ]);
+    const body = CompanyFinancials.parse(await (await ctx.app.request(`/v1/workspaces/${a.workspaceId}/companies/${company}/financials`, { headers: { cookie: a.cookie } })).json());
+    expect(body.filings.find((f) => f.documentId === xbrl)!.counted).toBe(false);
+    const t = body.tables.find((x) => x.statement === "income_statement" && x.basis === "consolidated")!;
+    expect(t.columns.map((c) => [c.periodEnd, c.documentId])).toEqual([["2025-03-31", ar26], ["2026-03-31", ar26]]);
+    expect(t.rows[0]!.cells.map((c) => [c.value, c.source?.kind, c.restated])).toEqual([["2401.6", "page", null], ["2602.15", "page", null]]);
+  });
+
+  it("gives an annual XBRL figure its XBRL source and the outcome of its check against the results PDF", async () => {
+    const a = await ctx.signUp("fin-x2@example.com");
+    const company = await ctx.createCompany(a.workspaceId, a.cookie, "Synthetic Cements Limited");
+    const xbrl = await seedFiling(a.workspaceId, a.userId, company, "2026-03-31", [{ label: "Revenue from operations", period: "2026-03-31", printed: "12105.40" }], { source: "xbrl" });
+    const pdf = await seedPdf(a.workspaceId, a.userId, company, "2026-03-31", {
+      statementsFound: [{ statement: "income_statement", basis: "consolidated", pages: [4, 5] }, { statement: "balance_sheet", basis: "consolidated", pages: [6] }],
+    });
+    const { revisionId, factIds } = await factIdsOf(xbrl);
+    await ctx.db.insert(schema.extractionCheck).values({
+      id: crypto.randomUUID(), workspaceId: a.workspaceId, revisionId, checkType: "xbrl_in_pdf", statement: "income_statement", basis: "consolidated", section: "Income",
+      periodLabel: "Year ended 2026-03-31", subjectLabel: "Revenue from operations", status: "passed", expected: "12105.40", detail: "", factId: factIds[0]!,
+      pdfDocumentId: pdf.documentId, pdfClassificationId: pdf.classificationId, pageIndex: 4, checkVersion: XBRL_PDF_CHECK_VERSION,
+    });
+    const body = CompanyFinancials.parse(await (await ctx.app.request(`/v1/workspaces/${a.workspaceId}/companies/${company}/financials`, { headers: { cookie: a.cookie } })).json());
+    expect(body.filings.find((f) => f.documentId === xbrl)!.counted).toBe(true);
+    expect(body.tables[0]!.rows[0]!.cells[0]).toMatchObject({
+      value: "12105.4",
+      source: {
+        kind: "xbrl", documentId: xbrl, originalName: "results-2026-03-31.xml", element: "RevenueFromOperations", contextId: "FourD", decimals: "-5", nil: false, span: "year",
+        inPdf: { status: "passed", pdfDocumentId: pdf.documentId, pageIndex: 4, statementPages: [4, 5], reason: null },
+      },
+    });
+  });
+
+  it("says an annual XBRL figure is not checked when no results PDF of the filing is stored", async () => {
+    const a = await ctx.signUp("fin-x3@example.com");
+    const company = await ctx.createCompany(a.workspaceId, a.cookie, "Synthetic Cements Limited");
+    await seedFiling(a.workspaceId, a.userId, company, "2026-03-31", [{ label: "Revenue from operations", period: "2026-03-31", printed: "12105.40" }], { source: "xbrl" });
+    // A results PDF of another period is not this filing's.
+    await seedPdf(a.workspaceId, a.userId, company, "2025-12-31");
+    const body = CompanyFinancials.parse(await (await ctx.app.request(`/v1/workspaces/${a.workspaceId}/companies/${company}/financials`, { headers: { cookie: a.cookie } })).json());
+    expect(body.tables[0]!.rows[0]!.cells[0]!.source).toMatchObject({
+      kind: "xbrl", inPdf: { status: "not_checked", pdfDocumentId: null, pageIndex: null, statementPages: [], reason: "no_pdf" },
+    });
   });
 
   it("is not found in another workspace", async () => {

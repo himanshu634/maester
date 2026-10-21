@@ -393,6 +393,7 @@ When a document is verified and extraction is enabled, the worker runs a `docume
     "id": "5d1f6a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b",
     "documentId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
     "jobId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+    "source": "pdf",
     "state": "complete",
     "pipelineVersion": "extract-1",
     "model": "gemini-2.5-pro",
@@ -421,9 +422,9 @@ When a document is verified and extraction is enabled, the worker runs a `docume
 }
 ```
 
-`checkType` is `subtotal` or `balance_identity` for a revision's own arithmetic checks. `xbrl_in_pdf` is a third value, reserved for the check that looks for a fact of an XBRL instance in a PDF; no route sends it yet.
+`revision.source` is `pdf` (read by the model) or `xbrl` (read from an XBRL instance by the parser). `checkType` is `subtotal` or `balance_identity`: `…/extraction` sends a revision's own arithmetic checks only. `xbrl_in_pdf` is a third value, for the check that looks for a fact of an XBRL instance in its results PDF; those rows arrive later, with the PDF, and `…/extraction` never sends them, so its body does not change when they arrive. Research shows their outcome on each XBRL figure (`CellSource.inPdf`).
 
-`GET …/facts?revisionId=` returns one revision's facts (the current revision by default). Each fact keeps the value exactly as printed (`reportedText`), its parsed decimal (`reportedValue`, `null` for a dash or unparseable text, see `valueStatus`), the unit and scale, and `normalizedValue` in actual currency units when the unit is recognised. `periodEnd` (income and cash flow) or `asOfDate` (balance sheet) is set only when the period label names an unambiguous date. `source.pageIndex` is the 0-based page of the original PDF; `source.textLayerMatch` says whether the value was found in that page's text (`null` for a scanned page). All decimals are strings.
+`GET …/facts?revisionId=` returns one revision's facts (the current revision by default). Each fact keeps the value exactly as printed (`reportedText`), its parsed decimal (`reportedValue`, `null` for a dash or unparseable text, see `valueStatus`), the unit and scale, and `normalizedValue` in actual currency units when the unit is recognised. `periodEnd` (income and cash flow) or `asOfDate` (balance sheet) is set only when the period label names an unambiguous date. `span` (`quarter`, `half_year`, `nine_months`, `year` or `other`) and `periodStart` are set when the filing gives the period's dates, as an XBRL instance does; a PDF fact has both null. `source` says where the fact was read, by `kind`: `page` gives `pageIndex`, the 0-based page of the original PDF, and `textLayerMatch`, whether the value was found in that page's text (`null` for a scanned page); `xbrl` gives the instance's `element`, `contextId`, `decimals` as written (`"INF"` or an integer) and `nil` (true for `xsi:nil`: the fact is `unparsed`, never zero). `source` is `null` only for a fact stored without its source. All decimals are strings.
 
 <!-- schema: DocumentFacts -->
 ```json
@@ -432,6 +433,7 @@ When a document is verified and extraction is enabled, the worker runs a `docume
     "id": "5d1f6a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b",
     "documentId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
     "jobId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+    "source": "pdf",
     "state": "complete",
     "pipelineVersion": "extract-1",
     "model": "gemini-2.5-pro",
@@ -456,6 +458,8 @@ When a document is verified and extraction is enabled, the worker runs a `docume
       "componentLabels": [],
       "periodLabel": "As at 31 March 2026",
       "periodEnd": null,
+      "periodStart": null,
+      "span": null,
       "asOfDate": "2026-03-31",
       "reportedText": "1,23,456.50",
       "reportedValue": "123456.50",
@@ -464,7 +468,7 @@ When a document is verified and extraction is enabled, the worker runs a `docume
       "scaleFactor": "10000000",
       "currency": "INR",
       "normalizedValue": "1234565000000.00",
-      "source": { "documentId": "7c9e6679-7425-40de-944b-e07fc1f90ae7", "pageIndex": 41, "textLayerMatch": true }
+      "source": { "kind": "page", "documentId": "7c9e6679-7425-40de-944b-e07fc1f90ae7", "pageIndex": 41, "textLayerMatch": true }
     }
   ]
 }
