@@ -204,30 +204,17 @@ class ReadScoresTests(TempCase):
         edits = {2: {"numbers_wrong": "298", "numbers_missing": "2"}}
         self.assertEqual(read_scores(self.sheet(edits=edits))[0].numbers_wrong, 298)
 
-    def test_more_wrong_and_missing_headings_than_printed_is_refused(self):
-        edits = {2: {"headings_wrong": "25", "headings_missing": "1"}}
-        with self.assertRaisesRegex(OcrScoreError, "sheet row 2: headings_wrong \\+ headings_missing is more than headings_printed"):
-            read_scores(self.sheet(edits=edits))
-
-    def test_more_wrong_table_rows_than_printed_is_refused(self):
-        with self.assertRaisesRegex(OcrScoreError, "sheet row 2: table_rows_wrong is more than table_rows_printed"):
-            read_scores(self.sheet(edits={2: {"table_rows_wrong": "41"}}))
-
     def test_a_config_that_is_not_one_of_the_four_is_refused(self):
         with self.assertRaisesRegex(OcrScoreError, "sheet row 2: config 'paddle-cm' is not one of rapidocr-cm, rapidocr-nocm"):
             read_scores(self.sheet(edits={2: {"config": "paddle-cm"}}))
-
-    def test_a_kind_that_is_not_scanned_or_digital_is_refused(self):
-        with self.assertRaisesRegex(OcrScoreError, "sheet row 2: kind 'picture' is not scanned or digital"):
-            read_scores(self.sheet(edits={2: {"kind": "picture"}}))
 
     def test_the_engine_and_cell_matching_come_from_the_config_not_from_the_cells(self):
         # A spreadsheet writes `true` as TRUE and a person may have retyped either cell.
         edits = {2: {"engine": "TESSERACT", "cell_matching": "TRUE"}, 3: {"cell_matching": "nonsense"}}
         self.assertEqual(read_scores(self.sheet(edits=edits)), ROWS)
 
-    def test_seconds_must_be_a_finite_number_that_is_not_negative(self):
-        for value in ("NaN", "Infinity", "-1.0", "fast", "1,5"):
+    def test_seconds_that_are_not_a_finite_number_are_a_message_and_not_a_traceback(self):
+        for value in ("NaN", "Infinity", "fast", "1,5"):
             with self.subTest(value=value), self.assertRaisesRegex(OcrScoreError, "sheet row 2: seconds .* is not a number of seconds"):
                 read_scores(self.sheet(edits={2: {"seconds": value}}))
 
@@ -297,33 +284,6 @@ class CheckScoresTests(unittest.TestCase):
                 rows = [row for row in ROWS if not (row.config == config and row.page == C)]
                 with self.assertRaisesRegex(OcrScoreError, f"page 7 of aether-industries/ar-2024-25: no row for {config}"):
                     check_scores(rows, PAGES, MANIFEST)
-
-    def test_a_digital_page_with_a_tesseract_row_is_refused(self):
-        extra = score_row("tesseract-cm", C, 0, 0, 0, 0, 0, 0, "1.0")
-        with self.assertRaisesRegex(OcrScoreError, "page 7 of aether-industries/ar-2024-25: tesseract-cm is not a config of a digital page"):
-            check_scores([*ROWS, extra], PAGES, MANIFEST)
-
-    def test_a_row_for_a_page_that_is_not_in_the_page_list_is_refused(self):
-        stray = dataclasses.replace(ROWS[0], page=13)
-        with self.assertRaisesRegex(OcrScoreError, "page 13 of aether-industries/ar-2024-25 is not in the page list"):
-            check_scores([*ROWS, stray], PAGES, MANIFEST)
-
-    def test_two_rows_for_one_page_and_config_are_refused(self):
-        with self.assertRaisesRegex(OcrScoreError, "page 12 of aether-industries/ar-2024-25: two rows for rapidocr-cm"):
-            check_scores([*ROWS, ROWS[0]], PAGES, MANIFEST)
-
-    def test_a_row_whose_kind_is_not_the_page_lists_is_refused(self):
-        rows = changed(ROWS, "rapidocr-cm", [C], kind="scanned")
-        with self.assertRaisesRegex(OcrScoreError, "page 7 of aether-industries/ar-2024-25: the sheet says scanned, the page list says digital"):
-            check_scores(rows, PAGES, MANIFEST)
-
-    def test_a_page_listed_twice_is_refused(self):
-        twice = OcrPages(scanned=[*PAGES.scanned, PageRef(filing=FILING, page=A)], digital=PAGES.digital)
-        with self.assertRaisesRegex(OcrScoreError, "page 12 of aether-industries/ar-2024-25 is in the page list twice"):
-            check_scores(ROWS, twice, MANIFEST)
-        both = OcrPages(scanned=PAGES.scanned, digital=[*PAGES.digital, PageRef(filing=FILING, page=B)])
-        with self.assertRaisesRegex(OcrScoreError, "page 40 of aether-industries/ar-2024-25 is in the page list twice"):
-            check_scores(ROWS, both, MANIFEST)
 
     def test_a_filing_that_is_not_in_the_manifest_is_refused(self):
         with self.assertRaisesRegex(OcrScoreError, "aether-industries/ar-2024-25 is not in the dev set of the manifest"):

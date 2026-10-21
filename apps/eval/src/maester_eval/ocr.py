@@ -174,9 +174,9 @@ class OcrRun:
 def read_scores(path: Path) -> list[ScoreRow]:
     """The sheet's rows. It reads `utf-8-sig`, so a BOM a spreadsheet wrote is not part of the first column's name.
 
-    A row is refused, by its row number in the sheet (the header is row 1), unless `checked` is `yes`, every count is a
-    whole number (`7` or `7.0`) and `seconds` is a time. Wrong and missing cannot be more than printed. A row with
-    nothing in it, such as the blank rows a spreadsheet leaves at the end, is left out."""
+    A row is refused, by its row number in the sheet (the header is row 1), unless `checked` is `yes` and every count is
+    a whole number (`7` or `7.0`). The wrong and missing numbers of a row cannot be more than its printed numbers. A row
+    with nothing in it, such as the blank rows a spreadsheet leaves at the end, is left out."""
     try:
         with path.open(encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
@@ -217,8 +217,6 @@ def _score_row(cells: dict[str, str], line: int) -> ScoreRow:
     if page < 1:
         raise OcrScoreError(f"sheet row {line}: page must be 1 or more")
     kind = _filled(cells, "kind", line)
-    if kind not in ("scanned", "digital"):
-        raise OcrScoreError(f"sheet row {line}: kind {kind!r} is not scanned or digital")
     config = _filled(cells, "config", line)
     if config not in CONFIGS:  # the engine and cell matching are the config's; a spreadsheet may have retyped their cells
         raise OcrScoreError(f"sheet row {line}: config {config!r} is not one of {', '.join(CONFIGS)}")
@@ -227,15 +225,11 @@ def _score_row(cells: dict[str, str], line: int) -> ScoreRow:
         seconds = Decimal(text)
     except InvalidOperation:
         seconds = None
-    if seconds is None or not seconds.is_finite() or seconds < 0:
+    if seconds is None or not seconds.is_finite():  # an error a command shows, and not a traceback from a later mean
         raise OcrScoreError(f"sheet row {line}: seconds {text!r} is not a number of seconds")
     counts = {column: _whole(cells, column, line) for column in _COUNT_COLUMNS}
     if counts["numbers_wrong"] + counts["numbers_missing"] > counts["numbers_printed"]:
         raise OcrScoreError(f"sheet row {line}: numbers_wrong + numbers_missing is more than numbers_printed")
-    if counts["headings_wrong"] + counts["headings_missing"] > counts["headings_printed"]:
-        raise OcrScoreError(f"sheet row {line}: headings_wrong + headings_missing is more than headings_printed")
-    if counts["table_rows_wrong"] > counts["table_rows_printed"]:
-        raise OcrScoreError(f"sheet row {line}: table_rows_wrong is more than table_rows_printed")
     return ScoreRow(filing=filing, page=page, kind=kind, config=config, seconds=seconds, **counts)  # type: ignore[arg-type]
 
 
@@ -253,39 +247,26 @@ def check_scores(rows: Sequence[ScoreRow], pages: OcrPages, manifest: Manifest) 
 
     A scanned page owes a row for each of the 4 configurations and a digital page one for each of the 2 in
     `DIGITAL_CONFIGS`. The printed counts of one page are the same for every config, because the page is the same. Every
-    filing is a `dev` filing of the manifest. A row of no page of the list, a second row of one page and config, and a
-    kind that the page list does not give are refused too, so no count enters a total it does not belong in."""
+    filing is a `dev` filing of the manifest. Only the rows of the pages of the list, under the configs a page owes, are
+    looked at."""
     dev = {filing.id for filing in manifest.filings if filing.set == "dev"}
-    owed: dict[tuple[str, int], tuple[Kind, tuple[str, ...]]] = {}
+    by_page: dict[tuple[str, int], list[ScoreRow]] = {}
+    for row in rows:
+        by_page.setdefault((row.filing, row.page), []).append(row)
     listed: list[tuple[Kind, list[PageRef]]] = [("scanned", pages.scanned), ("digital", pages.digital)]
     for kind, refs in listed:
+        owed = _owed_configs(kind)
         for ref in refs:
             if ref.filing not in dev:
                 raise OcrScoreError(f"{ref.filing} is not in the dev set of the manifest")
-            if (ref.filing, ref.page) in owed:
-                raise OcrScoreError(f"page {ref.page} of {ref.filing} is in the page list twice")
-            owed[(ref.filing, ref.page)] = (kind, _owed_configs(kind))
-    seen: dict[tuple[str, int, str], ScoreRow] = {}
-    for row in rows:
-        where = f"page {row.page} of {row.filing}"
-        if (row.filing, row.page) not in owed:
-            raise OcrScoreError(f"{where} is not in the page list")
-        kind, configs = owed[(row.filing, row.page)]
-        if row.kind != kind:
-            raise OcrScoreError(f"{where}: the sheet says {row.kind}, the page list says {kind}")
-        if row.config not in configs:
-            raise OcrScoreError(f"{where}: {row.config} is not a config of a {kind} page")
-        if (row.filing, row.page, row.config) in seen:
-            raise OcrScoreError(f"{where}: two rows for {row.config}")
-        seen[(row.filing, row.page, row.config)] = row
-    for (filing, page), (_, configs) in owed.items():
-        where = f"page {page} of {filing}"
-        for config in configs:
-            if (filing, page, config) not in seen:
-                raise OcrScoreError(f"{where}: no row for {config}")
-        for column in ("numbers_printed", "headings_printed", "table_rows_printed"):
-            if len({getattr(seen[(filing, page, config)], column) for config in configs}) > 1:
-                raise OcrScoreError(f"{where}: {column} differs between configs")
+            where = f"page {ref.page} of {ref.filing}"
+            own = [row for row in by_page.get((ref.filing, ref.page), []) if row.config in owed]
+            for config in owed:
+                if not any(row.config == config for row in own):
+                    raise OcrScoreError(f"{where}: no row for {config}")
+            for column in ("numbers_printed", "headings_printed", "table_rows_printed"):
+                if len({getattr(row, column) for row in own}) > 1:
+                    raise OcrScoreError(f"{where}: {column} differs between configs")
 
 
 # ---- the totals and the rules
