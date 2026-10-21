@@ -189,7 +189,7 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 12. The page says "Sending 12 files." one time at the start. It does not say the progress of each file.
 13. If the API gives `UNAUTHENTICATED`, `sendAll` starts no new file and the page shows the signed-out `Notice`.
 14. If the connection fails (`NETWORK`), `sendAll` starts no new file. The `Notice` says "The upload didn’t finish." and tells how many files went, for example 214 of 806. It shows the button "Send the rest".
-15. "Send the rest" calls `addFiles` with `rest`. `rest` holds the files that failed because of the connection and the files that `sendAll` did not try. They are in the order that the investor chose.
+15. "Send the rest" calls `addFiles` with `rest`. `rest` holds the files that failed because of the connection and the files that `sendAll` did not try. They are in the order that the investor chose. The `Notice` and its button then go, so the focus moves to the box of the drop strip.
 16. A file that arrived before the connection failed comes back as a duplicate, because the API checks the hash.
 17. `carryOver` joins the two batches into one record. The files that went in the first batch stay in the count.
 18. A file that failed after the API made its document stays under "Company not known yet" as an upload that did not finish. The API cannot remove a document yet.
@@ -202,6 +202,7 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 2. `filingLive` decides if a filing is live. A filing is live if a track works or waits in a queue.
 3. `applyDocument` writes the state, the intake state, the pipeline and the printed name of each file in place. It does not move a file to a different filing.
 4. If `shapeChanged` finds that a file changed its state, its intake state or its identification, the page reads the filings again immediately. The file can then be in a different filing.
+   If this read fails, `owedReads` keeps the IDs of the files that moved. The page then reads the filings again at each subsequent poll, until a read arrives. Each of these reads gives the IDs to `applyRead` as files that moved, because `applyDocument` already wrote the new state.
 5. When the opened filing is no longer live, the page reads the filings one time.
 6. While another filing in "Working on" is live, `listWatched` is true. The page then reads the filings. The interval is `LIST_POLL_MS` (5 seconds).
 7. `readLedger` counts the writes of the polls, the changes and the uploads. The page drops a read that started before the last applied read.
@@ -209,7 +210,7 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 9. Each failed poll makes the next interval longer. The interval is the base interval multiplied by the number of failures plus one. The maximum multiplier is 5. The two polls have their own counts of failures.
 10. A successful poll sets its count of failures back to zero.
 11. When the person hides the tab, both polls stop. The `visibilitychange` event starts them again.
-12. When the person leaves the page, the effect cleanup stops both timers.
+12. When the person leaves the page, the effect cleanup stops both timers. A poll that is in progress then sends no read of the filings and applies no read.
 13. After a read, `newQuestions` says each new question one time. It says nothing while a batch runs or while `identifying` is true. Several new questions come as one line, for example "31 companies need you."
 14. If a read or a call returns `UNAUTHENTICATED`, `signedOut` sets the state to `signed-out`. Both polls stop. A `Notice` with a link to sign in shows above the drop strip. The filings that were on the page stay on it.
 15. A failed poll shows no message.
@@ -229,6 +230,7 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 11. "Read it again" calls `extract` for each file in `readAgainIds`. The list has the XBRL files that the API read or failed to read. It does not index the text again.
     A PDF is in the list only if `pdfNeeded` is true and `pdfWorthReading` is true. The two functions follow these rules:
     - A PDF is never in the list while an XBRL file of the filing is `now` or `waiting`.
+    - A PDF is never in the list while `sourcesStale` is true. The poll of the opened filing changes the files, but not the sources. A statement can have the reason `xbrl_not_read_yet` or `xbrl_read_failed`. It is stale if the files have an XBRL file of its basis and no such file has that state now. The coverage of the XBRL is then not known until the next read of the filings.
     - A PDF is in the list if a statement in `sources` takes its numbers from this PDF.
     - A PDF is in the list if no statement of the filing comes from XBRL.
     - A PDF is not in the list if its only claim is `xbrl_read_failed` and an XBRL file of that basis failed. The free XBRL read goes alone.
@@ -236,17 +238,18 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 12. If the filing has a company and the state of its Numbers track is `done`, `Filing` shows "See the figures". This link goes to the company page, with `companyHref`.
 13. `Filing` shows "Read it again" only if `readAgainIds` has a file and no track works. The link and the button are both secondary actions.
 14. If the opened file becomes a held file or a file with no company, `waitingAbove` finds it. The filing column then shows "{name} waits for you above." and "Go to it".
-15. "Go to it" moves the focus to the row in "Not in your workspace yet", or to the `Notice` of the file. If the focus was in the filing, the page moves it there when the read arrives.
+15. "Go to it" moves the focus to the row in "Not in your workspace yet", or to the `Notice` of the file. If the focus was in the filing, the page moves it there when the read arrives. While the companies load, the row does not show. The focus then goes to the heading "Not in your workspace yet".
 16. `Filing` has the key `openCount`. `openCount` increases in three cases:
     - The investor opens a filing.
     - A single upload opens its filing.
     - A change moves the file to a different filing.
 
     A read never changes `openCount`. Thus a read does not move the focus.
+    A batch puts the opened filing on its first file and does not change `openCount`. `Filing` gets the pinned document as `pinned`. When `pinned` changes, `Filing` closes its open form. It also clears the state of a retry that runs, and the result of its last reload.
 
 ### Documents page: confirm a company
 
-1. `confirmRows` makes one row for each held identity. It shows the first four rows. "Show all" shows the other rows.
+1. `confirmRows` makes one row for each held identity. It shows the first four rows. "Show all" shows the other rows. The same button then says "Show fewer", so the focus stays on it.
 2. The row shows the printed name, the codes and the count of filings and files. The API gives the ids of the workspace companies that the identity can match (`matches`).
 3. Until `listCompanies` settles, `rowsToDraw` returns no row. A row cannot know before this if it matches a company.
 4. If a row matches a company, it shows "Which of your companies is this?", the matches first and chosen, and the button "Use this company". The button "Add …" is then an outline.
@@ -256,7 +259,7 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 8. `confirmCompany` sends `POST .../companies/confirm`. The API confirms each held file that prints the identity.
 9. The page then reads the filings and the companies again. It says `confirmedAloud` one time, for example "Coastline Bank added. Its 214 files carry on."
 10. If the opened filing waited for this company, the focus goes to the heading of the filing. If not, it goes to the heading of the company in "Working on", then in "Done", then to the "Working on" heading.
-11. If the API returns `CONFLICT`, `confirmFailure` says that the company exists and that the investor must pick it. The page reads the filings and the companies again, so that the row shows the company. All other failures show a message under the row.
+11. If the API returns `CONFLICT`, `confirmFailure` says that the company exists and that the investor must pick it. The page reads the filings and the companies again, so that the row shows the company. If the API returns `NOT_FOUND` or `INVALID_STATE`, the files moved before the confirm. `confirmFailure` then gives the same message as `changeFailure`, and the page reads the filings and the companies again. All other failures show a message under the row.
 12. A file with no company printed has no row. `unnamedNotice` makes its `Notice`: "{file}: which company is this?" Or, if the file prints a name, "{file}: is this {name}?"
 13. "Say which company" loads the answers of the file and opens `CompanyForm`. `onanswer` calls `changeClassification`. Then `follow` opens the filing of the file.
 
