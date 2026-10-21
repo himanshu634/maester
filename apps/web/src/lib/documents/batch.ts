@@ -226,8 +226,10 @@ export function sendFailure(
 
 /**
  * Send the accepted files, `SEND_AT_ONCE` at a time, each through `send`, and say after each
- * one how many are settled. A refusal that would refuse the rest too (signed out, offline)
- * stops the batch: files already started finish, nothing new starts.
+ * one how many are settled. Every XBRL instance goes before any PDF, each kind in the order
+ * chosen, so a results PDF whose instances are already in is not given to a paid read. A
+ * refusal that would refuse the rest too (signed out, offline) stops the batch: files already
+ * started finish, nothing new starts.
  */
 export async function sendAll(
 	accepted: Picked[],
@@ -240,10 +242,14 @@ export async function sendAll(
 	let sent = 0;
 	let stopped: Stop | null = null;
 	const refused: { at: number; refusal: Refusal }[] = [];
+	// The order sent, as positions in the order chosen: what is reported stays in the order chosen.
+	const positions = accepted.map((_, at) => at);
+	const isXml = (at: number) => /\.xml$/i.test(accepted[at].file.name);
+	const queue = [...positions.filter(isXml), ...positions.filter((at) => !isXml(at))];
 
 	async function lane() {
-		while (!stopped && next < accepted.length) {
-			const at = next++;
+		while (!stopped && next < queue.length) {
+			const at = queue[next++];
 			const item = accepted[at];
 			try {
 				await send(item);

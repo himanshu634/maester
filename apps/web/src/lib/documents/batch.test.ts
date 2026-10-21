@@ -291,6 +291,19 @@ describe('sendAll', () => {
 		expect(result).toEqual({ sent: 10, refused: [], unsent: 0, stopped: null });
 	});
 
+	it('sends every XBRL file before any PDF, each kind in the order chosen, and names refusals in the order chosen', async () => {
+		const chosen = ['a.pdf', 'q1.xml', 'b.pdf', 'q2.XML', 'c.pdf', 'd.pdf', 'q3.xml'].map((p) => pick(p));
+		const started: string[] = [];
+		const result = await sendAll(chosen, null, async (item) => {
+			started.push(item.path);
+			if (item.path === 'q3.xml' || item.path === 'a.pdf')
+				throw new ApiError(415, 'UNSUPPORTED_MEDIA_TYPE', 'x');
+		});
+		expect(started).toEqual(['q1.xml', 'q2.XML', 'q3.xml', 'a.pdf', 'b.pdf', 'c.pdf', 'd.pdf']);
+		expect(result.refused.map((r) => r.name)).toEqual(['a.pdf', 'q3.xml']);
+		expect(result.sent).toBe(5);
+	});
+
 	it('names each file the API refused, in the order chosen, and carries on', async () => {
 		const result = await sendAll(many(5), null, async (item) => {
 			if (item.path === 'f3.pdf' || item.path === 'f1.pdf')
