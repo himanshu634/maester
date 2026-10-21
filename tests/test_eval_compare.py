@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from eval_fixtures import RESULTS_Q2, instance_read, pdf_artefact, pdf_fact, row, xbrl_artefact, xbrl_fact
+from eval_fixtures import RESULTS_Q2, gold_fact, instance_read, pdf_artefact, pdf_fact, row, xbrl_artefact, xbrl_fact
 from test_eval_owners import FIRST, NEWER, OLDER, SECOND
 from typer.testing import CliRunner
 
@@ -27,6 +27,7 @@ from maester_eval.manifest import Filing, Manifest, XbrlPair, tag_values
 from maester_eval.owners import OWNER_RULE_VERSION
 from maester_eval.paths import EvalPaths
 from maester_eval.periods import SPAN_RULE_VERSION
+from maester_eval.scoring import compare_xbrl
 from maester_eval.sheet_concepts import CONCEPT_CARRY_VERSION, load_company_concepts
 from maester_eval.sheets import sheet_path, write_sheet
 from maester_eval.source_rule import SOURCE_RULE_VERSION
@@ -228,6 +229,16 @@ class CellTests(CompareCase):
         self.assertEqual(exact_agreement_tenths({"agree": 1, "agree_at_precision": 2}), 333)                       # 1 of 3
         self.assertIsNone(agreement_tenths({"disagree_sign": 1, "instances_differ": 2, "pdf_only": 3}))
 
+    def test_a_figure_against_an_xbrl_zero_at_a_coarse_precision(self):
+        # 0.04 crore is 4,00,000 known to 10^5; XBRL holds 0 at decimals -7. At 10^7 both are 0. Gold saw the page, so
+        # its figure is right and the two agree at precision. Compare did not see the page: the filer may have tagged
+        # a printed dash 0, so the cell is a status disagreement for a person to settle. The two rules differ on purpose.
+        small = dict(reportedText="0.04", reportedValue="0.04", scaleFactor="10000000", normalizedValue="400000")
+        zero = xbrl_fact(normalizedValue="0", reportedValue="0", decimals="-7")
+        self.assertEqual(self.one_cell(pdf_fact(**small), zero).outcome, "disagree_status")
+        gold = gold_fact(printed="0.04", value="0.04", scale="10000000", normalized_value="400000")
+        self.assertEqual(compare_xbrl(gold, zero), "match_at_precision")
+
     def test_a_column_gemini_did_not_read(self):
         # XBRL cash_flow consolidated half_year facts; no Gemini cash-flow fact at all: each is not_read, none xbrl_only.
         cash = dict(statement="cash_flow", **HALF_YEAR)
@@ -346,6 +357,30 @@ class RunTests(CompareCase):
         self.assertIn("## Against p0 and x0", md)
         self.assertIn("| Agreement | — | 100.0% | — |", md)
         self.assertIn("| instances_differ | 1 | 0 | +1 |", md)
+
+    def test_a_filing_compared_on_one_instance_names_the_other(self):
+        # b.xml (standalone) was not read: the filing is compared on a.xml, and b.xml is named with its reason code.
+        partly = xbrl_artefact(RESULTS_Q2, [xbrl_fact(), other_income()],
+                               instances=[instance_read(A, facts=2), unused(B, "XBRL_PAIR_BASIS")])
+        run = self.run_of(Manifest(filings=[Q2_PAIRED]), [self.pdf], [partly])
+        (filing,) = run.filings
+        self.assertTrue(filing.compared)
+        self.assertEqual([(u.filing_id, u.file, u.reason) for u in filing.unused_instances], [(RESULTS_Q2.id, B, "XBRL_PAIR_BASIS")])
+        md = render_compare_markdown(run, None)
+        self.assertIn(f"| {RESULTS_Q2.id} | b.xml | XBRL_PAIR_BASIS |", md.split("## Instances not used")[1])
+        whole = render_compare_markdown(self.run_of(Manifest(filings=[Q2_PAIRED]), [self.pdf], [self.xbrl]), None)
+        self.assertTrue(whole.split("## Instances not used")[1].split("\n## ")[0].strip().endswith("None."))
+
+    def test_against_counts_the_filings_not_compared_and_the_lines_outside_the_instance(self):
+        manifest = Manifest(filings=[Q2_PAIRED, NO_PDF])
+        run = self.run_of(manifest, [self.pdf], [self.xbrl])                     # NO_PDF has no PDF artefact
+        earlier = self.run_of(Manifest(filings=[Q2_PAIRED]), [pdf_artefact(RESULTS_Q2, [REVENUE])], [self.xbrl])
+        earlier = earlier.model_copy(update={"pdf_run": "p0", "xbrl_run": "x0"})
+        part = render_compare_markdown(run, earlier).split("## Against p0 and x0")[1]
+        self.assertIn("| Filings compared | 1 | 1 | 0 |", part)
+        self.assertIn("| Filings not compared | 1 | 0 | +1 |", part)
+        self.assertIn("| Instances not used | 0 | 0 | 0 |", part)
+        self.assertIn("| outside_instance | 1 | 0 | +1 |", part)                 # the comparative of PDF_FACTS
 
     def test_write_compare(self):
         run = self.run_of(Manifest(filings=[Q2_PAIRED]), [self.pdf], [self.xbrl])

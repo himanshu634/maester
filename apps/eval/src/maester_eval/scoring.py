@@ -59,6 +59,10 @@ class FactScore(BaseModel):
     # The gold fact's place in `GoldFiling.facts`, from 0, set by the XBRL scorer. `score_filing` scores every gold
     # fact in order, so a PDF FactScore's place in `facts` is its index.
     gold_index: int | None = None
+    # Where the gold fact sits in time: its period end and span as the gold file holds them. With the filing id, the
+    # concept and the basis they name the gold fact without its figure.
+    period_end: str | None = None
+    span: str | None = None
     # The matched XBRL fact's element, and the concept it was read with (under the run's map version).
     element: str | None = None
     xbrl_concept: str | None = None
@@ -190,7 +194,7 @@ def score_filing(artefact: Artefact, gold: GoldFiling) -> FilingScore:
     for g in gold.facts:
         found = _candidates(index, by_line, sections, g)
         base = dict(concept=g.concept, statement=g.statement, basis=g.basis, label=g.label, period_label=g.period_label,
-                    gold_printed=g.printed, gold_normalized=g.normalized_value)
+                    gold_printed=g.printed, gold_normalized=g.normalized_value, period_end=g.period_end, span=g.span)
         if not found:
             scores.append(FactScore(**base, outcome="missing", read_printed=None, read_normalized=None, page_match=None))
             continue
@@ -237,6 +241,21 @@ def _summarise(filings: list[FilingScore], facts: list[FactScore] | None = None)
 Unusable = Literal["format_unmapped", "pair_mismatch", "unreadable"]
 
 
+class UnusedInstance(BaseModel):
+    """An instance of an XBRL artefact that was not used, with the artefact's reason code (`XBRL_FORMAT_UNMAPPED`,
+    `XBRL_PAIR_<part>` or `XBRL_UNREADABLE:<reason code>`): a code, never a message or a value."""
+
+    filing_id: str
+    file: str
+    reason: str
+
+
+def unused_instances(artefact: Artefact) -> list[UnusedInstance]:
+    """The instances of an XBRL artefact that were not used, in pair order."""
+    return [UnusedInstance(filing_id=artefact.filing_id, file=i.file, reason=i.reason or "") for i in artefact.instances
+            if not i.used]
+
+
 class RunScore(BaseModel):
     run: str
     pipeline_version: str | None
@@ -253,6 +272,9 @@ class RunScore(BaseModel):
     unusable: dict[str, Unusable] = Field(default_factory=dict)
     # An XBRL run's filings, gold or not, with slots whose instances have no order, to how many (none listed with 0).
     pooled: dict[str, int] = Field(default_factory=dict)
+    # Every instance of an XBRL run's filings, gold or not, that was not used: those of a filing in `unusable`, and
+    # those of a filing scored on its other instances. A `shown` mix carries its XBRL run's, and its `unusable`.
+    unused_instances: list[UnusedInstance] = Field(default_factory=list)
     # An XBRL run's reader and element map versions, as its `run.json` names them; None when it names none.
     parser_version: str | None = None
     map_version: str | None = None
@@ -391,7 +413,7 @@ def score_xbrl_filing(artefact: Artefact, gold: GoldFiling) -> FilingScore:
             continue
         base = dict(concept=g.concept, statement=g.statement, basis=g.basis, label=g.label, period_label=g.period_label,
                     gold_printed=g.printed, gold_normalized=g.normalized_value, page_match=None, source="xbrl",
-                    gold_index=index, format=_slot_format(artefact, owner, pooled))
+                    gold_index=index, period_end=g.period_end, span=g.span, format=_slot_format(artefact, owner, pooled))
         if (placed.key, g.concept) in pooled_differ:
             scores.append(FactScore(**base, outcome="ambiguous", read_printed=None, read_normalized=None,
                                     detail="instances_differ"))
@@ -452,8 +474,9 @@ def score_xbrl_run(run_name: str, artefacts: list[Artefact], gold: dict[str, Gol
         model=record.get("model"), eval_set=eval_set, filings=scored,
         not_run=sorted(i for i in chosen_gold if i not in by_id and i in listed and i not in skipped),
         gold_missing=sorted(i for i in by_id if i not in gold), out_of_scope=sorted(skipped),
-        source="xbrl", unusable=unusable, pooled=pooled, parser_version=record.get("parser_version"),
-        map_version=record.get("map_version"))
+        source="xbrl", unusable=unusable, pooled=pooled,
+        unused_instances=[u for i in sorted(by_id) for u in unused_instances(by_id[i])],
+        parser_version=record.get("parser_version"), map_version=record.get("map_version"))
 
 
 _NO_IDENTITY_CODES: CompanyIdentity = {"bse_code": None, "cin": None, "nse_symbol": None, "isin": None}
@@ -516,7 +539,8 @@ def _shown_filing(gold: GoldFiling, pdf: FilingScore, xbrl: FilingScore | None, 
             facts.append(FactScore(
                 concept=g.concept, statement=g.statement, basis=g.basis, label=g.label, period_label=g.period_label,
                 outcome="missing", gold_printed=g.printed, read_printed=None, gold_normalized=g.normalized_value,
-                read_normalized=None, page_match=None, source="xbrl", gold_index=index, detail="not_in_xbrl"))
+                read_normalized=None, page_match=None, source="xbrl", gold_index=index, period_end=g.period_end,
+                span=g.span, detail="not_in_xbrl"))
     return pdf.model_copy(update={"facts": facts, "source": "shown", "outside_slots": outside,
                                   "not_placed": dict(not_placed)})
 
@@ -536,4 +560,6 @@ def score_shown(gold: dict[str, GoldFiling], pdf: RunScore, xbrl: RunScore | Non
                              pdf_by_id.get(p.filing_id)) for p in pdf.filings]
     return pdf.model_copy(update={
         "run": pdf.run if xbrl is None else f"{pdf.run}+{xbrl.run}", "filings": filings, "source": "shown",
-        "pipeline_version": None, "prompt_version": None, "model": None})
+        "pipeline_version": None, "prompt_version": None, "model": None,
+        "unusable": {} if xbrl is None else dict(xbrl.unusable),
+        "unused_instances": [] if xbrl is None else list(xbrl.unused_instances)})

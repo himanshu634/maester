@@ -14,7 +14,7 @@ from datetime import datetime
 import functools
 from importlib import resources
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from maester_eval.artefacts import read_artefacts, read_run
 from maester_eval.cells import COMPARE_RULE_VERSION
@@ -24,7 +24,7 @@ from maester_eval.gold import GoldFiling
 from maester_eval.owners import OWNER_RULE_VERSION
 from maester_eval.paths import to_utc
 from maester_eval.periods import SPAN_RULE_VERSION
-from maester_eval.scoring import RunScore, Summary, score_run, score_xbrl_run
+from maester_eval.scoring import FactScore, RunScore, Summary, score_run, score_xbrl_run
 from maester_eval.sheet_concepts import CONCEPT_CARRY_VERSION
 from maester_eval.source_rule import SOURCE_RULE_VERSION
 from maester_eval.tags import TAG_DIMENSIONS, UNITS
@@ -123,6 +123,33 @@ def _delta_table(now: Summary, before: Summary, earlier_run: str) -> list[str]:
     return lines + [""]
 
 
+def count_change(a: int, b: int) -> str:
+    """The change from count `b` to count `a` with its sign, such as `+3` or `−2`; `0` for none."""
+    change = a - b
+    return f"{'−' if change < 0 else '+'}{abs(change)}" if change else "0"
+
+
+def denominator_counts(score: RunScore) -> list[tuple[str, int]]:
+    """What decides the denominator of an `xbrl` or `shown` score: the gold facts it scored, those it did not (Outside,
+    Not placed), the filings with no used instance and the instances not used. A map or reader change that drops a
+    slot's facts, or makes an instance unusable, moves gold facts out of the rates; these counts show it."""
+    return [("Gold facts scored", score.summary().gold_facts),
+            ("Outside", sum(f.outside_slots for f in score.filings)),
+            ("Not placed", sum(sum(f.not_placed.values()) for f in score.filings)),
+            ("Filings with no used instance", len(score.unusable)),
+            ("Instances not used", len(score.unused_instances))]
+
+
+def _source_delta_table(now: RunScore, before: RunScore) -> list[str]:
+    """`## Against <earlier run>` for an `xbrl` or `shown` score: the rates of `_delta_table`, then the counts that
+    decide their denominator. A rate that holds while gold facts leave the denominator is not a rate that held."""
+    lines = _delta_table(now.summary(), before.summary(), before.run)
+    lines += ["| Count | This run | Earlier | Change |", "| --- | --- | --- | --- |"]
+    lines += [_row([label, a, b, count_change(a, b)])
+              for (label, a), (_, b) in zip(denominator_counts(now), denominator_counts(before))]
+    return lines + [""]
+
+
 # --- The element map -----------------------------------------------------------------------------------------------
 
 
@@ -181,6 +208,7 @@ def map_against_gold(xbrl: RunScore) -> dict:
         "sign_only": [{"element": e, "gold_facts": n} for e, n in sorted(sign_only.items(), key=lambda item: (-item[1], item[0]))],
         "without_element": [{"format": f, "concept": c, "gold_facts": n} for (f, c), n in sorted(lacking.items())],
         "pooled": dict(xbrl.pooled), "unusable": dict(xbrl.unusable),
+        "partly_used": [u.model_dump() for u in xbrl.unused_instances if u.filing_id not in xbrl.unusable],
     }
 
 
@@ -229,6 +257,14 @@ def _map_lines(xbrl: RunScore) -> list[str]:
     if found["unusable"]:
         lines += ["| Filing | Reason |", _row(["---"] * 2)]
         lines += [_row([filing, reason]) for filing, reason in found["unusable"].items()]
+    else:
+        lines.append("None.")
+    lines += ["", "### XBRL partly used", "",
+              "A filing scored on its other instances. The instance named here was not read, so its slots are not "
+              "scored.", ""]
+    if found["partly_used"]:
+        lines += ["| Filing | Instance not used | Reason |", _row(["---"] * 3)]
+        lines += [_row([u["filing_id"], PurePosixPath(u["file"]).name, u["reason"]]) for u in found["partly_used"]]
     else:
         lines.append("None.")
     return lines + [""]
@@ -394,7 +430,7 @@ def render_markdown(score: RunScore, against: RunScore | None = None, generated_
     for other in others or []:
         earlier = next((a for a in others_against or [] if a.source == other.source), None)
         if earlier is not None:
-            lines += _delta_table(other.summary(), earlier.summary(), earlier.run)
+            lines += _source_delta_table(other, earlier)
     if extended:
         lines += _version_lines(xbrl)
     for title, strata in score.strata().items():
@@ -415,7 +451,7 @@ def render_markdown(score: RunScore, against: RunScore | None = None, generated_
     if score.out_of_scope:
         reasons = out_of_scope_reasons or {}
         lines += ["## Out of scope", ""] + [f"- {i} — {reasons[i]}" if reasons.get(i) else f"- {i}" for i in score.out_of_scope] + [""]
-    mismatches = [(f.filing_id, x) for f in score.filings for x in f.facts if x.outcome not in MATCHES]
+    mismatches = _mismatches(score)
     lines += ["## Mismatches", ""]
     if not mismatches:
         lines.append("None.")
@@ -423,7 +459,45 @@ def render_markdown(score: RunScore, against: RunScore | None = None, generated_
         lines += ["| Filing | Statement | Basis | Label | Period | Outcome | Gold | Read |", "| --- | --- | --- | --- | --- | --- | --- | --- |"]
         for filing_id, x in mismatches:
             lines.append(_row([filing_id, x.statement, x.basis, x.label, x.period_label, x.outcome, x.gold_printed, x.read_printed]))
+    for other in others or []:
+        lines += _source_mismatch_lines(other)
     return "\n".join(lines) + "\n"
+
+
+def _mismatches(score: RunScore) -> list[tuple[str, FactScore]]:
+    """Each gold fact of the score that is not a match, with its filing id, in order."""
+    return [(f.filing_id, x) for f in score.filings for x in f.facts if x.outcome not in MATCHES]
+
+
+def _gold_index(position: int, x: FactScore) -> int:
+    """The gold fact's place in its gold file: the XBRL scorer and `shown` set it; a PDF score holds every gold fact
+    in order, so there it is the fact's place in the filing's scores."""
+    return position if x.gold_index is None else x.gold_index
+
+
+def mismatch_records(score: RunScore) -> list[dict]:
+    """`_mismatches` as `report.json` keeps them: the gold fact's identity (filing, place in the gold file, concept,
+    statement, basis, period label, span and period end), the outcome, where the scored figure came from, and the
+    element and detail for an XBRL figure. No figure: `score` and the gold file hold those."""
+    return [{"filing_id": f.filing_id, "gold_index": _gold_index(position, x), "concept": x.concept,
+             "statement": x.statement, "basis": x.basis, "period_label": x.period_label, "span": x.span,
+             "period_end": x.period_end, "outcome": x.outcome, "source": x.source, "element": x.element,
+             "detail": x.detail}
+            for f in score.filings for position, x in enumerate(f.facts) if x.outcome not in MATCHES]
+
+
+def _source_mismatch_lines(score: RunScore) -> list[str]:
+    """`## Mismatches: <source>` for an `xbrl` or `shown` score, with the figures as the PDF run's Mismatches shows them."""
+    lines = ["", f"## Mismatches: {score.source}", ""]
+    found = _mismatches(score)
+    if not found:
+        return lines + ["None."]
+    lines += ["| Filing | Statement | Basis | Concept | Period | Span | Period end | Outcome | From | Element | Detail | Gold | Read |",
+              _row(["---"] * 13)]
+    for filing_id, x in found:
+        lines.append(_row([filing_id, x.statement, x.basis, x.concept, x.period_label, x.span, x.period_end, x.outcome,
+                           x.source, x.element, x.detail, x.gold_printed, x.read_printed]))
+    return lines
 
 
 def write_report(run_dir: Path, score: RunScore, against: RunScore | None = None, generated_at: datetime | None = None,
@@ -443,7 +517,8 @@ def write_report(run_dir: Path, score: RunScore, against: RunScore | None = None
     }
     if others:
         data["sources"] = {o.source: {"summary": o.summary().model_dump(),
-                                      "strata": {k: {v: s.model_dump() for v, s in d.items()} for k, d in o.strata().items()}}
+                                      "strata": {k: {v: s.model_dump() for v, s in d.items()} for k, d in o.strata().items()},
+                                      "mismatches": mismatch_records(o)}
                            for o in scores}
     if tags is not None:
         data["format_tags"] = format_tag_table(scores, tags)

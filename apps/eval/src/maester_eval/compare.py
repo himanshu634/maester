@@ -45,8 +45,8 @@ from maester_eval.manifest import Manifest, SetChoice, tag_values
 from maester_eval.owners import OWNER_RULE_VERSION, DifferingCell, differing_cells, fact_figure, owned_facts, slot_owners
 from maester_eval.paths import to_utc
 from maester_eval.periods import SPAN_RULE_VERSION
-from maester_eval.report import TAG_TITLES, pp_change
-from maester_eval.scoring import rate_text, unusable_reason
+from maester_eval.report import TAG_TITLES, count_change, pp_change
+from maester_eval.scoring import UnusedInstance, rate_text, unused_instances, unusable_reason
 from maester_eval.sheet_concepts import CONCEPT_CARRY_VERSION, CompanyConcepts, ConceptPick, load_company_concepts
 from maester_eval.sheets import SHEET_COLUMNS, sheet_rows
 from maester_eval.source_rule import SOURCE_RULE_VERSION
@@ -110,6 +110,8 @@ class FilingCompare(BaseModel):
     cells: list[CellCompare]
     counts: dict[str, int]
     instances_differ: list[DifferingCell]
+    # A compared filing's instances that were not used: it was compared on its other instances.
+    unused_instances: list[UnusedInstance] = []
 
 
 class CompareRun(BaseModel):
@@ -294,7 +296,7 @@ def compare_filing(pdf: Artefact, xbrl: Artefact, concepts: CompanyConcepts, tag
             xbrl_unit=None if x is None or key in pooled_differ else x.get("unitLabel"),
             xbrl_normalized=None if x is None or key in pooled_differ else x["normalizedValue"]))
     return FilingCompare(filing_id=pdf.filing_id, company=pdf.company, set=pdf.set, tags=tags, compared=True, reason=None,
-                         cells=cells, counts=counts, instances_differ=differ)
+                         cells=cells, counts=counts, instances_differ=differ, unused_instances=unused_instances(xbrl))
 
 
 def settle_rows(fc: FilingCompare, pdf: Artefact) -> list[dict[str, str]]:
@@ -462,17 +464,36 @@ def _differ_lines(run: CompareRun) -> list[str]:
     return lines + [""]
 
 
+def _unused_lines(run: CompareRun) -> list[str]:
+    lines = ["## Instances not used", "",
+             "A filing compared on its other instances. The instance named here was not read, so its slots are not "
+             "compared.", ""]
+    found = [u for f in run.filings for u in f.unused_instances]
+    if not found:
+        return lines + ["None.", ""]
+    lines += ["| Filing | Instance not used | Reason |", _row(["---"] * 3)]
+    return lines + [_row([u.filing_id, Path(u.file).name, u.reason]) for u in found] + [""]
+
+
+def _filing_counts(run: CompareRun) -> list[tuple[str, int]]:
+    """What decides the denominator, by filing: the filings compared and not, and the instances not used in those compared."""
+    compared = [f for f in run.filings if f.compared]
+    return [("Filings compared", len(compared)), ("Filings not compared", len(run.filings) - len(compared)),
+            ("Instances not used", sum(len(f.unused_instances) for f in compared))]
+
+
 def _against_lines(run: CompareRun, against: CompareRun) -> list[str]:
     now, before = run.counts(), against.counts()
     lines = [f"## Against {against.pdf_run} and {against.xbrl_run}", "",
-             "Rates change in percentage points; counts change in cells or facts.", "",
+             "Rates change in percentage points; counts change in filings, instances, cells or facts.", "",
              "| Measure | This run | Earlier | Change |", "| --- | --- | --- | --- |"]
     for label, rate in (("Agreement", agreement_tenths), ("Exact agreement", exact_agreement_tenths)):
         a, b = rate(now), rate(before)
         lines.append(_row([label, rate_text(a), rate_text(b), pp_change(a, b)]))
+    for (label, a), (_, b) in zip(_filing_counts(run), _filing_counts(against)):
+        lines.append(_row([label, a, b, count_change(a, b)]))
     for name in (*COMPARE_OUTCOMES, *GEMINI_COUNTS):
-        change = now[name] - before[name]
-        lines.append(_row([name, now[name], before[name], f"{'−' if change < 0 else '+'}{abs(change)}" if change else "0"]))
+        lines.append(_row([name, now[name], before[name], count_change(now[name], before[name])]))
     return lines + [""]
 
 
@@ -487,7 +508,7 @@ def render_compare_markdown(run: CompareRun, against: CompareRun | None) -> str:
              "A cell is a slot of the filing's own XBRL instances and a concept. Gemini's concepts come from the company's "
              "labelling sheets. A Gemini line in a comparative column is outside the instance, never a line XBRL lacks.", ""]
     lines += _summary_lines(run) + _tag_lines(run) + _statement_lines(run) + _disagreement_lines(run) + _sign_lines(run)
-    lines += _differ_lines(run)
+    lines += _differ_lines(run) + _unused_lines(run)
     if against is not None:
         lines += _against_lines(run, against)
     return "\n".join(lines).rstrip("\n") + "\n"

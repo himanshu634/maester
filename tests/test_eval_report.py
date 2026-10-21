@@ -10,10 +10,10 @@ import unittest
 from unittest import mock
 
 from eval_fixtures import (
-    FILING, RESULTS_Q2, WHEN, gold_fact, gold_of, pdf_artefact, plain, scored_row as row, xbrl_artefact, xbrl_fact,
+    FILING, RESULTS_Q2, WHEN, gold_fact, gold_of, instance_read, pdf_artefact, plain, scored_row as row, xbrl_artefact,
+    xbrl_fact,
 )
-from test_eval_scoring_xbrl import G1, G2, G3, PDF_FACTS, STANDALONE
-from test_eval_scoring_xbrl import G1, G2, G3, PDF_FACTS, STANDALONE
+from test_eval_scoring_xbrl import A, B, G1, G2, G3, PDF_FACTS, STANDALONE
 from test_extraction_workflow import FAST, PDF, ScriptedModel
 from typer.testing import CliRunner
 
@@ -596,7 +596,7 @@ class BySourceTests(NumbersCase):
     def test_a_pdf_only_report_is_unchanged(self):
         md = render_markdown(self.pdf, generated_at=WHEN)
         for heading in ("## By source", "## By format tag", "## The element map against gold", "## Settled disagreements",
-                        "## Rule versions"):
+                        "## Rule versions", "## Mismatches: "):
             self.assertNotIn(heading, md)
         self.assertEqual([line for line in md.splitlines() if line.startswith("## ")][0], "## Summary")
 
@@ -619,6 +619,100 @@ class BySourceTests(NumbersCase):
         self.assertEqual(section(md, "Against x-earlier").splitlines()[0], "| Rate | This run | Earlier | Change |")
         self.assertIn("| Exact match | 100.0% | 100.0% | +0.0 pp |", section(md, "Against x-earlier"))
         self.assertEqual(md.count("## Against "), 1)  # the first score has no earlier run, and `shown` none either
+
+
+def partly_used():
+    """RESULTS_Q2's XBRL with its consolidated instance a.xml unreadable and its standalone b.xml used: the
+    consolidated quarter slot is held by no used instance, so G1 leaves the xbrl denominator for Outside."""
+    return xbrl_artefact(RESULTS_Q2, [xbrl_fact(**STANDALONE)], instances=[
+        instance_read(A, used=False, reason="XBRL_UNREADABLE:MALFORMED", format=None, mapped=False, state=None),
+        instance_read(B, basis="standalone", facts=1)])
+
+
+class GateDenominatorTests(NumbersCase):
+    """A map or reader change that moves gold facts out of the xbrl denominator shows in the --against counts, though
+    the exact-match rate holds."""
+
+    def setUp(self):
+        super().setUp()
+        self.now_art = partly_used()
+        self.now = self.xbrl_score(self.now_art, self.gold)
+        self.shown_now = score_shown(self.gold, self.pdf, self.now, [self.pdf_art], [self.now_art])
+        self.before = self.xbrl.model_copy(update={"run": "x0"})
+        self.shown_before = self.shown.model_copy(update={"run": "p+x0"})
+
+    def test_the_xbrl_delta_counts_the_gold_facts_scored_outside_not_placed_and_instances_not_used(self):
+        part = section(self.render(self.now, self.shown_now, others_against=[self.before, self.shown_before]), "Against x0")
+        self.assertIn("| Exact match | 100.0% | 100.0% | +0.0 pp |", part)    # the rate alone would hide the change
+        self.assertIn("| Count | This run | Earlier | Change |", part)
+        self.assertIn("| Gold facts scored | 1 | 2 | −1 |", part)             # G2 only; G1 and G2 before
+        self.assertIn("| Outside | 2 | 1 | +1 |", part)                       # G1 and the comparative G3; G3 before
+        self.assertIn("| Not placed | 0 | 0 | 0 |", part)
+        self.assertIn("| Filings with no used instance | 0 | 0 | 0 |", part)
+        self.assertIn("| Instances not used | 1 | 0 | +1 |", part)
+
+    def test_the_shown_delta_carries_the_xbrl_runs_instances_not_used(self):
+        part = section(self.render(self.now, self.shown_now, others_against=[self.before, self.shown_before]), "Against p+x0")
+        self.assertIn("| Instances not used | 1 | 0 | +1 |", part)
+        self.assertIn("| Outside | 1 | 1 | 0 |", part)                        # shown's Outside is another period: G3
+
+    def test_the_pdf_delta_is_unchanged(self):
+        earlier = self.pdf.model_copy(update={"run": "p0"})
+        part = section(render_markdown(self.pdf, earlier, generated_at=WHEN), "Against p0")
+        self.assertNotIn("| Count |", part)
+
+    def test_a_filing_with_one_used_and_one_unused_instance_is_named(self):
+        part = section(self.render(self.now), "The element map against gold")
+        self.assertIn(f"| {Q2} | a.xml | XBRL_UNREADABLE:MALFORMED |", part.split("### XBRL partly used")[1])
+        self.assertTrue(part.split("### XBRL not used")[1].split("###")[0].strip().endswith("None."))
+
+    def test_the_json_holds_the_instances_not_used(self):
+        with tempfile.TemporaryDirectory() as folder:
+            _, js = write_report(Path(folder), self.pdf, generated_at=WHEN, others=[self.now, self.shown_now], tags=self.tags)
+            data = json.loads(js.read_text(encoding="utf-8"))
+        self.assertEqual(data["map"]["partly_used"], [{"filing_id": Q2, "file": A, "reason": "XBRL_UNREADABLE:MALFORMED"}])
+
+
+class PerSourceMismatchTests(NumbersCase):
+    def setUp(self):
+        super().setUp()
+        # One gold fact printed in brackets; the instance holds it as a non-negative amount: wrong_sign for xbrl and shown.
+        self.sign_gold = {Q2: gold_of(gold_fact(**NEGATIVE))}
+        art = xbrl_artefact(RESULTS_Q2, [xbrl_fact(element="SyntheticPayments")])
+        self.sign = self.xbrl_score(art, self.sign_gold)
+        pdf = score_run("p", [self.pdf_art], self.sign_gold, [Q2], "dev")
+        self.sign_shown = score_shown(self.sign_gold, pdf, self.sign, [self.pdf_art], [art])
+
+    def test_each_other_source_lists_its_mismatches(self):
+        md = render_markdown(self.pdf, others=[self.sign, self.sign_shown], tags=self.tags, generated_at=WHEN)
+        header = ("| Filing | Statement | Basis | Concept | Period | Span | Period end | Outcome | From | Element | Detail "
+                  "| Gold | Read |")
+        for source in ("xbrl", "shown"):
+            part = section(md, f"Mismatches: {source}")
+            self.assertEqual(part.splitlines()[0], header, source)
+            self.assertIn(f"| {Q2} | income_statement | consolidated | revenue_from_operations | Quarter ended 30.09.2025 "
+                          "| quarter | 2025-09-30 | wrong_sign | xbrl | SyntheticPayments | — | (12,345.00) | 12345.00 ₹ lakh |",
+                          part, source)
+        self.assertIn("## Mismatches\n", md)                                    # the PDF run's, as in phase 0
+
+    def test_a_source_with_none_says_so(self):
+        md = self.render(self.xbrl, self.shown)
+        self.assertEqual(section(md, "Mismatches: xbrl"), "None.")
+        self.assertEqual(section(md, "Mismatches: shown"), "None.")
+
+    def test_the_json_holds_each_sources_mismatches_by_gold_fact(self):
+        with tempfile.TemporaryDirectory() as folder:
+            _, js = write_report(Path(folder), self.pdf, generated_at=WHEN, others=[self.sign, self.sign_shown], tags=self.tags)
+            data = json.loads(js.read_text(encoding="utf-8"))
+        expected = {"filing_id": Q2, "gold_index": 0, "concept": "revenue_from_operations", "statement": "income_statement",
+                    "basis": "consolidated", "period_label": "Quarter ended 30.09.2025", "span": "quarter",
+                    "period_end": "2025-09-30", "outcome": "wrong_sign", "source": "xbrl", "element": "SyntheticPayments",
+                    "detail": None}
+        self.assertEqual(data["sources"]["xbrl"]["mismatches"], [expected])
+        self.assertEqual(data["sources"]["shown"]["mismatches"], [expected])
+        # The PDF run read G2 as 10,500.00 lakh: its one mismatch, at its place in the gold file.
+        self.assertEqual([(m["gold_index"], m["basis"], m["outcome"], m["source"]) for m in data["sources"]["pdf"]["mismatches"]],
+                         [(1, "standalone", "wrong_value", "pdf")])
 
 
 class ByFormatTagTests(NumbersCase):
@@ -695,7 +789,8 @@ class MapAgainstGoldTests(NumbersCase):
 
     def test_no_suspect_no_sign_only_none_says_so(self):
         part = section(self.render(self.xbrl), "The element map against gold")
-        for heading in ("Map suspects", "Sign only", "Concepts no element gives", "Refilings with no order", "XBRL not used"):
+        for heading in ("Map suspects", "Sign only", "Concepts no element gives", "Refilings with no order", "XBRL not used",
+                        "XBRL partly used"):
             self.assertTrue(part.split(f"### {heading}")[1].split("###")[0].rstrip().endswith("None."), heading)
 
     def test_refilings_with_no_order_and_xbrl_not_used(self):
@@ -760,7 +855,8 @@ class WriteNumbersTests(NumbersCase):
         self.assertEqual(sorted(data["sources"]["pdf"]["strata"]), ["basis", "kind", "scanned", "statement", "stratum"])
         self.assertEqual(data["format_tags"]["unit"]["lakh"]["pdf"], {"gold_facts": 3, "match": 2})
         self.assertEqual(data["unit_tags"][Q2]["against_gold"], "agrees")
-        self.assertEqual(sorted(data["map"]), ["formats", "pooled", "sign_only", "suspects", "unusable", "without_element"])
+        self.assertEqual(sorted(data["map"]), ["formats", "partly_used", "pooled", "sign_only", "suspects", "unusable",
+                                               "without_element"])
         self.assertEqual(sorted(data["settled"]), ["pdf"])
         self.assertEqual(sorted(data["settled"]["pdf"]), ["summary"])
 
