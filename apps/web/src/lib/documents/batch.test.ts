@@ -387,6 +387,55 @@ describe('sendAll', () => {
 		expect(result.rest).toEqual([]);
 	});
 
+	describe('a file still in flight when the connection drops', () => {
+		/** Four files start at once; `settle` decides how each one ends, after f2 fails offline. */
+		async function dropThenSettle(settle: (waits: ReturnType<typeof deferred>[]) => void) {
+			const waits: ReturnType<typeof deferred>[] = [];
+			const done = sendAll(many(6), null, (item) => {
+				const wait = deferred();
+				waits[Number(item.path.slice(1, -4))] = wait;
+				return wait.promise;
+			});
+			await flush();
+			waits[2].reject(new ApiError(0, 'NETWORK', 'offline'));
+			await flush();
+			settle(waits);
+			await flush();
+			return done;
+		}
+
+		it('signed out after the drop is still in the rest, in the order chosen', async () => {
+			const result = await dropThenSettle((waits) => {
+				waits[1].reject(new ApiError(401, 'UNAUTHENTICATED', 'signed out'));
+				waits[0].resolve();
+				waits[3].resolve();
+			});
+			expect(result.stopped).toBe('offline');
+			expect(result.sent).toBe(2);
+			expect(result.rest.map((p) => p.path)).toEqual(['f1.pdf', 'f2.pdf', 'f4.pdf', 'f5.pdf']);
+		});
+
+		it('sent after the drop is not in the rest', async () => {
+			const result = await dropThenSettle((waits) => {
+				waits[0].resolve();
+				waits[1].resolve();
+				waits[3].resolve();
+			});
+			expect(result.sent).toBe(3);
+			expect(result.rest.map((p) => p.path)).toEqual(['f2.pdf', 'f4.pdf', 'f5.pdf']);
+		});
+
+		it('refused with a 5xx after the drop is refused, not in the rest', async () => {
+			const result = await dropThenSettle((waits) => {
+				waits[1].reject(new ApiError(503, 'INTERNAL', 'unavailable'));
+				waits[0].resolve();
+				waits[3].resolve();
+			});
+			expect(result.refused.map((r) => r.name)).toEqual(['f1.pdf', 'f2.pdf']);
+			expect(result.rest.map((p) => p.path)).toEqual(['f2.pdf', 'f4.pdf', 'f5.pdf']);
+		});
+	});
+
 	it('sending the rest again sends exactly those, and a second drop has only what is left', async () => {
 		const first = await sendAll(many(10), null, async (item) => {
 			if (item.path >= 'f2.pdf') throw new ApiError(0, 'NETWORK', 'offline');

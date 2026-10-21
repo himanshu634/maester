@@ -246,7 +246,7 @@ export async function sendAll(
 	let sent = 0;
 	let stopped: Stop | null = null;
 	const refused: { at: number; refusal: Refusal }[] = [];
-	/** Indexes of the files refused because the connection dropped. */
+	/** Indexes of the files that stopped the batch (offline or signed out); a resend meets them again. */
 	const droppedAt: number[] = [];
 
 	async function lane() {
@@ -259,7 +259,7 @@ export async function sendAll(
 			} catch (error) {
 				const failure = sendFailure(error, item.file);
 				refused.push({ at, refusal: { name: shownName(item, folder), reason: failure.reason } });
-				if (failure.stop === 'offline') droppedAt.push(at);
+				if (failure.stop) droppedAt.push(at);
 				stopped ??= failure.stop;
 			}
 			settled += 1;
