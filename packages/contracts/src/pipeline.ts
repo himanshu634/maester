@@ -8,7 +8,8 @@ import { XbrlFormatKind } from "./xbrl.js";
  */
 export const DocumentPipeline = z.strictObject({
   stored: z.enum(["done", "now", "failed"]),
-  identified: z.enum(["done", "now", "needs_you", "failed", "waiting"]),
+  /** `not_needed`: a rejected file or a duplicate, which is never identified. */
+  identified: z.enum(["done", "now", "needs_you", "failed", "waiting", "not_needed"]),
   numbers: z.strictObject({
     source: z.enum(["xbrl", "pdf"]).nullable(),
     state: z.enum(["done", "now", "not_needed", "failed", "waiting", "not_read"]),
@@ -21,7 +22,8 @@ export const DocumentPipeline = z.strictObject({
     format: XbrlFormatKind.nullable(),
   }),
   text: z.strictObject({
-    state: z.enum(["done", "now", "partial", "failed", "waiting"]),
+    /** `not_needed`: a rejected file or a duplicate, which is never indexed. */
+    state: z.enum(["done", "now", "partial", "failed", "waiting", "not_needed"]),
     pages: z.number().int().min(0),
     pagesRead: z.number().int().min(0),
     pagesOcr: z.number().int().min(0),

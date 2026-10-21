@@ -54,12 +54,25 @@ describe("computePipeline: stored and identified", () => {
     const at = (state: DocumentRow["state"], intakeState: DocumentRow["intakeState"]) =>
       computePipeline(input({ document: docRow({ state, intakeState }) }), null, []).identified;
     expect(at("uploaded", null)).toBe("waiting");
-    expect(at("rejected", null)).toBe("waiting");
     expect(at("stored", "identifying")).toBe("now");
     expect(at("stored", "needs_company")).toBe("needs_you");
     expect(at("stored", "needs_kind")).toBe("needs_you");
     expect(at("stored", "identify_failed")).toBe("failed");
-    for (const s of ["reading", "read", "read_failed", "kept", "duplicate", "waiting_for_xbrl"] as const) expect(at("stored", s)).toBe("done");
+    for (const s of ["reading", "read", "read_failed", "kept", "waiting_for_xbrl"] as const) expect(at("stored", s)).toBe("done");
+  });
+
+  it("a rejected file and a duplicate are never identified: not_needed, not waiting for ever", () => {
+    const at = (over: Partial<DocumentRow>) => computePipeline(input({ document: docRow(over) }), null, []).identified;
+    expect(at({ state: "rejected", intakeState: null })).toBe("not_needed");
+    expect(at({ intakeState: "duplicate" })).toBe("not_needed");
+    expect(at({ intakeState: "read", duplicateOfDocumentId: ID(9) })).toBe("not_needed");
+  });
+
+  it("a stored document that verify has not given an intake state yet is identifying now; one stored before intake with a classification is done", () => {
+    const at = (i: PipelineInput) => computePipeline(i, null, []).identified;
+    expect(at(input({ document: docRow({ intakeState: null }), classification: null }))).toBe("now");
+    expect(at(input({ document: docRow({ format: "xbrl", intakeState: null }), classification: null }))).toBe("now");
+    expect(at(input({ document: docRow({ intakeState: null }) }))).toBe("done");
   });
 
   it("every output parses as a DocumentPipeline", () => {
@@ -103,7 +116,7 @@ describe("computePipeline: numbers of an XBRL document", () => {
 
   it("not identified yet is waiting, not_identified; a held one waits for the investor", () => {
     expect(numbers(xbrlDoc("identifying"))).toEqual({ ...base, state: "waiting", reason: "not_identified" });
-    expect(numbers(xbrlDoc("identify_failed")).reason).toBe("not_identified");
+    expect(numbers(xbrlDoc("identify_failed"))).toEqual({ ...base, state: "not_read", reason: "not_identified" });
     expect(numbers(xbrlDoc(null)).reason).toBe("not_identified");
     expect(numbers(xbrlDoc("needs_kind"))).toEqual({ ...base, state: "waiting", reason: "needs_you" });
     expect(numbers(xbrlDoc("needs_company")).reason).toBe("needs_you");
@@ -117,9 +130,14 @@ describe("computePipeline: numbers of an XBRL document", () => {
     expect(numbers(xbrlDoc("kept"))).toEqual({ ...base, state: "not_read", reason: "not_a_read_kind" });
   });
 
-  it("a duplicate is not_read, duplicate", () => {
-    expect(numbers(xbrlDoc("duplicate"))).toEqual({ ...base, state: "not_read", reason: "duplicate" });
-    expect(numbers(xbrlDoc("read", { document: docRow({ format: "xbrl", intakeState: "read", duplicateOfDocumentId: ID(9) }) })).reason).toBe("duplicate");
+  it("a duplicate is not_needed, duplicate", () => {
+    expect(numbers(xbrlDoc("duplicate"))).toEqual({ ...base, state: "not_needed", reason: "duplicate" });
+    expect(numbers(xbrlDoc("read", { document: docRow({ format: "xbrl", intakeState: "read", duplicateOfDocumentId: ID(9) }) }))).toMatchObject({ state: "not_needed", reason: "duplicate" });
+  });
+
+  it("a rejected file has no numbers to wait for: not_needed, no reason", () => {
+    const rejected = xbrlDoc(null, { document: docRow({ format: "xbrl", state: "rejected", intakeState: null }) });
+    expect(numbers(rejected)).toEqual({ ...base, state: "not_needed", reason: null });
   });
 
   it("an XBRL document ignores the plan and the cover it is given", () => {
@@ -177,7 +195,7 @@ describe("computePipeline: numbers of a PDF", () => {
     for (const s of ["needs_company", "needs_kind"] as const) {
       expect(numbers(input({ document: docRow({ intakeState: s }) }))).toMatchObject({ state: "waiting", reason: "needs_you" });
     }
-    for (const s of ["identifying", "identify_failed", null] as const) {
+    for (const s of ["identifying", null] as const) {
       expect(numbers(input({ document: docRow({ intakeState: s }) }))).toMatchObject({ state: "waiting", reason: "not_identified" });
     }
   });
@@ -186,8 +204,31 @@ describe("computePipeline: numbers of a PDF", () => {
     expect(numbers(pdfRead({ document: docRow({ intakeState: null }) }))).toMatchObject({ source: "pdf", state: "done" });
   });
 
-  it("a duplicate is not_read, duplicate", () => {
-    expect(numbers(input({ document: docRow({ intakeState: "duplicate" }) }))).toMatchObject({ state: "not_read", reason: "duplicate" });
+  it("a duplicate is not_needed, duplicate", () => {
+    expect(numbers(input({ document: docRow({ intakeState: "duplicate" }) }))).toMatchObject({ state: "not_needed", reason: "duplicate" });
+  });
+
+  it("a rejected file is not_needed with no reason", () => {
+    expect(numbers(input({ document: docRow({ state: "rejected", intakeState: null }) }))).toEqual({
+      source: null, state: "not_needed", coveredByXbrl: [], waitingOn: [], reason: null, format: null,
+    });
+  });
+
+  it("a PDF whose identification failed is not_read, not_identified: it is not going to be read", () => {
+    expect(numbers(input({ document: docRow({ intakeState: "identify_failed" }) }))).toMatchObject({ source: null, state: "not_read", reason: "not_identified" });
+  });
+
+  it("a manual re-read shows now: a running or queued document.extract job over a read, failed or kept PDF", () => {
+    const extract = (state: JobRow["state"], type = "document.extract") => ({ type, state }) as JobRow;
+    for (const intakeState of ["read", "read_failed", "kept"] as const) {
+      for (const state of ["running", "queued"] as const) {
+        expect(numbers(pdfRead({ document: docRow({ intakeState }), latestJob: extract(state) }))).toMatchObject({ source: "pdf", state: "now", reason: null });
+      }
+    }
+    // The old state stands for a finished job, or a job of another type.
+    expect(numbers(pdfRead({ latestJob: extract("succeeded") })).state).toBe("done");
+    expect(numbers(pdfRead({ latestJob: extract("running", "document.classify") })).state).toBe("done");
+    expect(numbers(pdfRead({ document: docRow({ intakeState: "duplicate" }), latestJob: extract("running") })).state).toBe("not_needed");
   });
 });
 
@@ -224,6 +265,16 @@ describe("computePipeline: text", () => {
 
   it("a running job over a complete revision (a rebuild) leaves the finished index done", () => {
     expect(text(input({ indexJob: job("running"), index: idx("complete") })).state).toBe("done");
+  });
+
+  it("a rejected file and a duplicate are not_needed: they never get an index job", () => {
+    const empty = { pages: 0, pagesRead: 0, pagesOcr: 0, chunks: 0, xbrlBlocks: 0, ahead: null };
+    expect(text(input({ document: docRow({ state: "rejected", intakeState: null }) }))).toEqual({ state: "not_needed", ...empty });
+    expect(text(input({ document: docRow({ intakeState: "duplicate" }) }))).toEqual({ state: "not_needed", ...empty });
+  });
+
+  it("a document whose identification failed still waits for its index: it is indexed whatever it is", () => {
+    expect(text(input({ document: docRow({ intakeState: "identify_failed" }), indexJob: job("queued"), ahead: 1 }))).toMatchObject({ state: "waiting", ahead: 1 });
   });
 
   it("no job is waiting with ahead null", () => {

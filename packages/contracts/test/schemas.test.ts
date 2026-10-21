@@ -100,6 +100,16 @@ describe("DocumentPipeline", () => {
     expect(() => DocumentPipeline.parse({ ...IDLE_PIPELINE, text: { ...IDLE_PIPELINE.text, ahead: -1 } })).toThrow();
   });
 
+  it("says a track is not needed for a document that never takes it: a duplicate or a rejected file", () => {
+    const parsed = DocumentPipeline.parse({
+      ...IDLE_PIPELINE,
+      identified: "not_needed",
+      numbers: { ...IDLE_PIPELINE.numbers, state: "not_needed", reason: "duplicate" },
+      text: { ...IDLE_PIPELINE.text, state: "not_needed" },
+    });
+    expect([parsed.identified, parsed.numbers.state, parsed.text.state]).toEqual(["not_needed", "not_needed", "not_needed"]);
+  });
+
   it("carries a covered PDF's ids and an unmapped instance's format", () => {
     const id = "6d5d1b0a-1e5e-4f6b-9f5d-2a4e1c9b7f10";
     const covered = { ...IDLE_PIPELINE, numbers: { source: "xbrl", state: "not_needed", coveredByXbrl: [id], waitingOn: [], reason: null, format: null } };

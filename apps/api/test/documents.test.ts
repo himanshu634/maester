@@ -168,6 +168,37 @@ describe("documents", () => {
       expect((await get(importing)).pipeline.numbers).toMatchObject({ state: "waiting", reason: "not_identified" });
     });
 
+    it("another company's XBRL neither covers a PDF nor holds it: only the PDF's own company and instances of none yet count", async () => {
+      const { a, pdfId, xbrlId, userId } = await seedCovered("d18@example.com", BOTH);
+      const otherCompany = crypto.randomUUID();
+      await ctx.db.insert(schema.company).values({ id: otherCompany, workspaceId: a.workspaceId, displayName: "Synthetic Steel", country: "IN", createdByUserId: userId });
+      const strangers = [crypto.randomUUID(), crypto.randomUUID()];
+      for (const [n, id] of strangers.entries()) {
+        await ctx.db.insert(schema.document).values({
+          id, workspaceId: a.workspaceId, companyId: otherCompany, originalName: `o${n}.xml`, declaredSize: 10, declaredMime: "text/xml", format: "xbrl",
+          storageKey: `workspaces/${a.workspaceId}/documents/${id}/original.xml`, state: "stored", intakeState: n === 0 ? "identifying" : "read", createdByUserId: userId,
+        });
+      }
+      const get = async (id: string) =>
+        Document.parse(await (await ctx.app.request(`/v1/workspaces/${a.workspaceId}/documents/${id}`, { headers: { cookie: a.cookie } })).json());
+      expect((await get(pdfId)).pipeline.numbers).toMatchObject({ source: "xbrl", state: "not_needed", coveredByXbrl: [xbrlId], waitingOn: [] });
+      // Waiting: it names its own company's unsettled instance only, never the stranger's.
+      await ctx.db.update(schema.document).set({ intakeState: "identifying" }).where(eq(schema.document.id, xbrlId));
+      await ctx.db.update(schema.document).set({ intakeState: "waiting_for_xbrl" }).where(eq(schema.document.id, pdfId));
+      expect((await get(pdfId)).pipeline.numbers).toMatchObject({ state: "waiting", reason: "waiting_for_xbrl", waitingOn: [xbrlId] });
+    });
+
+    it("a manual re-read of a results PDF shows now, from the PDF, until the job finishes", async () => {
+      const { extract, a, pdfId } = await seedCovered("d19@example.com", [BOTH[0]!]);
+      const get = async () =>
+        Document.parse(await (await ctx.app.request(`/v1/workspaces/${a.workspaceId}/documents/${pdfId}`, { headers: { cookie: a.cookie } })).json());
+      expect((await get()).pipeline.numbers.state).toBe("not_needed");
+      expect((await extract()).status).toBe(202);
+      expect((await get()).pipeline.numbers).toMatchObject({ source: "pdf", state: "now", reason: null });
+      await ctx.db.update(schema.job).set({ state: "succeeded" }).where(eq(schema.job.subjectId, pdfId));
+      expect((await get()).pipeline.numbers.state).toBe("not_needed");
+    });
+
     it("a PDF waiting for XBRL names the instances it waits on", async () => {
       const { a, pdfId, xbrlId } = await seedCovered("d15@example.com", BOTH);
       await ctx.db.update(schema.document).set({ intakeState: "identifying" }).where(eq(schema.document.id, xbrlId));

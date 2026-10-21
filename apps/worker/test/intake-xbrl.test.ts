@@ -364,6 +364,39 @@ describe("decideIntake with XBRL", () => {
     expect((await loadWorkspaceXbrlDocs(ctx.db, ws.workspaceId))[0]!.coverage).toEqual(CONSOLIDATED);
   });
 
+  it("loadWorkspaceXbrlDocs with company ids keeps the XBRL of those companies and of none, and the plan over it is the plan over all", async () => {
+    const ws = await seedWs();
+    const mine = await addReadXbrl(ws, BOTH);
+    const theirs = await addReadXbrl(ws, BOTH, { companyId: ws.otherCompanyId, bseCode: "500111" });
+    const theirsUnsettled = await insertDoc(ws, "xbrl", "stored", "reading");
+    await classify(ws, theirsUnsettled, { companyId: ws.otherCompanyId, periodEnd: PERIOD });
+    // Not matched to a company yet: held, and it may yet be this company's. A company given at upload counts before a classification.
+    const unmatched = await insertDoc(ws, "xbrl", "stored", "needs_company");
+    await classify(ws, unmatched, { companyId: null, bseCode: "500999", periodEnd: PERIOD });
+    const uploadedFor = await insertDoc(ws, "xbrl", "uploaded", null, { companyId: ws.otherCompanyId });
+
+    const all = await loadWorkspaceXbrlDocs(ctx.db, ws.workspaceId);
+    expect(all.map((x) => x.documentId).sort()).toEqual([mine.id, theirs.id, theirsUnsettled, unmatched, uploadedFor].sort());
+    const filtered = await loadWorkspaceXbrlDocs(ctx.db, ws.workspaceId, { companyIds: [ws.companyId] });
+    expect(filtered.map((x) => x.documentId).sort()).toEqual([mine.id, unmatched].sort());
+    expect(await loadWorkspaceXbrlDocs(ctx.db, ws.workspaceId, { companyIds: [] })).toEqual(all.filter((x) => x.companyId === null));
+
+    // Exact: intake decides over the filtered set. Mine waits on the held instance that may be its own; the other company waits on its unsettled one.
+    const pdf = await addPdf(ws);
+    expect(await decide(pdf.row)).toBe("waiting_for_xbrl");
+    const theirPdf = await insertDoc(ws, "pdf", "stored", "identifying");
+    const theirRow = await classify(ws, theirPdf, { companyId: ws.otherCompanyId, periodEnd: PERIOD, statementsFound: BOTH.map((p) => ({ ...p, pages: [2] })) });
+    expect(await decide(theirRow)).toBe("waiting_for_xbrl");
+  });
+
+  it("loadWorkspaceXbrlDocs without coverage leaves the coverage empty and everything else as it is", async () => {
+    const ws = await seedWs();
+    await addReadXbrl(ws, BOTH);
+    const full = await loadWorkspaceXbrlDocs(ctx.db, ws.workspaceId);
+    expect(full[0]!.coverage).toHaveLength(2);
+    expect(await loadWorkspaceXbrlDocs(ctx.db, ws.workspaceId, { coverage: false })).toEqual(full.map((x) => ({ ...x, coverage: [] })));
+  });
+
   it("a waiting PDF whose period the investor changed is read, once released, under the classification its answers read under", async () => {
     const ws = await seedWs();
     const xbrl = await insertDoc(ws, "xbrl", "stored", "identifying");

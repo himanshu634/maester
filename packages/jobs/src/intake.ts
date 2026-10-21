@@ -3,7 +3,7 @@ import { JobTypes, XBRL_CHECK_SUBJECT, XBRL_PDF_CHECK_VERSION, type IntakeState 
 import {
   companyIdentity, getCurrentClassification, loadWorkspaceXbrlDocs, schema, type ClassificationRow, type Db,
 } from "@maester/db";
-import { planPdfNumbers, type Basis, type FilingKind, type Statement } from "@maester/financial-engine";
+import { planPdfNumbers, type Basis, type CompanyIdentity, type PdfNumbersInput, type Statement } from "@maester/financial-engine";
 import { createJob } from "./create.js";
 import type { Dispatcher } from "./dispatch.js";
 
@@ -27,6 +27,25 @@ const HOLD: Dispatcher = { enqueue: async () => {} };
  */
 async function lockXbrlWait(db: Db, workspaceId: string): Promise<void> {
   await db.execute(sql`select pg_advisory_xact_lock(hashtext('xbrl-wait:' || ${workspaceId}::text))`);
+}
+
+const NO_IDENTITY: CompanyIdentity = { cin: null, bseCode: null, nseSymbol: null, isin: null };
+
+/**
+ * A classification as the source rule sees a results PDF: the one place a classification becomes a `PdfNumbersInput`,
+ * for intake's decision and for the pipeline the API shows. Null when it is no results PDF, or has no company to match
+ * XBRL by. `identity` is the company's codes (`companyIdentity`); without them the PDF matches by company id alone.
+ */
+export function pdfNumbersInput(c: ClassificationRow, identity: CompanyIdentity | undefined): PdfNumbersInput | null {
+  if (c.kind !== "financial_results" || !c.companyId) return null;
+  return {
+    companyId: c.companyId,
+    companyIdentity: identity ?? NO_IDENTITY,
+    kind: "financial_results",
+    periodEnd: c.periodEnd,
+    // Validated against the contract when written: the statement kinds and bases the engine names.
+    statementsFound: c.statementsFound.map((s) => ({ statement: s.statement as Statement, basis: s.basis as Basis })),
+  };
 }
 
 export interface DecideOptions {
@@ -53,17 +72,10 @@ async function readDecision(t: Db, c: ClassificationRow & { companyId: string },
   // An annual report is never skipped or held, so it needs no XBRL documents.
   if (c.kind !== "financial_results") return read;
   await lockXbrlWait(t, c.workspaceId);
-  const plan = planPdfNumbers(
-    {
-      companyId: c.companyId,
-      companyIdentity: await companyIdentity(t, c.workspaceId, c.companyId),
-      kind: c.kind as FilingKind,
-      periodEnd: c.periodEnd,
-      // Validated against the contract when written: the statement kinds and bases the engine names.
-      statementsFound: c.statementsFound.map((s) => ({ statement: s.statement as Statement, basis: s.basis as Basis })),
-    },
-    await loadWorkspaceXbrlDocs(t, c.workspaceId),
-  );
+  const pdf = pdfNumbersInput(c, await companyIdentity(t, c.workspaceId, c.companyId));
+  if (!pdf) return read;
+  // Only XBRL of this company, or of none yet, can wait for or cover this PDF.
+  const plan = planPdfNumbers(pdf, await loadWorkspaceXbrlDocs(t, c.workspaceId, { companyIds: [c.companyId] }));
   if (plan.action === "wait") return allowWait ? { state: "waiting_for_xbrl", jobType: null } : null;
   if (plan.action === "skip") return { state: "read", jobType: null };
   return read;

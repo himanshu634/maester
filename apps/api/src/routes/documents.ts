@@ -30,8 +30,9 @@ import {
   type DocumentRow,
 } from "@maester/db";
 import { planPdfNumbers } from "@maester/financial-engine";
+import { pdfNumbersInput } from "@maester/jobs";
 import type { AppDeps, AppEnv } from "../app.js";
-import { documentPipelines, pdfNumbersInput } from "../documents/pipeline.js";
+import { documentPipelines } from "../documents/pipeline.js";
 import { HttpError } from "../errors.js";
 import { createJob } from "../jobs/create.js";
 import { uuidParam } from "../middleware/params.js";
@@ -54,9 +55,10 @@ function sanitiseName(name: string): string {
 async function refuseReadCoveredByXbrl(db: Db, doc: DocumentRow): Promise<void> {
   if (doc.format !== "pdf") return;
   const c = await getCurrentClassification(db, doc.workspaceId, doc.id);
-  if (c?.kind !== "financial_results" || !c.companyId) return;
-  const pdf = pdfNumbersInput(c, await companyIdentity(db, doc.workspaceId, c.companyId))!;
-  const plan = planPdfNumbers(pdf, await loadWorkspaceXbrlDocs(db, doc.workspaceId));
+  if (!c?.companyId) return;
+  const pdf = pdfNumbersInput(c, await companyIdentity(db, doc.workspaceId, c.companyId));
+  if (!pdf) return;
+  const plan = planPdfNumbers(pdf, await loadWorkspaceXbrlDocs(db, doc.workspaceId, { companyIds: [c.companyId] }));
   if (plan.action === "skip") throw new HttpError("INVALID_STATE", "this document's numbers come from XBRL");
   if (plan.action === "wait") throw new HttpError("INVALID_STATE", "this document is waiting for its XBRL file");
 }

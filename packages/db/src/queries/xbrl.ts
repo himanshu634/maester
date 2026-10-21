@@ -62,8 +62,27 @@ function settleState(r: XbrlDocRow): XbrlDocInput["state"] {
  * Company, codes and period come from the current classification (before one, the company given at upload).
  * Coverage is the distinct statement and basis of the facts of the current revision, as `getCurrentRevision`
  * picks it, when that revision was read from XBRL.
+ *
+ * Two options narrow the work, for a caller that has results PDFs in hand:
+ * - `companyIds`: only the documents whose company is one of these or is not known yet. The source rule only lets
+ *   XBRL of the PDF's own company, or of none yet, wait for or cover a PDF (`couldMatch`, `settledOfSameFiling`), so
+ *   the plan and the cover over the narrowed set are those over all of them. The company is the one `companyId` below
+ *   gives: the classification's once there is one, else the one given at upload.
+ * - `coverage: false`: skip the coverage query, and every `coverage` is empty. For a caller that reads only the state
+ *   and the company, as a PDF waiting for XBRL does.
  */
-export async function loadWorkspaceXbrlDocs(db: Db, workspaceId: string): Promise<XbrlDocInput[]> {
+export async function loadWorkspaceXbrlDocs(
+  db: Db,
+  workspaceId: string,
+  opts: { companyIds?: string[]; coverage?: boolean } = {},
+): Promise<XbrlDocInput[]> {
+  // The company as `toDoc` reads it: the classification's once there is one, else the one given at upload.
+  const company = sql`(case when c.id is null then d.company_id else c.company_id end)`;
+  const companyFilter = opts.companyIds
+    ? opts.companyIds.length
+      ? sql`and (${company} is null or ${company} in (${sql.join(opts.companyIds.map((id) => sql`${id}::uuid`), sql`, `)}))`
+      : sql`and ${company} is null`
+    : sql``;
   const { rows } = await db.execute<XbrlDocRow>(sql`
     select d.id, d.state::text as state, d.intake_state::text as intake_state, d.company_id as doc_company_id,
            c.id as classification_id, c.company_id, c.cin, c.bse_code, c.nse_symbol, c.isin, c.period_end::text as period_end,
@@ -87,8 +106,10 @@ export async function loadWorkspaceXbrlDocs(db: Db, workspaceId: string): Promis
       and d.state <> 'pending_upload'
       and d.duplicate_of_document_id is null
       and d.intake_state is distinct from 'duplicate'
+      ${companyFilter}
     order by d.created_at, d.id`);
   if (rows.length === 0) return [];
+  if (opts.coverage === false) return rows.map((r) => toDoc(r, []));
 
   // The current revision of each classified document: the newest read under its classification's `reads_under_id`.
   const { rows: pairs } = await db.execute<{ document_id: string; statement: Statement; basis: Basis }>(sql`
@@ -108,10 +129,7 @@ export async function loadWorkspaceXbrlDocs(db: Db, workspaceId: string): Promis
     ) r on r.source = 'xbrl'
     join financial_fact f on f.workspace_id = d.workspace_id and f.revision_id = r.id
     where d.workspace_id = ${workspaceId}
-      and d.format = 'xbrl'
-      and d.state <> 'pending_upload'
-      and d.duplicate_of_document_id is null
-      and d.intake_state is distinct from 'duplicate'
+      and d.id in (${sql.join(rows.map((r) => sql`${r.id}::uuid`), sql`, `)})
     order by 1, 2, 3`);
   const coverage = new Map<string, XbrlDocInput["coverage"]>();
   for (const p of pairs) {
@@ -120,12 +138,16 @@ export async function loadWorkspaceXbrlDocs(db: Db, workspaceId: string): Promis
     coverage.set(p.document_id, list);
   }
 
-  return rows.map((r) => ({
+  return rows.map((r) => toDoc(r, coverage.get(r.id) ?? []));
+}
+
+function toDoc(r: XbrlDocRow, coverage: XbrlDocInput["coverage"]): XbrlDocInput {
+  return {
     documentId: r.id,
     state: settleState(r),
     companyId: r.classification_id === null ? r.doc_company_id : r.company_id,
     identity: { cin: r.cin, bseCode: r.bse_code, nseSymbol: r.nse_symbol, isin: r.isin },
     periodEnd: r.period_end,
-    coverage: coverage.get(r.id) ?? [],
-  }));
+    coverage,
+  };
 }
