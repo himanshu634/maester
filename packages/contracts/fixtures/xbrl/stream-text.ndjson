@@ -1,0 +1,3 @@
+{"type": "started", "parserVersion": "1", "mapVersion": "1", "mode": "text"}
+{"type": "heartbeat"}
+{"type": "text", "result": {"textVersion": "1", "basis": "consolidated", "blocks": [{"element": "DisclosureOfNotesOnFinancialResultsExplanatoryTextBlock", "contextId": "OneD", "heading": "Disclosure of notes on financial results", "text": "The results were reviewed by the audit committee.\nSegment | Cement"}, {"element": "RelatedPartyTransactionExplanatory", "contextId": "OneExpenses1D", "heading": "Related party transaction", "text": "Rent paid to a director's family company."}]}}

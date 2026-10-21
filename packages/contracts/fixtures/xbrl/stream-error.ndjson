@@ -1,0 +1,2 @@
+{"type": "started", "parserVersion": "1", "mapVersion": "1", "mode": "read"}
+{"type": "error", "code": "XBRL_UNREADABLE", "retryable": false, "message": "the instance could not be read"}

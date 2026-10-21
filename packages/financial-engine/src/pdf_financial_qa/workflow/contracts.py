@@ -13,7 +13,8 @@ from pydantic.alias_generators import to_camel
 StatementKind = Literal["balance_sheet", "income_statement", "cash_flow"]
 ReportingBasis = Literal["consolidated", "standalone", "unknown"]
 ValueStatus = Literal["value", "dash", "unparsed"]
-DecimalStr = Annotated[str, StringConstraints(pattern=r"^-?\d+(\.\d+)?$")]
+# [0-9], not \d: \d also matches the digits of other scripts, which the Zod twin (DecimalString) refuses.
+DecimalStr = Annotated[str, StringConstraints(pattern=r"^-?[0-9]+(\.[0-9]+)?$")]
 
 
 class WireModel(BaseModel):
@@ -36,7 +37,9 @@ class CoverageEntry(WireModel):
     message: str | None = None
 
 
-class ExtractedFact(WireModel):
+class FactFields(WireModel):
+    """The fields every fact has, whether a PDF page or an XBRL instance gave it."""
+
     statement: StatementKind
     basis: ReportingBasis
     section: str
@@ -54,6 +57,9 @@ class ExtractedFact(WireModel):
     scale_factor: DecimalStr | None
     currency: str | None
     normalized_value: DecimalStr | None
+
+
+class ExtractedFact(FactFields):
     page_index: Annotated[int, Field(ge=0)]
     text_layer_match: bool | None
 
