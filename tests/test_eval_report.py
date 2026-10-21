@@ -770,7 +770,7 @@ class WriteNumbersTests(NumbersCase):
         for key in ("sources", "format_tags", "unit_tags", "map", "settled"):
             self.assertNotIn(key, data)
         self.assertEqual(data["rule_versions"], {
-            "span_rule": 1, "compare_rule": 1, "concept_carry": 1, "owner_rule": 1, "source_rule": 1,
+            "span_rule": 2, "compare_rule": 1, "concept_carry": 1, "owner_rule": 1, "source_rule": 1,
             "xbrl_parser": None, "xbrl_map": None})
 
     def test_the_xbrl_runs_own_versions_are_recorded_not_todays(self):
@@ -778,7 +778,7 @@ class WriteNumbersTests(NumbersCase):
         data = self.written(xbrl)
         self.assertEqual((data["rule_versions"]["xbrl_parser"], data["rule_versions"]["xbrl_map"]), ("7", "9"))
         versions = section((self.folder / "report.md").read_text(encoding="utf-8"), "Rule versions")
-        for words in ("XBRL parser 7", "XBRL element map 9", "span rule 1", "compare rule 1", "concept carry rule 1",
+        for words in ("XBRL parser 7", "XBRL element map 9", "span rule 2", "compare rule 1", "concept carry rule 1",
                       "owner rule 1", "source rule 1"):
             self.assertIn(words, versions)
 

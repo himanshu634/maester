@@ -316,7 +316,7 @@ class RunTests(CompareCase):
         run = self.run_of(manifest, [pdf], [self.xbrl])
         md = render_compare_markdown(run, None)
         self.assertIn("# Gemini against XBRL: p and x", md)
-        for text in ("compare rule 1", "concept carry rule 1", "owner rule 1", "span rule 1", f"source rule {SOURCE_RULE_VERSION}",
+        for text in ("compare rule 1", "concept carry rule 1", "owner rule 1", "span rule 2", f"source rule {SOURCE_RULE_VERSION}",
                      "XBRL parser xbrl-parser-1", "XBRL element map map-3"):
             self.assertIn(text, md)
         self.assertIn("Compared: 1 filing(s). Not compared: 1.", md)

@@ -15,16 +15,18 @@ from maester_eval.source_rule import Span
 
 __all__ = ["SPAN_RULE_VERSION", "Span", "span_of_label"]
 
-SPAN_RULE_VERSION = 1
+SPAN_RULE_VERSION = 2
 
 _SPACES = re.compile(r"\s+")
 _AS_AT = re.compile(r"\bas (at|on)\b")
 _YEAR_TO_DATE = re.compile(r"\byear to date\b|\bytd\b")
 # Tried in this order, the first match wins: a column that says nine months is not a quarter because it also
-# names the "three months" of its period, and "half year ended" is not a year.
+# names the "three months" of its period, and "half year ended" is not a year. "FY" is tried last: beside H1, H2,
+# 9M or Q3 it names the financial year the column falls in, not the column's length (version 2). Tokens run
+# together ("H1FY26") have no word boundary and match nothing, so they stay unknown.
 _WORDS: list[tuple[re.Pattern[str], Span]] = [
-    (re.compile(r"\b(nine|9) months?\b"), "nine_months"),
-    (re.compile(r"\b(six|6) months?\b|\bhalf[- ]?year(ly)?\b"), "half_year"),
+    (re.compile(r"\b(nine|9) months?\b|\b9m\b"), "nine_months"),
+    (re.compile(r"\b(six|6) months?\b|\bhalf[- ]?year(ly)?\b|\bh[12]\b"), "half_year"),
     (re.compile(r"\b(three|3) months?\b|\bquarter(ly)?\b|\bq[1-4]\b"), "quarter"),
     (re.compile(r"\b(twelve|12) months?\b|\byear (ended|ending)\b|\bfy\b"), "year"),
 ]
@@ -46,8 +48,8 @@ def span_of_label(label: str, period_end: date | str | None = None) -> Span | No
 
     The label is lower-cased with its spaces collapsed, and the first rule that matches wins:
     "as at" or "as on" is a point in time (no span); "year to date" takes its span from the month of
-    `period_end` (any other month, or no date, is no span); then nine months, six months or a half year,
-    three months or a quarter, and twelve months or a year ended."""
+    `period_end` (any other month, or no date, is no span); then nine months or 9M, six months, a half year, H1 or
+    H2, three months or a quarter, and twelve months, a year ended or FY."""
     text = _SPACES.sub(" ", label.lower()).strip()
     if _AS_AT.search(text):
         return None

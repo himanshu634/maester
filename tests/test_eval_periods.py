@@ -18,7 +18,19 @@ CASES = [
 
 class SpanOfLabelTests(unittest.TestCase):
     def test_the_rule_has_a_version(self):
-        self.assertEqual(SPAN_RULE_VERSION, 1)
+        self.assertEqual(SPAN_RULE_VERSION, 2)
+
+    def test_a_half_or_nine_month_token_beside_fy_is_not_the_year(self):
+        # Version 2: "FY" names the financial year a column falls in, not its length, when another span token is there.
+        cases = [("H1 FY 2025-26", "half_year"), ("H2 FY 2025-26", "half_year"), ("9M FY 2025-26", "nine_months"),
+                 ("H1 FY 26", "half_year"), ("Half year FY 2025-26", "half_year"), ("Q3 FY 2025-26", "quarter"),
+                 ("9M ended 31.12.2025", "nine_months"), ("FY 2025-26", "year")]
+        for label, span in cases:
+            self.assertEqual(span_of_label(label), span, label)
+
+    def test_tokens_run_together_stay_unknown(self):
+        for label in ("9MFY26", "H1FY26", "H1FY2025-26"):
+            self.assertIsNone(span_of_label(label), label)
 
     def test_span_of_label(self):
         for label, span in CASES:
