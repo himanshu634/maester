@@ -8,6 +8,8 @@ import type {
 	ChangeClassificationRequest,
 	ClassificationChanged,
 	Company,
+	ConfirmCompanyRequest,
+	ConfirmCompanyResponse,
 	CreateUploadResponse,
 	DocumentClassification,
 	DocumentRecord,
@@ -16,7 +18,8 @@ import type {
 	FinalizeResponse,
 	Job,
 	Me,
-	Page
+	Page,
+	WorkspaceFilings
 } from './types';
 
 export type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
@@ -145,6 +148,26 @@ export function documentsApi(fetcher: Fetcher, workspaceId: string) {
 		/** Read the statements again. */
 		extract(id: string): Promise<{ job: Job }> {
 			return postJson(fetcher, `${doc(id)}/extract`);
+		},
+
+		/** The workspace's filings: by company, the identities held for one, and files with none. */
+		listFilings(): Promise<WorkspaceFilings> {
+			return getJson(fetcher, `${base}/filings`);
+		},
+
+		/** Say which company the held files that print this identity belong to, once for all of them. */
+		confirmCompany(request: ConfirmCompanyRequest): Promise<ConfirmCompanyResponse> {
+			return postJson(fetcher, `${base}/companies/confirm`, request);
+		},
+
+		/** Index the document's text again. */
+		index(id: string): Promise<{ job: Job }> {
+			return postJson(fetcher, `${doc(id)}/index`);
+		},
+
+		/** A plain link to the stored file. */
+		fileHref(id: string): string {
+			return `${doc(id)}/file`;
 		},
 
 		getCompany(id: string): Promise<Company> {

@@ -19,6 +19,7 @@ import {
 	whatItIs
 } from './intake';
 import { ApiError } from './client';
+import { pipe } from './testing';
 import type { Classification, Company, DocumentRecord, Evidence, Job, NumbersState } from './types';
 
 function job(type: string, state: Job['state']): Job {
@@ -39,6 +40,7 @@ function doc(over: Partial<DocumentRecord> = {}): DocumentRecord {
 		classification: null,
 		createdAt: '2026-10-05T08:32:00Z',
 		latestJob: null,
+		pipeline: pipe(),
 		...over
 	};
 }
@@ -452,7 +454,7 @@ describe('sourceOf for XBRL evidence', () => {
 });
 
 describe('canReadAgain', () => {
-	const pipeline = (state: NumbersState) => ({ numbers: { state, coveredByXbrl: [] as string[] } });
+	const pipeline = (state: NumbersState) => pipe({ numbers: { state } });
 
 	it('is false for a PDF whose numbers come from its XBRL files', () => {
 		expect(canReadAgain(doc({ intakeState: 'read', pipeline: pipeline('not_needed') }))).toBe(
@@ -460,9 +462,8 @@ describe('canReadAgain', () => {
 		);
 	});
 
-	it('is true for a read PDF whose numbers it read itself, and with no pipeline', () => {
+	it('is true for a read PDF whose numbers it read itself', () => {
 		expect(canReadAgain(doc({ intakeState: 'read', pipeline: pipeline('done') }))).toBe(true);
-		expect(canReadAgain(doc({ intakeState: 'read' }))).toBe(true);
 	});
 });
 
@@ -569,6 +570,15 @@ describe('statementsWords', () => {
 });
 
 describe('identifiers', () => {
+	it('lists the ISIN after NSE', () => {
+		expect(
+			identifiers(
+				{ cin: null, bseCode: '500999', nseSymbol: 'SYNCEM', isin: 'INE999Z01011' },
+				[]
+			).map((i) => i.label)
+		).toEqual(['BSE', 'NSE', 'ISIN']);
+	});
+
 	it('lists the identifiers printed on the filing with their pages', () => {
 		expect(identifiers(annualReport, annualEvidence)).toEqual([
 			{ label: 'CIN', value: 'L26940MH2001PLC123456', page: 1 }

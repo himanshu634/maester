@@ -54,6 +54,44 @@ describe('documentsApi', () => {
 		]);
 	});
 
+	it('listFilings reads the workspace’s filings', async () => {
+		const { fetcher, calls } = scripted(json(200, { companies: [], held: [], unsorted: [] }));
+		await documentsApi(fetcher, WS).listFilings();
+		expect(calls[0].url).toBe(`/v1/workspaces/${WS}/filings`);
+	});
+
+	it('confirmCompany posts the identity and the company', async () => {
+		const { fetcher, calls } = scripted(json(200, { companyId: 'co-1', confirmed: 3 }));
+		const answer = await documentsApi(fetcher, WS).confirmCompany({
+			identity: { bseCode: '532999' },
+			company: { id: 'co-1' }
+		});
+		expect(answer).toEqual({ companyId: 'co-1', confirmed: 3 });
+		expect(calls[0].url).toBe(`/v1/workspaces/${WS}/companies/confirm`);
+		expect(calls[0].init?.method).toBe('POST');
+		expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+			identity: { bseCode: '532999' },
+			company: { id: 'co-1' }
+		});
+	});
+
+	it('index posts to the document’s index route', async () => {
+		const { fetcher, calls } = scripted(
+			json(202, { job: { id: 'j', type: 'document.index', state: 'queued', lastErrorCode: null } })
+		);
+		await documentsApi(fetcher, WS).index(DOC);
+		expect([calls[0].url, calls[0].init?.method]).toEqual([
+			`/v1/workspaces/${WS}/documents/${DOC}/index`,
+			'POST'
+		]);
+	});
+
+	it('fileHref links the stored file', () => {
+		expect(documentsApi(vi.fn() as unknown as Fetcher, WS).fileHref('d/1')).toBe(
+			`/v1/workspaces/${WS}/documents/d%2F1/file`
+		);
+	});
+
 	it('reads one company', async () => {
 		const { fetcher, calls } = scripted(
 			json(200, { id: 'co-1', displayName: 'Synthetic Cements' })

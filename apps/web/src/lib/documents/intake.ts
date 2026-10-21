@@ -234,7 +234,7 @@ export function sourceOf(evidence: Evidence[], field: EvidenceField): string | n
  * nothing of its own to read, and the API refuses a read of it.
  */
 export function canReadAgain(doc: DocumentRecord): boolean {
-	return doc.pipeline?.numbers.state !== 'not_needed';
+	return doc.pipeline.numbers.state !== 'not_needed';
 }
 
 /** "Balance sheet (standalone), Profit and loss (standalone)", or "—" when none was found. */
@@ -260,7 +260,7 @@ export function periodWords(answer: Pick<Classification, 'periodLabel' | 'period
 }
 
 export interface PrintedIdentifier {
-	label: 'CIN' | 'BSE' | 'NSE';
+	label: 'CIN' | 'BSE' | 'NSE' | 'ISIN';
 	value: string;
 	/** 1-based page it was printed on, when the evidence says. */
 	page: number | null;
@@ -268,13 +268,14 @@ export interface PrintedIdentifier {
 
 /** The identifiers printed on the filing, each with the page it was found on. */
 export function identifiers(
-	answer: Pick<Classification, 'cin' | 'bseCode' | 'nseSymbol'>,
+	answer: Pick<Classification, 'cin' | 'bseCode' | 'nseSymbol' | 'isin'>,
 	evidence: Evidence[]
 ): PrintedIdentifier[] {
 	const found: [PrintedIdentifier['label'], string | null][] = [
 		['CIN', answer.cin],
 		['BSE', answer.bseCode],
-		['NSE', answer.nseSymbol]
+		['NSE', answer.nseSymbol],
+		['ISIN', answer.isin]
 	];
 	return found.flatMap(([label, value]) => {
 		if (!value) return [];
