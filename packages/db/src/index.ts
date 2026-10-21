@@ -34,7 +34,7 @@ export {
 export type { IndexRevisionRow } from "./schema/document-index.js";
 export {
   startOrResumeRevision, writeRange, lastStoredPage, chunksWithoutEmbedding, insertEmbeddings, completeRevision,
-  getPageRead, putPageRead, documentsNeedingIndex,
+  getPageRead, putPageRead, documentsNeedingIndex, deleteModelRevisions,
   type IndexVersions, type PageInput, type ChunkInput, type RangeCounts, type PageReadKey, type RangeReadJson,
 } from "./queries/document-index.js";
 export { loadWorkspaceXbrlDocs, companyIdentity, companyIdentities } from "./queries/xbrl.js";

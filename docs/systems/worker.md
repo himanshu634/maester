@@ -7,7 +7,7 @@
 | Worker | The `apps/worker` service. It runs jobs. |
 | API | The `apps/api` service. It creates the first job for each uploaded document. |
 | Job | One row in the `job` table. A job tells the worker to do one task on one subject. |
-| Job type | The `type` column of a job: `document.verify`, `document.classify`, `document.extract`, `document.index`, `document.xbrl` or `document.xbrl_check`. |
+| Job type | The `type` column of a job: `document.verify`, `document.classify`, `document.extract`, `document.index`, `document.index.eval`, `document.xbrl` or `document.xbrl_check`. |
 | Handler | The function that does the work for one job type. |
 | `attempt` | The `attempt` column of a job. The worker adds 1 to it each time that it starts the job. |
 | `maxAttempts` | The `max_attempts` column of a job. The value is 2 for `document.classify` and `document.extract`, because these jobs can call a paid model. The value is 5 for all other types. |
@@ -17,7 +17,10 @@
 | Dispatch mode | The value of `DISPATCH_MODE`: `queue` or `cloud-tasks`. The default is `queue`. |
 | Dispatcher | The object that tells the worker about a new job: `QueueNotifier` or `CloudTasksDispatcher`. |
 | Notification | A `job_ready` message from Postgres. Its text is a job type. `QueueNotifier` sends it with `pg_notify`. |
-| Queue runner | The part of the worker that pulls jobs in `queue` mode. It has one claim loop for each job type. |
+| Queue runner | The part of the worker that pulls jobs in `queue` mode. It has one claim loop for each job type that has a handler. |
+| Candidate model | An embedding model in `EMBEDDING_MODELS` that is not `EMBEDDING_MODEL`. Only a measurement uses it. |
+| Candidate run | One run of the command `index:candidate`. It builds the index of one candidate model for the filings of a request. |
+| Request file | A JSON file with the filings and the questions of a measurement. `maester-eval` writes it. The worker reads it. |
 | Claim loop | The loop of the queue runner for one job type. It claims a job and starts it. |
 | Claim | One SQL statement that selects the oldest ready job of one type and takes its lease. `claimNext` runs it. |
 | Limit | The largest number of jobs of one job type that one worker runs at the same time. |
@@ -25,6 +28,9 @@
 | Backoff | The wait before a failed job runs again. The `run_after` column holds it. |
 | Idempotency key | The `idempotency_key` column of a job, in the form `<type>:<subjectId>:<pipelineVersion>`. Each key is unique. |
 | Extractor | The `apps/extractor` service. It reads a PDF and sends back answers and facts. See [extractor](extractor.md). |
+| Candidate command | `apps/worker/src/index-candidate.ts` and `apps/worker/src/index-candidate-cli.ts` | `runIndexCandidate` builds the index of a candidate model. The `index:candidate` script runs it. |
+| Prune command | `apps/worker/src/index-prune.ts` | `runIndexPrune` deletes the revisions of a candidate model. The `index:prune` script runs it. |
+| Eval command | `apps/worker/src/eval/` | `runEval` runs `sources`, `rank` and `bench`. `rankQuestions` ranks the pages with the branch functions of search. The `eval` script runs it. |
 | Extractor client | `HttpExtractorClient`, the part of the worker that sends a PDF to the extractor. |
 | Object store | The storage for uploaded files: a local directory (`disk`) or a Google Cloud Storage bucket (`gcs`). |
 | Classification | One row in the `document_classification` table. It holds the answers about what a document is: kind, company and period. |
@@ -145,13 +151,15 @@ At start, `logUnhandledQueued` writes one log line for each job type with queued
 
 ### Sweep
 
-1. Every `JOB_SWEEP_MS`, the queue runner calls `sweepExpired`.
-2. `sweepExpired` finds each `running` job with `lease_expires_at` in the past. A worker that stopped or stalled leaves such a job.
+1. Every `JOB_SWEEP_MS`, the queue runner calls `sweepExpired` with the job types that have a handler in this runner.
+2. `sweepExpired` finds each `running` job of these types with `lease_expires_at` in the past. A worker that stopped or stalled leaves such a job.
 3. If `attempt` is less than `maxAttempts`, the sweep sets the job to `queued` with `last_error_code` = `LEASE_EXPIRED`.
 4. The sweep also sets a new `run_after`. The backoff rules apply.
 5. If `attempt` is equal to or more than `maxAttempts`, the sweep sets the job to `failed` with `last_error_code` = `LEASE_EXPIRED` and `finished_at`.
 6. After a final failure, the sweep calls the `onFinalFailure` function of the handler, if the handler has one.
 7. Each statement of the sweep checks `lease_expires_at` again. Thus a job that a timer renewed in the meantime does not change.
+8. A runner does not sweep a job of a type that has no handler in this runner. Without the handler, the runner cannot call the `onFinalFailure` function of that type.
+9. The live worker has no handler for `document.index.eval`. Thus only the next `index:candidate` run sweeps an expired `document.index.eval` job.
 
 ### Stop of the worker
 
@@ -303,23 +311,25 @@ The job subject is the XBRL document. The key has the check version, the PDF cla
 The handler is in `apps/worker/src/jobs/document-index.ts`. It cuts a stored PDF into chunks, keeps the chunks and the pages in the database, and adds a vector to each chunk.
 
 1. If the worker has no indexer client or no embedder client, the handler throws `INDEXER_NOT_CONFIGURED`.
-2. The handler reads the document. If it is not `stored`, or it is a duplicate, the handler throws `INVALID_STATE`.
-3. If a revision for this job is complete, the handler returns its summary. It does not call the indexer.
-4. The handler reads the full PDF from the object store. If the object does not exist, the handler throws `OBJECT_MISSING`.
-5. The handler calls `GET /v1/versions` on the indexer. If the tokenizer of the indexer or the model of the embedder is not `EMBEDDING_MODEL`, the handler throws `INDEXER_MODEL_MISMATCH`.
-6. The handler starts the revision for this job, or resumes it. The revision records the versions.
-7. The handler reads the ranges in order. A range has `INDEX_PAGE_RANGE` pages (default 20). The first range starts at page 1. Each range starts at a multiple of `INDEX_PAGE_RANGE` from page 1.
-8. If the database has the read of a range, the handler sends it to `POST /v1/chunk`. The read is the cache. The key of the cache has the hash of the PDF, the range, the version of Docling, the OCR engine and the reader options.
-9. If the database has no read of the range, the handler sends the PDF to `POST /v1/index`. The handler keeps the read in the cache. It does not keep a read made with OCR off. It does not keep a read with a page that has the reason `PAGE_UNREADABLE`. A later try can succeed.
-10. The handler compares the page count in the `started` event of the indexer with the page count that it used for the range. The handler gets this value from the revision, or from the newest cached read of the PDF. If the two values are different and the revision holds no pages, the handler keeps the page count of the indexer in the revision. If the range is then different, the handler reads the range again. It does not keep the first read. If the two values are different and the revision holds pages, the handler throws `INVALID_INDEXER_RESULT`.
-11. The handler removes the NUL characters (U+0000) from the text, because Postgres refuses them. It then writes the pages and the chunks of the range in one transaction.
-12. After each range, the handler embeds the chunks that have no vector. It sends them to the embedder in batches of `EMBED_BATCH`, longest text first.
-13. After the last range, the handler completes the revision. The revision is `complete`. If a page has the reason `OCR_FAILED`, `OCR_BUDGET` or `PAGE_UNREADABLE`, the revision is `partial`.
-14. The handler calls `heartbeat` for each event, and writes the progress of the job.
+2. If the idempotency key of the job does not end with the pipeline version for `EMBEDDING_MODEL`, the handler throws `INDEX_MODEL_NOT_SERVED`. The pipeline version has `INDEX_PIPELINE_VERSION` and the model.
+3. The handler reads the document. If it is not `stored`, or it is a duplicate, the handler throws `INVALID_STATE`.
+4. If a revision for this job is complete, the handler returns its summary. It does not call the indexer.
+5. The handler reads the full PDF from the object store. If the object does not exist, the handler throws `OBJECT_MISSING`.
+6. The handler calls `GET /v1/versions` on the indexer. If the tokenizer of the indexer or the model of the embedder is not `EMBEDDING_MODEL`, the handler throws `INDEXER_MODEL_MISMATCH`.
+7. The handler asks the embedder which model it serves, with `GET /info`. If the answer is not `EMBEDDING_MODEL`, the handler throws `INDEXER_MODEL_MISMATCH`. If the embedder gives no answer, the handler throws `EMBEDDING_FAILED`.
+8. The handler starts the revision for this job, or resumes it. The revision records the versions.
+9. The handler reads the ranges in order. A range has `INDEX_PAGE_RANGE` pages (default 20). The first range starts at page 1. Each range starts at a multiple of `INDEX_PAGE_RANGE` from page 1.
+10. If the database has the read of a range, the handler sends it to `POST /v1/chunk`. The read is the cache. The key of the cache has the hash of the PDF, the range, the version of Docling, the OCR engine and the reader options.
+11. If the database has no read of the range, the handler sends the PDF to `POST /v1/index`. The handler keeps the read in the cache. It does not keep a read made with OCR off. It does not keep a read with a page that has the reason `PAGE_UNREADABLE`. A later try can succeed.
+12. The handler compares the page count in the `started` event of the indexer with the page count that it used for the range. The handler gets this value from the revision, or from the newest cached read of the PDF. If the two values are different and the revision holds no pages, the handler keeps the page count of the indexer in the revision. If the range is then different, the handler reads the range again. It does not keep the first read. If the two values are different and the revision holds pages, the handler throws `INVALID_INDEXER_RESULT`.
+13. The handler removes the NUL characters (U+0000) from the text, because Postgres refuses them. It then writes the pages and the chunks of the range in one transaction.
+14. After each range, the handler embeds the chunks that have no vector. It sends them to the embedder in batches of `EMBED_BATCH`, longest text first.
+15. After the last range, the handler completes the revision. The revision is `complete`. If a page has the reason `OCR_FAILED`, `OCR_BUDGET` or `PAGE_UNREADABLE`, the revision is `partial`.
+16. The handler calls `heartbeat` for each event, and writes the progress of the job.
 
 #### XBRL text blocks
 
-For a document with the format `xbrl`, `indexXbrl` replaces the Docling steps.
+For a document with the format `xbrl`, `indexXbrl` replaces the Docling steps. Steps 1 to 4 apply first. Before the handler starts the revision, it asks the embedder which model it serves, as in step 7.
 
 1. The handler sends the instance to `POST /v1/xbrl` with the mode `text`. The extractor returns the text blocks.
 2. The handler sends the blocks to `POST /v1/chunk-text` on the indexer. The indexer cuts them with the tokenizer of the embedding model.
@@ -337,13 +347,82 @@ The indexer reads at most `OCR_PAGE_BUDGET` pages of one document with OCR (defa
 
 #### Backfill
 
-The command `index:backfill` creates a `document.index` job for each stored document that has no current index. It queues again a job that failed or that finished without an index. It only queues jobs. The queue loop of the worker does the work. The command prints the counts of jobs created, queued again, waiting and current.
+The command `index:backfill` creates a `document.index` job for each stored document that has no current index. A current index is a complete or partial revision for `EMBEDDING_MODEL` with the present `INDEX_PIPELINE_VERSION`. The backfill also queues again a job that failed or that finished without an index. It only queues jobs. The queue loop of the worker does the work. The command prints the counts of jobs created, queued again, waiting and current.
 
 ```bash
 pnpm --filter @maester/worker index:backfill [--workspace <id>] [--document <id>]... [--dry-run]
 ```
 
 The option `--dry-run` shows the counts and changes nothing.
+
+#### Change of the reader or of the model
+
+A change of `OCR_ENGINE` or `INDEX_TABLE_CELL_MATCHING` in the indexer gives new keys to the cached page reads. It does not make a document need an index. To read the documents again, follow these steps:
+
+1. Raise `INDEX_PIPELINE_VERSION` in `packages/document-index/src/models.ts`.
+2. Run `index:backfill`.
+
+A change of `EMBEDDING_MODEL` also makes each document need an index, because a revision belongs to one model. Jobs that wait for the old model or version fail with `INDEX_MODEL_NOT_SERVED`, because the worker does not build them with another model.
+
+### Candidate index
+
+A measurement compares embedding models. It needs an index for each candidate model, beside the live index. The live worker does not build it, because a job for one model can run on a worker for another model.
+
+The job type `document.index.eval` has the same handler as `document.index`. The live worker has no handler for it, so the live worker never claims it. Only `index:candidate` runs it. The subject type of the job is `document_index`, and `maxAttempts` is 5.
+
+A candidate revision has the model of the candidate. Search reads the revisions of `EMBEDDING_MODEL` only, so live search never returns a chunk of a candidate.
+
+#### `index:candidate`
+
+Run the command in the worker container. The container can read the `blobs` volume and has `INDEXER_SECRET`.
+
+```bash
+docker compose --profile eval run --rm --no-deps -v "$PWD/data/eval:/eval:ro" worker node dist/index-candidate.js --workspace <id> --model <candidate> --request /eval/retrieval/runs/<run>/request.json [--embedder-url <url>] [--indexer-url <url>]
+```
+
+Build the images `maester/worker:local` and `maester/indexer:local` again before the first candidate run. A command that runs on the host (`pnpm --filter @maester/worker index:candidate`) cannot read the `blobs` volume, and the jobs fail with `OBJECT_MISSING`. It also needs `INDEXER_SECRET` in its environment.
+
+1. The command refuses a `--model` that `EMBEDDING_MODELS` does not know. It also refuses the live `EMBEDDING_MODEL`.
+2. It reads the request file. In the container, the file is under `/eval`, the mounted folder `data/eval`.
+3. It asks the embedder at `--embedder-url` which model it serves. If this is not `--model`, the command stops before it makes a job. The default is `http://embedder-candidate`.
+4. It asks the indexer at `--indexer-url` for its versions. If the tokenizer is not `--model`, the command stops. The default is `http://indexer-candidate:8791`.
+5. It finds the stored document of each filing of the request. If the workspace does not hold a filing, the command stops and names the filings.
+6. It makes one `document.index.eval` job for each document. It queues again a job that failed, or that succeeded but has no revision now.
+7. It starts a queue runner that has a handler for `document.index.eval` only, with a limit of 1. The runner has no extractor, so it calls no paid model.
+8. It waits until each job is `succeeded`, `failed` or `cancelled`. It prints the counts and the codes only.
+9. The exit code is 0 only if each job succeeded.
+
+CAUTION: Run one `index:candidate` at a time. Two runs at the same time fail the `document.index.eval` jobs of each other.
+
+The runner sweeps only the types that have a handler in it. Thus a candidate run does not touch the jobs of the live worker.
+
+#### `index:prune`
+
+```bash
+pnpm --filter @maester/worker index:prune --model <candidate> [--workspace <id>] [--dry-run]
+```
+
+The command deletes the revisions of a candidate model with their pages, chunks and vectors. The cached page reads stay. It refuses the live `EMBEDDING_MODEL`. It prints the counts of revisions and chunks. The option `--dry-run` shows the counts and deletes nothing.
+
+#### `eval`
+
+The command `eval` measures the index. It prints counts, ids, codes and seconds. It never prints the text of a question or of a page. The files that it writes have ids, page numbers and times only.
+
+```bash
+pnpm --filter @maester/worker eval <sources|rank|bench> --workspace <id> --request <file> --out <file> [--model <id>] [--embedder-url <url>] [--chunks <n>] [--text-model <id>]
+```
+
+| Command | Function |
+| --- | --- |
+| `sources` | Writes the revision that the workspace holds for each filing of the request, for `--model`. The default model is `EMBEDDING_MODEL`. |
+| `rank` | Ranks the pages for each question with the branch functions of search, for vectors, for keywords and for both. It needs `--model` and `--embedder-url`. |
+| `bench` | Times the embedder on the chunks of `--text-model` and on the queries. It needs `--model` and `--embedder-url`. `--chunks` sets the number of chunks. The default is 480. |
+
+1. For `rank` and `bench`, the command first asks the embedder which model it serves. If it is not `--model`, the command stops with exit code 1.
+2. `rank` searches each question in the filings of its scope only. The pages are PDF pages, counted from 1. They are not the page numbers that the filing prints.
+3. If a filing has no complete or partial revision of the model, `rank` and `bench` exit with code 2. `rank` still writes the rankings file. The command does not count the filing as "not retrieved".
+
+CAUTION: Do not upload documents while a candidate run uses the stack. An upload starts a classification that calls a paid model, and its jobs use the same CPU and memory as the candidate run.
 
 ### Retries
 
@@ -505,9 +584,10 @@ The breadth uses the current member list for all past days. Thus the past breadt
 | `INDEX_STREAM_INTERRUPTED` | The stream stops before a `result` event, ends in the middle of a line, or breaks. | Retry. |
 | `INDEX_TIMEOUT` | The call to the indexer or the whole job ran longer than `INDEX_TIMEOUT_SECONDS`, or the call was cancelled. | Retry. |
 | `INVALID_INDEXER_RESULT` | The versions or an event do not agree with the schema, or the pages of a range are not exactly the pages asked for. Or the page count of the indexer changes after the revision holds pages, or changes two times. | Final failure. |
-| `INDEXER_MODEL_MISMATCH` | The tokenizer of the indexer or the model of the embedder is not `EMBEDDING_MODEL`. The indexer can also send this code. | Final failure. |
+| `INDEXER_MODEL_MISMATCH` | The tokenizer of the indexer, the model of the embedder or the model that `GET /info` of the embedder names is not `EMBEDDING_MODEL`. The indexer can also send this code. | Final failure. API search answers `SEARCH_UNAVAILABLE` in the same case. |
+| `INDEX_MODEL_NOT_SERVED` | The key of a `document.index` job does not end with the pipeline version for `EMBEDDING_MODEL`. Someone queued the job for another model or version. | Final failure. |
 | `INDEXER_VERSIONS_CHANGED` | The versions in the events of a range are not the versions of the revision. | Retry. |
-| `EMBEDDING_FAILED` | The embedder fails, or it sends a wrong number of vectors. | Retry. The revision stays `building`. The next attempt resumes it. |
+| `EMBEDDING_FAILED` | The embedder fails, it does not answer `GET /info`, or it sends a wrong number of vectors. | Retry. The revision stays `building`. The next attempt resumes it. |
 | `OBJECT_MISSING` | The object store has no object for a `document.index` job. | Final failure. |
 | `INVALID_STATE` | For a `document.index` job: the document is not `stored`, it is a duplicate, or it is not in the workspace. | Final failure. |
 | `INDEX_REVISION_NOT_FOUND`, `REVISION_DOCUMENT_MISMATCH`, `REVISION_NOT_BUILDING`, `CHUNK_NOT_IN_WORKSPACE` | A database write of the index finds that another job changed the revision. | Retry. The next attempt starts the revision again. |
@@ -660,7 +740,7 @@ The `jobId` column is unique in `document_classification` and in `extraction_rev
 | `INDEXER_URL` | No default | The base URL of the indexer. Without a value, `document.index` fails with `INDEXER_NOT_CONFIGURED`. |
 | `INDEXER_SECRET` | No default | Necessary when `INDEXER_URL` has a value. The worker sends it in `x-indexer-secret`. |
 | `EMBEDDER_URL` | No default | The base URL of the embedder. |
-| `EMBEDDING_MODEL` | `Snowflake/snowflake-arctic-embed-l-v2.0` | The embedding model. It must be a model that `@maester/document-index` knows. |
+| `EMBEDDING_MODEL` | `Snowflake/snowflake-arctic-embed-l-v2.0` | The live embedding model. It must be a model that `@maester/document-index` knows. The Compose file gives this one value to the worker, the API, the indexer and the embedder. |
 | `INDEX_PAGE_RANGE` | `20` | The number of pages in one range. |
 | `INDEX_TIMEOUT_SECONDS` | `7200` | The time limit of one `document.index` job. |
 | `EMBED_BATCH` | `16` | The number of chunks in one request to the embedder. The maximum is 32, the `--max-client-batch-size` of the embedder. With a larger value, the worker does not start. |
@@ -810,6 +890,7 @@ CAUTION: Do not change `CONNECTIONS_KEY` after the investor saves a connection. 
 
 ## Limits
 
+- `index:candidate` builds one candidate model for each run, and it must run alone. It builds no index for the live model.
 - `document.verify` has an `onFinalFailure` function only for an XBRL instance. It releases the PDFs that wait. After a final failure, a PDF or an instance can stay `verifying`.
 - A text or chunker version change does not rebuild the index of an XBRL document through the backfill or `verify`. They judge an index as stale by its revision, so an XBRL revision is never stale for them.
 - A change of the period end of an XBRL document after a pair is made leaves the queued check of the old pair in place.
@@ -827,7 +908,7 @@ CAUTION: Do not change `CONNECTIONS_KEY` after the investor saves a connection. 
 - `nifty_pcr_oi` has no past days. Dhan gives the option chain live only.
 - If a pass takes more than 1 hour, a second pass can start at the same time. A run row from a process that stopped stays `running`.
 - Token renewal works only for a token that the investor made on the Dhan web site. This comes from the comment on `renewToken` in `packages/market/src/sources.ts`.
-- `market:refresh` runs only from the source. The container image has only `dist/server.js`.
+- `market:refresh` runs only from the source. The container image has `dist/server.js` and `dist/index-candidate.js` only.
 - Not known: whether the Dhan endpoints, codes and fields in `packages/market` agree with the live Dhan API. The code comments say that they come from the Dhan documents and that nobody called them live.
 
 ## Sources
@@ -857,6 +938,13 @@ CAUTION: Do not change `CONNECTIONS_KEY` after the investor saves a connection. 
 - [apps/worker/src/sniff.ts](../../apps/worker/src/sniff.ts)
 - [packages/financial-engine-ts/src/sources.ts](../../packages/financial-engine-ts/src/sources.ts)
 - [packages/db/drizzle/0008_xbrl.sql](../../packages/db/drizzle/0008_xbrl.sql)
+- [apps/worker/src/index-candidate.ts](../../apps/worker/src/index-candidate.ts)
+- [apps/worker/src/index-prune.ts](../../apps/worker/src/index-prune.ts)
+- [apps/worker/src/index-backfill.ts](../../apps/worker/src/index-backfill.ts)
+- [apps/worker/src/eval/cli.ts](../../apps/worker/src/eval/cli.ts)
+- [apps/worker/src/eval/rank.ts](../../apps/worker/src/eval/rank.ts)
+- [packages/document-index/src/models.ts](../../packages/document-index/src/models.ts)
+- [apps/api/src/routes/search.ts](../../apps/api/src/routes/search.ts)
 - [apps/worker/src/indexer.ts](../../apps/worker/src/indexer.ts)
 - [apps/worker/src/market/refresh.ts](../../apps/worker/src/market/refresh.ts)
 - [apps/worker/src/market/breadth.ts](../../apps/worker/src/market/breadth.ts)

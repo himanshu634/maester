@@ -10,7 +10,13 @@ This document describes `apps/indexer`, the Python service that reads the pages 
 | worker | The TypeScript service in `apps/worker`. It sends requests to the indexer. |
 | embedder | The service that turns text into vectors. It runs text-embeddings-inference in the `embedder` container. The indexer does not call it. |
 | Docling | The library that reads the layout, the reading order, the headings and the tables of a PDF. |
-| RapidOCR | The OCR engine that Docling uses on onnxruntime. OCR means optical character recognition. |
+| OCR | Optical character recognition. It reads the text of a page that has no text layer. |
+| OCR engine | The program that does OCR for Docling. `OCR_ENGINE` selects it: `rapidocr` or `tesseract`. |
+| RapidOCR | The default OCR engine. It runs on onnxruntime. |
+| Tesseract | The second OCR engine. The indexer runs the command `tesseract` with the English language data. |
+| engine string | The name and the version of the OCR engine. The worker uses it in the key of a cached page read. |
+| cell matching | The TableFormer setting `INDEX_TABLE_CELL_MATCHING`. It decides if a table cell takes the text of the PDF cells below it. |
+| candidate model | An embedding model in the `candidates` list of the lock file. Only a measurement uses it. |
 | range | A group of pages of one PDF, for example pages 21 to 40. One request reads one range. |
 | read | The output of Docling for one range. It holds the document structure, the text of each page and the source of each item. |
 | chunk | One piece of text for search. A chunk is on one page only. |
@@ -20,17 +26,18 @@ This document describes `apps/indexer`, the Python service that reads the pages 
 | event | One line of the NDJSON stream that the indexer returns. |
 | secret | The value of `INDEXER_SECRET`. The worker sends it in the `x-indexer-secret` header. |
 | model folder | The folder `/models` in the `models` volume. It holds the weights. |
+| served model | The model that the embedder names in the answer of `GET /info`. |
 | lock file | `apps/indexer/models.lock.json`. It records the commit of each model. |
 
 ## Function
 
 The indexer reads financial documents in PDF format for the worker. It does three tasks:
 
-- It reads a range of pages with Docling and RapidOCR, and cuts the pages into chunks.
+- It reads a range of pages with Docling and an OCR engine, and cuts the pages into chunks.
 - It cuts a read that the worker kept before into chunks again, and reads no page.
 - It cuts the text blocks of an XBRL instance into chunks, with the tokenizer of the embedding model. It reads no page.
 
-The indexer stores nothing. It has no access to the database or to object storage. The worker sends the PDF in the request body, writes the pages and the chunks to the database, and sends the chunks to the embedder. The indexer fetches no model while it runs.
+`OCR_ENGINE` selects the OCR engine. The default is RapidOCR. The indexer stores nothing. It has no access to the database or to object storage. The worker sends the PDF in the request body, writes the pages and the chunks to the database, and sends the chunks to the embedder. The indexer fetches no model while it runs.
 
 ## Parts
 
@@ -46,9 +53,11 @@ The indexer stores nothing. It has no access to the database or to object storag
 | Errors | `apps/indexer/src/maester_indexer/errors.py` | Defines `IndexingError`, which has a code, a message and a `retryable` value. |
 | Entry point | `apps/indexer/src/maester_indexer/__main__.py` | Starts `uvicorn` on `PORT`. The command `maester-indexer` runs it. |
 | Model fetch | `apps/indexer/src/maester_indexer/fetch_models.py` | The command `maester-indexer-fetch-models`. It gets the weights. |
-| Versions | `apps/indexer/src/maester_indexer/versions.py` | Reads the versions of the Docling packages, the Docling artifacts in `models.lock.json`, the OCR engine and the chunker. |
-| Lock file | `apps/indexer/models.lock.json` | Records the commit of each model. |
-| Container | `apps/indexer/Dockerfile` | Builds the image `maester/indexer:local`. |
+| Versions | `apps/indexer/src/maester_indexer/versions.py` | Reads the versions of the Docling packages, the Docling artifacts in `models.lock.json`, the OCR engine string and the chunker. |
+| OCR sample | `apps/indexer/src/maester_indexer/ocr_sample.py` | The command `maester-indexer-ocr-sample`. It reads a fixed list of pages under four reader configurations and writes a scoring sheet. |
+| Parity check | `apps/indexer/scripts/embedding_parity.py` | Compares the vectors of a candidate model from TEI with the vectors of sentence-transformers. It is not in the image. |
+| Lock file | `apps/indexer/models.lock.json` | Records the commit of each model, and the commit of each candidate model. |
+| Container | `apps/indexer/Dockerfile` | Builds the image `maester/indexer:local`. The image has the packages `tesseract-ocr` and `tesseract-ocr-eng`. |
 
 ## Operation
 
@@ -135,6 +144,12 @@ These errors come before the stream. The body is `{ "detail": { "code": ... } }`
 | `INDEX_FAILED` | Yes | An unexpected error, or Docling ends the read with a bad status. The message has the type of the error only. |
 | `INDEX_FAILED` | No | The first page of the range is after the last page of the file, or a check of the chunker finds that the items or the token counts are not correct. |
 
+### Errors at start
+
+- If `OCR_ENGINE` has a value that is not `rapidocr` or `tesseract`, the indexer does not start.
+- If `OCR_ENGINE` is `tesseract` and the command `tesseract` is not installed, the reader stops with the message "tesseract is not installed".
+- If the language data `eng.traineddata` is not in the folder that `tesseract --list-langs` names, the reader stops with a message that names the file.
+
 ### Page reasons
 
 A `page` event has `none_reason`. These values do not stop the stream.
@@ -161,12 +176,26 @@ The indexer reads these environment variables.
 | `INDEX_MAX_BYTES` | `52428800` (50 MiB) | The largest PDF that the indexer accepts. |
 | `INDEX_THREADS` | `6` | The number of threads for Docling. |
 | `INDEX_PAGE_BATCH` | `4` | The number of pages that Docling reads in one batch. A smaller value uses less memory. |
-| `INDEX_TABLE_CELL_MATCHING` | `true` | `true` or `false`. It sets the cell matching of TableFormer. |
+| `INDEX_TABLE_CELL_MATCHING` | `true` | `true` or `false`. It sets the cell matching of TableFormer. It applies to every page. A change gives new keys to the cached page reads. |
 | `INDEX_TOKENIZER_PATH` | No default | The folder of the tokenizer of the embedding model. |
 | `DOCLING_ARTIFACTS_PATH` | No default | The folder of the Docling and RapidOCR weights. |
-| `OCR_ENGINE` | `rapidocr` | The only value is `rapidocr`. |
-| `EMBEDDING_MODEL` | `Snowflake/snowflake-arctic-embed-l-v2.0` | The model whose tokenizer counts the tokens. |
+| `OCR_ENGINE` | `rapidocr` | `rapidocr` or `tesseract`. See "OCR engines" below. A change gives new keys to the cached page reads. |
+| `EMBEDDING_MODEL` | `Snowflake/snowflake-arctic-embed-l-v2.0` | The model whose tokenizer counts the tokens. In Compose, one variable `EMBEDDING_MODEL` also sets `INDEX_TOKENIZER_PATH` and the embedder. |
 | `HF_HUB_OFFLINE` | `1` in the image | If it is `1`, the libraries fetch no file from the network. |
+
+### OCR engines
+
+| Engine | Engine string | Source of the string |
+| --- | --- | --- |
+| `rapidocr` | `rapidocr-onnxruntime <version of the package rapidocr>` | The package `rapidocr`. The string is the same as before Tesseract existed, so the cached page reads stay valid. |
+| `tesseract` | `tesseract-cli <version> eng:<12 characters>` | The version of `tesseract --version`, and the first 12 hex characters of the sha256 of `eng.traineddata`. |
+
+1. The worker puts the engine string in the key of a cached page read. Thus a change of engine reads each page again.
+2. A page read of the other engine stays in the cache.
+3. Tesseract reads English only. The text source of a chunk is the same for both engines.
+4. The key of a cached page read also has the reader options. They have the form `table=accurate;cell_matching=<value>;ocr=<engine>`.
+
+The run of the OCR spot check will write its report in `docs/eval/<date>-ocr-spot-check.md` after the run. This report does not exist yet. It will give the measurement of the two engines.
 
 ### Pinned versions
 
@@ -184,7 +213,7 @@ The service `models` fetches the weights once, into the volume `models`. The com
 - `/models/embed/Snowflake/snowflake-arctic-embed-l-v2.0` holds the embedding model. Both the indexer and the embedder read it. The command gets only the configuration files, the tokenizer files and the safetensors weights. It does not get the ONNX files.
 - `/models/models.lock.json` holds the lock file.
 
-The option `--docling-only` fetches only the Docling weights. The CI workflow uses it. The services `indexer` and `embedder` mount the volume as read-only and set `HF_HUB_OFFLINE` to `1`.
+The option `--candidates` also fetches each candidate model of the lock file into `/models/embed/<candidate id>`. The tokenizer loads from any of these folders. The option `--docling-only` fetches only the Docling weights. The CI workflow uses it. The services `indexer` and `embedder`, and the services `indexer-candidate` and `embedder-candidate` of the `eval` profile, mount the volume as read-only and set `HF_HUB_OFFLINE` to `1`.
 
 ### Log
 
@@ -241,16 +270,79 @@ The indexer writes log lines to standard error. A log line has no text from a do
    INDEXER_SECRET=local-indexer-secret DOCLING_ARTIFACTS_PATH=/models/docling INDEX_TOKENIZER_PATH=/models/embed/Snowflake/snowflake-arctic-embed-l-v2.0 uv run maester-indexer
    ```
 
+### To read the pages of the OCR spot check
+
+1. Make sure that the corpus folder has the PDFs and that the page list file exists.
+2. Run the command in the indexer container, or on a computer that has the weights and Tesseract.
+
+   ```bash
+   maester-indexer-ocr-sample --pages data/eval/ocr/pages.json --corpus data/eval/corpus --out data/eval/ocr/runs
+   ```
+
+3. Read the run folder name that the command shows. The folder is under `--out`.
+4. Score the sheet `scores.csv` in the run folder by hand.
+5. Run `maester-eval ocr report` on the run. See the [evaluation harness description](eval.md).
+
+The command works as follows:
+
+- It reads 10 scanned pages and 5 digital pages.
+- It reads a scanned page under four configurations: `rapidocr-cm`, `rapidocr-nocm`, `tesseract-cm` and `tesseract-nocm`.
+- It reads a digital page under the two RapidOCR configurations.
+- A configuration that ends in `cm` has cell matching on.
+- It holds one reader at a time, because of the memory limit.
+- It shows the name of the run folder and counts only. The text of a page is in the run folder, which version control ignores.
+
+### To start the indexer of a candidate model
+
+1. Fetch the candidate models into the `models` volume.
+
+   ```bash
+   docker compose --profile setup run --rm models maester-indexer-fetch-models --out /models --candidates
+   ```
+
+2. Start the candidate services of the `eval` profile.
+
+   ```bash
+   CANDIDATE_MODEL=Qwen/Qwen3-Embedding-0.6B docker compose --profile eval up -d embedder-candidate indexer-candidate
+   ```
+
+3. Make sure that the embedder names the candidate model.
+
+   ```bash
+   curl http://localhost:8793/info
+   ```
+
+4. Build the index of the candidate. See `index:candidate` in the [worker description](worker.md).
+
+`indexer-candidate` listens on port 8794 and `embedder-candidate` on port 8793. The image is the image of the live indexer. Only `EMBEDDING_MODEL` and `INDEX_TOKENIZER_PATH` come from `CANDIDATE_MODEL`. If `CANDIDATE_MODEL` has no value, the services cannot start, and the live stack does not depend on them.
+
+### To check a candidate model against its model card
+
+1. Start the embedder of the candidate model.
+2. Run the parity script from the folder of the indexer.
+
+   ```bash
+   cd apps/indexer
+   uv run --group parity python scripts/embedding_parity.py --model Qwen/Qwen3-Embedding-0.6B --tei http://localhost:8793 --out parity-qwen.json
+   ```
+
+3. Read the result. The script exits with code 1 if the check fails.
+
+The check fails if one cosine is less than 0.999. It also fails if the prompts of the model card are not the prompts of the registry.
+
+The script downloads the model from Hugging Face, because the reference is sentence-transformers. The `parity` group is not in the image.
+
 ## Warnings and cautions
 
-CAUTION: Docling needs much memory. The container limit is 2304 MiB. If the container uses more, Docker stops it. Make `INDEX_PAGE_BATCH` smaller, or make the range smaller with `INDEX_PAGE_RANGE` in the worker.
+CAUTION: Docling needs much memory. The container limit is 2304 MiB. The image with Tesseract has no measured size, so do not use the earlier size of 2.71 GB. If the container uses more, Docker stops it. Make `INDEX_PAGE_BATCH` smaller, or make the range smaller with `INDEX_PAGE_RANGE` in the worker.
 
 ## Limits
 
 - The indexer reads one range for each request. It reads no whole PDF in one request.
 - The indexer reads PDF files only. It does not read an XBRL instance. The extractor turns the text blocks of an instance into text. The indexer only cuts that text.
 - A change of the chunker version or of the text version does not rebuild the index of an XBRL document through the backfill. The backfill judges an index as stale by its revision.
-- RapidOCR is the only OCR engine.
+- Tesseract reads English only.
+- The indexer has no OCR engine that calls a paid model.
 - The indexer runs on the CPU only.
 
 ## Sources
@@ -261,6 +353,9 @@ CAUTION: Docling needs much memory. The container limit is 2304 MiB. If the cont
 - [apps/indexer/src/maester_indexer/contracts.py](../../apps/indexer/src/maester_indexer/contracts.py)
 - [apps/indexer/src/maester_indexer/app.py](../../apps/indexer/src/maester_indexer/app.py)
 - [apps/indexer/src/maester_indexer/reader.py](../../apps/indexer/src/maester_indexer/reader.py)
+- [apps/indexer/src/maester_indexer/versions.py](../../apps/indexer/src/maester_indexer/versions.py)
+- [apps/indexer/src/maester_indexer/ocr_sample.py](../../apps/indexer/src/maester_indexer/ocr_sample.py)
+- [apps/indexer/scripts/embedding_parity.py](../../apps/indexer/scripts/embedding_parity.py)
 - [apps/indexer/src/maester_indexer/fetch_models.py](../../apps/indexer/src/maester_indexer/fetch_models.py)
 - [apps/indexer/Dockerfile](../../apps/indexer/Dockerfile)
 - [apps/indexer/src/maester_indexer/chunker.py](../../apps/indexer/src/maester_indexer/chunker.py)

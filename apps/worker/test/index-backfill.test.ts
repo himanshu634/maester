@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { DOCUMENT_INDEX_SUBJECT, JobTypes } from "@maester/contracts";
 import { schema } from "@maester/db";
-import { indexPipelineVersion } from "@maester/document-index";
+import { INDEX_PIPELINE_VERSION, indexPipelineVersion } from "@maester/document-index";
 import { backfillIndex, requeue, runIndexBackfillOnce } from "../src/index-backfill.js";
 import { createWorkerContext, seedWorkspace, workerTestEnv } from "./context.js";
 
@@ -95,7 +95,7 @@ describe("backfillIndex", () => {
     const indexed = await seedDoc();
     const jobId = await seedIndexJob(indexed, { state: "succeeded" });
     await ctx.db.insert(schema.documentIndexRevision).values({
-      id: crypto.randomUUID(), workspaceId, documentId: indexed, jobId, state: "complete", indexVersion: "v", doclingVersion: "d",
+      id: crypto.randomUUID(), workspaceId, documentId: indexed, jobId, state: "complete", indexVersion: INDEX_PIPELINE_VERSION, doclingVersion: "d",
       ocrEngine: "o", readerOptions: "r", chunkerVersion: "c", embeddingModel: MODEL,
     });
     const counts = await backfillIndex(ctx.db, ctx.dispatcher, opts);
@@ -118,8 +118,18 @@ describe("backfillIndex", () => {
     const doc = await seedDoc();
     const jobId = await seedIndexJob(doc, { state: "succeeded" });
     await ctx.db.insert(schema.documentIndexRevision).values({
-      id: crypto.randomUUID(), workspaceId, documentId: doc, jobId, state: "complete", indexVersion: "v", doclingVersion: "d",
+      id: crypto.randomUUID(), workspaceId, documentId: doc, jobId, state: "complete", indexVersion: INDEX_PIPELINE_VERSION, doclingVersion: "d",
       ocrEngine: "o", readerOptions: "r", chunkerVersion: "c", embeddingModel: "some-other-model",
+    });
+    expect(await backfillIndex(ctx.db, ctx.dispatcher, opts)).toEqual({ created: 0, requeued: 1, waiting: 0, current: 0 });
+  });
+
+  it("does not count a document indexed under an older index version as current", async () => {
+    const doc = await seedDoc();
+    const jobId = await seedIndexJob(doc, { state: "succeeded" });
+    await ctx.db.insert(schema.documentIndexRevision).values({
+      id: crypto.randomUUID(), workspaceId, documentId: doc, jobId, state: "complete", indexVersion: "0", doclingVersion: "d",
+      ocrEngine: "o", readerOptions: "r", chunkerVersion: "c", embeddingModel: MODEL,
     });
     expect(await backfillIndex(ctx.db, ctx.dispatcher, opts)).toEqual({ created: 0, requeued: 1, waiting: 0, current: 0 });
   });
@@ -133,7 +143,7 @@ describe("backfillIndex", () => {
       const jobId = crypto.randomUUID();
       await ctx.db.insert(schema.job).values({ id: jobId, workspaceId: ws, type: JobTypes.DOCUMENT_INDEX, subjectType: DOCUMENT_INDEX_SUBJECT, subjectId: doc, idempotencyKey: `k-${jobId}`, state: "succeeded" });
       await ctx.db.insert(schema.documentIndexRevision).values({
-        id: crypto.randomUUID(), workspaceId: ws, documentId: doc, jobId, state: "complete", indexVersion: "v", doclingVersion: "d",
+        id: crypto.randomUUID(), workspaceId: ws, documentId: doc, jobId, state: "complete", indexVersion: INDEX_PIPELINE_VERSION, doclingVersion: "d",
         ocrEngine: "o", readerOptions: "r", chunkerVersion: "c", embeddingModel: MODEL,
       });
     }

@@ -1,0 +1,30 @@
+[
+  {
+    "filing": "aether-industries/ar-2024-25",
+    "page": 12,
+    "a": "rapidocr-cm",
+    "b": "tesseract-cm",
+    "pairs": [
+      [
+        "(45)",
+        "45"
+      ],
+      [
+        "",
+        "7"
+      ]
+    ]
+  },
+  {
+    "filing": "aether-industries/ar-2024-25",
+    "page": 12,
+    "a": "rapidocr-cm",
+    "b": "rapidocr-nocm",
+    "pairs": [
+      [
+        "1,200 300",
+        "1,200300"
+      ]
+    ]
+  }
+]

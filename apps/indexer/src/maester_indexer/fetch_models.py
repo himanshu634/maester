@@ -5,6 +5,7 @@ This is the only code that downloads anything; the service itself runs offline. 
     <out>/models.lock.json
     <out>/docling/...                  Docling's layout, TableFormer and RapidOCR artifacts
     <out>/embed/<embedding model id>   the embedding model, at the revision in models.lock.json
+    <out>/embed/<candidate id>         with --candidates, each model in the lock's `candidates` list
 
 Docling is asked for each artifact at the revision models.lock.json records, not at `main`.
 RapidOCR's weights come through Docling's own download, which takes them from ModelScope at
@@ -54,9 +55,17 @@ def fetch_docling(out: Path, lock: dict) -> None:
 
 
 def fetch_embedding(out: Path, lock: dict) -> None:
+    _fetch_embed_model(out, lock["embedding"])
+
+
+def fetch_candidates(out: Path, lock: dict) -> None:
+    for model in lock.get("candidates", []):
+        _fetch_embed_model(out, model)
+
+
+def _fetch_embed_model(out: Path, model: dict) -> None:
     from huggingface_hub import snapshot_download
 
-    model = lock["embedding"]
     snapshot_download(
         repo_id=model["id"],
         revision=model["revision"],
@@ -70,6 +79,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="maester-indexer-fetch-models", description="Fetch the models the indexer runs on.")
     parser.add_argument("--out", required=True, type=Path, help="the models folder, e.g. /models")
     parser.add_argument("--lock", help=f"the {LOCK_FILE} to fetch at (default: the one shipped with the indexer)")
+    parser.add_argument("--candidates", action="store_true",
+                        help="also fetch each candidate embedding model in the lock (for measuring the index)")
     parser.add_argument("--docling-only", action="store_true", help="skip the embedding model (for CI)")
     args = parser.parse_args(argv)
 
@@ -80,6 +91,8 @@ def main(argv: list[str] | None = None) -> int:
     fetch_docling(args.out, lock)
     if not args.docling_only:
         fetch_embedding(args.out, lock)
+        if args.candidates:
+            fetch_candidates(args.out, lock)
     # Last, so a lock beside the models means the fetch finished.
     shutil.copyfile(lock_path, args.out / LOCK_FILE)
     print(f"models are in {args.out}", file=sys.stderr)

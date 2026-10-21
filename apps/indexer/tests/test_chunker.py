@@ -19,6 +19,7 @@ from maester_indexer.chunker import (
     basis_of,
     chunk_range,
     embed_budget,
+    _locked_model,
     filter_document,
     load_tokenizer,
 )
@@ -446,6 +447,45 @@ class LoadTokenizerTests(unittest.TestCase):
             with self.assertRaises(IndexingError) as raised:
                 load_tokenizer(str(folder), self.MODEL)
             self.assertEqual((raised.exception.code, raised.exception.retryable), ("INDEXER_MODEL_MISMATCH", False))
+
+    def _lock_with_candidates(self, root: Path) -> Path:
+        lock = {
+            "embedding": {"id": "Snowflake/snowflake-arctic-embed-l-v2.0", "revision": "0" * 40},
+            "candidates": [{"id": "Qwen/Qwen3-Embedding-0.6B", "revision": "1" * 40}],
+            "docling": {},
+        }
+        (root / "models.lock.json").write_text(json.dumps(lock), encoding="utf-8")
+        return root / "embed"
+
+    def test_a_candidate_folder_is_locked(self):
+        with tempfile.TemporaryDirectory() as root:
+            embed = self._lock_with_candidates(Path(root))
+            self.assertEqual(_locked_model(embed / "Qwen" / "Qwen3-Embedding-0.6B"), "Qwen/Qwen3-Embedding-0.6B")
+            self.assertEqual(
+                _locked_model(embed / "Snowflake" / "snowflake-arctic-embed-l-v2.0"),
+                "Snowflake/snowflake-arctic-embed-l-v2.0",
+            )
+
+    def test_a_folder_of_an_unlocked_model_is_not(self):
+        with tempfile.TemporaryDirectory() as root:
+            embed = self._lock_with_candidates(Path(root))
+            self.assertIsNone(_locked_model(embed / "BAAI" / "bge-m3"))
+
+    def test_a_candidate_tokenizer_loads_for_that_model_only(self):
+        with tempfile.TemporaryDirectory() as root:
+            embed = self._lock_with_candidates(Path(root))
+            folder = embed / "Qwen" / "Qwen3-Embedding-0.6B"
+            whitespace_tokenizer(448).get_tokenizer().save_pretrained(str(folder))
+            self.assertEqual(load_tokenizer(str(folder), "Qwen/Qwen3-Embedding-0.6B").get_max_tokens(), 448)
+            with self.assertRaises(IndexingError) as raised:
+                load_tokenizer(str(folder), "Snowflake/snowflake-arctic-embed-l-v2.0")
+            self.assertEqual(raised.exception.code, "INDEXER_MODEL_MISMATCH")
+
+    def test_a_malformed_candidates_entry_is_ignored_not_trusted(self):
+        with tempfile.TemporaryDirectory() as root:
+            lock = {"embedding": {"id": "A/b", "revision": "0" * 40}, "candidates": [None, {"id": 5}, "x"]}
+            (Path(root) / "models.lock.json").write_text(json.dumps(lock), encoding="utf-8")
+            self.assertIsNone(_locked_model(Path(root) / "embed" / "C" / "d"))
 
 
 if __name__ == "__main__":

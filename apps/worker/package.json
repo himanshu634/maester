@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file=../../.env src/server.ts",
+    "eval": "tsx --env-file=../../.env src/eval/cli.ts",
+    "index:candidate": "tsx --env-file=../../.env src/index-candidate-cli.ts",
     "index:backfill": "tsx --env-file=../../.env src/index-backfill-cli.ts",
+    "index:prune": "tsx --env-file=../../.env src/index-prune-cli.ts",
     "market:refresh": "tsx --env-file=../../.env src/market-refresh-cli.ts",
     "build": "tsup",
     "start": "node dist/server.js",

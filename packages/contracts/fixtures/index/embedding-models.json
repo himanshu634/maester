@@ -1,0 +1,34 @@
+[
+  {
+    "id": "Snowflake/snowflake-arctic-embed-l-v2.0",
+    "servedDimensions": 1024,
+    "dimensions": 1024,
+    "queryPrefix": "query: ",
+    "documentPrefix": "",
+    "promptsFrom": "card"
+  },
+  {
+    "id": "Qwen/Qwen3-Embedding-0.6B",
+    "servedDimensions": 1024,
+    "dimensions": 1024,
+    "queryPrefix": "Instruct: Given an investor's question about an Indian listed company, retrieve the passages of its annual report or financial results that answer it\nQuery:",
+    "documentPrefix": "",
+    "promptsFrom": "ours"
+  },
+  {
+    "id": "voyageai/voyage-4-nano",
+    "servedDimensions": 2048,
+    "dimensions": 1024,
+    "queryPrefix": "Represent the query for retrieving supporting documents: ",
+    "documentPrefix": "Represent the document for retrieval: ",
+    "promptsFrom": "card"
+  },
+  {
+    "id": "ibm-granite/granite-embedding-english-r2",
+    "servedDimensions": 768,
+    "dimensions": 768,
+    "queryPrefix": "",
+    "documentPrefix": "",
+    "promptsFrom": "none"
+  }
+]

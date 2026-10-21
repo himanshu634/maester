@@ -104,6 +104,10 @@ class CountingEmbedder implements Embedder {
   calls: string[][] = [];
   failCall: number | null = null;
 
+  servedModel(): Promise<string> {
+    return this.inner.servedModel();
+  }
+
   async embed(texts: string[], kind: "query" | "document"): Promise<number[][]> {
     this.calls.push(texts);
     if (this.calls.length === this.failCall) this.inner.fail(1);
@@ -296,7 +300,7 @@ describe("document.index on an XBRL document", () => {
     again.text = { ...TEXT, blocks: [TEXT.blocks[0]!] };
     const second = await ctx.db.insert(schema.job).values({
       id: crypto.randomUUID(), workspaceId: doc.workspaceId, type: JobTypes.DOCUMENT_INDEX, subjectType: DOCUMENT_INDEX_SUBJECT,
-      subjectId: doc.id, idempotencyKey: `document.index:${doc.id}:rebuild`, state: "queued",
+      subjectId: doc.id, idempotencyKey: `rebuild:${indexPipelineVersion(MODEL)}`, state: "queued",
     }).returning();
 
     await run(second[0]!.id, { extractor: again.client, indexer: new FakeIndexer(), embedder });

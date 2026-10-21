@@ -44,7 +44,7 @@ vi.mock("@maester/db", async (importOriginal) => {
     },
   };
 });
-import { FakeEmbedder, indexPipelineVersion, type Embedder } from "@maester/document-index";
+import { EmbedderError, FakeEmbedder, indexPipelineVersion, type Embedder } from "@maester/document-index";
 import type { IndexerClient, IndexInput, IndexResult } from "../src/indexer.js";
 import { documentIndex } from "../src/jobs/document-index.js";
 import { JobFailure } from "../src/jobs/types.js";
@@ -102,7 +102,10 @@ class FakeIndexer implements IndexerClient {
     this.chunkCalls = [];
   }
 
+  versionsCalls = 0;
+
   async versions(): Promise<IndexerVersions> {
+    this.versionsCalls += 1;
     return this.versionsValue;
   }
 
@@ -184,6 +187,10 @@ class CountingEmbedder implements Embedder {
   failCall: number | null = null;
   /** Runs at each call, with the call's number from 1. */
   onCall: ((n: number) => void) | null = null;
+
+  servedModel(): Promise<string> {
+    return this.inner.servedModel();
+  }
 
   async embed(texts: string[], kind: "query" | "document"): Promise<number[][]> {
     this.calls.push(texts);
@@ -380,7 +387,7 @@ describe("document.index", () => {
     const [r1] = await revisionsOf(doc.id);
 
     indexer.resetCalls();
-    const job2 = await run(await seedIndexJob(doc, "2:rebuild"), { indexer, embedder });
+    const job2 = await run(await seedIndexJob(doc, `rebuild:${indexPipelineVersion(MODEL)}`), { indexer, embedder });
 
     expect(job2.state).toBe("succeeded");
     expect(indexer.indexCalls).toEqual([]);
@@ -467,7 +474,7 @@ describe("document.index", () => {
     expect((await pageReadsOf(doc.workspaceId)).map((r) => [r.firstPage, r.lastPage])).toEqual([[1, 20], [21, 40]]);
 
     indexer.resetCalls();
-    const job2 = await run(await seedIndexJob(doc, "2:rebuild"), { indexer, embedder, env: { OCR_PAGE_BUDGET: 400 } });
+    const job2 = await run(await seedIndexJob(doc, `rebuild:${indexPipelineVersion(MODEL)}`), { indexer, embedder, env: { OCR_PAGE_BUDGET: 400 } });
 
     expect(job2.state).toBe("succeeded");
     expect(ranges(indexer.chunkCalls)).toEqual([[1, 20], [21, 40]]);
@@ -485,7 +492,7 @@ describe("document.index", () => {
     const [r1] = await currentOf(doc.id);
 
     indexer.failOn(21, 1);
-    const job2 = await seedIndexJob(doc, "2:rebuild");
+    const job2 = await seedIndexJob(doc, `rebuild:${indexPipelineVersion(MODEL)}`);
     expect((await run(job2, { indexer, embedder })).state).toBe("queued");
     expect((await currentOf(doc.id)).map((r) => r.id)).toEqual([r1!.id]);
     const building = (await revisionsOf(doc.id)).filter((r) => r.state === "building");
@@ -551,6 +558,42 @@ describe("document.index", () => {
     const job = await run(await seedIndexJob(doc), { indexer, embedder: new CountingEmbedder() });
     expect(job).toMatchObject({ state: "failed", attempt: 1, lastErrorCode: "INDEXER_MODEL_MISMATCH" });
     expect(indexer.indexCalls).toEqual([]);
+    expect(await revisionsOf(doc.id)).toEqual([]);
+  });
+
+  it("a job for another model fails INDEX_MODEL_NOT_SERVED and is not retried", async () => {
+    const doc = await seedDocument();
+    const indexer = new FakeIndexer({ pageCount: 5 });
+    const job = await run(await seedIndexJob(doc, indexPipelineVersion("Qwen/Qwen3-Embedding-0.6B")), { indexer, embedder: new CountingEmbedder() });
+    expect(job.idempotencyKey).toBe(`document.index:${doc.id}:1:Qwen/Qwen3-Embedding-0.6B`);
+    expect(job).toMatchObject({ state: "failed", attempt: 1, lastErrorCode: "INDEX_MODEL_NOT_SERVED" });
+    expect(await revisionsOf(doc.id)).toEqual([]);
+    expect(indexer.indexCalls).toEqual([]);
+    expect(indexer.chunkCalls).toEqual([]);
+    expect(indexer.versionsCalls).toBe(0);
+  });
+
+  it("an embedder that serves another model fails INDEXER_MODEL_MISMATCH and stores nothing", async () => {
+    const doc = await seedDocument();
+    const indexer = new FakeIndexer({ pageCount: 5 });
+    const embedder = new FakeEmbedder(MODEL, { serves: "/models/embed/Qwen/Qwen3-Embedding-0.6B" });
+    const job = await run(await seedIndexJob(doc), { indexer, embedder });
+    expect(job).toMatchObject({ state: "failed", attempt: 1, lastErrorCode: "INDEXER_MODEL_MISMATCH" });
+    expect(job.lastErrorMessage).toBe(`the embedder serves /models/embed/Qwen/Qwen3-Embedding-0.6B, not EMBEDDING_MODEL`);
+    expect(await revisionsOf(doc.id)).toEqual([]);
+    expect(indexer.indexCalls).toEqual([]);
+    const { rows } = await ctx.db.execute<{ n: number }>(sql`select count(*)::int as n from chunk_embedding where workspace_id = ${doc.workspaceId}`);
+    expect(rows[0]!.n).toBe(0);
+  });
+
+  it("an embedder that cannot say which model it serves fails EMBEDDING_FAILED and is retried", async () => {
+    const doc = await seedDocument();
+    const embedder = new FakeEmbedder(MODEL);
+    embedder.servedModel = async () => {
+      throw new EmbedderError("EMBEDDER_UNAVAILABLE", true, "The embedder did not say which model it serves.");
+    };
+    const job = await run(await seedIndexJob(doc), { indexer: new FakeIndexer({ pageCount: 5 }), embedder });
+    expect(job).toMatchObject({ state: "queued", attempt: 1, lastErrorCode: "EMBEDDING_FAILED" });
     expect(await revisionsOf(doc.id)).toEqual([]);
   });
 
@@ -656,7 +699,7 @@ describe("document.index", () => {
     expect(ranges(indexer.chunkCalls)).toEqual([[1, 5]]);
 
     indexer.resetCalls();
-    expect((await run(await seedIndexJob(doc, "2:rebuild"), { indexer, embedder })).state).toBe("succeeded");
+    expect((await run(await seedIndexJob(doc, `rebuild:${indexPipelineVersion(MODEL)}`), { indexer, embedder })).state).toBe("succeeded");
     expect(indexer.indexCalls).toEqual([]);
     expect(ranges(indexer.chunkCalls)).toEqual([[1, 5]]);
     expect(await pageReadsOf(doc.workspaceId)).toHaveLength(1);

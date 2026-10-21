@@ -60,10 +60,16 @@ class FromEnv(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 Settings.from_env({name: "0"})
 
-    def test_only_rapidocr_is_an_ocr_engine(self):
+    def test_tesseract_is_an_ocr_engine(self):
+        self.assertEqual(Settings.from_env({"OCR_ENGINE": "tesseract"}).ocr_engine, "tesseract")
+
+    def test_other_ocr_engines_are_refused(self):
         # Claude OCR (spec 8.1) is not built; naming it must not silently read with RapidOCR.
-        with self.assertRaises(ValueError):
-            Settings.from_env({"OCR_ENGINE": "claude"})
+        for engine in ("claude", "easyocr"):
+            with self.subTest(engine=engine), self.assertRaisesRegex(
+                ValueError, "OCR_ENGINE must be one of rapidocr, tesseract"
+            ):
+                Settings.from_env({"OCR_ENGINE": engine})
 
 
 if __name__ == "__main__":

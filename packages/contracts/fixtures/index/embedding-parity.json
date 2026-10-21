@@ -1,0 +1,16 @@
+{
+  "queries": [
+    "What was Synthetic Cements Limited's revenue from operations in the year?",
+    "How much did Synthetic Cements Limited owe in borrowings at the end of the year?",
+    "Who signed the auditor's report of Synthetic Cements Limited?",
+    "What dividend per share did the board of Synthetic Cements Limited recommend?",
+    "Which note lists the related parties of Synthetic Cements Limited?"
+  ],
+  "documents": [
+    "Synthetic Cements Limited\nStatement of profit and loss (₹ in crore)\nRevenue from operations 1,23,456.78 1,10,234.50\nOther income 456.78 389.12",
+    "Synthetic Cements Limited\nNotes to the financial statements\n25 Borrowings\nTerm loans from banks, secured 4,321.00 3,987.65\nNon-convertible debentures 1,500.00 1,500.00",
+    "Synthetic Cements Limited\nIndependent auditor's report\nWe have audited the standalone financial statements of the company, which comprise the balance sheet as at 31 March 2026.",
+    "Synthetic Cements Limited\nDirectors' report\nThe board recommends a dividend of ₹12.50 per equity share of face value ₹10 each for the year ended 31 March 2026.",
+    "Synthetic Cements Limited\nNotes to the financial statements\n38 Related party transactions\nThe company's subsidiaries and key managerial personnel are listed below."
+  ]
+}

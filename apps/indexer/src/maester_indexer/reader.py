@@ -1,4 +1,4 @@
-"""Reading one page range of a PDF with Docling and RapidOCR.
+"""Reading one page range of a PDF with Docling and RapidOCR (or Tesseract, by `OCR_ENGINE`).
 
 OCR is on or off for a whole range (the worker's OCR budget). Docling builds one pipeline,
 with its own copy of the layout and TableFormer models, for each set of options, so only
@@ -16,10 +16,12 @@ from docling.datamodel.accelerator_options import AcceleratorDevice, Accelerator
 from docling.datamodel.base_models import ConversionStatus, DocumentStream, InputFormat
 from docling.datamodel.document import ConversionResult
 from docling.datamodel.pipeline_options import (
+    OcrOptions,
     PdfPipelineOptions,
     RapidOcrOptions,
     TableFormerMode,
     TableStructureOptions,
+    TesseractCliOcrOptions,
 )
 from docling.datamodel.settings import settings as docling_settings
 from docling.document_converter import DocumentConverter, PdfFormatOption
@@ -30,7 +32,7 @@ from maester_indexer.contracts import IndexerVersions, PageNoneReason, RangePage
 from maester_indexer.errors import IndexingError
 from maester_indexer.settings import Settings
 from maester_indexer.sources import Cell, cells_inside, source_of
-from maester_indexer.versions import CHUNKER_VERSION, DOCLING_VERSION, OCR_ENGINE, reader_options
+from maester_indexer.versions import CHUNKER_VERSION, DOCLING_VERSION, ocr_engine_version, reader_options
 
 # The layers whose items make a page's text: the body and the furniture (running headers
 # and footers, which the chunker leaves out but the page text keeps).
@@ -53,6 +55,16 @@ def _unreadable() -> IndexingError:
     return IndexingError("UNREADABLE_PDF", "The PDF could not be opened: it is encrypted, damaged or empty.", False)
 
 
+def ocr_options(settings: Settings) -> OcrOptions:
+    """Docling's options for the engine `OCR_ENGINE` names. Tesseract reads English only: its
+    default languages (eng, spa, fra, deu) fail at construction where only eng is installed."""
+    if settings.ocr_engine == "rapidocr":
+        return RapidOcrOptions(backend="onnxruntime")
+    if settings.ocr_engine == "tesseract":
+        return TesseractCliOcrOptions(lang=["eng"], tesseract_cmd="tesseract")
+    raise ValueError(f"No OCR options are built for the engine {settings.ocr_engine!r}")  # never RapidOCR by default
+
+
 class Reader:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -63,7 +75,7 @@ class Reader:
         self._lock = threading.Lock()  # one read at a time
         self.versions = IndexerVersions(
             docling_version=DOCLING_VERSION,
-            ocr_engine=OCR_ENGINE,
+            ocr_engine=ocr_engine_version(settings.ocr_engine),
             reader_options=reader_options(settings),
             chunker_version=CHUNKER_VERSION,
             tokenizer=settings.embedding_model,
@@ -85,7 +97,7 @@ class Reader:
         settings = self._settings
         options = PdfPipelineOptions(
             do_ocr=ocr_on,
-            ocr_options=RapidOcrOptions(backend="onnxruntime"),
+            ocr_options=ocr_options(settings),
             do_table_structure=True,
             table_structure_options=TableStructureOptions(
                 mode=TableFormerMode.ACCURATE, do_cell_matching=settings.table_cell_matching

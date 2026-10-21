@@ -316,13 +316,14 @@ export async function putPageRead(db: Db, workspaceId: string, key: PageReadKey,
 }
 
 /**
- * Stored documents with no complete or partial revision for the model, each with its
- * `document.index` job of this pipeline version when one exists. A duplicate gets no index; a
- * stored document from before intake (null intake state) is included.
+ * Stored documents with no current index: no complete or partial revision for the model built at `indexVersion`.
+ * So a bump of the index version makes every older revision stale, and the backfill rebuilds it. Each comes with
+ * its `document.index` job of this pipeline version when one exists; a `document.index.eval` job is never matched.
+ * A duplicate gets no index; a stored document from before intake (null intake state) is included.
  */
 export async function documentsNeedingIndex(
   db: Db,
-  input: { workspaceId?: string; documentIds?: string[]; model: string; pipelineVersion: string },
+  input: { workspaceId?: string; documentIds?: string[]; model: string; pipelineVersion: string; indexVersion: string },
 ): Promise<{ documentId: string; workspaceId: string; job: JobRow | null }[]> {
   if (input.documentIds && input.documentIds.length === 0) return [];
   const rows = await db
@@ -349,6 +350,7 @@ export async function documentsNeedingIndex(
               and(
                 eq(documentIndexRevision.documentId, document.id),
                 eq(documentIndexRevision.embeddingModel, input.model),
+                eq(documentIndexRevision.indexVersion, input.indexVersion),
                 inArray(documentIndexRevision.state, ["complete", "partial"]),
               ),
             ),
@@ -357,4 +359,29 @@ export async function documentsNeedingIndex(
     )
     .orderBy(asc(document.createdAt), asc(document.id));
   return rows;
+}
+
+/**
+ * Deletes every revision of the model, in one workspace or in all, whatever its state; the cascade removes their
+ * pages, chunks and embeddings. Cached page reads are kept, so a rebuild reads nothing again. Returns the revisions
+ * and chunks deleted, or that would be with `dryRun`.
+ */
+export async function deleteModelRevisions(
+  db: Db,
+  input: { model: string; workspaceId?: string; dryRun?: boolean },
+): Promise<{ revisions: number; chunks: number }> {
+  const scope = and(
+    eq(documentIndexRevision.embeddingModel, input.model),
+    input.workspaceId ? eq(documentIndexRevision.workspaceId, input.workspaceId) : undefined,
+  );
+  return db.transaction(async (tx) => {
+    const [revisions] = await tx.select({ n: sql<number>`count(*)::int` }).from(documentIndexRevision).where(scope);
+    const [chunks] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(documentChunk)
+      .innerJoin(documentIndexRevision, eq(documentIndexRevision.id, documentChunk.revisionId))
+      .where(scope);
+    if (!input.dryRun) await tx.delete(documentIndexRevision).where(scope);
+    return { revisions: revisions!.n, chunks: chunks!.n };
+  });
 }

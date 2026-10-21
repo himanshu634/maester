@@ -24,13 +24,19 @@ from maester_eval.compare import (
 )
 from maester_eval.concepts import load_taxonomy
 from maester_eval.errors import EvalError
+from maester_eval.eval_wire import EvalRequestModel, document_refs
 from maester_eval.files import write_text_atomically
 from maester_eval.gold import (
     SettledRecord, count_unverified, freeze_sheet, gold_of_origin, read_gold, read_gold_filing, read_sheet, write_gold,
 )
-from maester_eval.manifest import SetChoice, load_manifest, missing_files, tag_values, write_manifest
-from maester_eval.paths import DEFAULT
+from maester_eval.manifest import FilingKind, SetChoice, load_manifest, missing_files, tag_values, write_manifest
+from maester_eval.ocr import check_scores, choose_cell_matching, choose_engine, read_pages, read_scores, render_ocr_report
+from maester_eval.ocr import read_run as read_ocr_run
+from maester_eval.paths import DEFAULT, EvalPaths
 from maester_eval.report import score_run_dir, score_xbrl_run_dir, write_report
+from maester_eval.retrieval import build_request, check_set, corpus_filings, read_corpus, read_questions
+from maester_eval.retrieval_report import read_lock_revisions, read_retrieval_run, render_retrieval_report
+from maester_eval.retrieval_scoring import choose_model, needs_granite
 from maester_eval.runner import gemini_model_factory, run_live, workflow_settings_from_env
 from maester_eval.settle import check_provenance, merge_gold
 from maester_eval.sheets import export_run, sheet_path, write_sheet
@@ -46,6 +52,16 @@ app = typer.Typer(
     pretty_exceptions_enable=False,
     no_args_is_help=True,
 )
+ocr_app = typer.Typer(
+    help="The OCR spot check: list the filings to read, then score the sheet and apply the engine and cell-matching rules.",
+    no_args_is_help=True,
+)
+app.add_typer(ocr_app, name="ocr")
+retrieval_app = typer.Typer(
+    help="The retrieval set: check the question sheet, write the request the ranker reads, then score the rankings and choose the model.",
+    no_args_is_help=True,
+)
+app.add_typer(retrieval_app, name="retrieval")
 # soft_wrap: a path or an id stays on one line, also where no terminal gives a width (`live` in the background).
 console = Console(soft_wrap=True)
 Params = ParamSpec("Params")
@@ -619,4 +635,119 @@ def xbrl_map(
     console.print(f"report → {run_dir / 'report.md'}", markup=False)
     if to is not None:
         write_text_atomically(to, text)
+        console.print(f"published → {to}", markup=False)
+
+
+@ocr_app.command("request")
+@_reports_errors
+def ocr_request(
+    out: Annotated[Path, typer.Option(help="Where to write the request, e.g. data/eval/ocr/request.json.")],
+) -> None:
+    """Write the dev filings that are in the corpus, and no questions, as the request the worker's eval commands read."""
+    manifest = load_manifest(DEFAULT.manifest)
+    # The manifest's own list, not `select("dev")`: that leaves out the filings a baseline cannot score, and their pages
+    # are still candidates for the spot check.
+    dev = [filing for filing in manifest.filings if filing.set == "dev"]
+    absent = set(missing_files(dev, DEFAULT.corpus))
+    present = [filing for filing in dev if filing.file not in absent]
+    if not present:
+        _fail(f"no dev filing is under {DEFAULT.corpus}")
+    request = EvalRequestModel(version=1, documents=document_refs(present, DEFAULT.corpus), questions=[])
+    write_text_atomically(out, request.model_dump_json(indent=2) + "\n")
+    console.print(f"{len(present)} of {len(dev)} dev filing(s) are in the corpus → {out}", markup=False)
+
+
+@ocr_app.command("report")
+@_reports_errors
+def ocr_report(
+    run: Annotated[str, typer.Option(help="An OCR run folder's name, a path, or `latest`.")] = "latest",
+    to: Annotated[Optional[Path], typer.Option(help="Also copy the Markdown here, e.g. docs/eval/2026-10-21-ocr-spot-check.md.")] = None,
+) -> None:
+    """Score a run's scores.csv, apply the engine and cell-matching rules and write report.md into the run folder."""
+    run_dir = EvalPaths(DEFAULT.ocr).resolve_run(run)  # the OCR runs, never the extraction runs under data/eval/runs
+    manifest = load_manifest(DEFAULT.manifest)
+    pages = read_pages(DEFAULT.ocr / "pages.json")
+    rows = read_scores(run_dir / "scores.csv")
+    check_scores(rows, pages, manifest)
+    found = read_ocr_run(run_dir)
+    engine = choose_engine(rows)
+    cell = choose_cell_matching(rows, engine.engine)
+    md = render_ocr_report(rows, pages, found.engines, found.disagreements, engine, cell, run_dir.name, datetime.now(timezone.utc))
+    written = run_dir / "report.md"
+    write_text_atomically(written, md)
+    console.print(f"{run_dir.name}: {len(rows)} sheet row(s) for {len(pages.scanned)} scanned and {len(pages.digital)} digital page(s)", markup=False)
+    console.print(f"engine: {engine.engine or 'none'} ({engine.reason})", markup=False)
+    console.print(f"cell matching: {str(cell.cell_matching).lower()} ({cell.reason})", markup=False)
+    console.print(f"report → {written}", markup=False)
+    if to is not None:
+        write_text_atomically(to, md)
+        console.print(f"published → {to}", markup=False)
+
+
+@retrieval_app.command("check")
+@_reports_errors
+def retrieval_check() -> None:
+    """Check the question sheet against the corpus and the manifest, and print counts. No question text is shown."""
+    paths = EvalPaths(DEFAULT.retrieval)
+    manifest = load_manifest(DEFAULT.manifest)
+    corpus = read_corpus(paths.base / "corpus.json")
+    questions = read_questions(paths.base / "questions.csv")
+    check_set(questions, corpus, manifest)
+    kinds = {f.id: f.kind for f in manifest.filings}
+    verified = [q for q in questions if q.status == "verified"]
+    by_kind = ", ".join(f"{kind} {sum(1 for q in verified if kinds[q.filing] == kind)}" for kind in get_args(FilingKind))
+    console.print(f"questions: {len(questions)}", markup=False)
+    console.print(f"verified: {len(verified)}", markup=False)
+    console.print(f"verified by filing kind: {by_kind}", markup=False)
+    console.print(f"corpus filings: {len(corpus_filings(corpus, manifest))}", markup=False)
+
+
+@retrieval_app.command("request")
+@_reports_errors
+def retrieval_request(
+    label: Annotated[Optional[str], typer.Option(help="A word for the run folder's name: letters, digits, dot, dash or underscore.")] = None,
+) -> None:
+    """Write request.json, the corpus and the verified questions, into a new run folder under data/eval/retrieval/runs."""
+    paths = EvalPaths(DEFAULT.retrieval)  # its runs are apart from the extraction runs in data/eval/runs
+    manifest = load_manifest(DEFAULT.manifest)
+    corpus = read_corpus(paths.base / "corpus.json")
+    questions = read_questions(paths.base / "questions.csv")
+    check_set(questions, corpus, manifest)
+    request = build_request(questions, corpus, manifest, DEFAULT.corpus)
+    run_dir = paths.new_run(label)  # after every check: a refused set leaves no empty folder
+    write_text_atomically(run_dir / "request.json", request.model_dump_json(indent=2) + "\n")
+    console.print(f"{len(request.documents)} filing(s), {len(request.questions)} question(s)", markup=False)
+    console.print(str(run_dir), markup=False)
+
+
+@retrieval_app.command("report")
+@_reports_errors
+def retrieval_report(
+    run: Annotated[str, typer.Option(help="A retrieval run folder's name, a path, or `latest`.")] = "latest",
+    to: Annotated[Optional[Path], typer.Option(help="Also copy the Markdown here, e.g. docs/eval/2026-11-05-retrieval.md.")] = None,
+) -> None:
+    """Score a run's rankings, apply the model rule and write report.md into the run folder. Names questions by id only."""
+    paths = EvalPaths(DEFAULT.retrieval)
+    run_dir = paths.resolve_run(run)
+    manifest = load_manifest(DEFAULT.manifest)
+    corpus = read_corpus(paths.base / "corpus.json")
+    questions = read_questions(paths.base / "questions.csv")
+    check_set(questions, corpus, manifest)
+    verified = [question for question in questions if question.status == "verified"]
+    revisions = read_lock_revisions()
+    found = read_retrieval_run(run_dir, verified, revisions)
+    current = found.run_json.current
+    choice = choose_model(found.scores, found.benches, current)
+    granite = needs_granite(choice, found.benches, current)
+    md = render_retrieval_report(run_dir.name, verified, found.scores, found.benches, found.parities, found.run_json, choice,
+                                 granite, revisions=revisions, kinds={f.id: f.kind for f in manifest.filings},
+                                 generated_at=datetime.now(timezone.utc))
+    written = run_dir / "report.md"
+    write_text_atomically(written, md)
+    console.print(f"{run_dir.name}: {len(found.scores)} model(s), {len(verified)} verified question(s)", markup=False)
+    console.print(f"model: {choice.model} ({choice.reason})", markup=False)
+    console.print(f"granite: {'measured' if granite else 'not measured'}", markup=False)
+    console.print(f"report → {written}", markup=False)
+    if to is not None:
+        write_text_atomically(to, md)
         console.print(f"published → {to}", markup=False)

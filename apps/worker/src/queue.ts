@@ -130,7 +130,7 @@ export function startQueueRunner(deps: WorkerDeps, opts: QueueRunnerOptions): Qu
 
   const sweep = async () => {
     try {
-      const { requeued, failed } = await sweepExpired(deps.db);
+      const { requeued, failed } = await sweepExpired(deps.db, types);
       if (requeued.length || failed.length) {
         log.warn({ requeued: requeued.length, failed: failed.length, jobIds: [...requeued, ...failed].map((j) => j.id) }, "expired leases swept");
       }

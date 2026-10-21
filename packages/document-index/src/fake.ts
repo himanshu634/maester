@@ -1,14 +1,26 @@
 import { createHash } from "node:crypto";
-import { EmbedderError, type Embedder } from "./embedder.js";
+import { EmbedderError, toStored, type Embedder } from "./embedder.js";
 import { embeddingModel } from "./models.js";
 
 const DEFAULT_MODEL = "Snowflake/snowflake-arctic-embed-l-v2.0";
 
-/** Deterministic embedder for tests: equal texts give equal unit vectors, whatever the kind. */
+export interface FakeEmbedderOptions {
+  /** What `servedModel()` answers when it is not the model itself, such as the folder TEI is started on. */
+  serves?: string;
+}
+
+/**
+ * Deterministic embedder for tests: equal texts give equal unit vectors, whatever the kind. It makes the values the
+ * model serves and hands them to `toStored`, as the TEI client does, so a model that serves 2048 values is cut and
+ * a model that keeps 768 is padded by the same code.
+ */
 export class FakeEmbedder implements Embedder {
   private failures = 0;
   private failure: EmbedderError | undefined;
-  constructor(readonly model: string = DEFAULT_MODEL) {
+  constructor(
+    readonly model: string = DEFAULT_MODEL,
+    private readonly opts: FakeEmbedderOptions = {},
+  ) {
     embeddingModel(model);
   }
 
@@ -18,13 +30,17 @@ export class FakeEmbedder implements Embedder {
     this.failure = err;
   }
 
+  async servedModel(): Promise<string> {
+    return this.opts.serves ?? this.model;
+  }
+
   async embed(texts: string[], _kind: "query" | "document"): Promise<number[][]> {
     if (this.failures > 0) {
       this.failures -= 1;
       throw this.failure ?? new EmbedderError("EMBEDDING_FAILED", true, "The fake embedder was told to fail.");
     }
-    const dims = embeddingModel(this.model).dimensions;
-    return texts.map((t) => unitVector(t, dims));
+    const served = embeddingModel(this.model).servedDimensions;
+    return texts.map((t) => toStored(this.model, unitVector(t, served)));
   }
 }
 

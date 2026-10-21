@@ -1,10 +1,10 @@
 import pino from "pino";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { SearchResults } from "@maester/contracts";
 import {
   chunksWithoutEmbedding, completeRevision, insertEmbeddings, schema, startOrResumeRevision, writeRange,
 } from "@maester/db";
-import { EmbedderError, FakeEmbedder } from "@maester/document-index";
+import { EmbedderError, FakeEmbedder, type Embedder } from "@maester/document-index";
 import { createApp } from "../src/app.js";
 import { createAuth } from "../src/auth.js";
 import { silentLogger } from "../src/logger.js";
@@ -93,7 +93,7 @@ describe("GET /v1/workspaces/:ws/search", () => {
 
   it("answers 500 INTERNAL on a failed statement and logs neither the query nor its parameters", async () => {
     const a = await ctx.signUp("s8@example.com");
-    const wrong = { model: embedder.model, embed: async () => [[0.1, 0.2, 0.3]] };
+    const wrong = { model: embedder.model, embed: async () => [[0.1, 0.2, 0.3]], servedModel: async () => embedder.model };
     const app = createApp({ env: ctx.env, logger, db: ctx.db, auth: createAuth({ db: ctx.db, env: ctx.env, mailer: ctx.mailer, logger: silentLogger }), store: ctx.store, dispatcher: ctx.dispatcher, embedder: wrong });
     logged.length = 0;
     const res = await app.request(`/v1/workspaces/${a.workspaceId}/search?q=confidential+phrase`, { headers: { cookie: a.cookie } });
@@ -101,6 +101,51 @@ describe("GET /v1/workspaces/:ws/search", () => {
     expect(await code(res)).toBe("INTERNAL");
     expect(logged.length).toBeGreaterThan(0);
     expect(logged.join("\n")).not.toContain("confidential");
+  });
+
+  const QWEN_FOLDER = "/models/embed/Qwen/Qwen3-Embedding-0.6B";
+  const appWith = (e: Embedder) =>
+    createApp({ env: ctx.env, logger, db: ctx.db, auth: createAuth({ db: ctx.db, env: ctx.env, mailer: ctx.mailer, logger: silentLogger }), store: ctx.store, dispatcher: ctx.dispatcher, embedder: e });
+
+  it("answers 503 SEARCH_UNAVAILABLE when the embedder serves another model, and logs no query", async () => {
+    const a = await ctx.signUp("s9@example.com");
+    // The shared app has already seen its embedder match; that must not carry over to another app and embedder.
+    expect((await search(a.workspaceId, a.cookie, "?q=warm")).status).toBe(200);
+    const other = new FakeEmbedder(embedder.model, { serves: QWEN_FOLDER });
+    const embed = vi.spyOn(other, "embed");
+    logged.length = 0;
+    const res = await appWith(other).request(`/v1/workspaces/${a.workspaceId}/search?q=confidential+phrase`, { headers: { cookie: a.cookie } });
+    expect(res.status).toBe(503);
+    expect(await code(res)).toBe("SEARCH_UNAVAILABLE");
+    expect(embed).not.toHaveBeenCalled();
+    const lines = logged.map((l) => JSON.parse(l) as Record<string, unknown>);
+    const mismatch = lines.filter((l) => l.code === "EMBEDDER_MODEL_MISMATCH");
+    expect(mismatch).toHaveLength(1);
+    expect(mismatch[0]).toMatchObject({ level: 40, served: QWEN_FOLDER });
+    expect(logged.join("\n")).not.toContain("confidential");
+  });
+
+  it("asks which model the embedder serves until one answer matches, then not again", async () => {
+    const a = await ctx.signUp("s10@example.com");
+    const asked: number[] = [];
+    const flaky: Embedder = {
+      model: embedder.model,
+      embed: (texts, kind) => embedder.embed(texts, kind),
+      servedModel: async () => {
+        asked.push(asked.length + 1);
+        if (asked.length === 1) return QWEN_FOLDER;
+        if (asked.length === 2) throw new EmbedderError("EMBEDDER_UNAVAILABLE", true, "The embedder did not say which model it serves.");
+        return `/models/embed/${embedder.model}`;
+      },
+    };
+    const app = appWith(flaky);
+    const get = (q: string) => app.request(`/v1/workspaces/${a.workspaceId}/search?q=${q}`, { headers: { cookie: a.cookie } });
+    expect((await get("one")).status).toBe(503);
+    expect((await get("two")).status).toBe(503);
+    expect(asked).toEqual([1, 2]);
+    expect((await get("three")).status).toBe(200);
+    expect((await get("four")).status).toBe(200);
+    expect(asked).toEqual([1, 2, 3]);
   });
 
   it("returns hits with page, section path, text source and both ranks, and no figure field", async () => {

@@ -7,11 +7,22 @@ This document describes the Python command-line application in `apps/eval`. For 
 | Term | Meaning in this document |
 | --- | --- |
 | harness | The Python command-line application in `apps/eval`. Its distribution name is `maester-eval`. Its command is `maester-eval`. |
-| command | A subcommand of `maester-eval`. The commands are `live`, `xbrl-read`, `export`, `freeze`, `settle`, `report`, `compare`, `xbrl-elements`, `xbrl-pair`, `xbrl-map` and `tags`. The command `tags` has four subcommands: `propose`, `set`, `pick` and `coverage`. |
+| command | A subcommand of `maester-eval`. The commands are `live`, `xbrl-read`, `export`, `freeze`, `settle`, `report`, `compare`, `xbrl-elements`, `xbrl-pair`, `xbrl-map`, `tags`, `ocr` and `retrieval`. The command `tags` has four subcommands: `propose`, `set`, `pick` and `coverage`. The command `ocr` has two subcommands: `request` and `report`. The command `retrieval` has three subcommands: `check`, `request` and `report`. |
 | token | The part of the file name of an instance that names its format, for example `Main_Ind_As`. |
 | paired PDF | The results PDF of the same BSE code that the exchange announced on the same day as an instance. |
 | `xbrl_in_pdf` | The check that looks for each XBRL value on the statement pages of the paired PDF. |
 | decoy | A value that is one unit of its last printed place away from the XBRL value. The harness checks it against the PDF to see how often a number is found by chance. |
+| OCR spot check | The measurement that chooses the OCR engine and the cell matching. A person scores the same pages under four reader configurations. |
+| page list | The file `data/eval/ocr/pages.json`. It names 10 scanned pages and 5 digital pages of the corpus. |
+| scoring sheet | The file `scores.csv` in an OCR run folder. `maester-indexer-ocr-sample` writes it with empty counts. A person fills in the counts. |
+| retrieval set | The corpus file `corpus.json` and the question sheet `questions.csv` in `data/eval/retrieval`. |
+| question sheet | The file `questions.csv`. Each row is one question, the filing that it is about, and the PDF pages that answer it. |
+| ranking | The list of pages that search gives for one question, for vectors, for keywords and for both together. The worker command `eval rank` writes it. |
+| recall at k | The share of the questions that have an answer page among the pages of the first k chunks. |
+| reciprocal rank | The number 1 divided by the position of the first chunk on an answer page. It is 0 if no chunk is on an answer page. |
+| band | The difference that a challenger must win by. The rules fix the band before the run. The current setting wins every tie. |
+| candidate model | An embedding model that is not the live `EMBEDDING_MODEL`. The retrieval report compares it with the live model. |
+| PDF page | A page of the PDF, counted from 1. The retrieval set uses PDF pages. It does not use printed pages. |
 | engine | The Python package in `packages/financial-engine`. Its import name is `pdf_financial_qa`. |
 | workflow | The extraction workflow of the engine. The function `run_extraction` starts it. |
 | model | The Gemini model on Vertex AI that the workflow calls. |
@@ -75,7 +86,7 @@ This document describes the Python command-line application in `apps/eval`. For 
 
 ## Function
 
-The harness measures how well the extraction workflow reads real filings, and how well the XBRL reader reads the XBRL files of the same filings. A person runs it on a local computer, in a terminal. It has these commands:
+The harness measures how well the extraction workflow reads real filings, and how well the XBRL reader reads the XBRL files of the same filings. It also measures the index of the indexer. A person runs it on a local computer, in a terminal. These commands measure the extraction workflow and the XBRL reader:
 
 - `live` reads the filings of a set with the real model and keeps one artefact for each filing. With `--paired`, it reads only the filings that have pairs.
 - `xbrl-read` reads the paired instances of the filings and keeps one artefact for each filing in an XBRL run.
@@ -89,13 +100,21 @@ The harness measures how well the extraction workflow reads real filings, and ho
 - `tags propose`, `tags set`, `tags pick` and `tags coverage` fill, set and count the format tags, and pick the first gold filings.
 - `xbrl-map` runs the element maps, and the `xbrl_in_pdf` check, over a folder of instances. It calls no model and costs nothing.
 
+Five commands measure the index of the indexer, and they call no model:
+
+- `ocr request` writes the request file for the worker, with the `dev` filings that are in the corpus.
+- `ocr report` scores the scoring sheet and chooses the OCR engine and the cell matching.
+- `retrieval check` checks the question sheet against the corpus and the manifest.
+- `retrieval request` writes a request file with the verified questions into a new run folder.
+- `retrieval report` scores the rankings of each candidate model and chooses the embedding model.
+
 A person corrects each sheet against the PDF between `export` and `freeze`. The first report is the baseline. Each later report can show the change against an earlier run. The harness has no connection to the API, the worker, the extractor service or the database. It reads files only. Only `live` calls the model.
 
 ## Parts
 
 | Part | Location | Function |
 | --- | --- | --- |
-| Command line | `apps/eval/src/maester_eval/cli.py` | Defines the commands and their options with Typer. Reads `.env` before each command. Shows filing ids, codes, counts and seconds. Shows no label and no value of a fact. |
+| Command line | `apps/eval/src/maester_eval/cli.py` | Defines the commands and their options with Typer. The groups `tags`, `ocr` and `retrieval` hold the subcommands. Reads `.env` before each command. Shows filing ids, codes, counts and seconds. Shows no label and no value of a fact. |
 | Entry point | `apps/eval/src/maester_eval/__main__.py`, `apps/eval/pyproject.toml` | `pyproject.toml` installs the command `maester-eval`. `__main__.py` starts the command line for `python -m maester_eval`. |
 | Paths | `apps/eval/src/maester_eval/paths.py` | Gives the folders under `data/eval` and the path of the taxonomy. Makes a run folder. Finds a run from `latest`, a name or a path, and can ask for the source of the run. |
 | Manifest | `apps/eval/src/maester_eval/manifest.py` | Reads, checks and writes the manifest. Selects the filings of a set. Lists the filings that are out of scope. Checks the pairs and the format tags of a filing. |
@@ -118,6 +137,11 @@ A person corrects each sheet against the PDF between `export` and `freeze`. The 
 | Compare | `apps/eval/src/maester_eval/compare.py` | `compare`: sets Gemini against XBRL for each cell. Writes `compare-xbrl.md`, `compare-xbrl.json` and the rows of the settle sheets. |
 | Settle | `apps/eval/src/maester_eval/settle.py` | `settle`: adds the settled facts to a gold file. A settled fact never replaces a gold fact. |
 | XBRL map evaluation | `apps/eval/src/maester_eval/xbrl_map.py` | `xbrl-map`: reads each instance, counts what the maps and the sums do, pairs instances with PDFs, runs `xbrl_in_pdf`, and writes the report. |
+| OCR spot check | `apps/eval/src/maester_eval/ocr.py` | `ocr request` and `ocr report`: reads and checks the scoring sheet, applies the rules, writes the report. |
+| Retrieval set | `apps/eval/src/maester_eval/retrieval.py` | Reads the question sheet and `corpus.json`. Checks the set. Builds the request. |
+| Retrieval scoring | `apps/eval/src/maester_eval/retrieval_scoring.py` | Scores the rankings as exact ratios and applies the model rule. |
+| Retrieval report | `apps/eval/src/maester_eval/retrieval_report.py` | Reads the run folder of a retrieval run and writes its report. |
+| Wire shapes | `apps/eval/src/maester_eval/eval_wire.py` | The shapes of the JSON files that the worker commands read and write. |
 | Text helper | `apps/eval/src/maester_eval/text.py` | `normalise`: makes lower case, changes `&` to `and`, removes punctuation and joins spaces. It follows `normalise` in `apps/api/src/financials/stitch.ts`. |
 | Engine functions | `packages/financial-engine/src/pdf_financial_qa/workflow/`, `packages/financial-engine/src/pdf_financial_qa/xbrl/` | The harness calls `run_extraction`, `GeminiExtractionModel`, `PdfDocument`, `parse_reported`, `parse_label_date` and `format_decimal`. For XBRL it calls `parse_instance`, `detect_format`, `classify_instance` and `read_instance`. |
 | Tests | `tests/test_eval_*.py`, `tests/test_concepts_json.py` | Offline tests. They make no model call. |
@@ -457,6 +481,73 @@ If you give `--pdfs` and `--pdf-manifest`, the command also runs the `xbrl_in_pd
 
 `--against <report.json>` reads an earlier report. The new report ends with a table of each count that changed, with the earlier value, the new value and the change.
 
+### The `ocr request` command
+
+Usage: `maester-eval ocr request --out <file>`.
+
+1. The harness reads the manifest and the `dev` filings of it.
+2. It keeps the filings that have a PDF in the corpus. If none is in the corpus, the harness stops.
+3. It writes the request file with these filings and no question.
+4. It shows how many `dev` filings are in the corpus, and the path.
+
+### The `ocr report` command
+
+Usage: `maester-eval ocr report [--run <run>] [--to <path>]`. The default of `--run` is `latest` in `data/eval/ocr/runs`.
+
+1. The harness reads the page list, the scoring sheet and the files of the run folder.
+2. It checks the sheet against the page list and the manifest. It stops if a count has no value or is not correct.
+3. It chooses the OCR engine. See "How the harness chooses".
+4. It chooses the cell matching for that engine.
+5. It writes `report.md` in the run folder. The report has the tokens where two configurations disagree, with the filing and the page. It has no page text.
+6. It shows the engine, the cell matching and the reason of each.
+7. With `--to`, it copies the report to the path that you give.
+
+### The `retrieval check` command
+
+Usage: `maester-eval retrieval check`. The harness checks the question sheet. It shows the number of questions, the number of verified questions, the verified questions for each kind of filing and the number of corpus filings. It shows no question.
+
+### The `retrieval request` command
+
+Usage: `maester-eval retrieval request [--label <word>]`.
+
+1. The harness checks the set as `retrieval check` does. The set needs 40 verified questions or more.
+2. It makes a new run folder in `data/eval/retrieval/runs`.
+3. It writes `request.json` in the folder. The file has each corpus filing with the sha256 of its PDF, and each verified question with the filings of its company as scope.
+4. It shows the number of filings and questions, and the path of the folder.
+
+### The `retrieval report` command
+
+Usage: `maester-eval retrieval report [--run <run>] [--to <path>]`.
+
+1. The harness checks that the sheet and `request.json` have the same questions. It stops if a person edited a question after the request.
+2. For each model that `run.json` does not exclude, it reads `<slug>.rankings.json` and `<slug>.bench.json`. It reads `<slug>.parity.json` if it exists.
+3. It scores each model for vectors, for keywords and for both, by text source.
+4. If a filing has no revision of a model, it stops and names the filings. It does not count such a filing as "not retrieved".
+5. It chooses the model. See "How the harness chooses".
+6. It writes `report.md` in the run folder. The report names a question by its id only.
+7. With `--to`, it copies the report to the path that you give.
+
+### How the harness chooses
+
+The rules are fixed before a run. Each rule keeps the current setting unless a challenger wins by more than a band. Each ratio is an exact fraction of whole numbers.
+
+| Choice | Measure | Band | Result |
+| --- | --- | --- | --- |
+| OCR engine | Wrong numbers on the scanned pages, with cell matching on. | The larger of 1 and 1% of the numbers printed. | A challenger wins if it has fewer wrong numbers by more than the band. |
+| OCR engine, if the numbers tie | Wrong headings on the scanned pages. | The larger of 1 and 5% of the headings printed. | The same rule. RapidOCR wins a tie. |
+| OCR engine, speed | Mean seconds for a scanned page. | None | If Tesseract wins and takes more than twice the time of RapidOCR, the report names no engine and the investor decides. |
+| Cell matching | Table rows that are broken on the scanned pages of the engine and on the digital pages. | The larger of 1 and 2% of the table rows printed. | Cell matching stays on, unless off breaks fewer rows by more than the band. |
+| Embedding model | Recall at 10 for both methods together. | One question of the verified set. | A model that is behind the best by one question or less is tied. |
+
+For the embedding model, the rule goes on in this order:
+
+1. If one model is tied, it wins.
+2. If more than one model is tied and the live model is among them, the live model stays, whatever its time.
+3. Otherwise the tied model with the lowest seconds for 1,000 chunks wins.
+4. The model `granite-embedding-english-r2` is measured only if the winner is a challenger that takes more than 3,600 seconds for 1,500 chunks.
+
+A change of the OCR engine, of the cell matching or of the model makes the worker read or embed the documents again. This is expected to take days. Phase 3 did not measure it. This is the reason for the bands.
+
 ### How the harness finds a run
 
 The commands `export`, `freeze`, `settle`, `report` and `compare` take a run in `--run`. The commands `report` and `compare` also take runs in `--against`. The command `compare` takes the XBRL run in `--xbrl`.
@@ -677,6 +768,7 @@ These are the variables of the extractor, with the same defaults. Thus a run mea
 - `elements-<format id>.csv` in the folder that `--out` names, for `xbrl-elements`.
 - `data/eval/sheets/<filing id>.csv`, for `export`. The file is UTF-8 text with a byte order mark, so that spreadsheet applications read the text correctly.
 - `data/eval/gold/<filing id>.json`, for `freeze` and `settle`.
+- The request files of `ocr request` and `retrieval request`, and `report.md` in an OCR run folder or a retrieval run folder.
 - `report.md` and `report.json` in the run folder, for `report`. With `--to`, also a copy of `report.md` at the path that you give.
 - `compare-xbrl.md` and `compare-xbrl.json` in the folder of the PDF run, for `compare`. With `--to`, also a copy of `compare-xbrl.md`.
 - `data/eval/settle/<filing id>.csv`, for `compare`. The file has the same encoding as a sheet.
@@ -684,7 +776,37 @@ These are the variables of the extractor, with the same defaults. Thus a run mea
 
 The harness finds `data/eval` from the repository root, from whichever folder you run it. A path that you give to `--run`, `--xbrl`, `--against`, `--to`, `--from`, `--instances`, `--out`, `--xbrl-manifest`, `--manifest`, `--pdfs` or `--pdf-manifest` is relative to the current folder.
 
-Git ignores `data/eval/corpus`, `data/eval/runs` and `data/eval/xbrl` (`.gitignore`). It does not ignore the other files. You commit the manifest, the gold files and the reports in `docs/eval`. You decide if you commit the sheets and the settle sheets.
+Git ignores `data/eval/corpus`, `data/eval/runs`, `data/eval/xbrl`, `data/eval/retrieval` and the files of `data/eval/ocr` except `pages.json` and `.gitkeep` (`.gitignore`). It does not ignore the other files. You commit the manifest, the gold files and the reports in `docs/eval`. You decide if you commit the sheets and the settle sheets.
+
+### The OCR files
+
+The folder `data/eval/ocr` holds these files:
+
+- `pages.json` is the page list. You commit it.
+- `runs/<run>/` is a run folder that `maester-indexer-ocr-sample` makes. It has `scores.csv`, a picture of each page, the text that each configuration read, `disagreements.json` and, after `ocr report`, `report.md`.
+- Git ignores the run folders, because they hold page text.
+
+### The retrieval files
+
+The folder `data/eval/retrieval` holds files with the text of questions. Git ignores the whole folder.
+
+- `corpus.json` names the companies whose `dev` filings are searched. It lists the company names.
+- `questions.csv` is the question sheet. Its columns are `id`, `filing`, `query`, `pages` and `status`.
+- `runs/<run>/` is a run folder. It has `request.json` and `run.json`, and for each model `<slug>.rankings.json`, `<slug>.bench.json` and, if you ran the check, `<slug>.parity.json`. The slug is the model id with `/` written `--`.
+
+The question sheet follows these rules:
+
+- `id` is `q` and three digits.
+- `status` is `draft` or `verified`. Only a verified question is asked.
+- `pages` lists the answer pages with `;` between them.
+- A page is a PDF page, counted from 1. It is not the page number that the filing prints.
+- A page of another filing has the form `<filing id>:<page>`.
+- A spreadsheet can write `12` as `12.0`. The harness reads it as 12.
+- The harness refuses a page such as `12-13`, which a spreadsheet can read as a date. It names the sheet row.
+
+The retrieval pages in the rankings are PDF pages, counted from 1. Many filings of the corpus have two printed pages for each PDF page.
+
+You write `run.json` by hand. It has `current` (the live model), `excluded` (a model and the reason that it is not measured) and `memoryMiB` (the peak memory of each model). The field `current` is necessary.
 
 ### The manifest
 
@@ -1307,6 +1429,18 @@ Note: Git ignores `data/eval/xbrl`.
 
 Read the plan [evaluation baseline](../superpowers/plans/2026-10-15-eval-baseline.md), Task 10.
 
+### To measure the index
+
+The live steps run from the main checkout, with the go-ahead of the investor. See "Measure the index" in [DEVELOPMENT.md](../DEVELOPMENT.md).
+
+1. Run `maester-eval ocr request --out data/eval/ocr/request.json` and `maester-indexer-ocr-sample`. Score the sheet by hand. Run `maester-eval ocr report`.
+2. Write the question sheet and `corpus.json`. Run `maester-eval retrieval check`.
+3. Run `maester-eval retrieval request`.
+4. Make the index of each candidate model with the worker command `index:candidate`. Run one `index:candidate` at a time.
+5. For each model, run the worker commands `eval rank` and `eval bench`. Write the files in the run folder.
+6. Write `run.json` in the run folder.
+7. Run `maester-eval retrieval report --to docs/eval/<date>-retrieval.md`.
+
 ### To run the tests
 
 1. Run all the Python tests:
@@ -1341,6 +1475,8 @@ CAUTION: Do not tune a prompt, a rule or an element map on the `heldout` set. Ru
 
 ## Limits
 
+- The OCR spot check reads 15 pages. The retrieval set has 40 verified questions or more, on `dev` filings only. Neither measurement has a held-out set.
+- The retrieval scoring measures search inside the filings of one company. It does not measure search over the whole workspace.
 - The harness finds a gold fact by its printed words: the statement, the basis, the section, the label and the period label. A read fact with another label is `missing`, also when its value is right. It does not use the concept or the date. Phase 1 adds a way to find a gold fact by its concept.
 - A gold fact has a `span`, but it has no `dimensions` yet. The gold files hold facts of the three statements only.
 - `freeze` writes `adds_up` as an expected check. The report does not use the expected checks. It counts the checks that the workflow ran.
@@ -1400,6 +1536,11 @@ CAUTION: Do not tune a prompt, a rule or an element map on the `heldout` set. Ru
 - [`apps/eval/src/maester_eval/compare.py`](../../apps/eval/src/maester_eval/compare.py)
 - [`apps/eval/src/maester_eval/settle.py`](../../apps/eval/src/maester_eval/settle.py)
 - [`apps/eval/src/maester_eval/xbrl_map.py`](../../apps/eval/src/maester_eval/xbrl_map.py)
+- [`apps/eval/src/maester_eval/ocr.py`](../../apps/eval/src/maester_eval/ocr.py)
+- [`apps/eval/src/maester_eval/retrieval.py`](../../apps/eval/src/maester_eval/retrieval.py)
+- [`apps/eval/src/maester_eval/retrieval_scoring.py`](../../apps/eval/src/maester_eval/retrieval_scoring.py)
+- [`apps/eval/src/maester_eval/retrieval_report.py`](../../apps/eval/src/maester_eval/retrieval_report.py)
+- [`apps/eval/src/maester_eval/eval_wire.py`](../../apps/eval/src/maester_eval/eval_wire.py)
 - [`apps/eval/pyproject.toml`](../../apps/eval/pyproject.toml)
 - [`apps/eval/README.md`](../../apps/eval/README.md)
 - [`packages/contracts/concepts.json`](../../packages/contracts/concepts.json)

@@ -7,6 +7,7 @@ which of our assumptions still hold.
 """
 
 import os
+import shutil
 import unittest
 from functools import lru_cache
 from pathlib import Path
@@ -19,6 +20,7 @@ from docling.datamodel.pipeline_options import (
     RapidOcrOptions,
     TableFormerMode,
     TableStructureOptions,
+    TesseractCliOcrOptions,
 )
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
@@ -42,6 +44,21 @@ def _converter() -> DocumentConverter:
         document_timeout=None,
         accelerator_options=AcceleratorOptions(device=AcceleratorDevice.CPU),
         generate_parsed_pages=True,  # keeps each page's text cells on the result
+    )
+    return DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options)})
+
+
+@lru_cache(maxsize=1)
+def _tesseract_converter() -> DocumentConverter:
+    options = PdfPipelineOptions(
+        do_ocr=True,
+        ocr_options=TesseractCliOcrOptions(lang=["eng"], tesseract_cmd="tesseract"),
+        do_table_structure=True,
+        table_structure_options=TableStructureOptions(mode=TableFormerMode.ACCURATE),
+        artifacts_path=MODELS,
+        document_timeout=None,
+        accelerator_options=AcceleratorOptions(device=AcceleratorDevice.CPU),
+        generate_parsed_pages=True,
     )
     return DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options)})
 
@@ -70,6 +87,12 @@ class DoclingProbe(unittest.TestCase):
 
     def test_ocr_cells_are_marked_and_land_on_the_scanned_page(self):
         res = convert(FIXTURES / "scanned.pdf")
+        self.assertTrue(any(c.from_ocr for c in cells_of(res, page_no=1)))
+
+    @unittest.skipUnless(shutil.which("tesseract"), "the tesseract binary is not installed")
+    def test_tesseract_cells_are_marked_ocr(self):
+        # Spec 8.2 rule 1 takes a chunk's text_source from from_ocr on the cells, whichever engine read them.
+        res = _tesseract_converter().convert(FIXTURES / "scanned.pdf")
         self.assertTrue(any(c.from_ocr for c in cells_of(res, page_no=1)))
 
     def test_text_layer_cells_are_not_marked_ocr(self):

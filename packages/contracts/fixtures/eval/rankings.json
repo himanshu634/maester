@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "model": "Snowflake/snowflake-arctic-embed-l-v2.0",
+  "documents": [
+    {
+      "filing": "aether-industries/ar-2024-25",
+      "sha256": "0b9f7c1d5e2a4863b1c0d9e8f7a6b5c4d3e2f1a0918273645546372819a0b1c2",
+      "documentId": "6f1c2a52-2d0e-4c53-9a6b-0d7f1b3e8a11",
+      "revisionId": "a3b8d1c4-7e65-4f0a-8b21-5c9e0f4d2a77",
+      "state": "complete",
+      "versions": {
+        "indexVersion": "1",
+        "doclingVersion": "2.134.0",
+        "ocrEngine": "rapidocr-onnxruntime 3.9.2",
+        "readerOptions": "table=accurate;cell_matching=true;ocr=rapidocr",
+        "chunkerVersion": "1"
+      },
+      "chunks": 412,
+      "pages": [
+        { "page": 1, "source": "text_layer" },
+        { "page": 2, "source": "ocr" },
+        { "page": 3, "source": "mixed" },
+        { "page": 4, "source": "none" }
+      ]
+    },
+    {
+      "filing": "aether-industries/ar-2023-24",
+      "sha256": "f1e2d3c4b5a69788796a5b4c3d2e1f00112233445566778899aabbccddeeff00",
+      "documentId": "0c9d4e17-b2a3-4581-96f0-3e7a1d5b8c22",
+      "revisionId": "5e2f7a90-1b34-4d68-a0c5-8f3b6e1d9a44",
+      "state": "partial",
+      "versions": {
+        "indexVersion": "1",
+        "doclingVersion": "2.134.0",
+        "ocrEngine": "rapidocr-onnxruntime 3.9.2",
+        "readerOptions": "table=accurate;cell_matching=true;ocr=rapidocr",
+        "chunkerVersion": "1"
+      },
+      "chunks": 388,
+      "pages": [
+        { "page": 1, "source": "text_layer" },
+        { "page": 2, "source": "text_layer" }
+      ]
+    },
+    {
+      "filing": "aether-industries/ar-2022-23",
+      "sha256": "5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b",
+      "documentId": null,
+      "revisionId": null,
+      "state": null,
+      "versions": null,
+      "chunks": 0,
+      "pages": []
+    }
+  ],
+  "rankings": [
+    {
+      "questionId": "q001",
+      "vector": [
+        { "filing": "aether-industries/ar-2024-25", "page": 3 },
+        { "filing": "aether-industries/ar-2023-24", "page": 2 },
+        { "filing": "aether-industries/ar-2024-25", "page": 3 }
+      ],
+      "keyword": [
+        { "filing": "aether-industries/ar-2024-25", "page": 3 },
+        { "filing": "aether-industries/ar-2024-25", "page": 4 }
+      ],
+      "hybrid": [
+        { "filing": "aether-industries/ar-2024-25", "page": 3 },
+        { "filing": "aether-industries/ar-2023-24", "page": 2 },
+        { "filing": "aether-industries/ar-2024-25", "page": 3 },
+        { "filing": "aether-industries/ar-2024-25", "page": 4 }
+      ]
+    }
+  ]
+}

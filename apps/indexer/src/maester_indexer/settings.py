@@ -5,7 +5,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 DEFAULT_EMBEDDING_MODEL = "Snowflake/snowflake-arctic-embed-l-v2.0"
-OCR_ENGINES = ("rapidocr",)
+# Claude OCR (spec 8.1) is paid, so it is not built.
+OCR_ENGINES = ("rapidocr", "tesseract")
 
 
 @dataclass(frozen=True)

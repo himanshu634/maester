@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { indexPipelineVersion } from "@maester/document-index";
+import { INDEX_PIPELINE_VERSION, indexPipelineVersion } from "@maester/document-index";
 import { DOCUMENT_INDEX_SUBJECT, JobTypes } from "@maester/contracts";
 import { closeDb, createDb, documentsNeedingIndex, schema, type Db, type JobRow } from "@maester/db";
 import { createJob, maxAttemptsFor, type Dispatcher } from "@maester/jobs";
@@ -54,7 +54,7 @@ export async function requeue(db: Db, dispatcher: Dispatcher, job: JobRow): Prom
 /**
  * Enqueue `document.index` for every stored document with no current index, or queue its job
  * again when it failed. It only enqueues; the worker's queue loop runs the work. A document with a
- * current index (a complete or partial revision for the model) is counted and not touched.
+ * current index (a complete or partial revision for the model at INDEX_PIPELINE_VERSION) is counted and not touched.
  */
 export async function backfillIndex(db: Db, dispatcher: Dispatcher, opts: BackfillOptions): Promise<BackfillCounts> {
   const pipelineVersion = indexPipelineVersion(opts.model);
@@ -63,6 +63,7 @@ export async function backfillIndex(db: Db, dispatcher: Dispatcher, opts: Backfi
     documentIds: opts.documentIds,
     model: opts.model,
     pipelineVersion,
+    indexVersion: INDEX_PIPELINE_VERSION,
   });
   const counts: BackfillCounts = { created: 0, requeued: 0, waiting: 0, current: 0 };
   for (const { documentId, workspaceId, job } of needing) {
@@ -94,7 +95,7 @@ export async function backfillIndex(db: Db, dispatcher: Dispatcher, opts: Backfi
   return counts;
 }
 
-/** Stored non-duplicate documents in scope that are not in `needing`: they have a complete or partial index. */
+/** Stored non-duplicate documents in scope that are not in `needing`: they have a current index. */
 async function countCurrent(db: Db, opts: BackfillOptions, needing: Set<string>): Promise<number> {
   if (opts.documentIds && opts.documentIds.length === 0) return 0;
   const rows = await db
