@@ -291,10 +291,11 @@ class XbrlRunIsNotAPdfRunTests(CommandCase):
         self.assertEqual(result.exit_code, 1, result.output)
         self.assertIn("is an XBRL run; label the PDF run", result.output)
 
-    def test_report_scores_a_pdf_run_only(self):
+    def test_report_is_made_on_a_pdf_run(self):
+        # An XBRL run may be named, with a PDF run beside it (Task 9); named alone, there is no PDF run to report on.
         result = self.run_command("report", "--run", self.xbrl_run.name)
         self.assertEqual(result.exit_code, 1, result.output)
-        self.assertIn(f"run {self.xbrl_run.name} is not a pdf run", result.output)
+        self.assertIn("name a pdf run", result.output)
         result = self.run_command("report")  # `latest` is the newest pdf run, and there is none
         self.assertEqual(result.exit_code, 1, result.output)
         self.assertIn("no runs under", result.output)

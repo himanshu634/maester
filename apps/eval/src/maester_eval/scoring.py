@@ -259,6 +259,9 @@ class RunScore(BaseModel):
     unusable: dict[str, Unusable] = Field(default_factory=dict)
     # An XBRL run's filings, gold or not, with slots whose instances have no order, to how many (none listed with 0).
     pooled: dict[str, int] = Field(default_factory=dict)
+    # An XBRL run's reader and element map versions, as its `run.json` names them; None when it names none.
+    parser_version: str | None = None
+    map_version: str | None = None
 
     def summary(self) -> Summary:
         return _summarise(self.filings)
@@ -466,7 +469,8 @@ def score_xbrl_run(run_name: str, artefacts: list[Artefact], gold: dict[str, Gol
         model=record.get("model"), eval_set=eval_set, filings=scored,
         not_run=sorted(i for i in chosen_gold if i not in by_id and i in listed and i not in skipped),
         gold_missing=sorted(i for i in by_id if i not in gold), out_of_scope=sorted(skipped),
-        source="xbrl", unusable=unusable, pooled=pooled)
+        source="xbrl", unusable=unusable, pooled=pooled, parser_version=record.get("parser_version"),
+        map_version=record.get("map_version"))
 
 
 _NO_IDENTITY_CODES: CompanyIdentity = {"bse_code": None, "cin": None, "nse_symbol": None, "isin": None}

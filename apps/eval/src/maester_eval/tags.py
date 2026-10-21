@@ -259,15 +259,27 @@ def gold_coverage(filings: list[Filing], gold: dict[str, GoldFiling]) -> dict[st
     return table
 
 
-def unit_against_gold(filing: Filing, gold: GoldFiling, taxonomy: Taxonomy) -> GoldUnit:
-    """The unit tag against the scales of the gold's monetary facts. It reads scales, never a figure."""
-    if filing.tags is None or filing.tags.unit is None:
-        return "not_tagged"
-    units = set()
+def _monetary_units(gold: GoldFiling, taxonomy: Taxonomy) -> set[Unit | None]:
+    """The unit each monetary gold figure was printed in, read from its scale. None stands for a scale with no `Unit`."""
+    units: set[Unit | None] = set()
     for fact in gold.facts:
         concept = taxonomy.get(fact.concept)
         if concept is not None and concept.kind == "monetary" and fact.value_status == "value":
             units.add(unit_of_scale(fact.scale))
+    return units
+
+
+def gold_units(gold: GoldFiling, taxonomy: Taxonomy) -> list[str]:
+    """The units of the gold's monetary facts in words, `UNITS` order first, then "another scale" for a scale no unit names."""
+    found = _monetary_units(gold, taxonomy)
+    return [unit for unit in UNITS if unit in found] + (["another scale"] if None in found else [])
+
+
+def unit_against_gold(filing: Filing, gold: GoldFiling, taxonomy: Taxonomy) -> GoldUnit:
+    """The unit tag against the scales of the gold's monetary facts. It reads scales, never a figure."""
+    if filing.tags is None or filing.tags.unit is None:
+        return "not_tagged"
+    units = _monetary_units(gold, taxonomy)
     if not units:
         return "no_monetary_gold"
     if len(units) > 1:

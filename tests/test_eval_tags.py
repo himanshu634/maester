@@ -16,7 +16,7 @@ from maester_eval.gold import GoldFact, GoldFiling, write_gold
 from maester_eval.manifest import Filing, FormatTags, Manifest, XbrlPair, load_manifest, write_manifest
 from maester_eval.paths import EvalPaths
 from maester_eval.tags import (
-    REQUIREMENTS, TagsError, eligible, gold_coverage, pick_gold, propose_unit, requirement_keys, unit_against_gold,
+    REQUIREMENTS, TagsError, eligible, gold_coverage, gold_units, pick_gold, propose_unit, requirement_keys, unit_against_gold,
     unit_of_exponent, unit_of_scale,
 )
 
@@ -206,6 +206,12 @@ class CoverageTests(unittest.TestCase):
         dash = gold_of_facts(Filing(**Q2), [gold_fact(status="dash", scale=None)])
         self.assertEqual(unit_against_gold(lakh, dash, t), "no_monetary_gold")
         self.assertEqual(unit_against_gold(lakh, gold_with(["7"]), t), "disagrees")  # a scale no unit has
+
+    def test_the_gold_units_are_named_in_unit_order_with_another_scale_last(self):
+        t = load_taxonomy()
+        self.assertEqual(gold_units(gold_with(["10000000", "100000", "10000000"]), t), ["lakh", "crore"])
+        self.assertEqual(gold_units(gold_with(["7", "100000"]), t), ["lakh", "another scale"])
+        self.assertEqual(gold_units(gold_with([], per_share=1), t), [])
 
 
 class CommandTests(unittest.TestCase):

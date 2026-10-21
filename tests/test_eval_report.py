@@ -9,7 +9,11 @@ import tempfile
 import unittest
 from unittest import mock
 
-from eval_fixtures import FILING, WHEN, plain, scored_row as row
+from eval_fixtures import (
+    FILING, RESULTS_Q2, WHEN, gold_fact, gold_of, pdf_artefact, plain, scored_row as row, xbrl_artefact, xbrl_fact,
+)
+from test_eval_scoring_xbrl import G1, G2, G3, PDF_FACTS, STANDALONE
+from test_eval_scoring_xbrl import G1, G2, G3, PDF_FACTS, STANDALONE
 from test_extraction_workflow import FAST, PDF, ScriptedModel
 from typer.testing import CliRunner
 
@@ -17,12 +21,12 @@ from maester_eval import cli
 from maester_eval.artefacts import write_artefact, write_run
 from maester_eval.concepts import load_taxonomy
 from maester_eval.files import write_text_atomically
-from maester_eval.gold import freeze_sheet, read_gold, write_gold
-from maester_eval.manifest import Filing
+from maester_eval.gold import freeze_sheet, gold_of_origin, read_gold, write_gold
+from maester_eval.manifest import Filing, FormatTags
 from maester_eval.paths import EvalPaths
-from maester_eval.report import LABELS, RATES, render_markdown, score_run_dir, write_report
+from maester_eval.report import LABELS, RATES, map_concepts, render_markdown, score_run_dir, write_report
 from maester_eval.runner import run_filing
-from maester_eval.scoring import OUTCOMES
+from maester_eval.scoring import OUTCOMES, score_run, score_shown, score_xbrl_run
 from pdf_financial_qa.workflow.model import LocateOutput
 
 TAXONOMY = load_taxonomy()
@@ -528,6 +532,393 @@ class ReportCommandTests(ReportCase):
         self.assertEqual(result.exit_code, 0, result.output)
         for text in ("--run", "--set", "--against", "--to", "latest"):
             self.assertIn(text, plain(result.output))
+
+
+Q2 = RESULTS_Q2.id
+RESULTS_Q1 = RESULTS_Q2.model_copy(update={"file": "synthetic-cements/results-2025-06.pdf", "period_end": "2025-06-30"})
+TAGS = {Q2: {"unit": "lakh", "brackets": "yes", "restated": "not tagged", "spreads": "no", "financials": "no"}}
+# The one fact of results-2025-06, frozen from a settled disagreement: the June quarter's consolidated revenue.
+SETTLED_Q1 = dict(period_label="Quarter ended 30.06.2025", period_end="2025-06-30", origin="settled")
+NEGATIVE = dict(printed="(12,345.00)", value="-12345.00", normalized_value="-1234500000.00")
+
+
+class NumbersCase(unittest.TestCase):
+    """Task 8's scores, as `RunScore`s: Q2 FY26 results with three gold facts. The PDF read G1 and G3 right and G2 as
+    10,500.00 lakh, so it matches 2 of 3; XBRL holds G1 and G2 and G3 is a comparative outside its slots; `shown` is
+    XBRL's, own period only."""
+
+    def setUp(self):
+        self.gold = {Q2: gold_of(G1, G2, G3)}
+        self.pdf_art = pdf_artefact(RESULTS_Q2, PDF_FACTS)
+        self.xbrl_art = xbrl_artefact(RESULTS_Q2, [xbrl_fact(), xbrl_fact(**STANDALONE)])
+        self.pdf = score_run("p", [self.pdf_art], self.gold, [Q2], "dev")
+        self.xbrl = self.xbrl_score(self.xbrl_art, self.gold)
+        self.shown = score_shown(self.gold, self.pdf, self.xbrl, [self.pdf_art], [self.xbrl_art])
+        self.tags = TAGS
+
+    @staticmethod
+    def xbrl_score(artefact, gold, ids=(Q2,)):
+        return score_xbrl_run("x", [artefact], gold, list(ids), "dev", {"map_version": "1", "parser_version": "1"}, None)
+
+    def render(self, *others, **options):
+        return render_markdown(self.pdf, others=list(others), tags=self.tags, generated_at=WHEN, **options)
+
+
+class BySourceTests(NumbersCase):
+    def test_by_source(self):
+        md = self.render(self.xbrl, self.shown)
+        self.assertIn("| pdf | 1 | 3 | 66.6% | 0 | 0 | 0 | 0.0% | — | — |", md)  # 2 of 3; 2000 // 3 = 666 tenths
+        self.assertIn("| xbrl | 1 | 2 | 100.0% | 0 | 0 | 0 | 0.0% | 1 | 0 |", md)  # G3 is outside the instances' slots
+        self.assertIn("| shown | 1 | 2 | 100.0% | 0 | 0 | 0 | 0.0% | 1 | 0 |", md)  # G3 is another period
+        by_source = section(md, "By source").splitlines()
+        self.assertEqual(by_source[0:2], [
+            "| Source | Filings | Gold facts | Exact match | At precision | Dash as 0 | Wrong sign | Missing | Outside | Not placed |",
+            "| " + " | ".join(["---"] * 10) + " |"])
+        self.assertIn("Outside", by_source[-1])  # a line saying what Outside means, for xbrl and for shown
+
+    def test_the_sources_are_listed_in_the_order_given(self):
+        rows = [line.split(" | ")[0].removeprefix("| ") for line in section(self.render(self.xbrl, self.shown), "By source").splitlines()[2:5]]
+        self.assertEqual(rows, ["pdf", "xbrl", "shown"])
+
+    def test_not_placed_is_the_sum_of_every_filing_and_every_reason(self):
+        gold = {Q2: gold_of(G1, gold_fact(period_label="Current period ended 30.09.2025", span=None), gold_fact(period_end=None))}
+        xbrl = self.xbrl_score(self.xbrl_art, gold)
+        self.assertIn("| xbrl | 1 | 1 | 100.0% | 0 | 0 | 0 | 0.0% | 0 | 2 |", self.render(xbrl))
+
+    def test_sign_only_is_counted_and_listed_by_element(self):
+        # One gold fact printed in brackets; the instance holds "SyntheticPayments" as a non-negative amount.
+        gold = {Q2: gold_of(gold_fact(**NEGATIVE))}
+        sign = self.xbrl_score(xbrl_artefact(RESULTS_Q2, [xbrl_fact(element="SyntheticPayments")]), gold)
+        md = self.render(sign)
+        self.assertIn("| SyntheticPayments | 1 |", md.split("### Sign only")[1])
+        self.assertIn("| xbrl | 1 | 1 | 0.0% | 0 | 0 | 1 | 0.0% |", md)
+
+    def test_a_pdf_only_report_is_unchanged(self):
+        md = render_markdown(self.pdf, generated_at=WHEN)
+        for heading in ("## By source", "## By format tag", "## The element map against gold", "## Settled disagreements",
+                        "## Rule versions"):
+            self.assertNotIn(heading, md)
+        self.assertEqual([line for line in md.splitlines() if line.startswith("## ")][0], "## Summary")
+
+    def test_the_mismatches_appendix_leaves_out_the_three_matches(self):
+        pdf = self.pdf.model_copy(deep=True)
+        template = pdf.filings[0].facts[0]
+        pdf.filings[0].facts = [template.model_copy(update={"outcome": o}) for o in
+                                ("match", "match_at_precision", "match_dash_zero", "wrong_sign", "missing")]
+        appendix = section(render_markdown(pdf, generated_at=WHEN), "Mismatches")
+        self.assertEqual(len(appendix.splitlines()), 2 + 2)  # a header, a rule and the two rows that are not matches
+        self.assertIn("| wrong_sign |", appendix)
+        self.assertIn("| missing |", appendix)
+        self.assertNotIn("| match_at_precision |", appendix)
+        self.assertNotIn("| match_dash_zero |", appendix)
+
+    def test_a_section_for_each_other_source_against_an_earlier_run(self):
+        earlier_filing = self.xbrl.filings[0].model_copy(update={"facts": self.xbrl.filings[0].facts[:1]})
+        earlier = self.xbrl.model_copy(update={"run": "x-earlier", "filings": [earlier_filing]})
+        md = self.render(self.xbrl, self.shown, others_against=[earlier])
+        self.assertEqual(section(md, "Against x-earlier").splitlines()[0], "| Rate | This run | Earlier | Change |")
+        self.assertIn("| Exact match | 100.0% | 100.0% | +0.0 pp |", section(md, "Against x-earlier"))
+        self.assertEqual(md.count("## Against "), 1)  # the first score has no earlier run, and `shown` none either
+
+
+class ByFormatTagTests(NumbersCase):
+    def test_by_format_tag(self):
+        md = self.render(self.xbrl, self.shown, unit_checks={Q2: "agrees"})
+        self.assertIn("### Unit", md)
+        self.assertIn("| lakh | 1 | 2 of 3 (66.6%) | 2 of 2 (100.0%) | 2 of 2 (100.0%) |", md)
+        self.assertIn("Unit tag against gold: 1 agree, 0 disagree, 0 mixed, 0 no monetary gold, 0 not tagged.", md)
+        self.assertIn("| not tagged | 1 |", md.split("### Restated columns")[1])
+
+    def test_the_dimensions_are_the_five_tags_in_order(self):
+        part = section(self.render(self.xbrl, self.shown), "By format tag")
+        self.assertEqual([line for line in part.splitlines() if line.startswith("### ")],
+                         ["### Unit", "### Negatives in brackets", "### Restated columns", "### Two-page spreads",
+                          "### Banks and NBFCs"])
+        self.assertIn("| Value | Filings | pdf | xbrl | shown |", part)
+
+    def test_a_filing_counts_under_every_dimension(self):
+        part = section(self.render(self.xbrl, self.shown), "By format tag")
+        self.assertEqual(part.count("| 1 | 2 of 3 (66.6%) | 2 of 2 (100.0%) | 2 of 2 (100.0%) |"), 5)  # one row in each table
+
+    def test_a_source_without_a_filing_of_the_value_is_a_dash(self):
+        part = section(self.render(self.xbrl), "By format tag")  # no shown run
+        self.assertIn("| lakh | 1 | 2 of 3 (66.6%) | 2 of 2 (100.0%) | — |", part)
+
+    def test_banks_and_nbfcs_read_out_of_scope(self):
+        tags = {**TAGS, "synthetic-bank/results-2025-09": {**TAGS[Q2], "financials": "yes"}}
+        pdf = self.pdf.model_copy(update={"out_of_scope": ["synthetic-bank/results-2025-09"]})
+        md = render_markdown(pdf, others=[self.xbrl], tags=tags, generated_at=WHEN)
+        banks = md.split("### Banks and NBFCs")[1].split("\n## ")[0]
+        self.assertIn("| yes | 1 | out of scope (1 filing(s)) | out of scope (1 filing(s)) | — |", banks)
+        self.assertIn("| no | 1 | 2 of 3 (66.6%) | 2 of 2 (100.0%) | — |", banks)
+
+    def test_a_filing_with_no_tags_is_not_tagged_in_every_dimension(self):
+        md = render_markdown(self.pdf, others=[self.xbrl], tags={}, generated_at=WHEN)
+        self.assertIn("| not tagged | 1 | 2 of 3 (66.6%) | 2 of 2 (100.0%) | — |", md.split("### Unit")[1])
+
+    def test_unit_tags_that_disagree_with_gold_are_listed(self):
+        tags = {Q2: {**TAGS[Q2], "unit": "crore"}}
+        md = render_markdown(self.pdf, others=[self.xbrl], tags=tags, generated_at=WHEN, unit_checks={Q2: "disagrees"},
+                             gold_units={Q2: ["lakh"]})
+        self.assertIn("Unit tag against gold: 0 agree, 1 disagree, 0 mixed, 0 no monetary gold, 0 not tagged.", md)
+        self.assertIn(f"- {Q2}: tagged crore, gold lakh", md)
+        mixed = render_markdown(self.pdf, others=[self.xbrl], tags=TAGS, generated_at=WHEN, unit_checks={Q2: "mixed"},
+                                gold_units={Q2: ["lakh", "crore"]})
+        self.assertIn(f"- {Q2}: tagged lakh, gold lakh and crore", mixed)
+
+
+class MapAgainstGoldTests(NumbersCase):
+    def suspect(self):
+        xbrl = xbrl_artefact(RESULTS_Q2, [xbrl_fact(element="SyntheticOthersIncome", concept=None, normalizedValue="1250000000")])
+        gold = {Q2: gold_of(gold_fact(concept="total_income", printed="12,500.00", value="12500.00", normalized_value="1250000000.00"))}
+        return self.xbrl_score(xbrl, gold)
+
+    def test_the_map_section_names_suspects_by_element(self):
+        md = self.render(self.suspect())
+        self.assertIn("| Element | Its concept as read | The gold concept | Gold facts |", md)
+        self.assertIn("| SyntheticOthersIncome | none | total_income | 1 |", md)
+
+    def test_per_format_counts(self):
+        part = section(self.render(self.xbrl), "The element map against gold")
+        self.assertIn("| Format | Gold facts | Exact match | At precision | Dash as 0 | Wrong sign | Wrong value | Wrong scale "
+                      "| Wrong status | Ambiguous | Missing |", part)
+        self.assertIn("| in-capmkt/ind_as | 2 | 100.0% | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.0% |", part)
+
+    def test_concepts_no_element_gives(self):
+        # `synthetic_unmapped_concept` is not an id any map holds, and `revenue_from_operations` is.
+        gold = {Q2: gold_of(G1, gold_fact(concept="synthetic_unmapped_concept", label="Nothing", printed="5", value="5",
+                                          normalized_value="500000.00"))}
+        md = self.render(self.xbrl_score(self.xbrl_art, gold))
+        part = md.split("### Concepts no element gives")[1].split("\n###")[0]
+        self.assertIn("| in-capmkt/ind_as | synthetic_unmapped_concept | 1 |", part)
+        self.assertNotIn("revenue_from_operations", part)
+
+    def test_no_suspect_no_sign_only_none_says_so(self):
+        part = section(self.render(self.xbrl), "The element map against gold")
+        for heading in ("Map suspects", "Sign only", "Concepts no element gives", "Refilings with no order", "XBRL not used"):
+            self.assertTrue(part.split(f"### {heading}")[1].split("###")[0].rstrip().endswith("None."), heading)
+
+    def test_refilings_with_no_order_and_xbrl_not_used(self):
+        xbrl = self.xbrl.model_copy(update={"pooled": {Q2: 2}, "unusable": {"synthetic-cements/results-2026-03": "format_unmapped"}})
+        part = section(self.render(xbrl), "The element map against gold")
+        self.assertIn(f"| {Q2} | 2 |", part.split("### Refilings with no order")[1])
+        self.assertIn("| synthetic-cements/results-2026-03 | format_unmapped |", part.split("### XBRL not used")[1])
+
+    def test_without_an_xbrl_score_there_is_no_map_section(self):
+        self.assertNotIn("## The element map against gold", self.render())
+
+    def test_map_concepts_reads_the_formats_file(self):
+        concepts = map_concepts("in-capmkt/ind_as")
+        self.assertIn("revenue_from_operations", concepts)
+        self.assertIn("cash_at_beginning_of_period", concepts)  # from the cash balance block
+        self.assertIn("cash_at_end_of_period", concepts)
+        self.assertNotIn(None, concepts)
+        self.assertIn("revenue_from_operations", map_concepts("in-bse-fin/ind_as"))
+
+
+class SettledTests(NumbersCase):
+    def setUp(self):
+        super().setUp()
+        both = {**self.gold, RESULTS_Q1.id: gold_of(gold_fact(**SETTLED_Q1), filing=RESULTS_Q1)}
+        settled_gold = gold_of_origin(both, "settled")
+        q1_art = xbrl_artefact(RESULTS_Q1, [xbrl_fact(periodLabel="Quarter ended 30.06.2025", periodEnd="2025-06-30",
+                                                      periodStart="2025-04-01")])
+        ids = [Q2, RESULTS_Q1.id]
+        self.pdf_settled = score_run("p", [self.pdf_art], settled_gold, ids, "dev")
+        self.xbrl_settled = score_xbrl_run("x", [q1_art], settled_gold, ids, "dev", {}, None)
+
+    def test_settled_facts_are_scored_apart(self):
+        md = self.render(self.xbrl, self.shown, settled=[self.pdf_settled, self.xbrl_settled])
+        self.assertIn("| pdf | 1 | 3 | 66.6% | 0 | 0 | 0 | 0.0% | — | — |", md)
+        after = md.split("## Settled disagreements")[1]
+        self.assertIn("| pdf | 0 | 0 | — | 1 |", after)
+        self.assertIn("| xbrl | 1 | 1 | 100.0% | 0 |", after)
+        self.assertIn("They exist only where Gemini and XBRL disagreed", after)
+        self.assertNotIn("results-2025-06", md.split("## Settled disagreements")[0])  # never "Not run" in the headline
+        self.assertIn("| Source | Filings | Settled facts | Exact match | Not in this run |", after)
+
+    def test_no_settled_runs_no_section(self):
+        self.assertNotIn("## Settled disagreements", self.render(self.xbrl))
+
+
+class WriteNumbersTests(NumbersCase):
+    def setUp(self):
+        super().setUp()
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.folder = Path(self.temp.name)
+
+    def written(self, *others, **options):
+        _, js = write_report(self.folder, self.pdf, generated_at=WHEN, others=list(others) or None, tags=self.tags, **options)
+        return json.loads(js.read_text(encoding="utf-8"))
+
+    def test_the_json_gains_a_section_per_source_the_tags_the_map_and_the_settled(self):
+        data = self.written(self.xbrl, self.shown, unit_checks={Q2: "agrees"},
+                            settled=[score_run("p", [self.pdf_art], {}, [], "dev")])
+        self.assertEqual(sorted(data["sources"]), ["pdf", "shown", "xbrl"])
+        self.assertEqual(data["sources"]["xbrl"]["summary"]["gold_facts"], 2)
+        self.assertEqual(sorted(data["sources"]["pdf"]["strata"]), ["basis", "kind", "scanned", "statement", "stratum"])
+        self.assertEqual(data["format_tags"]["unit"]["lakh"]["pdf"], {"gold_facts": 3, "match": 2})
+        self.assertEqual(data["unit_tags"][Q2]["against_gold"], "agrees")
+        self.assertEqual(sorted(data["map"]), ["formats", "pooled", "sign_only", "suspects", "unusable", "without_element"])
+        self.assertEqual(sorted(data["settled"]), ["pdf"])
+        self.assertEqual(sorted(data["settled"]["pdf"]), ["summary"])
+
+    def test_a_pdf_only_json_has_no_new_section_but_always_the_rule_versions(self):
+        _, js = write_report(self.folder, self.pdf, generated_at=WHEN)
+        data = json.loads(js.read_text(encoding="utf-8"))
+        for key in ("sources", "format_tags", "unit_tags", "map", "settled"):
+            self.assertNotIn(key, data)
+        self.assertEqual(data["rule_versions"], {
+            "span_rule": 1, "compare_rule": 1, "concept_carry": 1, "owner_rule": 1, "source_rule": 1,
+            "xbrl_parser": None, "xbrl_map": None})
+
+    def test_the_xbrl_runs_own_versions_are_recorded_not_todays(self):
+        xbrl = self.xbrl.model_copy(update={"parser_version": "7", "map_version": "9"})
+        data = self.written(xbrl)
+        self.assertEqual((data["rule_versions"]["xbrl_parser"], data["rule_versions"]["xbrl_map"]), ("7", "9"))
+        versions = section((self.folder / "report.md").read_text(encoding="utf-8"), "Rule versions")
+        for words in ("XBRL parser 7", "XBRL element map 9", "span rule 1", "compare rule 1", "concept carry rule 1",
+                      "owner rule 1", "source rule 1"):
+            self.assertIn(words, versions)
+
+    def test_an_xbrl_run_that_recorded_no_version_says_unknown(self):
+        md = render_markdown(self.pdf, others=[self.xbrl.model_copy(update={"parser_version": None, "map_version": None})],
+                             tags=self.tags, generated_at=WHEN)
+        self.assertIn("XBRL parser unknown", section(md, "Rule versions"))
+
+    def test_the_scored_xbrl_run_carries_the_versions_its_record_names(self):
+        self.assertEqual((self.xbrl.parser_version, self.xbrl.map_version), ("1", "1"))
+
+
+class NumbersCommandTests(ReportCase):
+    """`maester-eval report` over one pdf run, one xbrl run, their gold and a manifest, in a temporary data folder."""
+
+    def setUp(self):
+        super().setUp()
+        for patcher in (mock.patch.dict(os.environ), mock.patch.object(cli, "load_dotenv"), mock.patch.object(cli, "DEFAULT", self.paths)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        tagged = RESULTS_Q2.model_copy(update={"tags": FormatTags(unit="lakh", unit_from="investor")})
+        self.filings = [tagged]
+        self.write_manifest(tagged)
+        write_gold(self.paths.gold, gold_of(G1, G2, G3))
+        self.pdf_run = self.make_run("pdf1", datetime(2026, 10, 17, tzinfo=timezone.utc), pdf_artefact(RESULTS_Q2, PDF_FACTS))
+        self.xbrl_run = self.make_xbrl("xbrl1", datetime(2026, 10, 17, 1, tzinfo=timezone.utc), "1")
+
+    def write_manifest(self, *filings):
+        self.paths.manifest.write_text(json.dumps({"filings": [f.model_dump(mode="json") for f in filings]}), encoding="utf-8")
+
+    def make_run(self, label, now, artefact, **record):
+        folder = self.paths.new_run(label, now=now)
+        write_run(folder, {"run": folder.name, "set": "dev", "pipeline_version": "extract-2", "prompt_version": "p", "model": "m", **record})
+        write_artefact(folder, artefact)
+        return folder
+
+    def make_xbrl(self, label, now, map_version, facts=None):
+        artefact = xbrl_artefact(RESULTS_Q2, facts or [xbrl_fact(), xbrl_fact(**STANDALONE)])
+        return self.make_run(label, now, artefact, source="xbrl", parser_version="1", map_version=map_version)
+
+    def numbers(self, *args):
+        return CliRunner().invoke(cli.app, ["report", *args], env={"COLUMNS": "500"})
+
+    def test_the_command_takes_one_run_per_source(self):
+        result = self.numbers("--run", self.pdf_run.name, "--run", self.xbrl_run.name, "--set", "dev")
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("xbrl: 2 gold fact(s), exact match 100.0%", result.output)
+        self.assertIn("shown: 2 gold fact(s), exact match 100.0%", result.output)
+        self.assertIn(f"report → {self.pdf_run / 'report.md'}", result.output)
+        for figure in ("12345", "12,345", "1234500000", "10,500"):
+            self.assertNotIn(figure, result.output)
+        md = (self.pdf_run / "report.md").read_text(encoding="utf-8")
+        self.assertIn("| xbrl | 1 | 2 | 100.0% | 0 | 0 | 0 | 0.0% | 1 | 0 |", md)
+        self.assertIn("| lakh | 1 | 2 of 3 (66.6%) | 2 of 2 (100.0%) | 2 of 2 (100.0%) |", md)
+        self.assertIn("Unit tag against gold: 1 agree, 0 disagree, 0 mixed, 0 no monetary gold, 0 not tagged.", md)
+        self.assertFalse((self.xbrl_run / "report.md").exists())  # the files go into the first run's folder
+        data = json.loads((self.pdf_run / "report.json").read_text(encoding="utf-8"))
+        self.assertEqual(sorted(data["sources"]), ["pdf", "shown", "xbrl"])
+        self.assertEqual(data["rule_versions"]["xbrl_map"], "1")
+
+    def test_the_first_run_may_be_the_xbrl_one(self):
+        result = self.numbers("--run", self.xbrl_run.name, "--run", self.pdf_run.name)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertTrue((self.xbrl_run / "report.md").is_file())
+
+    def test_two_runs_of_one_source_are_refused(self):
+        other = self.make_run("pdf2", datetime(2026, 10, 18, tzinfo=timezone.utc), pdf_artefact(RESULTS_Q2, PDF_FACTS))
+        result = self.numbers("--run", self.pdf_run.name, "--run", other.name)
+        self.assertEqual(result.exit_code, 1, result.output)
+        self.assertIn("two pdf runs; name one run per source", result.output)
+        self.assertFalse((self.pdf_run / "report.md").exists())
+        result = self.numbers("--run", self.pdf_run.name, "--run", self.xbrl_run.name, "--against", self.pdf_run.name,
+                              "--against", other.name)
+        self.assertIn("two pdf runs; name one run per source", result.output)
+
+    def test_a_run_list_with_no_pdf_run_is_refused(self):
+        result = self.numbers("--run", self.xbrl_run.name)
+        self.assertEqual(result.exit_code, 1, result.output)
+        self.assertIn("name a pdf run", result.output)
+
+    def test_against_per_source_adds_a_section_for_each(self):
+        old_pdf = self.make_run("pdfold", datetime(2026, 10, 10, tzinfo=timezone.utc),
+                                pdf_artefact(RESULTS_Q2, PDF_FACTS[:1] + PDF_FACTS[2:]))
+        old_xbrl = self.make_xbrl("xbrlold", datetime(2026, 10, 10, 1, tzinfo=timezone.utc), "0",
+                               facts=[xbrl_fact(), xbrl_fact(**{**STANDALONE, "element": "OtherIncome", "concept": "other_income"})])
+        result = self.numbers("--run", self.pdf_run.name, "--run", self.xbrl_run.name, "--against", old_pdf.name,
+                              "--against", old_xbrl.name)
+        self.assertEqual(result.exit_code, 0, result.output)
+        md = (self.pdf_run / "report.md").read_text(encoding="utf-8")
+        self.assertIn(f"## Against {old_pdf.name}", md)
+        self.assertIn(f"## Against {old_xbrl.name}", md)
+        self.assertIn(f"## Against {old_pdf.name}+{old_xbrl.name}", md)  # the shown mix, each earlier run in place of its source
+        self.assertIn("| Missing | 0.0% | 50.0% | −50.0 pp |", section(md, f"Against {old_xbrl.name}"))
+        self.assertFalse((old_xbrl / "report.md").exists())
+        data = json.loads((self.pdf_run / "report.json").read_text(encoding="utf-8"))
+        self.assertEqual(data["against"], old_pdf.name)
+
+    def test_an_against_run_of_a_source_not_scored_is_refused(self):
+        result = self.numbers("--against", self.xbrl_run.name)
+        self.assertEqual(result.exit_code, 1, result.output)
+        self.assertIn("no xbrl run", result.output)
+
+    def test_a_newer_map_report_folder_is_not_the_default_pdf_run(self):
+        self.paths.new_run("xbrl-map", now=datetime(2026, 10, 19, tzinfo=timezone.utc))  # no run.json, like phase 4's report folder
+        result = self.numbers("--run", "latest", "--run", self.xbrl_run.name)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertTrue((self.pdf_run / "report.md").is_file())
+
+    def test_the_default_run_is_the_latest_pdf_run_and_one_source_keeps_the_phase_0_console(self):
+        result = self.numbers()
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertNotIn("pdf:", result.output)
+        self.assertNotIn("xbrl:", result.output)
+        self.assertNotIn("## By source", (self.pdf_run / "report.md").read_text(encoding="utf-8"))
+
+    def test_settled_facts_are_scored_apart_and_said_on_the_console(self):
+        write_gold(self.paths.gold, gold_of(gold_fact(**SETTLED_Q1), filing=RESULTS_Q1))
+        self.write_manifest(*self.filings, RESULTS_Q1)
+        # Gemini read the June filing too, but its only gold fact is a settled one: the headline has no gold for it.
+        write_artefact(self.pdf_run, pdf_artefact(RESULTS_Q1, PDF_FACTS[:1]))
+        result = self.numbers("--run", self.pdf_run.name, "--run", self.xbrl_run.name)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("settled: 1 gold fact(s), scored apart", result.output)
+        md = (self.pdf_run / "report.md").read_text(encoding="utf-8")
+        self.assertIn("| pdf | 1 | 1 | 0.0% | 0 |", md.split("## Settled disagreements")[1])  # read, but not as the settled figure
+        self.assertIn("| xbrl | 0 | 0 | — | 1 |", md.split("## Settled disagreements")[1])  # the XBRL run lacks the filing
+        self.assertNotIn("## No gold yet", md)
+        self.assertNotIn("no gold yet", result.output)
+        self.assertNotIn("results-2025-06", md.split("## Settled disagreements")[0])
+        self.assertNotIn("results-2025-06", result.output)
+
+    def test_a_unit_tag_that_disagrees_with_gold_is_listed_with_its_ids_in_the_file_only(self):
+        wrong = RESULTS_Q2.model_copy(update={"tags": FormatTags(unit="crore", unit_from="investor")})
+        self.write_manifest(wrong)
+        result = self.numbers("--run", self.pdf_run.name, "--run", self.xbrl_run.name)
+        self.assertEqual(result.exit_code, 0, result.output)
+        md = (self.pdf_run / "report.md").read_text(encoding="utf-8")
+        self.assertIn("0 agree, 1 disagree", md)
+        self.assertIn(f"- {Q2}: tagged crore, gold lakh", md)
+        self.assertNotIn(Q2, result.output)
 
 
 if __name__ == "__main__":

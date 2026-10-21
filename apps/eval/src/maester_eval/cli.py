@@ -24,10 +24,11 @@ from maester_eval.files import write_text_atomically
 from maester_eval.gold import count_unverified, freeze_sheet, gold_of_origin, read_gold, read_sheet, write_gold
 from maester_eval.manifest import SetChoice, load_manifest, missing_files, tag_values, write_manifest
 from maester_eval.paths import DEFAULT
-from maester_eval.report import score_run_dir, write_report
+from maester_eval.report import score_run_dir, score_xbrl_run_dir, write_report
 from maester_eval.runner import gemini_model_factory, run_live, workflow_settings_from_env
 from maester_eval.sheets import export_run, sheet_path
-from maester_eval.tags import gold_coverage, pick_gold, propose_units, set_tags, unit_against_gold
+from maester_eval.scoring import RunScore, score_shown
+from maester_eval.tags import gold_coverage, gold_units, pick_gold, propose_units, set_tags, unit_against_gold
 from maester_eval.xbrl_pair import apply_pairs, check_copies, plan_pairs, read_xbrl_manifest, summary_lines
 from maester_eval.xbrl_read import run_xbrl
 from maester_eval.xbrl_survey import find_instances, survey_instances, write_survey
@@ -201,28 +202,99 @@ def freeze(
                   f"{count_unverified(rows)} row(s) not verified → {shown}", markup=False)
 
 
+def _resolve_runs(names: list[str]) -> dict[str, tuple[Path, dict]]:
+    """Each named run's folder and record, by the source its `run.json` names (a run with none is a PDF run).
+
+    `latest` is the latest PDF run. A named run may be of any source, but two of one source are refused: a report
+    holds one run per source."""
+    found: dict[str, tuple[Path, dict]] = {}
+    for name in names:
+        run_dir = DEFAULT.resolve_run(name, "pdf") if name == "latest" else DEFAULT.resolve_run(name)
+        record = read_run(run_dir)
+        source = record.get("source") or "pdf"
+        if source in found:
+            _fail(f"two {source} runs; name one run per source")
+        found[source] = (run_dir, record)
+    return found
+
+
 @app.command()
 @_reports_errors
 def report(
-    run: Annotated[str, typer.Option(help="A run folder's name, a path, or `latest`.")] = "latest",
+    run: Annotated[Optional[list[str]], typer.Option(
+        help="A run folder's name, a path, or `latest` (the latest PDF run). Repeat it for a run of another source: one per "
+             "source, and a PDF run among them. The files go into the first run's folder.")] = None,
     eval_set: Annotated[str, typer.Option("--set", help="dev, heldout or all.")] = "all",
-    against: Annotated[Optional[str], typer.Option(help="An earlier run to show the change against.")] = None,
+    against: Annotated[Optional[list[str]], typer.Option(
+        help="An earlier run to show the change against; repeat it for each source.")] = None,
     to: Annotated[Optional[Path], typer.Option(help="Also copy the Markdown here, e.g. docs/eval/2026-10-16-baseline.md.")] = None,
 ) -> None:
-    """Score a run against the gold set; write report.md and report.json into the run folder."""
+    """Score runs against the gold set; write report.md and report.json into the first run's folder.
+
+    A PDF run alone gives the phase 0 report. With an XBRL run too, the report adds the XBRL figures, the `shown` mix of
+    the two, and the figures by source, by format tag and for the element map. Facts frozen from settled disagreements
+    are scored apart. Every headline is scored on the gold a person labelled from a sheet."""
     chosen = _set_choice(eval_set)
     manifest = load_manifest(DEFAULT.manifest)
     ids = [f.id for f in manifest.filings]
     out_of_scope = {f.id: f.out_of_scope or "" for f in manifest.out_of_scope(chosen)}
-    run_dir = DEFAULT.resolve_run(run, "pdf")
+    names = run or ["latest"]
+    runs = _resolve_runs(names)
+    earlier_runs = _resolve_runs(against) if against else {}
+    if "pdf" not in runs:
+        _fail("name a pdf run: the report is made on the PDF run")
+    for source, (earlier_dir, _) in earlier_runs.items():
+        if source not in runs:
+            _fail(f"{earlier_dir.name} is {source}, but no {source} run is scored; add --run for it")
+    first_dir = next(iter(runs.values()))[0]  # `runs` keeps the order of `--run`
     gold = read_gold(DEFAULT.gold)
-    score = score_run_dir(run_dir, gold, ids, chosen, out_of_scope)
-    # The earlier run is read and scored before anything is written, and against the gold set as it is now.
-    earlier = None if against is None else score_run_dir(DEFAULT.resolve_run(against, "pdf"), gold, ids, chosen, out_of_scope)
-    md, _ = write_report(run_dir, score, earlier, out_of_scope_reasons=out_of_scope)
+    sheet, settled_view = gold_of_origin(gold, "sheet"), gold_of_origin(gold, "settled")
+    in_set = {f.id: f for f in (*manifest.select(chosen), *manifest.out_of_scope(chosen))}
+    settled_facts = sum(len(g.facts) for g in settled_view.values() if chosen == "all" or g.set == chosen)
+
+    def scored(source: str, run_dir: Path, view: dict) -> RunScore:
+        if source == "xbrl":
+            return score_xbrl_run_dir(run_dir, view, ids, chosen, out_of_scope)
+        return score_run_dir(run_dir, view, ids, chosen, out_of_scope)
+
+    pdf_dir = runs["pdf"][0]
+    score = scored("pdf", pdf_dir, sheet)
+    # A filing with settled facts only has gold; it is scored apart, so the headline does not call it "no gold yet".
+    score = score.model_copy(update={"gold_missing": [i for i in score.gold_missing if i not in settled_view]})
+    others: list[RunScore] = []
+    xbrl_score = None
+    if "xbrl" in runs:
+        xbrl_score = scored("xbrl", runs["xbrl"][0], sheet)
+        others.append(xbrl_score)
+        others.append(score_shown(sheet, score, xbrl_score, read_artefacts(pdf_dir), read_artefacts(runs["xbrl"][0])))
+    # The earlier runs are read and scored before anything is written, on the gold set as it is now.
+    earlier = {source: scored(source, d, sheet) for source, (d, _) in earlier_runs.items()}
+    others_against = [earlier["xbrl"]] if "xbrl" in earlier else []
+    if xbrl_score is not None and earlier.keys() & {"pdf", "xbrl"}:
+        before_pdf, before_xbrl = earlier.get("pdf", score), earlier.get("xbrl", xbrl_score)
+        before_pdf_dir, before_xbrl_dir = earlier_runs.get("pdf", runs["pdf"])[0], earlier_runs.get("xbrl", runs["xbrl"])[0]
+        others_against.append(score_shown(sheet, before_pdf, before_xbrl, read_artefacts(before_pdf_dir),
+                                          read_artefacts(before_xbrl_dir)))
+    settled = []
+    if settled_facts:
+        settled = [scored(source, d, settled_view) for source, (d, _) in runs.items()]
+    taxonomy = load_taxonomy()
+    tags = {i: tag_values(f) for i, f in in_set.items()}
+    unit_checks = {i: unit_against_gold(in_set[i], g, taxonomy) for i, g in sheet.items() if i in in_set}
+    units = {i: gold_units(sheet[i], taxonomy) for i, answer in unit_checks.items() if answer in ("disagrees", "mixed")}
+    extended = bool(others) or bool(settled)
+    md, _ = write_report(first_dir, score, earlier.get("pdf"), out_of_scope_reasons=out_of_scope,
+                         others=others or None, others_against=others_against or None, tags=tags if extended else None,
+                         settled=settled or None, unit_checks=unit_checks if extended else None, gold_units=units)
     s = score.summary()
-    console.print(f"{run_dir.name} ({chosen}): {s.filings} filing(s), {s.gold_facts} gold fact(s), "
+    console.print(f"{pdf_dir.name} ({chosen}): {s.filings} filing(s), {s.gold_facts} gold fact(s), "
                   f"exact match {s.rate('match')}, missing {s.rate('missing')}", markup=False)
+    if others:
+        for each in (score, *others):
+            console.print(f"{each.source}: {each.summary().gold_facts} gold fact(s), exact match {each.summary().rate('match')}",
+                          markup=False)
+    if settled:
+        console.print(f"settled: {settled_facts} gold fact(s), scored apart", markup=False)
     if score.not_run or score.gold_missing:
         console.print(f"not run: {len(score.not_run)}; no gold yet: {len(score.gold_missing)}", markup=False)
     if score.out_of_scope:
