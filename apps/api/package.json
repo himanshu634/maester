@@ -18,6 +18,7 @@
     "@maester/contracts": "workspace:*",
     "@maester/db": "workspace:*",
     "@maester/document-index": "workspace:*",
+    "@maester/financial-engine": "workspace:*",
     "@maester/jobs": "workspace:*",
     "@maester/market": "workspace:*",
     "@maester/storage": "workspace:*",

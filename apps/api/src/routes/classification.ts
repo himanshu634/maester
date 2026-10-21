@@ -9,7 +9,7 @@ import {
   type EvidenceField,
 } from "@maester/contracts";
 import { getCurrentClassification, getDocument, getLatestJobForSubject, listEvidence, schema, type ClassificationRow, type Db } from "@maester/db";
-import { decideIntake, READ_KINDS } from "@maester/jobs";
+import { decideIntake, READ_KINDS, redecidePdfsAfterXbrl } from "@maester/jobs";
 import type { AppDeps, AppEnv } from "../app.js";
 import { HttpError, isUniqueViolation } from "../errors.js";
 import { createJob } from "../jobs/create.js";
@@ -169,6 +169,8 @@ export function classificationRoutes(deps: AppDeps) {
 
     await decideIntake(deps.db, deps.dispatcher, created.row, { read: created.read });
     const doc = (await getDocument(deps.db, workspace.id, documentId))!;
+    // An instance's new answers may release the PDFs that wait on XBRL, or send a covered one back to be read.
+    if (doc.format === "xbrl") await redecidePdfsAfterXbrl(deps.db, deps.dispatcher, workspace.id);
     const job = await getLatestJobForSubject(deps.db, workspace.id, "document", documentId);
     const evidence = await listEvidence(deps.db, workspace.id, created.row.id);
     const body: ClassificationChanged = {

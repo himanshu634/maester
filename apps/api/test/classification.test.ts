@@ -115,6 +115,32 @@ describe("classification", () => {
     expect(DocumentClassification.parse(await read.json()).classification).toMatchObject({ isin: "INE998Z01012", xbrlFormat: "in-capmkt/banking", basis: "standalone" });
   });
 
+  it("confirming a held XBRL document for another company reads it with document.xbrl and releases the PDF that waited on it", async () => {
+    const a = await ctx.signUp("xbrl-release@example.com");
+    const companyId = crypto.randomUUID();
+    await ctx.db.insert(schema.company).values({ id: companyId, workspaceId: a.workspaceId, displayName: "Synthetic Cements Limited", country: "IN", bseCode: "500999", createdByUserId: a.userId });
+    const xbrl = await seedDocument(a.workspaceId, a.userId);
+    await ctx.db.update(schema.document).set({ format: "xbrl" }).where(eq(schema.document.id, xbrl));
+    const xc = await seedClassification(a.workspaceId, xbrl, { kind: "financial_results", cin: null, bseCode: "500999", periodEnd: "2025-09-30", statementsFound: [] });
+    const pdf = await seedDocument(a.workspaceId, a.userId);
+    await ctx.db.update(schema.document).set({ intakeState: "waiting_for_xbrl", companyId }).where(eq(schema.document.id, pdf));
+    const pc = crypto.randomUUID();
+    await ctx.db.insert(schema.documentClassification).values({
+      id: pc, workspaceId: a.workspaceId, documentId: pdf, kind: "financial_results", companyId, periodEnd: "2025-09-30", setBy: "maester", readsUnderId: pc,
+      statementsFound: [{ statement: "income_statement", basis: "consolidated", pages: [2] }],
+    });
+
+    const res = await ctx.app.request(url(a.workspaceId, xbrl), send("POST", a.cookie, {
+      basedOn: xc, company: { new: { displayName: "Synthetic Steel Limited", country: "IN" } },
+    }));
+    expect(res.status).toBe(200);
+    const jobs = await ctx.db.select().from(schema.job).where(eq(schema.job.workspaceId, a.workspaceId));
+    expect(jobs.filter((j) => j.subjectId === xbrl).map((j) => j.type)).toEqual([JobTypes.DOCUMENT_XBRL]);
+    expect(jobs.filter((j) => j.subjectId === pdf).map((j) => j.type)).toEqual([JobTypes.DOCUMENT_EXTRACT]);
+    const [released] = await ctx.db.select().from(schema.document).where(eq(schema.document.id, pdf));
+    expect(released!.intakeState).toBe("reading");
+  });
+
   it("a PDF's classification has no isin, format or basis", async () => {
     const a = await ctx.signUp("pdf-null@example.com");
     const doc = await seedDocument(a.workspaceId, a.userId);

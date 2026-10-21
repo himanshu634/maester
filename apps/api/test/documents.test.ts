@@ -92,6 +92,71 @@ describe("documents", () => {
     expect(rows.every((r) => r.idempotencyKey.includes(":manual-"))).toBe(true);
   });
 
+  describe("extract on a results PDF that XBRL covers", () => {
+    type Pair = { statement: "income_statement"; basis: "consolidated" | "standalone" };
+    const BOTH: Pair[] = [{ statement: "income_statement", basis: "consolidated" }, { statement: "income_statement", basis: "standalone" }];
+
+    /** A stored results PDF printing both bases, and a read XBRL instance of its company and period with facts in `coverage`. */
+    async function seedCovered(email: string, coverage: Pair[]) {
+      const a = await ctx.signUp(email);
+      const { body } = await createUpload(a.workspaceId, a.cookie);
+      const pdfId = (body as { document: { id: string } }).document.id;
+      const companyId = await companyFor(a.workspaceId, a.cookie);
+      const [user] = await ctx.db.select().from(schema.user).where(eq(schema.user.email, email));
+      await ctx.db.update(schema.document).set({ state: "stored", intakeState: "read", companyId }).where(eq(schema.document.id, pdfId));
+      const pdfClass = crypto.randomUUID();
+      await ctx.db.insert(schema.documentClassification).values({
+        id: pdfClass, workspaceId: a.workspaceId, documentId: pdfId, kind: "financial_results", companyId, periodEnd: "2025-09-30",
+        statementsFound: BOTH.map((p) => ({ ...p, pages: [2] })), setBy: "maester", readsUnderId: pdfClass,
+      });
+      const xbrlId = crypto.randomUUID();
+      await ctx.db.insert(schema.document).values({
+        id: xbrlId, workspaceId: a.workspaceId, companyId, originalName: "r.xml", declaredSize: 10, declaredMime: "text/xml", format: "xbrl",
+        storageKey: `workspaces/${a.workspaceId}/documents/${xbrlId}/original.xml`, state: "stored", intakeState: "read", createdByUserId: user!.id,
+      });
+      const xbrlClass = crypto.randomUUID();
+      await ctx.db.insert(schema.documentClassification).values({
+        id: xbrlClass, workspaceId: a.workspaceId, documentId: xbrlId, kind: "financial_results", companyId, periodEnd: "2025-09-30", setBy: "maester", readsUnderId: xbrlClass,
+      });
+      const jobId = crypto.randomUUID();
+      await ctx.db.insert(schema.job).values({
+        id: jobId, workspaceId: a.workspaceId, type: JobTypes.DOCUMENT_XBRL, subjectType: "document", subjectId: xbrlId, idempotencyKey: `k-${jobId}`, state: "succeeded",
+      });
+      const revisionId = crypto.randomUUID();
+      await ctx.db.insert(schema.extractionRevision).values({
+        id: revisionId, workspaceId: a.workspaceId, documentId: xbrlId, jobId, classificationId: xbrlClass, source: "xbrl", state: "complete",
+        pipelineVersion: "xbrl-1", model: "xbrl-parser-1", promptVersion: "in-capmkt/ind_as@1", pageCount: 0, coverage: { statements: [] },
+      });
+      await ctx.db.insert(schema.financialFact).values(coverage.map((p, i) => ({
+        id: crypto.randomUUID(), workspaceId: a.workspaceId, revisionId, companyId, statement: p.statement, basis: p.basis, section: "s", lineOrder: i,
+        reportedLabel: "line", isSubtotal: false, periodLabel: "Quarter ended 30 Sep 2025", periodEnd: "2025-09-30", span: "quarter" as const,
+        reportedText: "", valueStatus: "unparsed" as const,
+      })));
+      const extract = () => ctx.app.request(`/v1/workspaces/${a.workspaceId}/documents/${pdfId}/extract`, { method: "POST", headers: { cookie: a.cookie, origin: "http://localhost" } });
+      const extractJobs = async () =>
+        (await ctx.db.select().from(schema.job).where(eq(schema.job.subjectId, pdfId))).filter((j) => j.type === JobTypes.DOCUMENT_EXTRACT);
+      return { extract, extractJobs };
+    }
+
+    it("a skipped results PDF answers 409 INVALID_STATE and creates no document.extract job", async () => {
+      const { extract, extractJobs } = await seedCovered("d12@example.com", BOTH);
+      const res = await extract();
+      expect(res.status).toBe(409);
+      const err = (await res.json()) as { error: { code: string; message: string } };
+      expect(err.error.code).toBe("INVALID_STATE");
+      expect(err.error.message).toContain("numbers come from XBRL");
+      expect(await extractJobs()).toHaveLength(0);
+    });
+
+    it("a results PDF the XBRL covers only in part gets a document.extract job, as today", async () => {
+      const { extract, extractJobs } = await seedCovered("d13@example.com", [BOTH[0]!]);
+      const res = await extract();
+      expect(res.status).toBe(202);
+      expect(ExtractResponse.parse(await res.json()).job.type).toBe(JobTypes.DOCUMENT_EXTRACT);
+      expect(await extractJobs()).toHaveLength(1);
+    });
+  });
+
   it("finalize requires the object to exist, enqueues verify, and is idempotent", async () => {
     const a = await ctx.signUp("d3@example.com");
     const { body } = await createUpload(a.workspaceId, a.cookie);

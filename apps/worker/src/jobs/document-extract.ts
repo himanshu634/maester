@@ -148,6 +148,8 @@ async function extract(job: JobRow, ctx: JobContext): Promise<DocumentExtractRes
     .limit(1);
   if (!doc) throw new JobFailure("DOCUMENT_NOT_FOUND", `document ${job.subjectId} not found in workspace ${job.workspaceId}`, false);
   if (doc.state !== "stored") throw new JobFailure("INVALID_STATE", `document is ${doc.state}; only stored documents are extracted`, false);
+  // An XBRL instance's numbers come from document.xbrl, never from a paid model read.
+  if (doc.format === "xbrl") throw new JobFailure("INVALID_STATE", "document is an XBRL instance; document.xbrl reads it", false);
 
   const [done] = await ctx.db.select().from(schema.extractionRevision).where(eq(schema.extractionRevision.jobId, job.id));
   if (done) {
@@ -188,6 +190,13 @@ async function extract(job: JobRow, ctx: JobContext): Promise<DocumentExtractRes
 
 export const documentExtract: JobHandler = Object.assign(extract, {
   async onFinalFailure(job: JobRow, { db }: FinalFailureDeps): Promise<void> {
+    // A stray extract of an instance was never its read: document.xbrl's outcome stands.
+    const [doc] = await db
+      .select({ format: schema.document.format })
+      .from(schema.document)
+      .where(and(eq(schema.document.id, job.subjectId), eq(schema.document.workspaceId, job.workspaceId)))
+      .limit(1);
+    if (doc?.format === "xbrl") return;
     const classificationId =
       classificationIdOfReadJob(job.idempotencyKey) ?? (await getCurrentClassification(db, job.workspaceId, job.subjectId))?.readsUnderId ?? null;
     await setIntakeIfCurrent(db, job.workspaceId, job.subjectId, classificationId, "read_failed");

@@ -15,6 +15,7 @@ import {
   type FinalizeResponse,
 } from "@maester/contracts";
 import {
+  companyIdentity,
   getCompany,
   getCurrentClassification,
   getCurrentRevision,
@@ -24,9 +25,12 @@ import {
   listChecks,
   listDocuments,
   listFactsWithSources,
+  loadWorkspaceXbrlDocs,
   schema,
+  type Db,
   type DocumentRow,
 } from "@maester/db";
+import { planPdfNumbers, type Basis, type Statement } from "@maester/financial-engine";
 import type { AppDeps, AppEnv } from "../app.js";
 import { HttpError } from "../errors.js";
 import { createJob } from "../jobs/create.js";
@@ -41,6 +45,28 @@ export function storageKeyFor(workspaceId: string, documentId: string, format: D
 function sanitiseName(name: string): string {
   // eslint-disable-next-line no-control-regex
   return name.replace(/[\x00-\x1f\x7f/\\]/g, "_").slice(0, 255);
+}
+
+/**
+ * A results PDF whose numbers XBRL covers, or will once its XBRL settles, is not read by a model: the
+ * source rule decides, as intake does. A PDF with no company is read as before (the rule needs one).
+ */
+async function refuseReadCoveredByXbrl(db: Db, doc: DocumentRow): Promise<void> {
+  if (doc.format !== "pdf") return;
+  const c = await getCurrentClassification(db, doc.workspaceId, doc.id);
+  if (c?.kind !== "financial_results" || !c.companyId) return;
+  const plan = planPdfNumbers(
+    {
+      companyId: c.companyId,
+      companyIdentity: await companyIdentity(db, doc.workspaceId, c.companyId),
+      kind: "financial_results",
+      periodEnd: c.periodEnd,
+      statementsFound: c.statementsFound.map((s) => ({ statement: s.statement as Statement, basis: s.basis as Basis })),
+    },
+    await loadWorkspaceXbrlDocs(db, doc.workspaceId),
+  );
+  if (plan.action === "skip") throw new HttpError("INVALID_STATE", "this document's numbers come from XBRL");
+  if (plan.action === "wait") throw new HttpError("INVALID_STATE", "this document is waiting for its XBRL file");
 }
 
 export function documentRoutes(deps: AppDeps) {
@@ -165,6 +191,7 @@ export function documentRoutes(deps: AppDeps) {
     const doc = await getDocument(deps.db, workspace.id, uuidParam(c, "id"));
     if (!doc) throw new HttpError("NOT_FOUND", "document not found");
     if (doc.state !== "stored") throw new HttpError("INVALID_STATE", `document is ${doc.state}; only stored documents can be extracted`);
+    await refuseReadCoveredByXbrl(deps.db, doc);
     const job = await createJob(deps.db, deps.dispatcher, {
       workspaceId: workspace.id,
       type: doc.format === "xbrl" ? JobTypes.DOCUMENT_XBRL : JobTypes.DOCUMENT_EXTRACT,
