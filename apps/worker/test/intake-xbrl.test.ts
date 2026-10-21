@@ -298,6 +298,17 @@ describe("decideIntake with XBRL", () => {
     expect(dispatchedFor(pdf.id, JobTypes.DOCUMENT_EXTRACT)).toHaveLength(1);
   });
 
+  it("a read annual report with no revision under its answers is never sent to Gemini by a release", async () => {
+    const ws = await seedWs();
+    const annual = await addPdf(ws, { kind: "annual_report" });
+    await ctx.db.update(schema.document).set({ intakeState: "read", companyId: ws.companyId }).where(eq(schema.document.id, annual.id));
+    const xbrl = await insertDoc(ws, "xbrl", "stored", "identifying");
+    await ctx.db.update(schema.document).set({ intakeState: "identify_failed" }).where(eq(schema.document.id, xbrl));
+    expect(await redecidePdfsAfterXbrl(ctx.db, ctx.dispatcher, ws.workspaceId)).toBe(0);
+    expect((await docOf(annual.id)).intakeState).toBe("read");
+    expect(await jobsOf(annual.id, JobTypes.DOCUMENT_EXTRACT)).toHaveLength(0);
+  });
+
   it("a skipped PDF stays read while new, unidentified XBRL documents of the workspace arrive", async () => {
     const ws = await seedWs();
     await addReadXbrl(ws, BOTH);

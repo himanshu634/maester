@@ -49,9 +49,11 @@ export function classificationRoutes(deps: AppDeps) {
     }
 
     await decideIntake(deps.db, deps.dispatcher, created.row, { read: created.read });
+    // An instance's new answers may release the PDFs that wait on XBRL, or send a covered one back to be read. So may a
+    // results PDF's own: a corrected period can match other XBRL, or none, and a period-only change starts no read.
+    const decided = (await getDocument(deps.db, workspace.id, documentId))!;
+    if (decided.format === "xbrl" || created.row.kind === "financial_results") await redecidePdfsAfterXbrl(deps.db, deps.dispatcher, workspace.id);
     const doc = (await getDocument(deps.db, workspace.id, documentId))!;
-    // An instance's new answers may release the PDFs that wait on XBRL, or send a covered one back to be read.
-    if (doc.format === "xbrl") await redecidePdfsAfterXbrl(deps.db, deps.dispatcher, workspace.id);
     const { input: loaded, pipeline } = (await documentPipelines(deps.db, workspace.id, [documentId], deps.env.EMBEDDING_MODEL)).get(documentId)!;
     const evidence = await listEvidence(deps.db, workspace.id, created.row.id);
     const body: ClassificationChanged = {

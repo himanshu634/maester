@@ -281,8 +281,8 @@ export async function enqueueXbrlPdfChecks(
 
 /**
  * Decide again, after an XBRL document has settled (stored, rejected, kept or failed), every PDF of the
- * workspace that waits for XBRL, and every PDF that XBRL covered (`read` with no revision under its current
- * read), so an XBRL confirmed for another company sends it back to Gemini. The list is taken under the
+ * workspace that waits for XBRL, and every results PDF that XBRL covered (`financial_results`, `read` with no
+ * revision under its current read), so an XBRL confirmed for another company sends it back to Gemini. The list is taken under the
  * XBRL-wait lock, so a decision to wait still in flight commits first and is listed. Each PDF then gets its
  * own decision, which takes the lock itself; no transaction is nested. A covered PDF acts only on a `read`
  * plan, so a finished PDF never goes back to waiting while a folder imports. Returns how many changed state.
@@ -295,7 +295,7 @@ export async function redecidePdfsAfterXbrl(db: Db, dispatcher: Dispatcher, work
       select d.id, d.intake_state::text as intake_state
       from document d
       left join lateral (
-        select dc.reads_under_id from document_classification dc
+        select dc.kind, dc.reads_under_id from document_classification dc
         where dc.workspace_id = d.workspace_id and dc.document_id = d.id
         order by dc.created_at desc, dc.id desc
         limit 1
@@ -306,6 +306,7 @@ export async function redecidePdfsAfterXbrl(db: Db, dispatcher: Dispatcher, work
           d.intake_state = 'waiting_for_xbrl'
           or (
             d.intake_state = 'read'
+            and c.kind = 'financial_results'
             and c.reads_under_id is not null
             and not exists (
               select 1 from extraction_revision r
