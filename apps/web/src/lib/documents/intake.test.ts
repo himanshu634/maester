@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
 	addedAt,
@@ -5,6 +7,7 @@ import {
 	companyAnswer,
 	companyCandidates,
 	identifiers,
+	kindChoices,
 	kindSaveLabel,
 	normalizeCompanyName,
 	sourceOf,
@@ -411,5 +414,25 @@ describe('changeFailure', () => {
 			'That didn’t reach Maester. Check your connection and try again.'
 		);
 		expect(changeFailure(new Error('boom')).message).toBe('That didn’t save. Try again.');
+	});
+});
+
+describe('kindChoices', () => {
+	it('offers every kind for a PDF', () => {
+		expect(kindChoices('pdf')).toEqual(['annual_report', 'financial_results', 'other']);
+	});
+
+	it('never offers an annual report for an XBRL instance', () => {
+		expect(kindChoices('xbrl')).toEqual(['financial_results', 'other']);
+	});
+
+	it('is what every "What is it?" form on a filing offers, by the file’s own format', () => {
+		const filing = readFileSync(
+			fileURLToPath(new URL('../components/documents/Filing.svelte', import.meta.url)),
+			'utf8'
+		);
+		const forms = filing.match(/<KindForm\b[\s\S]*?\/>/g) ?? [];
+		expect(forms.length).toBeGreaterThan(0);
+		for (const form of forms) expect(form).toContain('kinds={kindChoices(file.format)}');
 	});
 });

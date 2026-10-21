@@ -10,6 +10,8 @@
 | `maester-eval export --run latest` | Writes a labelling sheet per filing to `data/eval/sheets/`, pre-filled with what the pipeline read. Never overwrites a sheet without `--force`. |
 | `maester-eval freeze <filing-id> --run latest` | Turns a checked sheet into `data/eval/gold/<filing-id>.json`, reading the machine columns back from the run's artefact. Only rows marked `verified` are kept, and each needs a concept from the taxonomy or the freeze stops. Never overwrites gold without `--force`. |
 | `maester-eval report --run latest` | Scores the run against the gold set and writes `report.md` and `report.json` into the run folder; `--to docs/eval/<date>-<label>.md` publishes the Markdown; `--against <run>` adds the delta. |
+| `maester-eval xbrl-elements --instances <folder> --out data/eval/xbrl/` | Lists the numeric elements each XBRL format holds, as element names and counts only (never a value). Used to draft an element map. |
+| `maester-eval xbrl-map --instances <folder> [--manifest <xbrl-manifest.csv>] [--pdfs <folder> --pdf-manifest <manifest.csv>] [--to docs/eval/<file>.md] [--against <report.json>]` | Runs the XBRL element maps and sums over every instance, and with `--pdfs` the `xbrl_in_pdf` check against the paired results PDF of each. Offline, no model call. Writes `report.json` and `report.md` into `data/eval/runs/<time>-xbrl-map/`: element names, ids and counts, never a value or a company name. |
 
 A filing id is its path under the corpus without `.pdf`: `synthetic-cements/ar-2025-26`.
 

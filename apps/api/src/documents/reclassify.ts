@@ -30,6 +30,11 @@ export async function writeInvestorClassification(
     .where(and(eq(schema.document.id, documentId), eq(schema.document.workspaceId, workspaceId)))
     .for("update");
   if (!locked) throw new HttpError("NOT_FOUND", "document not found");
+  // An instance holds results facts and columns that are not the year's end; read as an annual report, they would
+  // fill the annual tables and outrank the annual report's own PDF.
+  if (input.kind === "annual_report" && locked.format === "xbrl") {
+    throw new HttpError("VALIDATION_FAILED", "an XBRL instance cannot be an annual report", [{ path: "kind", message: "not allowed for XBRL" }]);
+  }
   const prev = await getCurrentClassification(db, workspaceId, documentId);
   if (!prev) throw new HttpError("INVALID_STATE", "document has not been identified yet");
   if (prev.id !== input.basedOn) {

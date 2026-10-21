@@ -17,6 +17,7 @@
 	import { filingHeading, filingMeta, type FilingView } from '$lib/documents/filings';
 	import {
 		addedAt,
+		kindChoices,
 		kindSaveLabel,
 		periodWords,
 		sourceOf,
@@ -297,6 +298,7 @@
 							<div class="edit" id="{id}-{file.documentId}-kind-form">
 								<KindForm
 									initial={current}
+									kinds={kindChoices(file.format)}
 									submitLabel={copy.kind.saveChange}
 									{busy}
 									onsubmit={kindFrom(file.documentId, 'kind')}
@@ -457,6 +459,7 @@
 					<p>{copy.needsKind.detail}</p>
 					<KindForm
 						initial={current.classification}
+						kinds={kindChoices(file.format)}
 						submitLabel={kindSaveLabel}
 						primary={primaryAvailable}
 						{busy}

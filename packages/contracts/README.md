@@ -361,7 +361,7 @@ A document once verification has finished, with its terminal job attached:
   "storedAt": "2026-09-10T08:16:05Z",
   "pipeline": {
     "stored": "done",
-    "identified": "done",
+    "identified": "now",
     "numbers": { "source": null, "state": "waiting", "coveredByXbrl": [], "waitingOn": [], "reason": "not_identified", "format": null, "partial": false, "warnings": [] },
     "text": { "state": "waiting", "pages": 0, "pagesRead": 0, "pagesOcr": 0, "chunks": 0, "xbrlBlocks": 0, "ahead": null }
   },
@@ -388,7 +388,9 @@ A document once verification has finished, with its terminal job attached:
 
 A rejected document instead carries `"state": "rejected"`, a non-null `rejectionCode` (`UNSUPPORTED_TYPE`, `TOO_LARGE` or `OBJECT_MISSING`), `contentSha256: null`, `sizeBytes: null` and `storedAt: null`.
 
-`format` is `pdf` or `xbrl` (an XBRL instance). Every stored document is `pdf` until XBRL instances are accepted; a file that is not a PDF is rejected as `UNSUPPORTED_TYPE`.
+`format` is `pdf` or `xbrl` (an XBRL instance), set at upload from the declared type: `application/pdf` is `pdf`, `application/xml` and `text/xml` are `xbrl`. The worker checks the bytes: a file that is not what its type says, or an XML file that is not an XBRL instance or has a DOCTYPE, is rejected as `UNSUPPORTED_TYPE`.
+
+`pipeline` says where the document stands on each track: `stored`, `identified`, `numbers` (which source the figures come from, and why a document has none) and `text` (how far the index is). The API works it out on each read from what is stored. A stored document that is not identified yet has `identified: "now"`. A rejected file and a duplicate have `identified: "not_needed"`, `numbers.state: "not_needed"` and `text.state: "not_needed"`, because nothing will run for them.
 
 ### `GET /v1/workspaces/{ws}/documents/{id}/download`
 
@@ -565,7 +567,7 @@ Both return a `Job`:
 
 Uploading and verifying a PDF is a five-step round trip:
 
-1. **Create the upload.** `POST /v1/workspaces/{ws}/documents/uploads` with `CreateUploadRequest` (`originalName`, `size`, `mimeType: "application/pdf"`, and optionally `companyId`). An unknown `companyId` is `400 VALIDATION_FAILED` on that field. The response's `document` is `pending_upload`; `upload` carries a signed `PUT` URL, the exact headers required, and an expiry.
+1. **Create the upload.** `POST /v1/workspaces/{ws}/documents/uploads` with `CreateUploadRequest` (`originalName`, `size`, `mimeType` (`application/pdf` for a PDF, `application/xml` or `text/xml` for an XBRL instance), and optionally `companyId`). An unknown `companyId` is `400 VALIDATION_FAILED` on that field. The response's `document` is `pending_upload`; `upload` carries a signed `PUT` URL, the exact headers required, and an expiry.
 2. **PUT the bytes.** `fetch(upload.url, { method: "PUT", headers: upload.headers, body: file })` — send *exactly* the headers in `upload.headers` (`Content-Type` and `Content-Length`, in that exact casing — the API returns them as-is) and nothing else; a mismatched header invalidates the signature. Do not send the session cookie or `credentials: "include"` on this request — it goes straight to object storage, not the API.
 3. **Finalize.** `POST /v1/workspaces/{ws}/documents/{id}/finalize` with no body. This confirms the object landed, flips the document to `uploaded`, and enqueues a `document.verify` job. The response is `FinalizeResponse` (`document`, `job`).
 4. **Subscribe to progress.** Open `GET /v1/workspaces/{ws}/jobs/{job.id}/events` (see §6) to watch the job move through `queued` → `running` → `succeeded`/`failed`.
@@ -631,7 +633,7 @@ GET /v1/workspaces/3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f/documents?limit=25
       "storedAt": "2026-09-10T08:16:05Z",
       "pipeline": {
         "stored": "done",
-        "identified": "done",
+        "identified": "now",
         "numbers": { "source": null, "state": "waiting", "coveredByXbrl": [], "waitingOn": [], "reason": "not_identified", "format": null, "partial": false, "warnings": [] },
         "text": { "state": "waiting", "pages": 0, "pagesRead": 0, "pagesOcr": 0, "chunks": 0, "xbrlBlocks": 0, "ahead": null }
       },

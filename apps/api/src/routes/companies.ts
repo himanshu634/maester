@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { ConfirmCompanyRequest, CreateCompanyRequest, ListQuery, type ConfirmCompanyResponse } from "@maester/contracts";
-import { getCompany, getCurrentClassification, listCompanies, lockHeldDocuments, schema, type ClassificationRow, type Db } from "@maester/db";
+import { getCompany, getCurrentClassification, listCompanies, lockHeldDocuments, schema, type ClassificationRow, type Db, type PrintedIdentity } from "@maester/db";
 import { decideIntake, redecidePdfsAfterXbrl } from "@maester/jobs";
 import type { AppDeps, AppEnv } from "../app.js";
 import { writeInvestorClassification } from "../documents/reclassify.js";
@@ -8,6 +8,16 @@ import { HttpError, isUniqueViolation } from "../errors.js";
 import { uuidParam } from "../middleware/params.js";
 import { toCompany } from "../serialize.js";
 import { validate } from "../validation.js";
+
+/** True when the classification prints one of the identity's given codes, matched exactly, as `lockHeldDocuments` matches. */
+function printsIdentity(c: ClassificationRow, identity: PrintedIdentity): boolean {
+  return (
+    (!!identity.cin && c.cin === identity.cin) ||
+    (!!identity.bseCode && c.bseCode === identity.bseCode) ||
+    (!!identity.isin && c.isin === identity.isin) ||
+    (!!identity.nseSymbol && c.nseSymbol === identity.nseSymbol)
+  );
+}
 
 export function companyRoutes(deps: AppDeps) {
   const r = new Hono<AppEnv>();
@@ -78,9 +88,10 @@ export function companyRoutes(deps: AppDeps) {
 
         const written: { row: ClassificationRow; read: boolean; format: "pdf" | "xbrl" }[] = [];
         for (const held of await lockHeldDocuments(db, workspace.id, identity)) {
-          // The lock is held now: a confirm that ran first has already given this document its company.
+          // The lock is held now: a confirm that ran first has already given this document its company, and answers
+          // written while this one waited may no longer print the identity.
           const current = await getCurrentClassification(db, workspace.id, held.documentId);
-          if (!current || current.companyId !== null) continue;
+          if (!current || current.companyId !== null || !printsIdentity(current, identity)) continue;
           const result = await writeInvestorClassification(tx, workspace.id, userId, held.documentId, { basedOn: current.id, company: { id: companyId } });
           written.push({ ...result, format: held.format });
         }

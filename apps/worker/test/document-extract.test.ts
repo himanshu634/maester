@@ -108,6 +108,17 @@ describe("document.extract", () => {
     expect(checks.map((c) => c.status).sort()).toEqual(["not_checked", "passed"]);
   });
 
+  it("never sends a company of another workspace to the extractor", async () => {
+    const doc = await seedStoredDocument();
+    const other = await seedWorkspace(ctx.db);
+    const foreign = crypto.randomUUID();
+    await ctx.db.insert(schema.company).values({ id: foreign, workspaceId: other.workspaceId, displayName: "Foreign Synthetic Ltd", country: "IN", createdByUserId: other.userId });
+    await ctx.db.update(schema.document).set({ companyId: foreign }).where(eq(schema.document.id, doc.id));
+    const { job } = await extract(doc.workspaceId, doc.id);
+    expect(job.state).toBe("succeeded");
+    expect(seen[0]!.headers["x-company-name"]).toBeUndefined();
+  });
+
   it("does not write a second revision when the same job runs again", async () => {
     const doc = await seedStoredDocument();
     const jobId = await seedJob(ctx.db, doc.workspaceId, { type: JobTypes.DOCUMENT_EXTRACT, subjectType: "document", subjectId: doc.id });

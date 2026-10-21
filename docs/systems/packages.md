@@ -25,6 +25,8 @@
 | Intake state | The value of `document.intake_state`. It shows the next step for a stored document. |
 | Model | A Gemini language model on Vertex AI. The Python engine calls it through LangChain or `google-genai`. |
 | Rule | A regular expression in `classify/rules.py` that finds an answer in the text of a page. |
+| XBRL instance | An XML file in the XBRL 2.1 format with the facts of a results filing. |
+| Source rule | The function `planPdfNumbers` and its companions in `@maester/financial-engine`. It says which source gives the numbers of a statement, and if a results PDF is read, skipped or held. |
 | Fixture | A sample JSON or NDJSON file in `packages/contracts/fixtures`. The TypeScript tests and the Python tests read the same fixtures. |
 | Wire format | The JSON that one process sends to a different process, for example from `extractor` to `worker`. |
 | Transient error | An error after which the same call can succeed later, for example a timeout or HTTP status 429. |
@@ -43,7 +45,7 @@
 
 The shared packages hold the code that more than one app uses. Six TypeScript packages give the API contracts, the database, job dispatch, file storage, market data and the lint settings. One Python package, the financial engine, classifies PDF filings and extracts their financial statements. The `api` and `worker` apps use the TypeScript packages. The `extractor`, `cli` and `eval` apps use the Python package.
 
-A seventh TypeScript package, `packages/financial-engine-ts`, is empty. For the full system, see [Maester](maester.md).
+A seventh TypeScript package, `packages/financial-engine-ts`, holds the source rule. The command package `apps/import` sends a folder of files through the API. For the full system, see [Maester](maester.md).
 
 ## Parts
 
@@ -56,8 +58,9 @@ A seventh TypeScript package, `packages/financial-engine-ts`, is empty. For the 
 | `@maester/storage` | `packages/storage` | Gives the `ObjectStore` interface and three object stores. |
 | `@maester/market` | `packages/market` | Gets daily market data from Dhan and FRED. Encrypts and decrypts the secrets of market connections. |
 | `@maester/document-index` | `packages/document-index` | Names the embedding models, calls the embedder and searches the chunks. |
-| `maester-financial-engine` | `packages/financial-engine` | A Python library with the import name `pdf_financial_qa`. It classifies PDF filings and extracts facts from them. |
-| `@maester/financial-engine` | `packages/financial-engine-ts` | An empty TypeScript package. It exports only `ENGINE_VERSION`, with the value `"0.0.0"`. |
+| `maester-financial-engine` | `packages/financial-engine` | A Python library with the import name `pdf_financial_qa`. It classifies PDF filings and extracts facts from them. It also reads XBRL instances, with element maps. |
+| `@maester/financial-engine` | `packages/financial-engine-ts` | The source rule. It exports `ENGINE_VERSION`, with the value `"0.0.0"`, and the functions of the source rule. |
+| `@maester/import` | `apps/import` | A command that sends the PDFs and the XBRL instances of a folder through the API. |
 
 The name of the package in `packages/financial-engine-ts` is `@maester/financial-engine`, without `-ts`.
 
@@ -73,7 +76,8 @@ The name of the package in `packages/financial-engine-ts` is `@maester/financial
 | `@maester/market` | `apps/api`, `apps/worker` | `apps/api/src/routes/connections.ts`, `apps/worker/src/market/build.ts` |
 | `@maester/document-index` | `apps/api`, `apps/worker` | `apps/api/src/routes/search.ts`, `apps/worker/src/jobs/document-index.ts` |
 | `maester-financial-engine` | `apps/extractor`, `apps/cli`, `apps/eval` | `apps/extractor/src/maester_extractor/app.py`, `apps/cli/src/maester_cli/cli.py`, `apps/eval/src/maester_eval/runner.py` |
-| `@maester/financial-engine` | No app | Only its own `package.json` has this name |
+| `@maester/financial-engine` | `apps/api`, `apps/worker`, `@maester/jobs` | `apps/api/src/documents/pipeline.ts`, `apps/worker/src/jobs/document-classify.ts`, `packages/jobs/src/intake.ts` |
+| `@maester/import` | No app. A person runs it. | `apps/import/src/cli.ts` |
 
 The `web` app does not import `@maester/contracts`. Four files keep a copy of a subset of the validators as TypeScript types:
 
@@ -97,15 +101,18 @@ The `web` app does not import `@maester/contracts`. Four files keep a copy of a 
 | `workspace.ts` | `Workspace`, `Membership`, `Me` |
 | `job.ts` | `JobTypes`, `JobState`, `JobProgress`, `Job` |
 | `company.ts` | `CountryCode`, `Company`, `CreateCompanyRequest` |
-| `document.ts` | `DocumentState`, `RejectionCode`, `Document`, `CreateUploadRequest`, `CreateUploadResponse`, `FinalizeResponse`, `DownloadResponse`, `ClassificationChanged` |
+| `document.ts` | `DocumentState`, `DocumentFormat`, `UploadMimeType`, `RejectionCode`, `Document`, `CreateUploadRequest`, `CreateUploadResponse`, `FinalizeResponse`, `DownloadResponse`, `ClassificationChanged` |
 | `extraction.ts` | `ExtractorEvent`, `ExtractionResult`, `ExtractedFact`, `ExtractionRevision`, `FinancialFact`, `DocumentExtraction`, `DocumentFacts`, `ExtractResponse` |
-| `classification.ts` | `ClassifyResponse`, `ClassificationResult`, `Classification`, `Evidence`, `IntakeState`, `ChangeClassificationRequest`, `Cin`, `BseCode`, `NseSymbol` |
+| `classification.ts` | `ClassifyResponse`, `ClassificationResult`, `Classification`, `Evidence`, `IntakeState`, `ChangeClassificationRequest`, `Cin`, `BseCode`, `NseSymbol`, `toResultsSpan` |
 | `payloads.ts` | `DocumentVerifyResult`, `DocumentClassifyResult`, `DocumentExtractResult`. Each is the `result` of one job type. |
 | `market-mood.ts` | `ReadingKey`, `ReadingFamily`, `MoodBand`, `MissingReason`, `Reading`, `FetchStatus`, `MarketMood`, `ReadingDetail` |
 | `connection.ts` | `ConnectionProvider`, `Connection`, `ConnectionList`, `SaveDhanConnectionRequest`, `SaveFredConnectionRequest` |
+| `xbrl.ts` | The wire format of `/v1/xbrl` and `/v1/xbrl/pdf-check`: `XbrlClassification`, `XbrlReadResult`, `XbrlTextResult`, `XbrlPdfCheckRequest`, `XbrlPdfCheckResult`, `XbrlPdfNotChecked`, `XBRL_PDF_CHECK_VERSION` |
+| `pipeline.ts` | `DocumentPipeline`. The `pipeline` object of a document. |
+| `filings.ts` | `WorkspaceFilings`, `WorkspaceFiling`, `FilingFile`, `StatementSource`, `HeldIdentity`, `ConfirmCompanyRequest`, `ConfirmCompanyResponse` |
 | `research.ts` | `CellStatus`, `CellCheck`, `CellSource`, `Restated`, `FinancialCell`, `FinancialRow`, `FinancialColumn`, `TableUnit`, `StatementTable`, `CompanyFiling`, `CompanyFinancials`, `StockPoint`, `CompanyStock`, `ResearchCompany`, `ResearchCompanies` |
 
-Each validator has a TypeScript type with the same name. `JobTypes` gives the three job types: `document.verify`, `document.classify` and `document.extract`. The package has no OpenAPI document and no generated client. Its `README.md` is the guide to the HTTP routes of the API. The README does not describe the routes for market mood, for market connections or for Research.
+Each validator has a TypeScript type with the same name. `JobTypes` gives the job types: `document.verify`, `document.classify`, `document.extract`, `document.index`, `document.xbrl` and `document.xbrl_check`. The package has no OpenAPI document and no generated client. Its `README.md` is the guide to the HTTP routes of the API. The README does not describe the routes for market mood, for market connections or for Research.
 
 The market mood validators give the shape of the Market mood page:
 
@@ -122,7 +129,7 @@ The Research validators give the shape of the Research pages:
 - A `FinancialColumn` has the period of the year and the filing that the whole column comes from.
 - A `FinancialRow` has `perShare`. On a per-share row, the values are rupees a share, as printed.
 - A `FinancialCell` has a `status`: `value`, `dash`, `unparsed` or `missing`. It has `value` only when the status is `value`.
-- A `CellSource` has the 0-based `pageIndex`, the `pageCount` and `textLayerMatch`, which is `null` for a page with no text layer.
+- A `CellSource` has the kind `page` or the kind `xbrl`. The kind `page` has the 0-based `pageIndex`, the `pageCount` and `textLayerMatch`, which is `null` for a page with no text layer. The kind `xbrl` has the element, the context, the `decimals`, the nil flag, the span and `inPdf`. It has no page.
 - A `CellCheck` has the role `subject`, `component` or `none`. Its `expected` is the subtotal as the page prints it. Its `actual` is the sum of the lines.
 - A `CompanyStock` has the state `ok`, `no_symbol`, `not_connected` or `not_tracked`.
 - A `ResearchCompany` has a company and the counts `annualReportsRead`, `reading` and `failed`.
@@ -142,7 +149,7 @@ The connection validators give the shape of a market connection on the Settings 
 | `createDb(url)`, `closeDb(db)`, `Db` | Make a Drizzle client over a `pg` pool with a maximum of 10 connections. Close the pool. |
 | `schema` | All the table and enum definitions. |
 | `WorkspaceRow`, `MembershipRow`, `CompanyRow`, `DocumentRow`, `JobRow` | The row types of the platform tables. |
-| `ExtractionRevisionRow`, `FinancialFactRow`, `SourceReferenceRow`, `ExtractionCheckRow` | The row types of the extraction tables. |
+| `ExtractionRevisionRow`, `FinancialFactRow`, `SourceReferenceRow`, `ExtractionCheckRow`, `XbrlSourceRow` | The row types of the extraction tables. |
 | `ClassificationRow`, `EvidenceRow`, `WaitlistEntryRow` | The row types of the classification and waitlist tables. |
 | `runMigrations(db, folder)`, `DEFAULT_MIGRATIONS_FOLDER` | Apply the migrations. The default folder is `packages/db/drizzle`. |
 | `encodeCursor`, `decodeCursor` | Make and parse the cursor of a list page. The cursor is base64url JSON with the `createdAt` and `id` of the last row. |
@@ -151,6 +158,9 @@ The connection validators give the shape of a market connection on the Settings 
 | `getLatestRevision`, `getRevision`, `listChecks`, `listFactsWithSources` | Extraction queries. |
 | `listCompanyFilings`, `listFactsWithSourcesForRevisions`, `listChecksForRevisions`, `CompanyFilingRow` | Research queries. `listCompanyFilings` gives the documents that have a company, newest first, with the kind and the period end of the current classification. The other two queries give the facts with their pages, and the checks, of a list of revisions. |
 | `getCurrentClassification`, `listEvidence`, `getCurrentRevision` | Classification queries. |
+| `loadWorkspaceXbrlDocs`, `companyIdentity`, `companyIdentities`, `listXbrlPdfChecks` | XBRL queries. `loadWorkspaceXbrlDocs` gives the XBRL documents of a workspace as the source rule needs them: state, company, period and coverage. `listXbrlPdfChecks` gives the `xbrl_in_pdf` rows of the current check version. |
+| `loadPipelineInputs` | Gives the rows from which the API works out the `pipeline` of documents. |
+| `listFilingRows`, `loadXbrlFilingData`, `lockHeldDocuments` | Filing queries. `lockHeldDocuments` locks the held documents that print an identity, oldest first. |
 | `normalizeCompanyName`, `matchCompanies`, `findStoredDuplicate` | Company match and duplicate search for document intake. |
 | `admitOrWaitlist`, `approveWaitlistEmail`, `normalizeEmail` | Waitlist queries for sign-up. |
 | `MarketPointRow`, `NewMarketPoint`, `MarketFetchRow`, `MarketConnectionRow`, `MarketConnectionProvider` | The row types of the market tables. |
@@ -176,6 +186,11 @@ Each query for a workspace record takes the workspace ID and gives only rows of 
 | `decideIntake(db, dispatcher, classification, opts)` | Writes the next intake state and company of a document from a classification. |
 | `READ_KINDS` | The kinds that Maester extracts: `annual_report` and `financial_results`. |
 | `readVersion(id)`, `classificationIdOfReadJob(key)` | Make the version text `classification-<id>` for an extraction job, and get the ID back from an idempotency key. |
+| `pdfNumbersInput(classification, identity)` | Makes the input of the source rule from the classification of a results PDF. It gives `null` for a document that is not a results PDF or has no company. |
+| `enqueueXbrlPdfChecks(db, dispatcher, ws, by)` | Creates a `document.xbrl_check` job for each pair of an XBRL document and a results PDF of the same company and period end. `by` names the XBRL side or the PDF side. |
+| `redecidePdfsAfterXbrl(db, dispatcher, ws)` | Decides again each PDF of the workspace that waits for XBRL, and each results PDF that XBRL covers. It runs after an XBRL document settles, and after a change to the answers of a results PDF. |
+| `recheckPdfRead(db, ws, documentId, classificationId)` | Applies the source rule again before `document.extract` reads a results PDF. It writes `read` for `skip` and `waiting_for_xbrl` for `wait`, and returns the plan. It returns null for a read. |
+| `xbrlCheckVersion(pdfClassificationId, xbrlRevisionId)`, `xbrlCheckKeyOf(key)` | Make the version text `v<check version>:pdf-<id>:xbrl-<id>` of a check job, and read the three values back from an idempotency key. |
 
 The package does not run jobs. The `worker` app runs them. See [worker](worker.md).
 
@@ -261,10 +276,26 @@ The Pydantic classes in `classify.contracts` and `workflow.contracts` are a copy
 3. It stops with no change if the classification is not the current classification of the document.
 4. It stops with no change if `opts.onlyFrom` does not contain the intake state of the document.
 5. It writes the company ID and the new intake state to the `document` row.
-6. For `reading`, it creates a `document.extract` job with the version `classification-<classificationId>`. It sends no task in the transaction.
-7. After the transaction commits, it sends the task of the new job.
+6. For `reading`, it creates the read job with the version `classification-<classificationId>`. The job is `document.extract` for a PDF and `document.xbrl` for an XBRL instance. It sends no task in the transaction.
+7. For a results PDF with a company, it first locks the XBRL wait of the workspace and applies the source rule. The state can be `waiting_for_xbrl` with no job, or `read` with no job when XBRL covers each statement of the PDF.
+8. After the transaction commits, it sends the task of the new job.
+9. For a PDF that is a results PDF, it then calls `enqueueXbrlPdfChecks`.
 
 Because the version contains the classification ID, each classification gives a maximum of one extraction job.
+
+### The source rule
+
+`@maester/financial-engine` in `packages/financial-engine-ts` holds the source rule, `SOURCE_RULE_VERSION = 1`. Its functions are pure. They read no database and no clock. The Python twin is `apps/eval/src/maester_eval/source_rule.py`. Both pass the fixture `packages/financial-engine-ts/fixtures/source-rule.json`.
+
+| Function | Rule |
+| --- | --- |
+| `rankSlotCandidates`, `slotOwner` | The revision that owns a slot. XBRL comes before PDF. Then the newer filing period, with no period last. Then the newer revision. Then the larger revision ID. |
+| `annualSlotOf` | The slot in an annual table that a fact fills, or none. A fact of a results filing fills no annual column. An XBRL fact fills its year, or its own period-end instant. A PDF fact fills its slot as read. |
+| `planPdfNumbers` | `read`, `skip` or `wait` for a results PDF. It waits if an XBRL document that is not settled can match its company and period. It skips if settled XBRL covers each statement and basis that the PDF prints. Else it reads. |
+| `coveringXbrl` | The settled XBRL documents that cover at least one statement of the PDF. |
+| `slotKey` | The text key of a slot. |
+
+A basis `unknown` never covers a statement. An annual report is never skipped or held.
 
 ### Migrations
 
@@ -449,17 +480,18 @@ The error codes `DH-902` and `806` tell that the Dhan data plan is not active. T
 | `verification` | 0000 | One Better Auth value with an expiry: `identifier`, `value` and `expires_at`. |
 | `workspace` | 0000 | One workspace: name, owner and locale. The default locale is `en-IN`. |
 | `membership` | 0000 | One user in one workspace, with a role (`owner`) and a state (`active` or `revoked`). One row for each workspace and user. |
-| `document` | 0000, 0003 | One file: original name, declared size and MIME type, object key, SHA-256, size, state, rejection code, intake state and `duplicate_of_document_id`. |
+| `document` | 0000, 0003, 0008 | One file: original name, declared size and MIME type, object key, SHA-256, size, state, rejection code, intake state, `duplicate_of_document_id` and `format` (`pdf` or `xbrl`). |
 | `job` | 0000 | One job: type, subject, idempotency key, state, `attempt`, `max_attempts`, lease, progress, result and last error. |
-| `company` | 0001, 0003 | One company of a workspace: `display_name`, country, CIN, BSE code and NSE symbol. |
-| `extraction_revision` | 0001, 0003 | One extraction: document, job, classification, state, versions, page count, printed company name, coverage and warnings. |
-| `financial_fact` | 0001 | One fact: statement, basis, section, line order, label, period, printed text, decimal, value status, unit, scale, currency and normalized value. |
+| `company` | 0001, 0003, 0008 | One company of a workspace: `display_name`, country, CIN, BSE code, NSE symbol and ISIN. The ISIN is unique in a workspace when it has a value. |
+| `extraction_revision` | 0001, 0003, 0008 | One extraction: document, job, classification, state, versions, page count, printed company name, coverage, warnings and `source` (`pdf` or `xbrl`). |
+| `financial_fact` | 0001, 0008 | One fact: statement, basis, section, line order, label, period, printed text, decimal, value status, unit, scale, currency and normalized value. Also `period_start` and `span` (`quarter`, `half_year`, `nine_months`, `year` or `other`). |
 | `source_reference` | 0001 | The page of one fact: document, page index from 0 and text layer match. One row for each fact. |
-| `extraction_check` | 0001 | One check of a revision: type, statement, basis, subject, status, expected value and actual value. |
+| `extraction_check` | 0001, 0008 | One check of a revision: type, statement, basis, subject, status, expected value and actual value. A row of the type `xbrl_in_pdf` also has `fact_id`, `pdf_document_id`, `pdf_classification_id`, `page_index`, `reason` and `check_version`. |
+| `xbrl_source` | 0008 | The source of one XBRL fact: document, element, context ID, `decimals`, nil flag, concept and footnote IDs. One row for each fact. |
 | `rate_limit` | 0002 | The Better Auth rate limiter: key, count and time of the last request. |
 | `waitlist_entry` | 0002 | One email that asked for an account: status (`pending` or `approved`), source (`google`, `email` or `admin`), request time and approval time. |
-| `document_classification` | 0003 | One classification: kind, other type, results span, period, company, printed identifiers, statements found, `set_by`, job, `reads_under_id`, versions and warnings. |
-| `classification_evidence` | 0003 | The source of one answer: field, source (`rule`, `model` or `investor`), rule ID, page index, quote and text layer match. |
+| `document_classification` | 0003, 0008 | One classification: kind, other type, results span, period, company, printed identifiers, statements found, `set_by`, job, `reads_under_id`, versions and warnings. Also `isin`, `xbrl_format` and `basis` (for an XBRL instance only). |
+| `classification_evidence` | 0003, 0008 | The source of one answer: field, source (`rule`, `model` or `investor`), rule ID, page index, quote and text layer match. Also `element` and `context` for an answer that an XBRL fact gave. |
 | `market_point` | 0004 | One market point: series, day, value, source text and `fetched_at`. One row for each series and day. |
 | `market_fetch` | 0004 | One refresh run: state (`running`, `ok` or `failed`), start time, end time, `points_written`, error code and error message. |
 | `market_connection` | 0005 | One market connection: provider (`dhan` or `fred`), client ID, `secret_ciphertext`, `secret_last4`, expiry, `checked_at`, `last_error_code`, `saved_at` and `saved_by_user_id`. One row for each provider. |
@@ -658,7 +690,9 @@ CAUTION: Do not change a migration that a database already applied. Add a new mi
 
 ## Limits
 
-- `@maester/financial-engine` in `packages/financial-engine-ts` is empty. Its README says that extraction stays in Python.
+- `@maester/financial-engine` in `packages/financial-engine-ts` holds the source rule only. Its README says that extraction stays in Python.
+- `@maester/import` does not retry a network error. It retries a `5xx` answer two times. A second run of the same folder makes duplicates.
+- The source rule matches XBRL to a PDF by company and period end. It does not use the span.
 - `@maester/jobs` creates jobs and sends tasks only. It does not run jobs, lease them or retry them.
 - `DiskObjectStore` is for local development and tests. `apps/api/src/env.ts` refuses `STORAGE_DRIVER=disk` when `NODE_ENV` is `production`.
 - `MembershipRole` has one value only: `owner`.
@@ -719,6 +753,9 @@ CAUTION: Do not change a migration that a database already applied. Add a new mi
 - [`packages/financial-engine/src/pdf_financial_qa/config.py`](../../packages/financial-engine/src/pdf_financial_qa/config.py)
 - [`packages/financial-engine/src/pdf_financial_qa/storage.py`](../../packages/financial-engine/src/pdf_financial_qa/storage.py)
 - [`packages/financial-engine-ts/src/index.ts`](../../packages/financial-engine-ts/src/index.ts)
+- [`packages/financial-engine-ts/src/sources.ts`](../../packages/financial-engine-ts/src/sources.ts)
+- [`apps/import/README.md`](../../apps/import/README.md)
+- [`packages/db/drizzle/0008_xbrl.sql`](../../packages/db/drizzle/0008_xbrl.sql)
 - [`packages/financial-engine-ts/README.md`](../../packages/financial-engine-ts/README.md)
 - [`apps/api/src/store.ts`](../../apps/api/src/store.ts)
 - [`apps/api/src/migrate.ts`](../../apps/api/src/migrate.ts)

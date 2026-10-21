@@ -3,7 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
-  DOCUMENT_INDEX_SUBJECT, JobTypes, XbrlTextResult, type ChunkTextRequest, type ChunkTextResponse, type IndexerVersions,
+  DOCUMENT_INDEX_SUBJECT, JobTypes, type XbrlTextResult, type ChunkTextRequest, type ChunkTextResponse, type IndexerVersions,
 } from "@maester/contracts";
 import { schema, type JobRow } from "@maester/db";
 import { FakeEmbedder, indexPipelineVersion, searchChunks, type Embedder } from "@maester/document-index";

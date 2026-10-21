@@ -45,7 +45,8 @@ The cookie goes only to the API, never to the signed upload URL. Signing out end
 
 The command takes `.pdf` and `.xml` files (any case), goes through the folder depth first in
 sorted order, and skips names that start with `.`, `Thumbs.db`, `desktop.ini` and symbolic links.
-A file over 50 MB (52428800 bytes) is refused on your machine, without a request. A `400`, `413`
+It sends every `.xml` file before any `.pdf`, each kind in that order, so a results PDF whose XBRL
+is already in is not given to a paid read. A file over 50 MB (52428800 bytes) is refused on your machine, without a request. A `400`, `413`
 or `415` from the API is a refusal. A network error, or a `5xx` after two retries (after 1 s, then
 2 s), is a failure.
 

@@ -7,7 +7,13 @@ This document describes the Python command-line application in `apps/eval`. For 
 | Term | Meaning in this document |
 | --- | --- |
 | harness | The Python command-line application in `apps/eval`. Its distribution name is `maester-eval`. Its command is `maester-eval`. |
-| command | A subcommand of `maester-eval`. The harness has four commands: `live`, `export`, `freeze` and `report`. |
+| command | A subcommand of `maester-eval`. The harness has six commands: `live`, `export`, `freeze`, `report`, `xbrl-elements` and `xbrl-map`. |
+| XBRL instance | An XML file with the facts of a results filing. The investor keeps the instances in a folder outside the repository. |
+| element map | A reviewed JSON file that says which element of an XBRL format is which line of which statement. See the [extractor description](extractor.md). |
+| token | The part of the file name of an instance that names its format, for example `Main_Ind_As`. |
+| paired PDF | The results PDF of the same BSE code that the exchange announced on the same day as an instance. |
+| `xbrl_in_pdf` | The check that looks for each XBRL value on the statement pages of the paired PDF. |
+| decoy | A value that is one unit of its last printed place away from the XBRL value. The harness checks it against the PDF to see how often a number is found by chance. |
 | engine | The Python package in `packages/financial-engine`. Its import name is `pdf_financial_qa`. |
 | workflow | The extraction workflow of the engine. The function `run_extraction` starts it. |
 | model | The Gemini model on Vertex AI that the workflow calls. |
@@ -52,12 +58,14 @@ This document describes the Python command-line application in `apps/eval`. For 
 
 ## Function
 
-The harness measures how well the extraction workflow reads real filings. A person runs it on a local computer, in a terminal. It has four commands:
+The harness measures how well the extraction workflow reads real filings. It also measures how well the element maps read XBRL instances. A person runs it on a local computer, in a terminal. It has six commands:
 
 - `live` reads the filings of a set with the real model and keeps one artefact for each filing.
 - `export` writes one sheet for each artefact of a run.
 - `freeze` turns a sheet that a person checked into a gold file.
 - `report` compares a run with the gold files and writes the result.
+- `xbrl-elements` lists the numeric elements of each XBRL format, with counts. It reads no value.
+- `xbrl-map` runs the element maps, and the `xbrl_in_pdf` check, over a folder of instances. It calls no model and costs nothing.
 
 A person corrects each sheet against the PDF between `export` and `freeze`. The first report is the baseline. Each later report can show the change against an earlier run. The harness has no connection to the API, the worker, the extractor service or the database.
 
@@ -65,7 +73,7 @@ A person corrects each sheet against the PDF between `export` and `freeze`. The 
 
 | Part | Location | Function |
 | --- | --- | --- |
-| Command line | `apps/eval/src/maester_eval/cli.py` | Defines the four commands and their options with Typer. Reads `.env` before each command. Shows filing ids, codes, counts and seconds. Shows no label and no value of a fact. |
+| Command line | `apps/eval/src/maester_eval/cli.py` | Defines the six commands and their options with Typer. Reads `.env` before each command. Shows filing ids, codes, counts and seconds. Shows no label and no value of a fact. |
 | Entry point | `apps/eval/src/maester_eval/__main__.py`, `apps/eval/pyproject.toml` | `pyproject.toml` installs the command `maester-eval`. `__main__.py` starts the command line for `python -m maester_eval`. |
 | Paths | `apps/eval/src/maester_eval/paths.py` | Gives the folders under `data/eval` and the path of the taxonomy. Makes a run folder. Finds a run from `latest`, a name or a path. |
 | Manifest | `apps/eval/src/maester_eval/manifest.py` | Reads and checks the manifest. Selects the filings of a set. Lists the filings that are out of scope. |
@@ -76,6 +84,9 @@ A person corrects each sheet against the PDF between `export` and `freeze`. The 
 | Gold | `apps/eval/src/maester_eval/gold.py` | `freeze`: reads a sheet and writes a gold file. Reads the gold files. |
 | Scorer | `apps/eval/src/maester_eval/scoring.py` | Finds each gold fact among the read facts, compares the values as exact decimals and counts the outcomes. |
 | Report | `apps/eval/src/maester_eval/report.py` | Writes `report.md` and `report.json`. |
+| XBRL survey | `apps/eval/src/maester_eval/xbrl_survey.py` | `xbrl-elements`: reads each instance and counts its numeric elements by format. |
+| XBRL map evaluation | `apps/eval/src/maester_eval/xbrl_map.py` | `xbrl-map`: reads each instance, counts what the maps and the sums do, pairs instances with PDFs, runs `xbrl_in_pdf`, and writes the report. |
+| Source rule | `apps/eval/src/maester_eval/source_rule.py` | The Python twin of the source rule in `@maester/financial-engine`. Both pass the same fixture. |
 | Text helper | `apps/eval/src/maester_eval/text.py` | `normalise`: makes lower case, changes `&` to `and`, removes punctuation and joins spaces. It follows `normalise` in `apps/api/src/financials/stitch.ts`. |
 | Engine functions | `packages/financial-engine/src/pdf_financial_qa/workflow/` | The harness calls `run_extraction`, `GeminiExtractionModel`, `PdfDocument`, `parse_reported`, `parse_label_date` and `format_decimal`. |
 | Tests | `tests/test_eval_*.py`, `tests/test_concepts_json.py` | Offline tests. They make no model call. |
@@ -169,6 +180,59 @@ Usage: `maester-eval report [--run <run>] [--set <set>] [--against <run>] [--to 
 12. With `--to`, it copies `report.md` to the path and makes the folders of the path. It shows `published → <path>`.
 13. If the copy fails, it shows `cannot write <path>: <reason>` and stops. The report is already written.
 
+### The `xbrl-elements` command
+
+The command reads every `.xml` file under a folder. It uses the parser and the format detection of the engine, as the extractor does.
+
+1. The command finds the instances. If the folder does not exist, or has no `.xml` file, it stops.
+2. For each instance, it reads the facts with the limits of the extractor. A file that the parser refuses is counted under the reason code of the parser.
+3. For each readable instance, it finds the format from the numeric elements.
+4. For each format, it counts the numeric elements in contexts without a member.
+5. It writes `elements-<format>.csv` in the folder that `--out` gives. A row has `element`, `files`, `contexts` and `statement_guess`.
+6. It shows the number of files for each format and the number of unreadable files for each reason. It shows no value.
+
+### The `xbrl-map` command
+
+```bash
+uv run --locked python -m maester_eval xbrl-map --instances <folder> [--manifest <xbrl-manifest.csv>] \
+  [--pdfs <folder> --pdf-manifest <manifest.csv>] [--to docs/eval/<file>.md] [--against <report.json>]
+```
+
+The command calls no model and sends nothing to a network. It writes `report.json` and `report.md` in a new run folder named `<time>-xbrl-map`. It shows the number of files read and the path of the report.
+
+For each instance, the command does these steps:
+
+1. `parse_instance` reads the file. If it refuses the file, the command counts the reason code and goes on.
+2. `read_instance` reads the facts and the sum checks. `classify_instance` reads the identity.
+3. The command compares the detected format with the format that the token of the file name gives. It lists each file that disagrees by its file name.
+4. For each format, it counts the files, the facts written and the numeric facts without a member. A numeric fact is a line of the map, an ignored element or an unmapped element. The report shows the 30 elements that are in no map, with the number of files for each.
+5. For each sum of the map, it counts the periods that passed, failed and were not checked. It does this with the function `sum_checks` of the engine, one sum at a time. It also counts the balance identity.
+6. It counts the files whose declared rounding agrees with the coarsest `decimals`. It counts the files with `XBRL_ROUNDING_MISSING` and `XBRL_ROUNDING_MISMATCH`.
+7. It counts nil facts, the facts left out for `XBRL_UNIT_UNSUPPORTED`, and the share of facts with a concept.
+8. It counts the files for each entry point. For each element that the map lists as different between entry points, it counts the files that hold the element with a member.
+
+The report holds element names, ids, the file names of instances and counts. It holds no value and no company name. The command names an instance by its own file name, never by its folder, because the folder holds the company name.
+
+#### The `--pdfs` run
+
+If you give `--pdfs` and `--pdf-manifest`, the command also runs the `xbrl_in_pdf` check. `--manifest` is necessary then. The paths in the manifests start from the folder that `--pdfs` gives.
+
+1. The instance manifest gives the BSE code and the day for each instance. The PDF manifest gives the results PDFs: the rows with the category `Result`, the subcategory `Financial Results` and the status `ok`.
+2. An instance pairs with the results PDFs of the same BSE code and day. The command reads each PDF with `PdfDocument.load` and classifies it with `classify_text`. No model runs.
+3. If a PDF has the period end of the instance, the pair is kept (`period_agrees`). If the PDF has another period, the pair is left out (`period_disagrees`). If the rules find no period in the PDF, or the instance has none, the pair is kept (`period_unread`).
+4. An instance with no PDF for its day is `unpaired_no_pdf`. A PDF that the command cannot read is counted under its reason code.
+5. The command builds the request as the worker does. The scale is the scale of the declared rounding. The places are the fewest places among the reported values of the monetary facts. The statement pages are those that the rules found.
+6. A fact that has no value, no unit or no statement page is not checked. The reasons are `no_value`, `no_unit` and `no_statement_pages`. The rules can find a statement with the basis `unknown`, which no fact has.
+7. `check_xbrl_in_pdf` checks the facts. The report counts passed, failed and not checked, by statement, by basis and by unit.
+8. A pass is on the exact candidate when the exact number is on a page of the statement. Else the pass needed the rounded candidate. The report counts the two kinds apart.
+9. The report lists the 20 elements that fail in most files.
+10. The command measures the sign. For each pass, it looks if a bracket or a minus stands before the number that matched. It does this for facts with a negative value, for facts that a sum takes off (outflows), and for all other facts.
+11. The command measures how often a number is found by chance. It checks each fact again with a decoy, and counts the decoys that pass, by unit. It also counts the passes on a value of zero.
+
+#### The option `--against`
+
+`--against <report.json>` reads an earlier report. The new report ends with a table of each count that changed, with the earlier value, the new value and the change.
+
 ### How the harness finds a run
 
 The commands `export`, `freeze` and `report` take a run in `--run`. The command `report` also takes one in `--against`.
@@ -213,6 +277,11 @@ The harness shows an error in red and stops with exit code 1. A message names a 
 | Out of scope | The manifest gives the filing the field `out_of_scope`. | `live` does not read it unless `--only` names it. `report` lists it under Out of scope. It scores the filing if the run read it. |
 | Run stopped early | A person stops `live`, or the computer stops. | The run folder keeps the artefacts that `live` wrote. `run.json` has no `finished_at` and no `model`. The report shows the model as `unknown`. |
 | Sheet exists | `export` finds a sheet for the filing. | The harness keeps the sheet. `--force` replaces it. |
+| `--pdfs` without the manifests | `xbrl-map` has `--pdfs` or `--pdf-manifest` and not all of `--pdfs`, `--pdf-manifest` and `--manifest`. | The command stops with exit code 1. |
+| Manifest without a column | A manifest has no `bse_code`, `file` or one of the other columns that the command needs. | The command stops with exit code 1. The message names the column. |
+| Report that is not JSON | `--against` names a file that is not a report. | The command stops before it writes anything. |
+| Instance that is refused | The parser refuses the file. The reasons are `DOCTYPE`, `TOO_LARGE`, `MALFORMED`, `NOT_AN_INSTANCE`, `TOO_MANY_FACTS` and `TIMED_OUT`. | The report counts the file under its reason and goes on. |
+| File that the command cannot open | The operating system refuses the read. | The report counts the file under `UNREADABLE_FILE` and goes on. |
 | Gold file exists | `freeze` finds a gold file for the filing. | The harness stops. `--force` replaces the file. |
 
 | Error | Cause | Result |
@@ -250,6 +319,7 @@ The harness shows an error in red and stops with exit code 1. A message names a 
 
 - The file `.env`. The command line loads it with `load_dotenv()` before each command.
 - The manifest, for `live`, `freeze` and `report`.
+- The XBRL instances and, for the `--pdfs` run, the manifests and the PDFs of the investor, for `xbrl-elements` and `xbrl-map`. The harness reads them and writes nothing there.
 - The PDFs under `data/eval/corpus`, for `live`.
 - The run folders under `data/eval/runs`, for `export`, `freeze` and `report`.
 - The sheets under `data/eval/sheets`, for `freeze`.
@@ -272,6 +342,8 @@ These are the variables of the extractor, with the same defaults. Thus a run mea
 - `data/eval/sheets/<filing id>.csv`, for `export`. The file is UTF-8 text with a byte order mark, so that spreadsheet applications read the text correctly.
 - `data/eval/gold/<filing id>.json`, for `freeze`.
 - `report.md` and `report.json` in the run folder, for `report`. With `--to`, also a copy of `report.md` at the path that you give.
+- `elements-<format>.csv` in the folder of `--out`, for `xbrl-elements`.
+- `report.md` and `report.json` in a run folder named `<time>-xbrl-map`, for `xbrl-map`. With `--to`, also a copy of `report.md`.
 
 The harness finds `data/eval` from the repository root, from whichever folder you run it. A path that you give to `--run`, `--against` or `--to` is relative to the current folder.
 
@@ -505,6 +577,27 @@ WARNING: Read one filing first. `live` sends the PDFs to Google and can cause ch
    uv run --locked maester-eval report --run latest --set dev --to docs/eval/2026-10-16-baseline.md
    ```
 
+### To run the evaluation of the XBRL maps
+
+1. Make sure that the instances and the manifests are on your computer. They are outside the repository.
+2. Run the command with the instances only, for the first counts:
+
+   ```bash
+   uv run --locked python -m maester_eval xbrl-map --instances ~/Personal/maester-filings/xbrl \
+     --manifest ~/Personal/maester-filings/xbrl-manifest.csv
+   ```
+
+3. Run the command with the PDFs, to run `xbrl_in_pdf`. It reads each paired PDF, so it takes some minutes:
+
+   ```bash
+   uv run --locked python -m maester_eval xbrl-map --instances ~/Personal/maester-filings/xbrl \
+     --manifest ~/Personal/maester-filings/xbrl-manifest.csv --pdfs ~/Personal/maester-filings \
+     --pdf-manifest ~/Personal/maester-filings/manifest.csv --to docs/eval/<date>-xbrl-map-<version>.md
+   ```
+
+4. Read the report. A sum that fails is a fault of the map or of the filer. Check it against the PDF.
+5. Before you commit the report, make sure that it holds no value and no company name.
+
 ### To take a baseline
 
 Read the plan [evaluation baseline](../superpowers/plans/2026-10-15-eval-baseline.md), Task 10.
@@ -545,7 +638,11 @@ CAUTION: Do not tune a prompt or a rule on the `heldout` set. Run it only to dec
 - A gold fact has no `span` and no `dimensions` yet. The gold files hold facts of the three statements only.
 - `freeze` writes `adds_up` as an expected check. The report does not use the expected checks. It counts the checks that the workflow ran.
 - The harness has the `live` mode only. It has no `replay` mode, thus every run calls the model. Phase 1 adds `replay`.
-- The harness does not run classification. The kind of a filing comes from the manifest.
+- The harness does not run classification of PDFs. The kind of a filing comes from the manifest.
+- `xbrl-map` scores no element map against gold. It counts what the map and the sums do. Phase 5 scores the map against a gold set.
+- The `--pdfs` run uses the rules of the classifier only. The live check uses the statement pages of the full classification, which can find more pages.
+- The `--pdfs` run takes the PDF's unit to be the unit that the instance declares, as the check does. The run looks for a PDF that prints a finer unit than the instance declares: it looks for the exact quotient. It cannot see a PDF that prints a coarser unit, because the printed number has fewer places. The run does not measure a coarser unit.
+- `xbrl-map` pairs an instance with a PDF by the BSE code and the day only. It does not check the company name.
 - `live` reads the filings one at a time.
 
 ## Sources
@@ -561,11 +658,15 @@ CAUTION: Do not tune a prompt or a rule on the `heldout` set. Run it only to dec
 - [`apps/eval/src/maester_eval/scoring.py`](../../apps/eval/src/maester_eval/scoring.py)
 - [`apps/eval/src/maester_eval/report.py`](../../apps/eval/src/maester_eval/report.py)
 - [`apps/eval/src/maester_eval/text.py`](../../apps/eval/src/maester_eval/text.py)
+- [`apps/eval/src/maester_eval/xbrl_survey.py`](../../apps/eval/src/maester_eval/xbrl_survey.py)
+- [`apps/eval/src/maester_eval/xbrl_map.py`](../../apps/eval/src/maester_eval/xbrl_map.py)
+- [`apps/eval/src/maester_eval/source_rule.py`](../../apps/eval/src/maester_eval/source_rule.py)
 - [`apps/eval/pyproject.toml`](../../apps/eval/pyproject.toml)
 - [`apps/eval/README.md`](../../apps/eval/README.md)
 - [`packages/contracts/concepts.json`](../../packages/contracts/concepts.json)
 - [`packages/financial-engine/src/pdf_financial_qa/workflow/runner.py`](../../packages/financial-engine/src/pdf_financial_qa/workflow/runner.py)
 - [`packages/financial-engine/src/pdf_financial_qa/workflow/values.py`](../../packages/financial-engine/src/pdf_financial_qa/workflow/values.py)
+- [`tests/test_eval_xbrl_survey.py`](../../tests/test_eval_xbrl_survey.py), [`tests/test_eval_xbrl_map.py`](../../tests/test_eval_xbrl_map.py), [`tests/test_eval_source_rule.py`](../../tests/test_eval_source_rule.py)
 - [`tests/test_eval_cli.py`](../../tests/test_eval_cli.py), [`tests/test_eval_live.py`](../../tests/test_eval_live.py), [`tests/test_eval_manifest.py`](../../tests/test_eval_manifest.py), [`tests/test_eval_sheets.py`](../../tests/test_eval_sheets.py), [`tests/test_eval_gold.py`](../../tests/test_eval_gold.py), [`tests/test_eval_scoring.py`](../../tests/test_eval_scoring.py), [`tests/test_eval_report.py`](../../tests/test_eval_report.py)
 - [`.gitignore`](../../.gitignore)
 - [`docs/superpowers/specs/2026-10-15-financial-data-layer-design.md`](../superpowers/specs/2026-10-15-financial-data-layer-design.md), section 9

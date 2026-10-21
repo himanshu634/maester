@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
-import type { DocumentExtractResult, ExtractionResult } from "@maester/contracts";
+import type { DocumentExtractNotRead, DocumentExtractResult, ExtractionResult } from "@maester/contracts";
 import { getCurrentClassification, schema, type Db, type ExtractionRevisionRow, type JobRow } from "@maester/db";
+import { classificationIdOfReadJob, recheckPdfRead } from "@maester/jobs";
 import { ObjectNotFoundError, type ObjectStore } from "@maester/storage";
 import { INSERT_BATCH, factRow, insertRevisionChecks, readClassificationId } from "./revision-rows.js";
 import { JobFailure, type FinalFailureDeps, type JobContext, type JobHandler } from "./types.js";
@@ -18,11 +19,20 @@ function summary(revision: ExtractionRevisionRow, factCount: number, failedCheck
 }
 
 async function existingSummary(db: Db, revision: ExtractionRevisionRow): Promise<DocumentExtractResult> {
-  const facts = await db.select({ id: schema.financialFact.id }).from(schema.financialFact).where(eq(schema.financialFact.revisionId, revision.id));
+  const facts = await db
+    .select({ id: schema.financialFact.id })
+    .from(schema.financialFact)
+    .where(and(eq(schema.financialFact.workspaceId, revision.workspaceId), eq(schema.financialFact.revisionId, revision.id)));
   const failed = await db
     .select({ id: schema.extractionCheck.id })
     .from(schema.extractionCheck)
-    .where(and(eq(schema.extractionCheck.revisionId, revision.id), eq(schema.extractionCheck.status, "failed")));
+    .where(
+      and(
+        eq(schema.extractionCheck.workspaceId, revision.workspaceId),
+        eq(schema.extractionCheck.revisionId, revision.id),
+        eq(schema.extractionCheck.status, "failed"),
+      ),
+    );
   return summary(revision, facts.length, failed.length);
 }
 
@@ -59,7 +69,10 @@ export async function writeRevision(
       .onConflictDoNothing({ target: schema.extractionRevision.jobId })
       .returning();
     if (!revision) {
-      const [existing] = await tx.select().from(schema.extractionRevision).where(eq(schema.extractionRevision.jobId, job.id));
+      const [existing] = await tx
+        .select()
+        .from(schema.extractionRevision)
+        .where(and(eq(schema.extractionRevision.workspaceId, job.workspaceId), eq(schema.extractionRevision.jobId, job.id)));
       return existingSummary(tx as unknown as Db, existing!);
     }
 
@@ -94,7 +107,7 @@ export async function setIntakeIfCurrent(db: Db, workspaceId: string, documentId
     .where(and(eq(schema.document.id, documentId), eq(schema.document.workspaceId, workspaceId)));
 }
 
-async function extract(job: JobRow, ctx: JobContext): Promise<DocumentExtractResult> {
+async function extract(job: JobRow, ctx: JobContext): Promise<DocumentExtractResult | DocumentExtractNotRead> {
   if (!ctx.extractor) throw new JobFailure("EXTRACTOR_NOT_CONFIGURED", "EXTRACTOR_URL is not set on the worker", false);
 
   const [doc] = await ctx.db
@@ -107,18 +120,38 @@ async function extract(job: JobRow, ctx: JobContext): Promise<DocumentExtractRes
   // An XBRL instance's numbers come from document.xbrl, never from a paid model read.
   if (doc.format === "xbrl") throw new JobFailure("INVALID_STATE", "document is an XBRL instance; document.xbrl reads it", false);
 
-  const [done] = await ctx.db.select().from(schema.extractionRevision).where(eq(schema.extractionRevision.jobId, job.id));
+  const [done] = await ctx.db
+    .select()
+    .from(schema.extractionRevision)
+    .where(and(eq(schema.extractionRevision.workspaceId, job.workspaceId), eq(schema.extractionRevision.jobId, job.id)));
   if (done) {
     // A crash after the revision committed but before the document was marked; mark it again (idempotent).
     await setIntakeIfCurrent(ctx.db, job.workspaceId, doc.id, done.classificationId, "read");
     return existingSummary(ctx.db, done);
   }
 
+  // XBRL dropped with the PDF may have come in after this automatic read was decided: ask the source rule again, so a
+  // results PDF that XBRL covers, or may yet, is never given to a paid read. A manual re-read is checked by the API.
+  const automatic = classificationIdOfReadJob(job.idempotencyKey);
+  if (automatic) {
+    const plan = await recheckPdfRead(ctx.db, job.workspaceId, doc.id, automatic);
+    if (plan) {
+      ctx.logger.info({ documentId: doc.id, plan }, "extraction not needed");
+      return { outcome: "not_read", plan };
+    }
+  }
+
   if ((doc.sizeBytes ?? 0) > ctx.env.EXTRACT_MAX_BYTES) {
     throw new JobFailure("TOO_LARGE_FOR_EXTRACTION", `documents over ${ctx.env.EXTRACT_MAX_BYTES} bytes are not extracted`, false);
   }
   const company = doc.companyId
-    ? (await ctx.db.select().from(schema.company).where(eq(schema.company.id, doc.companyId)).limit(1))[0]
+    ? (
+        await ctx.db
+          .select()
+          .from(schema.company)
+          .where(and(eq(schema.company.id, doc.companyId), eq(schema.company.workspaceId, job.workspaceId)))
+          .limit(1)
+      )[0]
     : undefined;
 
   let pdf: Uint8Array;

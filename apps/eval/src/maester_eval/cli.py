@@ -10,6 +10,7 @@ Every command stops the same way: an `EvalError` or an `OSError` becomes its tex
 from collections.abc import Callable
 from datetime import datetime, timezone
 import functools
+import json
 from pathlib import Path
 from typing import Annotated, NoReturn, Optional, ParamSpec, get_args
 
@@ -27,6 +28,7 @@ from maester_eval.paths import DEFAULT
 from maester_eval.report import score_run_dir, write_report
 from maester_eval.runner import gemini_model_factory, run_live, workflow_settings_from_env
 from maester_eval.sheets import export_run, sheet_path
+from maester_eval.xbrl_map import render_markdown, run_xbrl_map
 from maester_eval.xbrl_survey import find_instances, survey_instances, write_survey
 
 app = typer.Typer(
@@ -206,3 +208,35 @@ def xbrl_elements(
     for path in write_survey(survey, out):
         console.print(f"wrote {path}", markup=False)
     console.print(f"{survey.files} file(s) read", markup=False)
+
+
+@app.command("xbrl-map")
+@_reports_errors
+def xbrl_map(
+    instances: Annotated[Path, typer.Option(help="A folder of XBRL instances; every .xml under it is read.")],
+    manifest: Annotated[Optional[Path], typer.Option(help="xbrl-manifest.csv (bse_code, filed, file): says which BSE code and day an instance has.")] = None,
+    pdfs: Annotated[Optional[Path], typer.Option(help="The folder the manifests' file paths start from. With --pdf-manifest it switches on the paired-PDF run of `xbrl_in_pdf`.")] = None,
+    pdf_manifest: Annotated[Optional[Path], typer.Option(help="manifest.csv (bse_code, date, category, subcategory, status, file): the results PDFs.")] = None,
+    to: Annotated[Optional[Path], typer.Option(help="Also copy the Markdown here, e.g. docs/eval/2026-10-21-xbrl-map-v1.md.")] = None,
+    against: Annotated[Optional[Path], typer.Option(help="An earlier report.json to show the change in each count against.")] = None,
+) -> None:
+    """Run the XBRL element maps, and with --pdfs the `xbrl_in_pdf` check, over a folder of instances. Offline, no model call.
+
+    Writes report.json and report.md into data/eval/runs/<time>-xbrl-map/: element names, ids and counts, never a value."""
+    earlier = None
+    if against is not None:
+        try:
+            earlier = json.loads(against.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            _fail(f"{against} is not a readable report.json")
+    report_data = run_xbrl_map(instances, manifest, pdfs, pdf_manifest)
+    run_dir = DEFAULT.new_run("xbrl-map")
+    text = render_markdown(report_data, run_dir.name, earlier, against.name if against is not None else None)
+    write_text_atomically(run_dir / "report.json", json.dumps(report_data, indent=2, sort_keys=True) + "\n")
+    write_text_atomically(run_dir / "report.md", text)
+    files = report_data["files"]
+    console.print(f"{run_dir.name}: {files['read']} of {files['found']} file(s) read, {files['unreadable_total']} unreadable", markup=False)
+    console.print(f"report → {run_dir / 'report.md'}", markup=False)
+    if to is not None:
+        write_text_atomically(to, text)
+        console.print(f"published → {to}", markup=False)

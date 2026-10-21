@@ -232,8 +232,10 @@ export function sendFailure(
 
 /**
  * Send the accepted files, `SEND_AT_ONCE` at a time, each through `send`, and say after each
- * one how many are settled. A refusal that would refuse the rest too (signed out, offline)
- * stops the batch: files already started finish, nothing new starts.
+ * one how many are settled. Every XBRL instance goes before any PDF, each kind in the order
+ * chosen, so a results PDF whose instances are already in is not given to a paid read. A
+ * refusal that would refuse the rest too (signed out, offline) stops the batch: files already
+ * started finish, nothing new starts.
  */
 export async function sendAll(
 	accepted: Picked[],
@@ -248,10 +250,14 @@ export async function sendAll(
 	const refused: { at: number; refusal: Refusal }[] = [];
 	/** Indexes of the files that stopped the batch (offline or signed out); a resend meets them again. */
 	const droppedAt: number[] = [];
+	// The order sent, as positions in the order chosen: what is reported stays in the order chosen.
+	const positions = accepted.map((_, at) => at);
+	const isXml = (at: number) => /\.xml$/i.test(accepted[at].file.name);
+	const queue = [...positions.filter(isXml), ...positions.filter((at) => !isXml(at))];
 
 	async function lane() {
-		while (!stopped && next < accepted.length) {
-			const at = next++;
+		while (!stopped && next < queue.length) {
+			const at = queue[next++];
 			const item = accepted[at];
 			try {
 				await send(item);
@@ -268,13 +274,11 @@ export async function sendAll(
 	}
 
 	await Promise.all(Array.from({ length: Math.min(SEND_AT_ONCE, accepted.length) }, lane));
-	// Lanes take files in order, so every index from `next` on was never tried.
+	// Lanes take files in queue order, so every queue entry from `next` on was never tried. The
+	// rest is in the order chosen; a resend puts its XBRL first again.
 	const rest =
 		stopped === 'offline'
-			? [
-					...droppedAt.sort((a, b) => a - b),
-					...Array.from({ length: accepted.length - next }, (_, i) => next + i)
-				].map((at) => accepted[at])
+			? [...droppedAt, ...queue.slice(next)].sort((a, b) => a - b).map((at) => accepted[at])
 			: [];
 	return {
 		sent,

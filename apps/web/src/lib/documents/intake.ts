@@ -12,6 +12,7 @@ import type {
 	ClassificationSummary,
 	Company,
 	CompanyAnswer,
+	DocumentFormat,
 	Evidence,
 	EvidenceField,
 	StatementFound
@@ -181,6 +182,16 @@ export function companyCandidates(
 	if (!answer.companyNameAsPrinted) return [];
 	const wanted = normalizeCompanyName(answer.companyNameAsPrinted);
 	return companies.filter((c) => normalizeCompanyName(c.displayName) === wanted);
+}
+
+/**
+ * The answers "What is it?" offers. An XBRL instance is never an annual report: its results figures and
+ * columns that are not the year's end would fill the annual tables, so the API refuses it and it is not offered.
+ */
+export function kindChoices(format: DocumentFormat): ChosenKind[] {
+	return format === 'xbrl'
+		? ['financial_results', 'other']
+		: ['annual_report', 'financial_results', 'other'];
 }
 
 /** The button that saves "what is it?": only the kinds Maester reads promise a read. */

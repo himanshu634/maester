@@ -1,6 +1,7 @@
 <!--
 	"What is it?": an annual report, financial results (and for which period), or another company
-	document (and which kind). Used when Maester couldn't tell, and to change its answer.
+	document (and which kind). Used when Maester couldn't tell, and to change its answer. An XBRL
+	instance is not offered "annual report" (`kindChoices`).
 -->
 <script module lang="ts">
 	import type { ChosenKind, OtherType, ResultsSpan } from '$lib/documents/types';
@@ -23,6 +24,8 @@
 			otherType: OtherType | null;
 			resultsSpan: ResultsSpan | null;
 		};
+		/** The answers offered, in order: `kindChoices` of the document's format. */
+		kinds?: ChosenKind[];
 		/** The submit button's words, or a function of the choice ("Save and read it" or "Save"). */
 		submitLabel: string | ((kind: ChosenKind | null) => string);
 		/** The screen's one primary action: filled. Otherwise outlined. */
@@ -32,10 +35,17 @@
 		oncancel?: () => void;
 	}
 
-	let { initial, submitLabel, primary = false, busy = false, onsubmit, oncancel }: Props = $props();
+	let {
+		initial,
+		kinds = ['annual_report', 'financial_results', 'other'],
+		submitLabel,
+		primary = false,
+		busy = false,
+		onsubmit,
+		oncancel
+	}: Props = $props();
 
 	const id = $props.id();
-	const kinds: ChosenKind[] = ['annual_report', 'financial_results', 'other'];
 
 	// The form starts from the current answer and is the investor's from then on.
 	const start = untrack(() => initial);

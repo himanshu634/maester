@@ -158,6 +158,26 @@ describe("importFolder", () => {
     expect(settled).toHaveLength(5);
   });
 
+  it("sends every XML file before any PDF, each kind in the walk's order", async () => {
+    await files(["a/1.pdf", "a/q2.xml", "b.pdf", "c/q1.XML", "c/z.pdf", "d.xml"]);
+    const result = await run({ concurrency: 1 });
+    expect(result.sent).toBe(6);
+    expect(api.uploads.map((u) => u.name)).toEqual(["q2.xml", "q1.XML", "d.xml", "1.pdf", "b.pdf", "z.pdf"]);
+  });
+
+  it("fails a file whose signed URL is malformed, and goes on", async () => {
+    await files(["a.pdf", "b.pdf"]);
+    api.hook = (req, res, { body }) => {
+      if (!(req.method === "POST" && req.url!.endsWith("/uploads") && body.toString().includes('"a.pdf"'))) return false;
+      res.writeHead(201, { "content-type": "application/json" });
+      res.end(JSON.stringify({ document: { id: "doc-a" }, upload: { url: "http://[", headers: {} } }));
+      return true;
+    };
+    const result = await run({ concurrency: 1 });
+    expect(result).toEqual({ sent: 1, refused: [], failed: [{ name: "a.pdf", code: "BAD_RESPONSE" }], stopped: null });
+    expect(api.finalized).toEqual(["doc-1"]);
+  });
+
   it("sends the cookie to the API, and the signed headers but no cookie to the signed URL", async () => {
     await files(["1.pdf"]);
     await run();

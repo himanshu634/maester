@@ -181,7 +181,7 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 4. `screen` reads the first bytes of each other file. `looksLikePdf` looks for `%PDF-`. `looksLikeXml` looks for a `<` after an optional byte order mark and white space.
 5. A refused file never goes to the API. One `Notice` names each refused file of the batch and the reason.
 6. The page accepts one batch at a time. While a batch runs, `DropStrip` is not active and shows the line "Sending 3 of 12 files from bse-xbrl…" with the ruler.
-7. `sendAll` sends the accepted files four at a time (`SEND_AT_ONCE`). For each file, `upload` sends `POST .../documents/uploads` with the name, the size and the type. The type is `application/xml` for an `.xml` file and `application/pdf` for all other files.
+7. `sendAll` sends the accepted files four at a time (`SEND_AT_ONCE`). It sends each XBRL instance (an `.xml` file) before each PDF. Thus a results PDF does not go to a paid read when its instances can cover it. The files of each format go in the order that the investor chose. The `Notice` names the refused files in the order that the investor chose. For each file, `upload` sends `POST .../documents/uploads` with the name, the size and the type. The type is `application/xml` for an `.xml` file and `application/pdf` for all other files.
 8. When the API makes the document, `withUpload` adds the file to the page and the page adds its ID to `uploadingIds`. Thus the page does not show the file as an upload that did not finish.
 9. If the batch has one file, `openNew` opens the filing of the file and moves the focus to its heading. If the batch has more files, the opened filing stays on the first file and the focus does not move.
 10. `upload` sends the file bytes with `PUT` to the URL of the upload target. It removes the `Content-Length` header from the given headers.
@@ -189,7 +189,7 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 12. The page says "Sending 12 files." one time at the start. It does not say the progress of each file.
 13. If the API gives `UNAUTHENTICATED`, `sendAll` starts no new file and the page shows the signed-out `Notice`.
 14. If the connection fails (`NETWORK`), `sendAll` starts no new file. The `Notice` says "The upload didn’t finish." and tells how many files went, for example 214 of 806. It shows the button "Send the rest".
-15. "Send the rest" calls `addFiles` with `rest`. `rest` holds the files that failed because of the connection, then the files that `sendAll` did not try, in the order that the investor chose.
+15. "Send the rest" calls `addFiles` with `rest`. `rest` holds the files that failed because of the connection and the files that `sendAll` did not try. They are in the order that the investor chose.
 16. A file that arrived before the connection failed comes back as a duplicate, because the API checks the hash.
 17. `carryOver` joins the two batches into one record. The files that went in the first batch stay in the count.
 18. A file that failed after the API made its document stays under "Company not known yet" as an upload that did not finish. The API cannot remove a document yet.
@@ -218,8 +218,8 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 
 1. `Filing` shows the answers of each stored file under "Read as", with one `h4` for each file. A duplicate has no answers. It shows as "Added twice" on the first copy.
 2. `loadAnswers` loads the answers when the opened filing changes, after each read, and for each file that moved. If `getClassification` fails, the page keeps the ID in `answersFailed`. `Filing` then shows a `SectionIssue` with "Try again".
-3. If a file needs the kind of document, `Filing` shows a `Notice` with `KindForm`. The button says "Save and read it" for a kind that Maester reads, and "Save" for all other kinds.
-4. The "Change" action opens `KindForm` or `CompanyForm` in place for the answer that the investor wants to correct. `companyCandidates` lists the workspace companies that agree with the printed identifiers.
+3. If a file needs the kind of document, `Filing` shows a `Notice` with `KindForm`. `kindChoices` gives the kinds that `KindForm` shows. For an XBRL instance, it does not show "Annual report", because the API refuses that kind for an instance. The button says "Save and read it" for a kind that Maester reads, and "Save" for all other kinds.
+4. The "Change" action opens `KindForm` or `CompanyForm` in place for the answer that the investor wants to correct. This `KindForm` also gets its kinds from `kindChoices`. `companyCandidates` lists the workspace companies that agree with the printed identifiers.
 5. `companyCandidates` compares the CIN first, then the exchange codes and the ISIN, then the normalized name.
 6. Each form calls `changeClassification` with `basedOn` set to the ID of the current answers.
 7. If the API returns `CONFLICT` for `basedOn`, `changeFailure` gives the message that the answers changed. The page reads the file again (`refreshFiles`) and the form shows the latest answers.

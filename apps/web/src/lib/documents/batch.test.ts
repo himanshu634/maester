@@ -302,6 +302,21 @@ describe('sendAll', () => {
 		expect(result).toEqual({ sent: 10, refused: [], unsent: 0, stopped: null, rest: [] });
 	});
 
+	it('sends every XBRL file before any PDF, each kind in the order chosen, and names refusals in the order chosen', async () => {
+		const chosen = ['a.pdf', 'q1.xml', 'b.pdf', 'q2.XML', 'c.pdf', 'd.pdf', 'q3.xml'].map((p) =>
+			pick(p)
+		);
+		const started: string[] = [];
+		const result = await sendAll(chosen, null, async (item) => {
+			started.push(item.path);
+			if (item.path === 'q3.xml' || item.path === 'a.pdf')
+				throw new ApiError(415, 'UNSUPPORTED_MEDIA_TYPE', 'x');
+		});
+		expect(started).toEqual(['q1.xml', 'q2.XML', 'q3.xml', 'a.pdf', 'b.pdf', 'c.pdf', 'd.pdf']);
+		expect(result.refused.map((r) => r.name)).toEqual(['a.pdf', 'q3.xml']);
+		expect(result.sent).toBe(5);
+	});
+
 	it('names each file the API refused, in the order chosen, and carries on', async () => {
 		const result = await sendAll(many(5), null, async (item) => {
 			if (item.path === 'f3.pdf' || item.path === 'f1.pdf')
@@ -360,6 +375,21 @@ describe('sendAll', () => {
 			'f9.pdf'
 		]);
 		// f0 and f1 go; f2–f5 fail offline (the f0 and f1 lanes start f4 and f5 before the f2 and f3 lanes catch); f6–f9 are never tried
+	});
+
+	it('offline with XBRL sent first: the rest is in the order chosen, never the XBRL that went', async () => {
+		const chosen = ['a.pdf', 'b.pdf', 'q1.xml', 'c.pdf', 'd.pdf', 'q2.xml', 'e.pdf'].map((p) =>
+			pick(p)
+		);
+		const started: string[] = [];
+		const result = await sendAll(chosen, null, async (item) => {
+			started.push(item.path);
+			if (item.path.endsWith('.pdf')) throw new ApiError(0, 'NETWORK', 'offline');
+		});
+		expect(started.slice(0, 2)).toEqual(['q1.xml', 'q2.xml']);
+		expect(result.stopped).toBe('offline');
+		expect(result.sent).toBe(2);
+		expect(result.rest.map((p) => p.path)).toEqual(['a.pdf', 'b.pdf', 'c.pdf', 'd.pdf', 'e.pdf']);
 	});
 
 	it('the files that went are never in the rest', async () => {
