@@ -29,13 +29,18 @@ def write_text_atomically(path: Path, text: str, encoding: str = "utf-8") -> Non
 
     A write the system refuses (no folder, no permission, a full disk) is a `WriteError`:
     `cannot write <path>: <reason>`."""
+    write_bytes_atomically(path, text.encode(encoding))
+
+
+def write_bytes_atomically(path: Path, data: bytes) -> None:
+    """`write_text_atomically` for bytes: an XBRL instance copied into the corpus is written the same way."""
     temporary = path.with_name(f".{path.name}.{secrets.token_hex(4)}.tmp")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        handle = temporary.open("x", encoding=encoding, newline="")
+        handle = temporary.open("xb")
         try:
             with handle:
-                handle.write(text)
+                handle.write(data)
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, path)

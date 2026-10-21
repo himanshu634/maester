@@ -22,11 +22,12 @@ from maester_eval.concepts import load_taxonomy
 from maester_eval.errors import EvalError
 from maester_eval.files import write_text_atomically
 from maester_eval.gold import count_unverified, freeze_sheet, read_gold, read_sheet, write_gold
-from maester_eval.manifest import SetChoice, load_manifest, missing_files
+from maester_eval.manifest import SetChoice, load_manifest, missing_files, write_manifest
 from maester_eval.paths import DEFAULT
 from maester_eval.report import score_run_dir, write_report
 from maester_eval.runner import gemini_model_factory, run_live, workflow_settings_from_env
 from maester_eval.sheets import export_run, sheet_path
+from maester_eval.xbrl_pair import apply_pairs, check_copies, plan_pairs, read_xbrl_manifest, summary_lines
 from maester_eval.xbrl_survey import find_instances, survey_instances, write_survey
 
 app = typer.Typer(
@@ -206,3 +207,27 @@ def xbrl_elements(
     for path in write_survey(survey, out):
         console.print(f"wrote {path}", markup=False)
     console.print(f"{survey.files} file(s) read", markup=False)
+
+
+@app.command("xbrl-pair")
+@_reports_errors
+def xbrl_pair(
+    xbrl_manifest: Annotated[Path, typer.Option(help="The investor's xbrl-manifest.csv.")],
+    source: Annotated[Path, typer.Option("--from", help="The folder the CSV's file paths are relative to.")],
+    dry_run: Annotated[bool, typer.Option(help="Check and count; copy nothing and write nothing.")] = False,
+) -> None:
+    """Pair each results filing with the XBRL instances BSE filed for it and copy them into the corpus."""
+    manifest = load_manifest(DEFAULT.manifest)
+    plan = plan_pairs(manifest, read_xbrl_manifest(xbrl_manifest))
+    if dry_run:
+        copies = check_copies(manifest, plan, source, DEFAULT.corpus)
+    else:
+        paired, copied = apply_pairs(manifest, plan, source, DEFAULT.corpus)
+        write_manifest(DEFAULT.manifest, paired)
+    for line in summary_lines(manifest, plan):
+        console.print(line, markup=False)
+    if dry_run:
+        console.print(f"dry run: {sum(1 for c in copies if c.needed)} instance(s) would be copied; nothing written",
+                      markup=False)
+    else:
+        console.print(f"copied {copied} instance(s) into the corpus; manifest written", markup=False)
