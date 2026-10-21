@@ -18,7 +18,7 @@ from decimal import Decimal
 from maester_eval.errors import EvalError
 from maester_eval.gold import GoldFact, GoldFiling, SettledRecord, fact_keys
 
-__all__ = ["SettleError", "merge_gold"]
+__all__ = ["SettleError", "check_provenance", "merge_gold"]
 
 
 class SettleError(EvalError):
@@ -32,6 +32,20 @@ def _same_figure(a: GoldFact, b: GoldFact) -> bool:
     if a.normalized_value is None or b.normalized_value is None:  # both dashes
         return True
     return Decimal(a.normalized_value) == Decimal(b.normalized_value)
+
+
+def check_provenance(rows: list[dict[str, str]], xbrl_run: str, map_version: str | None, compared: str) -> None:
+    """Refuse a settle sheet that another compare wrote: each row must name the XBRL run and the map version that
+    `compared` (the PDF run's `compare-xbrl.json`) names, or the settled facts would be recorded against an XBRL side
+    the investor never saw. A row with neither, from a sheet written before rows carried them, is refused too. The
+    message names runs and versions only."""
+    expected = (xbrl_run, map_version or "")
+    for row in rows:
+        found = (row.get("xbrl_run", ""), row.get("map_version", ""))
+        if found != expected:
+            raise SettleError(f"the settle sheet is from XBRL run {found[0] or 'none'} with map {found[1] or 'none'}, but "
+                              f"{compared} is from XBRL run {expected[0]} with map {expected[1] or 'none'}; settle against "
+                              "the compare that wrote the sheet")
 
 
 def merge_gold(existing: GoldFiling | None, settled: GoldFiling, record: SettledRecord) -> tuple[GoldFiling, int]:

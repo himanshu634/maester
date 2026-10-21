@@ -42,7 +42,7 @@ def settle_row(**values):
     base = {column: "" for column in SETTLE_COLUMNS}
     base.update(sheet_rows(pdf)[1], concept="revenue_from_operations", concept_from="own", xbrl_element="RevenueFromOperations",
                 xbrl_value="10000.00", xbrl_unit="₹ lakh", xbrl_normalized="1000000000", outcome="disagree_value",
-                gold_text="10,000.00", verified="yes")
+                xbrl_run="x", map_version="map-3", gold_text="10,000.00", verified="yes")
     base.update(values)
     return base
 
@@ -190,6 +190,47 @@ class SettleCommandTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 1, result.output)
         self.assertIn(f"{other.name} has no compare-xbrl.json; run compare first", plain(result.output))
         self.assertFalse(self.gold.exists())
+
+    def test_a_sheet_another_compare_wrote_is_refused(self):
+        # The sheet was written from xbrl1 under map-3. A later compare against xbrl2 (map-4) keeps the sheet a person
+        # is settling and rewrites compare-xbrl.json: settle must not stamp the sheet's rows with xbrl2.
+        self.settle_it()
+        newer = self.make_run("xbrl2", datetime(2026, 10, 20, 2, tzinfo=timezone.utc), [xbrl_artefact(RESULTS_Q2, XBRL_FACTS)],
+                              source="xbrl", parser_version="xbrl-parser-1", map_version="map-4")
+        self.assertEqual(self.invoke("compare", "--run", self.pdf_run.name, "--xbrl", newer.name).exit_code, 0)
+        result = self.settle()
+        self.assertEqual(result.exit_code, 1, result.output)
+        self.assertIn(f"the settle sheet is from XBRL run {self.xbrl_run.name} with map map-3, but "
+                      f"{self.pdf_run.name}/compare-xbrl.json is from XBRL run {newer.name} with map map-4; "
+                      "settle against the compare that wrote the sheet", " ".join(plain(result.output).split()))
+        for text in ("10,000.00", "10000.00", "1000000000", "10,500"):
+            self.assertNotIn(text, result.output)
+        self.assertFalse(self.gold.exists())
+
+    def test_a_sheet_with_no_provenance_is_refused(self):
+        columns = [c for c in SETTLE_COLUMNS if c not in ("xbrl_run", "map_version")]
+        rows = [{**{c: r.get(c, "") for c in columns}, "gold_text": "10,000.00", "verified": "yes"}
+                for r in read_sheet(self.settle_sheet)]
+        write_sheet(self.settle_sheet, rows, columns=columns)
+        result = self.settle()
+        self.assertEqual(result.exit_code, 1, result.output)
+        self.assertIn("the settle sheet is from XBRL run none with map none", " ".join(plain(result.output).split()))
+        self.assertFalse(self.gold.exists())
+
+    def test_a_filing_the_compare_did_not_compare_is_refused(self):
+        self.settle_it()
+        compared = self.pdf_run / "compare-xbrl.json"
+        data = json.loads(compared.read_text(encoding="utf-8"))
+        for change in (lambda d: d["filings"][0].update(compared=False, reason="no_concepts"), lambda d: d["filings"].clear()):
+            with self.subTest():
+                copy = json.loads(json.dumps(data))
+                change(copy)
+                compared.write_text(json.dumps(copy), encoding="utf-8")
+                result = self.settle()
+                self.assertEqual(result.exit_code, 1, result.output)
+                self.assertIn(f"{self.pdf_run.name}/compare-xbrl.json did not compare {RESULTS_Q2.id}; run compare first",
+                              " ".join(plain(result.output).split()))
+                self.assertFalse(self.gold.exists())
 
     def test_a_filing_not_in_the_manifest_and_a_missing_sheet_are_refused(self):
         result = self.invoke("settle", "nobody/results-2025-09", "--run", self.pdf_run.name)

@@ -194,7 +194,7 @@ class CellTests(CompareCase):
         self.assertEqual((cell.outcome, cell.xbrl_element, cell.xbrl_value, cell.xbrl_normalized),
                          ("instances_differ", "RevenueFromOperations", None, None))
         self.assertIsNone(agreement_tenths(fc.counts))
-        self.assertEqual(settle_rows(fc, pdf), [])
+        self.assertEqual(settle_rows(fc, pdf, "x", "map-3"), [])
         (differ,) = fc.instances_differ
         self.assertEqual((differ.owner, differ.others), (None, [FIRST, SECOND]))
 
@@ -277,17 +277,21 @@ class CellTests(CompareCase):
         self.assertEqual((fc.compared, fc.reason), (False, "pdf_failed"))
 
     def test_settle_rows(self):
-        rows = settle_rows(compare_filing(self.pdf, self.xbrl, self.concepts, self.tags), self.pdf)
+        fc = compare_filing(self.pdf, self.xbrl, self.concepts, self.tags)
+        rows = settle_rows(fc, self.pdf, "x", "map-3")
         self.assertEqual([(r["row"], r["concept"], r["concept_from"], r["span"], r["printed"], r["xbrl_value"], r["xbrl_unit"],
                            r["xbrl_normalized"], r["outcome"]) for r in rows],
                          [("2", "revenue_from_operations", "own", "quarter", "10,500.00", "10000.00", "₹ lakh", "1000000000",
                            "disagree_value")])
         self.assertEqual(rows[0]["xbrl_element"], "RevenueFromOperations")
+        # Where the XBRL side came from, so `settle` can refuse a sheet another compare wrote. No map version is "".
+        self.assertEqual((rows[0]["xbrl_run"], rows[0]["map_version"]), ("x", "map-3"))
+        self.assertEqual(settle_rows(fc, self.pdf, "x", None)[0]["map_version"], "")
 
     def test_no_sign_only_cell_gets_a_settle_row(self):
         pdf = pdf_artefact(RESULTS_Q2, [pdf_fact(reportedText="(12,345.00)", reportedValue="-12345.00", normalizedValue="-1234500000")])
         fc = compare_filing(pdf, xbrl_artefact(RESULTS_Q2, [xbrl_fact()]), self.concepts, self.tags)
-        self.assertEqual(([c.outcome for c in fc.cells], settle_rows(fc, pdf)), (["disagree_sign"], []))
+        self.assertEqual(([c.outcome for c in fc.cells], settle_rows(fc, pdf, "x", "map-3")), (["disagree_sign"], []))
 
 
 def paired(filing, *bases):

@@ -258,7 +258,7 @@ class SettleSheetTests(unittest.TestCase):
 
     def test_the_settle_columns_are_the_sheet_columns_and_the_xbrl_side(self):
         self.assertEqual(SETTLE_COLUMNS, SHEET_COLUMNS + ["concept_from", "xbrl_element", "xbrl_value", "xbrl_unit",
-                                                          "xbrl_normalized", "outcome"])
+                                                          "xbrl_normalized", "outcome", "xbrl_run", "map_version"])
 
 
 class ExportCommandTests(unittest.TestCase):

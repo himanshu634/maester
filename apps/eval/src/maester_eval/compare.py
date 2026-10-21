@@ -72,7 +72,10 @@ _SETTLED = frozenset(_DISAGREE)
 # `scoring.RunScore.unusable`'s reasons, as compare names them: a file the reader could not read has no mapped instance.
 _UNUSABLE = {"format_unmapped": "no_mapped_instance", "unreadable": "no_mapped_instance", "pair_mismatch": "pair_mismatch"}
 
-SETTLE_COLUMNS = SHEET_COLUMNS + ["concept_from", "xbrl_element", "xbrl_value", "xbrl_unit", "xbrl_normalized", "outcome"]
+# `xbrl_run` and `map_version` name the XBRL run and map the row was compared under; `settle` refuses a sheet whose rows
+# name another than the PDF run's `compare-xbrl.json`.
+SETTLE_COLUMNS = SHEET_COLUMNS + ["concept_from", "xbrl_element", "xbrl_value", "xbrl_unit", "xbrl_normalized", "outcome",
+                                  "xbrl_run", "map_version"]
 
 
 class CellCompare(BaseModel):
@@ -299,9 +302,10 @@ def compare_filing(pdf: Artefact, xbrl: Artefact, concepts: CompanyConcepts, tag
                          cells=cells, counts=counts, instances_differ=differ, unused_instances=unused_instances(xbrl))
 
 
-def settle_rows(fc: FilingCompare, pdf: Artefact) -> list[dict[str, str]]:
+def settle_rows(fc: FilingCompare, pdf: Artefact, xbrl_run: str, map_version: str | None) -> list[dict[str, str]]:
     """For each `disagree_value`, `disagree_scale` or `disagree_status` cell, its Gemini fact's labelling sheet row with
-    the concept filled, and the XBRL side. A sign apart or instances that differ never get a row."""
+    the concept filled, the XBRL side, and the XBRL run and map version it was compared under (no version is "").
+    A sign apart or instances that differ never get a row."""
     rows = sheet_rows(pdf)
     out: list[dict[str, str]] = []
     for cell in fc.cells:
@@ -309,7 +313,8 @@ def settle_rows(fc: FilingCompare, pdf: Artefact) -> list[dict[str, str]]:
             continue
         out.append(dict(rows[cell.pdf_row - 1], concept=cell.concept, concept_from=cell.concept_from or "",
                         xbrl_element=cell.xbrl_element or "", xbrl_value=cell.xbrl_value or "",
-                        xbrl_unit=cell.xbrl_unit or "", xbrl_normalized=cell.xbrl_normalized or "", outcome=cell.outcome))
+                        xbrl_unit=cell.xbrl_unit or "", xbrl_normalized=cell.xbrl_normalized or "", outcome=cell.outcome,
+                        xbrl_run=xbrl_run, map_version=map_version or ""))
     return out
 
 

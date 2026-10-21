@@ -32,7 +32,7 @@ from maester_eval.manifest import SetChoice, load_manifest, missing_files, tag_v
 from maester_eval.paths import DEFAULT
 from maester_eval.report import score_run_dir, score_xbrl_run_dir, write_report
 from maester_eval.runner import gemini_model_factory, run_live, workflow_settings_from_env
-from maester_eval.settle import merge_gold
+from maester_eval.settle import check_provenance, merge_gold
 from maester_eval.sheets import export_run, sheet_path, write_sheet
 from maester_eval.scoring import RunScore, rate_text, score_shown
 from maester_eval.tags import gold_coverage, gold_units, pick_gold, propose_units, set_tags, unit_against_gold
@@ -244,10 +244,13 @@ def settle(
     try:
         data = json.loads(compared.read_text(encoding="utf-8"))
         xbrl_run, versions = data["xbrl_run"], data["versions"]
+        was_compared = any(f["filing_id"] == filing_id and f["compared"] is True for f in data["filings"])
         record = SettledRecord(pdf_run=run_dir.name, xbrl_run=xbrl_run, map_version=versions["map"],
                                compare_rule=versions["compare_rule"], settled_at=now.isoformat(), facts=0)
     except (ValueError, KeyError, TypeError):  # no text of the file: it holds figures
         _fail(f"{compared} is not a readable compare-xbrl.json; run compare again")
+    if not was_compared:
+        _fail(f"{run_dir.name}/compare-xbrl.json did not compare {filing_id}; run compare first")
     path = sheet_path(DEFAULT.settle, filing_id)
     if not path.is_file():
         _fail(f"no settle sheet at {path}; run `maester-eval compare` first")
@@ -256,6 +259,7 @@ def settle(
         _fail(f"run {run_dir.name} has no artefact for {filing_id}")
     artefact = read_artefact(found)
     rows = read_sheet(path)
+    check_provenance(rows, xbrl_run, record.map_version, f"{run_dir.name}/compare-xbrl.json")
     taken = read_run(run_dir)
     exported_from = {k: taken.get(k) for k in ("run", "pipeline_version", "prompt_version", "model")}
     frozen = freeze_sheet(rows, filing, load_taxonomy(), now, exported_from, artefact)
@@ -410,7 +414,7 @@ def compare(
     for filing in result.filings:
         if filing.set != "dev" or not filing.compared:
             continue
-        rows = settle_rows(filing, pdf_artefacts[filing.filing_id])
+        rows = settle_rows(filing, pdf_artefacts[filing.filing_id], result.xbrl_run, result.versions["map"])
         if not rows:
             continue
         path = sheet_path(DEFAULT.settle, filing.filing_id)
