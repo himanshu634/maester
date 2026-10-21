@@ -613,6 +613,23 @@ export function shapeChangedIds(before: WorkspaceFilings, after: WorkspaceFiling
 }
 
 /**
+ * The answers kept after a read: a file that `moved` (`shapeChangedIds`) outside the opened
+ * filing loses its stored answers, so they load again once it is opened; an answer stored as
+ * "not identified yet" would otherwise stay so. The opened filing's files (`keep`) are asked for
+ * again through `answersWanted` instead, so its Read as never empties. The same object comes back
+ * when nothing is dropped.
+ */
+export function forgetAnswers<T>(
+	answers: Readonly<Record<string, T>>,
+	moved: Iterable<string>,
+	keep: readonly string[]
+): Readonly<Record<string, T>> {
+	const drop = [...moved].filter((doc) => doc in answers && !keep.includes(doc));
+	if (drop.length === 0) return answers;
+	return Object.fromEntries(Object.entries(answers).filter(([doc]) => !drop.includes(doc)));
+}
+
+/**
  * Whether a read changed which companies a held identity could be, so the companies are read
  * again before its row is drawn: a company added elsewhere is not in the page's list yet.
  */

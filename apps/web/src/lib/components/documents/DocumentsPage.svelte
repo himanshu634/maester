@@ -45,6 +45,7 @@
 		buildView,
 		filingLive,
 		follow,
+		forgetAnswers,
 		identifying,
 		keepFresher,
 		listWatched,
@@ -299,7 +300,13 @@
 			const aloud = questionsAloud();
 			if (aloud) say(aloud);
 		}
-		loadAnswers(new Set([...changed, ...shapeChangedIds(before, next)]));
+		const moved = new Set([...changed, ...shapeChangedIds(before, next)]);
+		answers = forgetAnswers(answers, moved, openFiling?.files.map((f) => f.documentId) ?? []);
+		// A file that moved is asked for afresh, whether it is open now or once it is opened.
+		if (answersFailed.some((doc) => moved.has(doc))) {
+			answersFailed = answersFailed.filter((doc) => !moved.has(doc));
+		}
+		loadAnswers(moved);
 	}
 
 	/**

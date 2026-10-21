@@ -9,6 +9,7 @@ import {
 	filingMeta,
 	filingTitle,
 	follow,
+	forgetAnswers,
 	identifying,
 	keepFresher,
 	listWatched,
@@ -1129,6 +1130,14 @@ describe('the page’s bookkeeping (Task 10)', () => {
 		expect(matchesChanged([], [heldOf({ key: 'h-2', matches: ['co-9'] })])).toBe(true);
 		// An identity confirmed and gone needs no new companies read.
 		expect(matchesChanged([one], [])).toBe(false);
+	});
+
+	it('forgetAnswers: drops the answers of moved files outside the opened filing, so they load again', () => {
+		const answers = { a: null, b: null, c: null };
+		expect(forgetAnswers(answers, ['a', 'b'], ['b'])).toEqual({ b: null, c: null });
+		// Nothing to forget: the same object, so nothing redraws.
+		expect(forgetAnswers(answers, ['b', 'gone'], ['b'])).toBe(answers);
+		expect(forgetAnswers(answers, [], [])).toBe(answers);
 	});
 
 	describe('readLedger', () => {
