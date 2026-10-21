@@ -69,7 +69,7 @@ The Postgres image is `pgvector/pgvector:pg16`, started with `shared_buffers=256
 docker compose up -d --force-recreate postgres
 ```
 
-Run the `models` command before the indexer or the embedder starts for the first time. Otherwise Docker creates `/models` owned by root and the fetch cannot write to it. `EMBEDDING_MODEL` reaches only the worker and the API. The embedder command and the indexer's tokenizer path in `docker-compose.yml` name the arctic model, so to use another model, change those two as well, and fetch its weights.
+Run the `models` command before the indexer or the embedder starts for the first time. Otherwise Docker creates `/models` owned by root and the fetch cannot write to it. `EMBEDDING_MODEL` (default `Snowflake/snowflake-arctic-embed-l-v2.0`) is the one variable for the live model: Compose gives it to the worker, the API and the indexer, and builds the embedder's `--model-id` and the indexer's `INDEX_TOKENIZER_PATH` from it. To switch the live model, fetch its weights (`maester-indexer-fetch-models --candidates` fetches the candidates), set `EMBEDDING_MODEL` and start the stack again. Jobs queued for the old model fail with `INDEX_MODEL_NOT_SERVED`. The worker and the API ask the embedder (`GET /info`) which model it serves: a mismatch fails the job with `INDEXER_MODEL_MISMATCH`, and search answers `SEARCH_UNAVAILABLE`.
 
 The worker and the API do not wait for the indexer or the embedder. Until they answer, index jobs back off and retry, and `GET /v1/workspaces/:ws/search` answers 503 `SEARCH_UNAVAILABLE`. Index every document that was stored before search existed with `pnpm --filter @maester/worker index:backfill [--workspace <id>] [--document <id>]… [--dry-run]`.
 
@@ -222,7 +222,9 @@ Copy [`.env.example`](../.env.example) to `.env`. The TypeScript services valida
 | `INDEXER_URL`, `INDEXER_SECRET` | worker | To index; the secret is required when the URL is set and must match the indexer's. Unset: `document.index` fails with `INDEXER_NOT_CONFIGURED` | `http://localhost:8791`, `local-indexer-secret` |
 | `EMBEDDER_URL`, `EMBEDDING_MODEL` | worker, api | To embed chunks (worker) and search queries (api); unset in the API: search answers 503 | `http://localhost:8792`, `Snowflake/snowflake-arctic-embed-l-v2.0` |
 | `INDEX_PAGE_RANGE`, `INDEX_TIMEOUT_SECONDS`, `EMBED_BATCH`, `EMBED_TIMEOUT_SECONDS`, `OCR_PAGE_BUDGET` | worker | Defaulted. `EMBED_BATCH` is at most 32, the embedder's `--max-client-batch-size`; an embed call that times out is not retried in the call, because the embedder keeps working on it, and the job retries later | 20 pages, 7200 s, 16, 300 s, 400 pages |
-| `INDEXER_SECRET`, `INDEX_THREADS`, `INDEX_PAGE_BATCH`, `INDEX_MAX_BYTES`, `DOCLING_ARTIFACTS_PATH`, `INDEX_TOKENIZER_PATH` | indexer | See the [indexer description](systems/indexer.md) | Compose sets them |
+| `INDEXER_SECRET`, `INDEX_THREADS`, `INDEX_PAGE_BATCH`, `INDEX_MAX_BYTES`, `DOCLING_ARTIFACTS_PATH`, `INDEX_TOKENIZER_PATH`, `EMBEDDING_MODEL` | indexer | See the [indexer description](systems/indexer.md) | Compose sets them |
+| `OCR_ENGINE`, `INDEX_TABLE_CELL_MATCHING` | indexer (Compose reads them from the root `.env`) | `rapidocr` (default) or `tesseract`; `true` (default) or `false`. A change gives new keys to the cached page reads | `rapidocr`, `true` |
+| `CANDIDATE_MODEL` | Compose, `eval` profile | The embedding model that `embedder-candidate` and `indexer-candidate` serve. Unset, they cannot start | Unset |
 | `EXTRACT_TIMEOUT_SECONDS`, `EXTRACT_MAX_BYTES` | worker | Defaulted | 1800 s, 50 MiB |
 | `GOOGLE_CLOUD_PROJECT`, `WORKER_INVOKER_SA`, `CLOUD_TASKS_QUEUE`, `TASK_DISPATCH_DEADLINE_SECONDS` | worker | To enqueue extraction when the mode is `cloud-tasks` | Unset |
 | `EXTRACTOR_SECRET`, `GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION`, `GEMINI_MODEL`, `GEMINI_CLASSIFY_MODEL` | extractor | The project and Application Default Credentials for any extraction | See the [extractor README](../apps/extractor/README.md) |
@@ -381,6 +383,20 @@ uv run --locked maester-eval report --run latest --set dev --to docs/eval/2026-1
 ```
 
 Keep every sheet column as text and every date as `YYYY-MM-DD` in your spreadsheet application. `freeze --run` reads the machine columns (`statement`, `basis`, `section`, `label`, `period_label`, `period_end`, `printed`, `scale_factor`, `page`) back from the run's artefact, so a cell you edit there must still agree with it; put a correction in the matching `gold_` column (`gold_text`, `gold_scale`, `gold_page`, `gold_period_end`) instead. The model comes from the same variables as the extractor (`GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION`, `GEMINI_MODEL`). The console shows ids, codes and counts; figures are only in the files. The full description is [System: evaluation harness](systems/eval.md).
+
+### Measure the index
+
+Ingestion phase 3 chooses the OCR engine, the table cell-matching setting and the embedding model by rules fixed before the runs. Two reports in `docs/eval/` hold the result: `<date>-ocr-spot-check.md` and `<date>-retrieval.md`. The live steps are Tasks 11 to 14 of the phase 3 plan (measure the index). They run from the main checkout, never from a worktree, with the investor's go-ahead, and need a stack with a current index. Outline:
+
+1. **OCR spot check.** `maester-eval ocr request`, then `maester-indexer-ocr-sample` in the indexer container (it reads 10 scanned and 5 digital pages under four configurations), score `scores.csv` by hand, then `maester-eval ocr report --to docs/eval/<date>-ocr-spot-check.md`. Reading with Tesseract needs the image to hold it; the image's engine string is in the [indexer README](../apps/indexer/README.md).
+2. **The retrieval set.** Write `data/eval/retrieval/corpus.json` and `questions.csv` (40 or more verified questions; pages are PDF pages counted from 1, not printed page numbers), then `maester-eval retrieval check` and `maester-eval retrieval request`.
+3. **One candidate at a time.** Fetch the candidates (`maester-indexer-fetch-models --out /models --candidates`), start `CANDIDATE_MODEL=<id> docker compose --profile eval up -d embedder-candidate indexer-candidate`, then run `pnpm --filter @maester/worker index:candidate --workspace <id> --model <id> --request <file> --embedder-url http://localhost:8793 --indexer-url http://localhost:8794`, then `eval rank` and `eval bench` for the model, and stop the pair before the next model. The embedder and the indexer of a candidate are checked against `--model` first (`/info` and `/v1/versions`); a mismatch stops the command.
+4. **Report.** Write `run.json` by hand, then `maester-eval retrieval report --to docs/eval/<date>-retrieval.md`.
+5. **Switch.** Only if a report names a challenger: change `EMBEDDING_MODEL`, `OCR_ENGINE` or `INDEX_TABLE_CELL_MATCHING`, raise `INDEX_PIPELINE_VERSION` for a reader change, and run `index:backfill`. Each switch reads or embeds every document again, which takes days. `index:prune` deletes a candidate's revisions afterwards.
+
+Run one `index:candidate` at a time: two runs fail each other's `document.index.eval` jobs. A runner sweeps only the job types it has a handler for, so an expired `document.index.eval` job is swept only by the next `index:candidate` run, not by the live worker. Do not upload documents while a candidate run uses the stack: an upload starts a Gemini classification, which is a paid call.
+
+The candidate pair adds 5.25 GiB (3072m + 2304m) to the live stack's capped total of 5.9 GiB, so raise Docker Desktop's memory limit before it starts (the memory budget above). The details are in the [worker](systems/worker.md), [indexer](systems/indexer.md) and [evaluation harness](systems/eval.md) descriptions.
 
 ## 14. Known limitations
 

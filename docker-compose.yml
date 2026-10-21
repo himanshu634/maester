@@ -197,7 +197,14 @@ services:
       PORT: 8791
       INDEXER_SECRET: local-indexer-secret
       DOCLING_ARTIFACTS_PATH: /models/docling
-      INDEX_TOKENIZER_PATH: /models/embed/Snowflake/snowflake-arctic-embed-l-v2.0
+      # The one place the live model is named is EMBEDDING_MODEL; the tokenizer
+      # path and the embedder below follow it. The indexer checks that TEI serves it.
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-Snowflake/snowflake-arctic-embed-l-v2.0}
+      INDEX_TOKENIZER_PATH: /models/embed/${EMBEDDING_MODEL:-Snowflake/snowflake-arctic-embed-l-v2.0}
+      # OCR_ENGINE is rapidocr or tesseract; INDEX_TABLE_CELL_MATCHING is true or
+      # false. Either change gives pages new cache keys, so every range is read again.
+      OCR_ENGINE: ${OCR_ENGINE:-rapidocr}
+      INDEX_TABLE_CELL_MATCHING: ${INDEX_TABLE_CELL_MATCHING:-true}
       INDEX_THREADS: 6
       INDEX_PAGE_BATCH: 4
       HF_HUB_OFFLINE: 1
@@ -221,7 +228,7 @@ services:
   # embeds chunks with it and the API embeds search queries.
   embedder:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9
-    command: ["--model-id", "/models/embed/Snowflake/snowflake-arctic-embed-l-v2.0", "--max-client-batch-size", "32", "--port", "80"]
+    command: ["--model-id", "/models/embed/${EMBEDDING_MODEL:-Snowflake/snowflake-arctic-embed-l-v2.0}", "--max-client-batch-size", "32", "--port", "80"]
     environment:
       HF_HUB_OFFLINE: 1
     volumes:
@@ -233,6 +240,60 @@ services:
       - "8792:80"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 120s
+
+  # The eval profile serves ONE candidate embedding model at a time, for
+  # `pnpm --filter @maester/worker index:candidate` and `eval rank|bench`. Start it by hand:
+  #   CANDIDATE_MODEL=Qwen/Qwen3-Embedding-0.6B docker compose --profile eval up -d embedder-candidate indexer-candidate
+  # Unset CANDIDATE_MODEL leaves them unable to start; the live stack does not depend on them.
+  # They run beside the live embedder and indexer, so the memory caps add up; the
+  # live stack is about 5.9 GiB, and the two together need about 5.25 GiB more.
+  embedder-candidate:
+    profiles: ["eval"]
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9
+    command: ["--model-id", "/models/embed/${CANDIDATE_MODEL:-none}", "--max-client-batch-size", "32", "--port", "80"]
+    environment:
+      HF_HUB_OFFLINE: 1
+    volumes:
+      - models:/models:ro
+    mem_limit: 3072m
+    cpus: 8
+    ports:
+      - "8793:80"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 120s
+
+  # The candidate's indexer: the live indexer's settings, with the candidate's tokenizer.
+  # Unset CANDIDATE_MODEL leaves it unable to start; the live stack does not depend on it.
+  indexer-candidate:
+    profiles: ["eval"]
+    image: maester/indexer:local
+    environment:
+      PORT: 8791
+      INDEXER_SECRET: local-indexer-secret
+      DOCLING_ARTIFACTS_PATH: /models/docling
+      EMBEDDING_MODEL: ${CANDIDATE_MODEL:-none}
+      INDEX_TOKENIZER_PATH: /models/embed/${CANDIDATE_MODEL:-none}
+      OCR_ENGINE: ${OCR_ENGINE:-rapidocr}
+      INDEX_TABLE_CELL_MATCHING: ${INDEX_TABLE_CELL_MATCHING:-true}
+      INDEX_THREADS: 6
+      INDEX_PAGE_BATCH: 4
+      HF_HUB_OFFLINE: 1
+    volumes:
+      - models:/models:ro
+    mem_limit: 2304m
+    cpus: 8
+    ports:
+      - "8794:8791"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8791/healthz').status == 200 else 1)"]
       interval: 10s
       timeout: 5s
       retries: 12
