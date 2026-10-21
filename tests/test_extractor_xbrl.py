@@ -1,6 +1,10 @@
 """The extractor's /v1/xbrl: auth, limits and the NDJSON stream, over synthetic instances. Offline: no model is called."""
 
+import asyncio
+import contextlib
+import gc
 import json
+import threading
 import time
 import unittest
 from unittest import mock
@@ -126,6 +130,53 @@ class XbrlRouteTests(unittest.TestCase):
         self.assertNotIn("SYNTHETIC", response.text)
         self.assertNotIn("SYNTHETIC", "\n".join(logs.output))
         self.assertIn("doc-1", "\n".join(logs.output))
+
+    def test_a_client_that_goes_away_mid_parse_leaves_no_unretrieved_exception_in_the_asyncio_log(self):
+        """The parse thread outlives the cancelled stream; its later crash must not reach the asyncio logger."""
+        release, finished = threading.Event(), threading.Event()
+
+        def crash_late(*args, **kwargs):
+            try:
+                release.wait(5)
+                raise RuntimeError("SYNTHETIC CEMENTS 1234")
+            finally:
+                finished.set()
+
+        async def drive():
+            app = create_app(Settings(secret=SECRET, heartbeat_seconds=0.05))
+            started, sent = asyncio.Event(), []
+            requests = [{"type": "http.request", "body": INSTANCE, "more_body": False}]
+
+            async def receive():
+                if requests:
+                    return requests.pop()
+                await asyncio.Event().wait()
+
+            async def send(message):
+                sent.append(message)
+                if message["type"] == "http.response.body" and b'"started"' in message.get("body", b""):
+                    started.set()
+
+            scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST",
+                     "scheme": "http", "path": "/v1/xbrl", "raw_path": b"/v1/xbrl", "query_string": b"",
+                     "root_path": "", "server": ("test", 80), "client": ("test", 1),
+                     "headers": [(b"x-extractor-secret", SECRET.encode()), (b"x-xbrl-mode", b"read"),
+                                 (b"content-type", b"application/xml")]}
+            task = asyncio.ensure_future(app(scope, receive, send))
+            await asyncio.wait_for(started.wait(), 5)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            release.set()
+            while not finished.is_set():
+                await asyncio.sleep(0.01)
+            await asyncio.sleep(0.2)  # the loop sees the thread finish
+            gc.collect()
+
+        with mock.patch.object(extractor_app, "parse_instance", side_effect=crash_late):
+            with self.assertNoLogs("asyncio", level="WARNING"):
+                asyncio.run(drive())
+                gc.collect()
 
     def test_a_slow_parse_sends_heartbeats(self):
         real = extractor_app.parse_instance

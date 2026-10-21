@@ -287,6 +287,9 @@ def create_app(settings: Settings | None = None, model_factory: ModelFactory | N
             return
 
         run = asyncio.ensure_future(asyncio.to_thread(read_xbrl, body, mode, settings))
+        # If the client goes away the stream is cancelled and nobody awaits this future. Retrieve its outcome anyway,
+        # so a later crash in the thread is not logged by asyncio with a traceback that may hold document text.
+        run.add_done_callback(lambda future: future.cancelled() or future.exception())
         while True:
             await asyncio.wait({run}, timeout=settings.heartbeat_seconds)
             if run.done():
