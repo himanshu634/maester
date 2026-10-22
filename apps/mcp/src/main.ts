@@ -1,7 +1,8 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { createDb } from "@maester/db";
+import { closeDb, createDb } from "@maester/db";
 import { TeiEmbedder, type Embedder } from "@maester/document-index";
 import { createLogger } from "./logger.js";
+import { assertReadOnly, watchPool } from "./pool.js";
 import { createServer } from "./server.js";
 import { loadSettings, SettingsError } from "./settings.js";
 import { resolveWorkspace } from "./workspace.js";
@@ -20,8 +21,11 @@ export async function main(): Promise<void> {
   const logger = createLogger(process.env.LOG_LEVEL ?? "info");
   // Every session on this pool is read-only: Postgres refuses a write from this process.
   const db = createDb(settings.databaseUrl, { readOnly: true, max: 4 });
+  watchPool(db, logger);
   let workspace;
   try {
+    // The second lock: Postgres must say the session is read-only, or the server does not start.
+    await assertReadOnly(db);
     workspace = await resolveWorkspace(db, settings);
   } catch (e) {
     if (e instanceof SettingsError) {
@@ -44,6 +48,13 @@ export async function main(): Promise<void> {
   const server = createServer({ db, workspace, embedder, settings, logger });
   await server.connect(new StdioServerTransport());
   logger.info("maester-mcp serving on stdio");
+  // The host closes stdin to stop the server; the pool's idle clients would otherwise keep the process alive.
+  process.stdin.on("close", () => {
+    void server
+      .close()
+      .then(() => closeDb(db))
+      .finally(() => process.exit(0));
+  });
 }
 
 main().catch((e: unknown) => {
