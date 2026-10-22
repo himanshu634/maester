@@ -4,6 +4,7 @@ import type { Embedder } from "@maester/document-index";
 import { INSTRUCTIONS } from "./instructions.js";
 import type { Logger } from "./logger.js";
 import type { Settings } from "./settings.js";
+import { registerTools } from "./tools/index.js";
 
 export type ServerDeps = {
   db: Db;
@@ -13,10 +14,11 @@ export type ServerDeps = {
   logger: Logger;
 };
 
-export function createServer(_deps: ServerDeps): McpServer {
+export function createServer(deps: ServerDeps): McpServer {
   const server = new McpServer({ name: "maester", version: "0.1.0" }, { instructions: INSTRUCTIONS });
   // McpServer answers tools/list only once a tool is registered, so an empty server would say "method not found".
   // This is its own idempotent handler setup (the one registerTool runs); it is private in the typings only.
   server["setToolRequestHandlers"]();
+  registerTools(server, deps);
   return server;
 }

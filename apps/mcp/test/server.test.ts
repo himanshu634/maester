@@ -5,10 +5,11 @@ import type { Db, WorkspaceRow } from "@maester/db";
 import { silentLogger } from "../src/logger.js";
 import { createServer } from "../src/server.js";
 import { loadSettings } from "../src/settings.js";
+import { TOOL_NAMES } from "../src/tools/index.js";
 
 async function connect() {
   const server = createServer({
-    // No tool reads the database yet; later tasks pass real ones.
+    // Listing tools reads nothing; the tools themselves are tested against a real database in list-tools.test.ts.
     db: {} as Db,
     workspace: {} as WorkspaceRow,
     embedder: null,
@@ -22,9 +23,9 @@ async function connect() {
 }
 
 describe("createServer", () => {
-  it("lists no tools yet", async () => {
+  it("lists the allow-listed tools and no others", async () => {
     const { client, server } = await connect();
-    expect((await client.listTools()).tools).toEqual([]);
+    expect((await client.listTools()).tools.map((t) => t.name).sort()).toEqual([...TOOL_NAMES].sort());
     await client.close();
     await server.close();
   });
