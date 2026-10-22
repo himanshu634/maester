@@ -19,6 +19,10 @@ export default [
         { selector: "CallExpression[callee.name='Number']", message: WHY },
         { selector: "NewExpression[callee.name='Number']", message: WHY },
         { selector: "CallExpression[callee.name=/^(parseFloat|parseInt)$/]", message: WHY },
+        // Unary plus, BigInt and toFixed also turn a figure's string into a number, or a number into a rounded string.
+        { selector: "UnaryExpression[operator='+']", message: WHY },
+        { selector: "CallExpression[callee.name='BigInt']", message: WHY },
+        { selector: "MemberExpression[property.name='toFixed']", message: WHY },
       ],
       "no-restricted-imports": ["error", { paths: [{ name: "decimal.js", message: WHY }, { name: "decimal.js-light", message: WHY }], patterns: ["decimal.js/*"] }],
     },
