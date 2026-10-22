@@ -96,7 +96,7 @@ Claude Code / Desktop ──stdio──▶ apps/mcp
                                            Postgres (the same database the API uses)
 ```
 
-- **Process.** One Node process, started by the agent host with `node apps/mcp/dist/server.js` (or `tsx src/server.ts` in development). It reads its settings from the environment, resolves the workspace, opens one small pool and serves until stdin closes.
+- **Process.** One Node process, started by the agent host with `node apps/mcp/dist/main.js` (or `tsx src/server.ts` in development). It reads its settings from the environment, resolves the workspace, opens one small pool and serves until stdin closes.
 - **Settings.** `DATABASE_URL` (required); `MAESTER_WORKSPACE_ID`, or `MAESTER_USER_EMAIL` to take that user's first workspace (one is required; the id wins when both are set); `EMBEDDER_URL` and `EMBEDDING_MODEL` as the API reads them (search is unavailable without `EMBEDDER_URL`); `XBRL_PDF_CHECK` as the API reads it. Parsed with zod at start; a bad or missing setting, or a workspace that does not exist, ends the process with one line on stderr naming the setting.
 - **Shared functions (my call).** The four inline handler bodies move into exported functions in `apps/api/src/read/` (`loadCompanyFinancials`, `listResearchCompanies`, `loadWorkspaceFilings`), and the routes call them. They take `(db, workspaceId, …)`, return contract types or `null` for not found, and import nothing from Hono. `@maester/api` gains `"exports": { "./read": "./src/read/index.ts" }`; `apps/mcp` depends on it. The served-model check moves into `@maester/document-index` as a small gate both callers hold. Moving `stitch`, `buildFilings` and `serialize` into their own package is cleaner but churns code that is still unmerged in #19; it is left for later. Watch the existing `@maester/db` → `@maester/financial-engine` dependency if anything moves into the engine.
 - **One new query.** `getFactWithSource(db, workspaceId, factId)` in `@maester/db`, joined through the revision to the workspace, returning `FactWithSource` plus the document, revision and company ids, or `null`.
@@ -172,7 +172,7 @@ Tool descriptions ask; the server makes sure. Each line below has a test.
 
 ## 9. Connecting an agent
 
-`DEVELOPMENT.md` gains a section: build (`pnpm --filter @maester/mcp build`), then add the server to Claude Code (`claude mcp add maester --env DATABASE_URL=… --env MAESTER_USER_EMAIL=… -- node <repo>/apps/mcp/dist/server.js`) and to Claude Desktop (`claude_desktop_config.json`, the same command and env), with the TEI URL for search. It names the database it connects to: the investor's local Postgres from the main checkout, never a worktree's.
+`DEVELOPMENT.md` gains a section: build (`pnpm --filter @maester/mcp build`), then add the server to Claude Code (`claude mcp add maester --env DATABASE_URL=… --env MAESTER_USER_EMAIL=… -- node <repo>/apps/mcp/dist/main.js`) and to Claude Desktop (`claude_desktop_config.json`, the same command and env), with the TEI URL for search. It names the database it connects to: the investor's local Postgres from the main checkout, never a worktree's.
 
 ## 10. Testing
 
