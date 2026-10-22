@@ -25,6 +25,7 @@ Maester's product plan connects portfolio tracking with company research and ver
 | [System: indexer](systems/indexer.md) | The Python page reader and chunker: routes, events, settings, weights | Backend and data |
 | [System: web](systems/web.md) | The SvelteKit web app: routes, API client, build and serving, checks | Frontend |
 | [System: CLI](systems/cli.md) | The command-line tool: commands, cache, model calls | Engineering |
+| [System: MCP server](systems/mcp.md) | The read-only MCP server for agents: tools, settings, answer rules, connecting Claude | Engineering |
 | [System: shared packages](systems/packages.md) | Config, contracts, database, financial engines, jobs, market data and storage | Engineering |
 | [System: evaluation harness](systems/eval.md) | The `maester-eval` app: live runs over real filings, XBRL reads, labelling sheets, the gold set, the report, compare and settle | Engineering and data |
 | [Monorepo decision](decisions/0001-platform-monorepo.md) | Rationale and consequences of the package split | Engineering |

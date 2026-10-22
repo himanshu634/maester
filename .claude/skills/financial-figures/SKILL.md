@@ -42,7 +42,7 @@ Paths marked *(phase n)* arrive with that phase of the spec; until then they do 
 | Schema | `packages/db/src/schema/extraction.ts`; `concepts.ts` *(phase 1)* for `concept_mapping`, `concept_override`, `fact_review` |
 | Series and metrics | `packages/financial-engine-ts/src/` — `decimal`, `concepts`, `series`, `periods`, `metrics` *(phase 1)*; fixtures beside them |
 | API | `apps/api/src/financials/` (`stitch.ts` today; `series.ts`, `compute.ts` *(phase 1)*), `apps/api/src/routes/research.ts` |
-| MCP | `apps/mcp/` *(phase 2)* |
+| MCP | `apps/mcp/` (M1 built: facts and search, no calculation; M2 adds metrics with phase 1), `apps/api/src/read/` for the loaders it shares with the API |
 | Evaluation | `apps/eval/` *(phase 0)*; corpus `data/eval/corpus/` (git-ignored); gold `data/eval/gold/`; reports `docs/eval/` |
 | Web | `apps/web/src/lib/research/` (`summary.ts` formats only), `components/research/` |
 

@@ -378,6 +378,8 @@ Under `/v1/workspaces/:ws`:
 
 ### 8.2 MCP server
 
+The [MCP server design](2026-10-21-mcp-server-design.md) refines this section; its §11 names what changes in the tool list below.
+
 `apps/mcp`: TypeScript, `@modelcontextprotocol/sdk`, stdio transport. Reads Postgres through `@maester/db` with `DATABASE_URL`; the workspace is `MAESTER_WORKSPACE_ID` (or the first workspace of `MAESTER_USER_EMAIL`). It imports the same functions the API routes call; it has no HTTP server and no auth of its own because it runs on the investor's own machine for their own workspace. **Read-only.** Tools:
 
 | Tool | Returns |
