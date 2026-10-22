@@ -12,7 +12,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@google-cloud/tasks": "^7.1.0",
     "@maester/api": "workspace:*",
     "@maester/contracts": "workspace:*",
     "@maester/db": "workspace:*",

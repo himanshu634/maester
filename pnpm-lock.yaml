@@ -117,9 +117,6 @@ importers:
 
   apps/mcp:
     dependencies:
-      '@google-cloud/tasks':
-        specifier: ^7.1.0
-        version: 7.1.0
       '@maester/api':
         specifier: workspace:*
         version: link:../api
