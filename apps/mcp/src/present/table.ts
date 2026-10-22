@@ -5,7 +5,7 @@ import { CELL_STATUS_WORDS, inPdfWords, perShareUnit, toUnit, unitWords, type Un
 
 /** The statement answer of `get_statement`: pure, from the contract's table. Decimal strings are copied, never parsed. */
 
-const Decimal = z.string().regex(/^-?\d+(\.\d+)?$/);
+export const Decimal = z.string().regex(/^-?\d+(\.\d+)?$/);
 
 export const UnitSchema = z.object({ label: z.string().nullable(), scale: Decimal.nullable(), currency: z.string().nullable() });
 
@@ -113,14 +113,20 @@ function reasonFor(cell: FinancialCell): string | null {
   return cell.source?.kind === "xbrl" && cell.source.nil ? "the XBRL file gives no value" : "no value could be placed in the table's unit";
 }
 
-/** What another filing printed for the same line and year, in words, and which figure this table shows. */
-function restatedWords(cell: FinancialCell, unit: Unit): string | null {
+/**
+ * What another filing printed for the same line and year, in words, and which figure this table shows. Each figure is
+ * named with its unit: as printed in that filing's own unit, and the same figure in this table's unit.
+ */
+function restatedWords(cell: FinancialCell, unit: Unit, filings: CompanyFiling[]): string | null {
   const r = cell.restated;
   if (!r) return null;
-  const filing = r.filingPeriodEnd ? `The filing for the period ending ${r.filingPeriodEnd}` : "Another filing";
+  const name = filingName(filings, r.documentId);
+  const period = r.filingPeriodEnd ? ` for the period ending ${r.filingPeriodEnd}` : "";
+  const filing = `${name ? `The filing ${name}` : "Another filing"}${period} (document_id ${r.documentId})`;
+  const inTable = r.value === null ? "no figure in this table's unit" : `${r.value} in this table's unit (${unitWords(unit)})`;
   const shown = " This table shows this column's filing's figure.";
-  if (r.kind === "xbrl") return `${filing} filed ${r.value ?? "no value"} (${unitWords(unit)}) for this year in its XBRL file.${shown}`;
-  return `${filing} printed ${r.printed} for this year, on page ${r.pageIndex + 1}.${shown}`;
+  if (r.kind === "xbrl") return `${filing} filed ${inTable} for this year in its XBRL file, element ${r.element}.${shown}`;
+  return `${filing} printed ${r.printed} for this year on page ${r.pageIndex + 1}, in its own unit; that is ${inTable}.${shown}`;
 }
 
 export function presentCell(cell: FinancialCell, column: FinancialColumn, unit: TableUnit | Unit, filings: CompanyFiling[]): CellAnswer {
@@ -138,8 +144,8 @@ export function presentCell(cell: FinancialCell, column: FinancialColumn, unit: 
     scale: u.scale,
     currency: u.currency,
     source: sourceAnswer(cell, filings),
-    check: checkSentence(cell.check, cell.source),
-    restated: restatedWords(cell, u),
+    check: checkSentence(cell.check, cell.source?.kind ?? null, u),
+    restated: restatedWords(cell, u, filings),
     reviewed: "not yet",
   };
 }

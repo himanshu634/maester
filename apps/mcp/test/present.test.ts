@@ -94,36 +94,38 @@ describe("presentCell", () => {
 describe("checkSentence", () => {
   const check = (over: Partial<CellCheck>): CellCheck => ({ ...NO_CHECK, ...over });
   it("says passed, not checked and no sum", () => {
-    expect(checkSentence(check({ role: "subject", status: "passed", checkType: "subtotal" }), pageSource)).toBe("Adds up");
-    expect(checkSentence(check({ role: "subject", status: "not_checked", checkType: "subtotal" }), pageSource)).toBe("Not checked");
-    expect(checkSentence(NO_CHECK, pageSource)).toBe("No sum covers this line");
+    expect(checkSentence(check({ role: "subject", status: "passed", checkType: "subtotal" }), "page", unit)).toBe("Adds up");
+    expect(checkSentence(check({ role: "subject", status: "not_checked", checkType: "subtotal" }), "page", unit)).toBe(
+      "Not checked: a line the sum needs was not found or has no value",
+    );
+    expect(checkSentence(NO_CHECK, "page", unit)).toBe("No sum covers this line");
   });
   it("says a failed subtotal without the difference", () => {
     expect(
-      checkSentence(check({ role: "subject", status: "failed", checkType: "subtotal", subjectLabel: "Total income", expected: "1243.00", actual: "1234.00" }), pageSource),
-    ).toBe("No. The lines add up to 1234.00; the page prints 1243.00.");
+      checkSentence(check({ role: "subject", status: "failed", checkType: "subtotal", subjectLabel: "Total income", expected: "1243.00", actual: "1234.00" }), "page", unit),
+    ).toBe("No. The lines add up to 1234.00; the page prints 1243.00. Both figures are in ₹ crore.");
   });
   it("says a component's subject", () => {
-    expect(checkSentence(check({ role: "component", status: "passed", checkType: "subtotal", subjectLabel: "Total income" }), pageSource)).toBe(
+    expect(checkSentence(check({ role: "component", status: "passed", checkType: "subtotal", subjectLabel: "Total income" }), "page", unit)).toBe(
       "Part of total income, which adds up",
     );
-    expect(checkSentence(check({ role: "component", status: "failed", checkType: "subtotal", subjectLabel: "Total income" }), pageSource)).toBe(
+    expect(checkSentence(check({ role: "component", status: "failed", checkType: "subtotal", subjectLabel: "Total income" }), "page", unit)).toBe(
       "Part of total income, which doesn't add up",
     );
   });
   it("says the balance identity on the total", () => {
     expect(
-      checkSentence(check({ role: "subject", status: "failed", checkType: "balance_identity", subjectLabel: "Total assets", expected: "500.00", actual: "490.00" }), pageSource),
-    ).toBe("No. Total assets doesn't equal equity and liabilities: the page prints 500.00; equity and liabilities come to 490.00.");
+      checkSentence(check({ role: "subject", status: "failed", checkType: "balance_identity", subjectLabel: "Total assets", expected: "500.00", actual: "490.00" }), "page", unit),
+    ).toBe("No. Total assets doesn't equal equity and liabilities: the page prints 500.00; equity and liabilities come to 490.00. Both figures are in ₹ crore.");
   });
   it("names the XBRL file for an XBRL figure", () => {
     expect(
-      checkSentence(check({ role: "subject", status: "failed", checkType: "subtotal", expected: "10.00", actual: "9.00" }), xbrlSource),
-    ).toBe("No. The lines add up to 9.00; the XBRL file gives 10.00.");
+      checkSentence(check({ role: "subject", status: "failed", checkType: "subtotal", expected: "10.00", actual: "9.00" }), "xbrl", unit),
+    ).toBe("No. The lines add up to 9.00; the XBRL file gives 10.00. Both figures are in ₹ crore.");
   });
   it("presents every XBRL-in-PDF status as not checked while the flag is false", () => {
     for (const status of ["passed", "failed"] as const) {
-      expect(checkSentence(check({ role: "subject", status, checkType: "xbrl_in_pdf" }), xbrlSource)).toBe("Not checked");
+      expect(checkSentence(check({ role: "subject", status, checkType: "xbrl_in_pdf" }), "xbrl", unit)).toBe("Not checked");
     }
   });
 });
@@ -163,7 +165,7 @@ describe("presentFact", () => {
   };
   const filing = { name: "ar-2025.pdf", documentId: DOC, kind: "annual_report", periodEnd: "2025-03-31", pageCount: 286 };
   it("gives the figure beside its own unit, and the citation", () => {
-    const out = presentFact(fact, filing, { superseded: null, inTable: null });
+    const out = presentFact(fact, filing, { check: "Adds up", superseded: null, inTable: null });
     expect(FactAnswerSchema.parse(out)).toBeTruthy();
     expect(out).toMatchObject({
       reported_value: "-1234.50", printed: "(1,234.50)", unit_label: "₹ in crores", scale: "10000000", currency: "INR",
@@ -173,17 +175,17 @@ describe("presentFact", () => {
     expect(out.filing).toMatchObject({ name: "ar-2025.pdf", kind: "annual_report" });
   });
   it("carries in_table.value only beside in_table.unit", () => {
-    const inTable = inTableFromCell(presentCell(cell({ value: "-123.45" }), column, unit, filings));
-    const out = presentFact(fact, filing, { superseded: null, inTable });
+    const inTable = inTableFromCell({ ...presentCell(cell({ value: "-123.45" }), column, unit, filings), fact_id: FACT });
+    const out = presentFact(fact, filing, { check: "Adds up", superseded: null, inTable });
     expect(out.in_table).toMatchObject({ shown: true, value: "-123.45", unit: { label: "₹ in crores", scale: "10000000", currency: "INR" } });
     expect(FactAnswerSchema.parse(out)).toBeTruthy();
   });
   it("says an unknown value in words, never zero", () => {
-    const out = presentFact({ ...fact, valueStatus: "dash", reportedValue: null, reportedText: "-" }, filing, { superseded: "A newer read replaced this one.", inTable: null });
+    const out = presentFact({ ...fact, valueStatus: "dash", reportedValue: null, reportedText: "-" }, filing, { check: "Adds up", superseded: "A newer read replaced this one.", inTable: null });
     expect(out).toMatchObject({ reported_value: null, reason: "a dash printed on the page", superseded: "A newer read replaced this one." });
   });
   it("gives an XBRL fact its element and context", () => {
-    const out = presentFact({ ...fact, source: { kind: "xbrl", documentId: DOC2, element: "e", contextId: "c", decimals: "-5", nil: false } }, filing, { superseded: null, inTable: null });
+    const out = presentFact({ ...fact, source: { kind: "xbrl", documentId: DOC2, element: "e", contextId: "c", decimals: "-5", nil: false } }, filing, { check: "Adds up", superseded: null, inTable: null });
     expect(out.source).toMatchObject({ kind: "xbrl", element: "e", context: "c", decimals: "-5" });
     expect(out.source).not.toHaveProperty("page");
   });
@@ -243,5 +245,52 @@ describe("presentFilings", () => {
   });
   it("lists every company with no filter", () => {
     expect(presentFilings(filingsIn, null).companies).toHaveLength(2);
+  });
+});
+
+describe("fix wave: words a reader can act on", () => {
+  it("keeps the reason of an XBRL-in-PDF check that never ran, flag or no flag", () => {
+    const never = { ...xbrlSource.inPdf, status: "not_checked" as const, pageIndex: null, reason: "disabled" as const };
+    expect(inPdfWords(never)).toBe("not checked: the check against the PDF is turned off");
+    expect(inPdfWords({ ...xbrlSource.inPdf, status: "passed" })).toBe("not checked");
+  });
+
+  it("names rupees a share for a per-share figure, not the table's unit", () => {
+    const perShare = { label: "rupees a share", scale: "1", currency: "INR" };
+    const failed: CellCheck = { ...NO_CHECK, role: "subject", status: "failed", checkType: "subtotal", expected: "12.40", actual: "12.00" };
+    expect(checkSentence(failed, "page", perShare)).toBe("No. The lines add up to 12.00; the page prints 12.40. Both figures are in rupees a share.");
+    expect(checkSentence(failed, "xbrl", { label: "₹ a share", scale: "1", currency: "INR" })).toContain("in rupees a share.");
+  });
+
+  it("names the other filing, its page and both units when a year was restated", () => {
+    const restated = presentCell(
+      cell({ restated: { kind: "page", documentId: DOC2, filingPeriodEnd: "2026-03-31", pageIndex: 86, value: "2389.1", printed: "2,389.10" } }),
+      column, unit, filings,
+    );
+    expect(restated.restated).toBe(
+      `Another filing for the period ending 2026-03-31 (document_id ${DOC2}) printed 2,389.10 for this year on page 87, in its own unit; that is 2389.1 in this table's unit (₹ crore). This table shows this column's filing's figure.`,
+    );
+  });
+
+  const fact: FinancialFact = {
+    id: FACT, revisionId: REV, companyId: CO, statement: "income_statement", basis: "consolidated", section: "Income", lineOrder: 1,
+    reportedLabel: "Revenue from operations", isSubtotal: false, componentLabels: [], periodLabel: "Quarter ended 31.03.2026", periodEnd: "2026-03-31", asOfDate: null,
+    reportedText: "640.25", reportedValue: "640.25", valueStatus: "value", unitLabel: "₹ in crores", scaleFactor: "10000000", currency: "INR",
+    normalizedValue: "6402500000", periodStart: null, span: null, source: { kind: "page", documentId: DOC, pageIndex: 2, textLayerMatch: true },
+  };
+  const filing = { name: "results.pdf", documentId: DOC, kind: "financial_results", periodEnd: "2026-03-31", pageCount: 6 };
+
+  it("says why a PDF fact has no span, and never works one out from the label", () => {
+    const out = presentFact(fact, filing, { check: "No sum covers this line", superseded: null, inTable: null });
+    expect(out).toMatchObject({ span: null, period_start: null, check: "No sum covers this line" });
+    expect(out.span_reason).toMatch(/^The read did not record the span or the period start/);
+    expect(FactAnswerSchema.parse(out)).toBeTruthy();
+    const balance = presentFact({ ...fact, periodEnd: null, asOfDate: "2026-03-31" }, filing, { check: "Adds up", superseded: null, inTable: null });
+    expect(balance.span_reason).toBe("A balance on one day (as_of_date), so it has no span or period start.");
+  });
+
+  it("ties an XBRL fact's in_pdf to the flag: wire the fact's own outcome before the result is shown", () => {
+    // fact.ts writes "not checked" for an XBRL fact's in_pdf. That is right only while the result is hidden.
+    expect(XBRL_IN_PDF_RESULT_SHOWN).toBe(false);
   });
 });

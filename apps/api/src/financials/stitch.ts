@@ -154,12 +154,18 @@ const NO_CHECK: CellCheck = { role: "none", status: null, checkType: null, subje
 
 type Placed = { filing: Filing; move: number; byKey: Map<string, FactWithSource>; keys: string[] };
 
+/**
+ * The line a fact is printed on, as the table matches lines across filings: its section and printed name, normalised.
+ * A row's key is this, then "|n" for the n-th line of that name in one filing.
+ */
+export const lineOf = (fact: { section: string; reportedLabel: string }): string => `${normalise(fact.section)}|${normalise(fact.reportedLabel)}`;
+
 function keyed(facts: FactWithSource[]): { byKey: Map<string, FactWithSource>; keys: string[] } {
   const seen = new Map<string, number>();
   const byKey = new Map<string, FactWithSource>();
   const keys: string[] = [];
   for (const f of [...facts].sort((a, b) => a.fact.lineOrder - b.fact.lineOrder)) {
-    const base = `${normalise(f.fact.section)}|${normalise(f.fact.reportedLabel)}`;
+    const base = lineOf(f.fact);
     const n = seen.get(base) ?? 0;
     seen.set(base, n + 1);
     const key = `${base}|${n}`;
@@ -172,13 +178,19 @@ function keyed(facts: FactWithSource[]): { byKey: Map<string, FactWithSource>; k
 /** Failed outranks not checked, which outranks passed: a figure is never shown cleaner than its worst check. */
 const SEVERITY: Record<ExtractionCheckRow["status"], number> = { failed: 2, not_checked: 1, passed: 0 };
 
-function checkFor(f: FactWithSource, filing: Filing, siblings: FactWithSource[], move: number): CellCheck {
+/**
+ * A fact's arithmetic check, from its own revision's `checks`: the check whose subject is this line, else its subtotal's
+ * sum when the line is one of that subtotal's components. `siblings` are the facts printed beside it (same statement,
+ * basis and day); `move` places `expected` and `actual` in the reader's unit (0: the filing's own). The one matching rule
+ * for both the statement table and a fact read on its own.
+ */
+export function checkFor(f: FactWithSource, checks: readonly ExtractionCheckRow[], siblings: readonly FactWithSource[], move: number): CellCheck {
   // A check names its section when it has one: two subtotals called "Total" are told apart by it. A check with no
   // section (the balance identity) covers every section, so total assets can have two checks: the worst status
   // wins, and on a tie the check that names the section exactly, so the result never depends on array order.
   const index = (subject: string, section: string, types: readonly ExtractionCheckRow["checkType"][]) => {
     let best: ExtractionCheckRow | undefined;
-    for (const c of filing.checks) {
+    for (const c of checks) {
       if (
         !types.includes(c.checkType) ||
         c.statement !== f.fact.statement ||
@@ -214,6 +226,16 @@ function checkFor(f: FactWithSource, filing: Filing, siblings: FactWithSource[],
     return { role: "component", status: theirs.status, checkType: "subtotal", subjectLabel: parent.fact.reportedLabel, expected: rescale(theirs.expected), actual: rescale(theirs.actual) };
   }
   return NO_CHECK;
+}
+
+/**
+ * One fact's check in its filing's own unit, from its revision's facts and checks: the siblings are grouped as the table
+ * groups them (same statement, basis and day), so a fact read on its own gets the check its table cell would.
+ */
+export function factCheck(f: FactWithSource, revisionFacts: readonly FactWithSource[], checks: readonly ExtractionCheckRow[]): CellCheck {
+  const day = dateOf(f);
+  const siblings = revisionFacts.filter((s) => s.fact.statement === f.fact.statement && s.fact.basis === f.fact.basis && dateOf(s) === day);
+  return checkFor(f, checks, siblings, 0);
 }
 
 function valueOf(f: FactWithSource, placed: Placed, unit: Unit): string | null {
@@ -278,7 +300,7 @@ function cellOf(f: FactWithSource, placed: Placed, unit: Unit, siblings: FactWit
     factId: f.fact.id,
     revisionId: f.fact.revisionId,
     source: sourceOf(f, placed.filing),
-    check: checkFor(f, placed.filing, siblings, placed.move),
+    check: checkFor(f, placed.filing.checks, siblings, placed.move),
     restated: null,
   };
 }

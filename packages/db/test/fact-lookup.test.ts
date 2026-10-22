@@ -107,7 +107,10 @@ describe("getFactWithSource", () => {
     const oldFact = await fact(a, older);
     const newer = await revision(a, d, "pdf", null, new Date("2026-10-03T00:00:00Z"));
     const newFact = await fact(a, newer);
-    expect((await getFactWithSource(db, a.ws, oldFact))!.isCurrentRevision).toBe(false);
+    const old = (await getFactWithSource(db, a.ws, oldFact))!;
+    expect(old.isCurrentRevision).toBe(false);
+    // The replacement is named, so a caller can say when the filing was read again.
+    expect(old.currentRevision?.id).toBe(newer);
     expect((await getFactWithSource(db, a.ws, newFact))!.isCurrentRevision).toBe(true);
   });
 });

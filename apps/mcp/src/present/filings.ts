@@ -1,6 +1,18 @@
 import { z } from "zod";
-import type { FilingFile, StatementSourceReason, WorkspaceFilings } from "@maester/contracts";
+import type { FilingFile, InPdfCount, StatementSourceReason, WorkspaceFilings } from "@maester/contracts";
+import { XBRL_IN_PDF_RESULT_SHOWN } from "./flags.js";
 import { inPdfWords, NOT_CHECKED } from "./words.js";
+
+/**
+ * A statement's XBRL-in-PDF counts in words. A check that never ran says why; the counts of one that ran are "not
+ * checked" while the result is not shown.
+ */
+function inPdfCountWords(inPdf: InPdfCount | null, pdfDocumentId: string | null, pdfPages: number[], shown: boolean = XBRL_IN_PDF_RESULT_SHOWN): string {
+  if (inPdf === null) return NOT_CHECKED;
+  if (inPdf.notChecked !== null) return inPdfWords({ status: "not_checked", pdfDocumentId, pageIndex: null, statementPages: pdfPages, reason: inPdf.notChecked }, shown);
+  if (!shown) return NOT_CHECKED;
+  return `${inPdf.found} of ${inPdf.checked} figures found on the results PDF's statement pages`;
+}
 
 const REASON_WORDS: Record<StatementSourceReason, string> = {
   xbrl_lacks_statement: "the XBRL file has facts but none for this statement",
@@ -95,10 +107,7 @@ export function presentFilings(filings: WorkspaceFilings, companyId: string | nu
               pdf_document_id: s.pdfDocumentId,
               pdf_pages: s.pdfPages.map((p) => p + 1),
               reason: s.reason === null ? null : REASON_WORDS[s.reason],
-              in_pdf:
-                s.inPdf === null
-                  ? NOT_CHECKED
-                  : inPdfWords({ status: "not_checked", pdfDocumentId: s.pdfDocumentId, pageIndex: null, statementPages: s.pdfPages, reason: s.inPdf.notChecked }),
+              in_pdf: inPdfCountWords(s.inPdf, s.pdfDocumentId, s.pdfPages),
             })),
           })),
         })),
