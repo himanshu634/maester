@@ -37,7 +37,8 @@ The server runs on the computer of the investor. It talks to the host through st
 
 | Part | Location | Function |
 | --- | --- | --- |
-| Entry | `apps/mcp/src/main.ts` | Reads the settings. Opens a read-only database pool with a maximum of 4 connections. Finds the workspace. Connects the server to standard input and output. |
+| Entry | `apps/mcp/src/main.ts` | Reads the settings. Opens a read-only database pool with a maximum of 4 connections. Checks that the session is read-only. Finds the workspace. Makes the embedder if `EMBEDDER_URL` has a value. Connects the server to standard input and output. Stops when the host closes standard input. |
+| Pool guards | `apps/mcp/src/pool.ts` | `assertReadOnly` asks Postgres if the session is read-only. `watchPool` logs a lost database connection, so the process does not stop. |
 | Settings | `apps/mcp/src/settings.ts` | Reads and checks the environment variables. A blank value counts as not set. |
 | Workspace | `apps/mcp/src/workspace.ts` | Finds the one workspace from `MAESTER_WORKSPACE_ID` or `MAESTER_USER_EMAIL`. |
 | Server | `apps/mcp/src/server.ts` | Makes the `McpServer` object with the `instructions`. Registers the tools. |
@@ -46,25 +47,27 @@ The server runs on the computer of the investor. It talks to the host through st
 | Presenters | `apps/mcp/src/present/` | Pure functions that change the shapes of `@maester/contracts` into the shapes that an agent gets. They count pages from 1 and write states as words. |
 | Errors | `apps/mcp/src/errors.ts` | Gives the error codes, the error result and `runTool`. `runTool` runs one call and writes one log line. |
 | Logger | `apps/mcp/src/logger.ts` | Writes pino log lines to standard error (file descriptor 2). |
-| Read loaders | `apps/api/src/read/` | `loadCompanyFinancials`, `listResearchCompanies` and `loadWorkspaceFilings`. The package `@maester/api` exports them as `@maester/api/read`. |
+| Read loaders | `apps/api/src/read/` | `loadCompanyFinancials`, `listResearchCompanies` and `loadWorkspaceFilings`, and the check and line rules of the statement table, `factCheck` and `lineOf`. The package `@maester/api` exports them as `@maester/api/read`. |
 | Gate | `packages/document-index/src/gate.ts` | `ServedModelGate` checks that the embedder serves the model that the index uses. |
 | Fact lookup | `packages/db/src/queries/extraction.ts` | `getFactWithSource` gets one fact with its source, for one workspace. |
-| Read-only pool | `packages/db/src/client.ts` | `createDb(url, { readOnly: true })` sets `default_transaction_read_only=on` for each session. |
+| Read-only pool | `packages/db/src/client.ts` | `createDb(url, { readOnly: true })` sets `default_transaction_read_only=on` for each session. It keeps the `options` of the URL and adds this setting after them, so the URL cannot turn it off. |
 | Tests | `apps/mcp/test/` | Vitest tests. The tool tests use a real Postgres database. |
 
 ## Operation
 
 1. The host starts `node apps/mcp/dist/main.js` with the settings in the environment.
 2. `loadSettings` checks the environment. If a setting is wrong, the server writes one line to standard error that names the setting. Then it stops with exit code 1.
-3. `createDb` opens the pool with `readOnly` true. Postgres then refuses each write from the server.
-4. `resolveWorkspace` finds the workspace. If `MAESTER_WORKSPACE_ID` has a value, the server uses that workspace. If not, it uses the first workspace of the user with `MAESTER_USER_EMAIL`. If it finds none, the server stops as in step 2.
-5. `createServer` registers the tools and the `instructions`. The server then reads messages on standard input until the host closes it.
-6. The agent reads the descriptions of the tools. Each description starts with the answer rules in two lines and ends with what the agent does when the tool has no answer.
-7. The agent calls a tool. The SDK checks the input against the input schema. If the input is wrong, the agent gets an error result from the SDK.
-8. The handler of the tool calls a read loader or a query, always with the ID of the workspace. If the input has an ID that is not in the workspace, the handler gives `NOT_FOUND`. The sentence is the same for an ID that does not exist.
-9. A presenter changes the data into the answer. It copies each decimal string without a change. It writes `null` with a reason for each value that Maester does not know.
-10. `runTool` writes one log line to standard error: the tool, the time in milliseconds, the number of items and the error code. The line has no argument and no result.
-11. The server sends the answer as structured content with a short text summary.
+3. `createDb` opens the pool with `readOnly` true. Postgres then refuses each write from the server. `watchPool` adds a listener for errors on the pool. If the database stops, the server logs the SQLSTATE and continues, and the next tool call gives `UNAVAILABLE`.
+4. `assertReadOnly` runs `SHOW default_transaction_read_only`. If the value is not `on`, the server stops as in step 2, with a line that names `DATABASE_URL`.
+5. `resolveWorkspace` finds the workspace. If `MAESTER_WORKSPACE_ID` has a value, the server uses that workspace. If not, it uses the first workspace of the user with `MAESTER_USER_EMAIL`. If it finds none, the server stops as in step 2.
+6. If `EMBEDDER_URL` has a value, the server makes a `TeiEmbedder` for `EMBEDDING_MODEL`, with a timeout of 30 seconds and 1 retry. If the client does not know the model, the server stops as in step 2. If `EMBEDDER_URL` has no value, the server has no embedder.
+7. `createServer` registers the tools and the `instructions`, with one gate for the embedder. The server then reads messages on standard input. When the host closes standard input, the server closes the pool and stops with exit code 0.
+8. The agent reads the descriptions of the tools. Each description starts with the answer rules in two lines and ends with what the agent does when the tool has no answer.
+9. The agent calls a tool. The SDK checks the input against the input schema. If the input is wrong, the agent gets an error result from the SDK.
+10. The handler of the tool calls a read loader or a query, always with the ID of the workspace. If the input has an ID that is not in the workspace, the handler gives `NOT_FOUND`. The sentence is the same for an ID that does not exist.
+11. A presenter changes the data into the answer. It copies each decimal string without a change. It writes `null` with a reason for each value that Maester does not know.
+12. `runTool` writes one log line to standard error: the tool, the time in milliseconds, the number of items and the error code. If the handler throws an error, the line also has the class name of the error and its SQLSTATE. The line has no argument, no result and no error message.
+13. The server sends the answer as structured content with a short text summary.
 
 ### The tools
 
@@ -72,9 +75,9 @@ The server runs on the computer of the investor. It talks to the host through st
 | --- | --- | --- |
 | `list_companies` | None | The companies: ID, name, NSE symbol, BSE code, CIN, the number of annual reports read, the newest period end read and where each stands in words. It calls `listResearchCompanies`. |
 | `list_filings` | `company_id` (optional) | The filings: company, kind, period, files, how far Maester read each file, the source of each statement and basis, and why a source has no use. It calls `loadWorkspaceFilings`. |
-| `get_statement` | `company_id`, `statement`, `basis`, and optional `from` and `to` | One statement table, as the Research page gets it. `statement` is `income_statement`, `balance_sheet` or `cash_flow`. `basis` is `consolidated` or `standalone`. It calls `loadCompanyFinancials`. |
-| `get_filing_facts` | `document_id`, and optional `statement` and `basis` | The facts of the current revision of one document, each in the shape of `get_fact`. It is the way to the figures of a results filing. |
-| `get_fact` | `fact_id` | One fact with all that a citation needs. It calls `getFactWithSource`. |
+| `get_statement` | `company_id`, `statement`, `basis`, and optional `from` and `to` | One statement table, as the Research page gets it. `statement` is `income_statement`, `balance_sheet` or `cash_flow`. `basis` is `consolidated`, `standalone` or `unknown`. The value `unknown` is for a filing that does not state its basis. It calls `loadCompanyFinancials`. If the table is not available, `table` is null, and `read_bases` gives the `basis` values that have a table. |
+| `get_filing_facts` | `document_id`, and optional `statement` and `basis` | The facts of the current revision of one document, each in the shape of `get_fact` without `in_table`. It is the way to the figures of a results filing. `note` says why a document has no facts, or that the facts come from an earlier read. `duplicate_of` gives the original of a copy. |
+| `get_fact` | `fact_id` | One fact with all that a citation needs, its check and `in_table`. It calls `getFactWithSource`. |
 | `search_filings` | `query`, and optional `company_id` and `limit` | Passages from the text index. `limit` is 8 by default and at most 20. It calls `searchChunks` after the gate. |
 | `list_metrics` | None | An empty list and the sentence that Maester has no named calculations yet. |
 
@@ -83,12 +86,16 @@ Rules for the answers:
 - Each cell and each fact has its fact ID, its source, its basis, its currency, its unit, its span and its period.
 - The source of a figure from a PDF is the filing name, the document ID and the page, counted from 1. The source of a figure from XBRL is the element, the context and the decimals.
 - The check, the restated state and the reviewed state are sentences. The reviewed state is "not yet", because no review exists.
+- Each fact has its own `check`. The server gets the check from the checks of the revision of the fact, with the rule of the statement table (`factCheck`). A failed sum gives its two figures and their unit, but not the difference.
+- If a fact has no span or no period start, `span_reason` tells why. The server does not get a span from the label.
+- The restated sentence gives the document ID of the other filing and the figure in the unit of that filing. It also gives the same figure in the unit of the table.
 - `get_statement` needs the basis, so one answer never mixes consolidated and standalone figures.
 - `get_statement` gives each row as a printed line name. A row has no concept yet.
-- `get_fact` gives the value in the unit of the filing. If the fact is a cell of the statement table, the answer also gives the value in the unit of the table.
+- `get_fact` gives the value in the unit of the filing. If the fact is a cell of the statement table, `in_table` also gives the value in the unit of the table. It also gives the `fact_id` of the cell. If another filing gives the figure for that year, `in_table` names that filing and the `fact_id` of its cell.
+- A newer read of a filing can replace the read of a fact. Then `superseded` says "Read again on" and the date, and `in_table` gives the cell of the current read. If no read of the filing is current, `superseded` says so and tells why.
 - `search_filings` gives the passages in a `passages` list. A fixed `figures` field says that a number in a passage is not a figure. The server does not remove numbers from passages.
 - Each XBRL fact has a check of its figure against the results PDF. The server says "not checked" for this check while `XBRL_IN_PDF_RESULT_SHOWN` is false. The web client does the same.
-- The server adds, subtracts, divides, rounds and converts nothing. The eslint rules of `apps/mcp` stop the use of `Number`, `parseFloat`, `parseInt` and `decimal.js` in `src`.
+- The server adds, subtracts, divides, rounds and converts nothing. The eslint rules of `apps/mcp` stop the use of `Number`, `parseFloat`, `parseInt`, the unary `+`, `BigInt`, `toFixed` and `decimal.js` in `src`.
 
 ## States and errors
 
@@ -96,10 +103,12 @@ Rules for the answers:
 | --- | --- | --- |
 | Settings error | `DATABASE_URL` has no value, a setting has a wrong value, or neither `MAESTER_WORKSPACE_ID` nor `MAESTER_USER_EMAIL` has a value. | The server writes `maester-mcp: <setting>: <message>` to standard error and stops with exit code 1. |
 | Workspace not found | `MAESTER_WORKSPACE_ID` is not a workspace, or the email has no user with a workspace. | The same as a settings error. |
+| Session not read-only | Postgres says that the session is not read-only, for example through a pooler that removes the startup options. | The server writes a line that names `DATABASE_URL` and stops with exit code 1. |
+| Connection lost | The database stops while the pool has an idle connection. | The server logs the SQLSTATE and continues. The next tool call connects again, or gives `UNAVAILABLE`. |
 | `NOT_FOUND` | An ID is not in the workspace, or it does not exist. | An error result with one sentence. |
 | `INVALID_INPUT` | The input does not fit the input schema. | An error result. The SDK writes the message. |
 | `SEARCH_UNAVAILABLE` | `EMBEDDER_URL` has no value, the embedder does not answer, or it serves a model other than `EMBEDDING_MODEL`. | An error result for `search_filings` only. The other tools continue to work. |
-| `UNAVAILABLE` | The database does not answer, or a handler throws an error. | An error result with the sentence "Maester's database did not answer." The server logs the code only. |
+| `UNAVAILABLE` | The database does not answer, or a handler throws an error. | An error result with the sentence "Maester's database did not answer." The server logs the code, the class name of the error and its SQLSTATE, but not the message. |
 | Write refused | Code in the server tries to write to the database. | Postgres refuses the write with code 25006. |
 | No named calculation | The agent asks for a figure that no fact and no named calculation gives. | `list_metrics` gives an empty list with the reason. The agent must say that Maester cannot calculate the figure yet. |
 
@@ -117,7 +126,7 @@ An error result carries its code and sentence in the text only. It has no struct
 
 ### What the server writes
 
-- Log lines on standard error. A line has the tool, the time, the number of items and the error code. It has no argument, no result and no document text.
+- Log lines on standard error. A line has the tool, the time, the number of items and the error code. For an error that a handler throws, the line also has the class name and the SQLSTATE. It has no argument, no result, no error message and no document text.
 - Nothing to the database and nothing to standard output except the MCP protocol.
 
 ### Environment variables

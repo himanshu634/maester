@@ -272,12 +272,13 @@ pnpm typecheck
 pnpm test
 ```
 
-The tests need Postgres and three separate databases, which `scripts/db/init.sql` creates the first time the Postgres volume is initialised. Point the suite at them:
+The tests need Postgres and four separate databases, which `scripts/db/init.sql` creates the first time the Postgres volume is initialised. A volume made before `maester_test_mcp` was added does not have it; create it once with `docker compose exec postgres createdb -U maester maester_test_mcp`. Point the suite at them:
 
 ```bash
 export DATABASE_URL_TEST_DB=postgres://maester:maester@localhost:5433/maester_test_db
 export DATABASE_URL_TEST_API=postgres://maester:maester@localhost:5433/maester_test_api
 export DATABASE_URL_TEST_WORKER=postgres://maester:maester@localhost:5433/maester_test_worker
+export DATABASE_URL_TEST_MCP=postgres://maester:maester@localhost:5433/maester_test_mcp
 pnpm test
 ```
 
@@ -470,6 +471,6 @@ claude mcp add maester \
 }
 ```
 
-**Settings.** `DATABASE_URL` is required. One of `MAESTER_WORKSPACE_ID` (a workspace id, which wins when both are set) or `MAESTER_USER_EMAIL` (that user's first workspace) is required. `EMBEDDING_MODEL` defaults to `Snowflake/snowflake-arctic-embed-l-v2.0` and must be the model that the embedder serves. `XBRL_PDF_CHECK` is `true` unless you set it to `false`, and must match the API's value. A bad setting stops the server at start with one line on stderr that names the setting.
+**Settings.** `DATABASE_URL` is required. One of `MAESTER_WORKSPACE_ID` (a workspace id, which wins when both are set) or `MAESTER_USER_EMAIL` (that user's first workspace) is required. `EMBEDDING_MODEL` defaults to `Snowflake/snowflake-arctic-embed-l-v2.0` and must be the model that the embedder serves. `XBRL_PDF_CHECK` is `true` unless you set it to `false`, and must match the API's value. A bad setting stops the server at start with one line on stderr that names the setting. The server also stops, naming `DATABASE_URL`, when Postgres says its session is not read-only: connect to Postgres directly, not through a pooler that drops startup options. A `?options=` in the URL is kept, but it cannot turn read-only off.
 
-**Check it.** Ask the agent: "What was the consolidated revenue from operations of the company in FY2025?" It must give the figure with its fact id, filing, page, basis, unit and period. Then ask: "What was its revenue growth?" It must say that Maester has no named calculation for it yet, and give no figure. The server logs one line for each tool call on stderr, with no arguments and no results. Your agent host shows stderr in its MCP log.
+**Check it.** Ask the agent: "What was the consolidated revenue from operations of the company in FY2025?" It must give the figure with its fact id, filing, page, basis, unit and period. Then ask: "What was its revenue growth?" It must say that Maester has no named calculation for it yet, and give no figure. A company whose filings do not state a basis is read with `basis: "unknown"`; `get_statement` names it in `read_bases` when it is the basis there is. The server logs one line for each tool call on stderr, with no arguments and no results. Your agent host shows stderr in its MCP log.
