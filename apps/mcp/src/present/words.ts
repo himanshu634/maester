@@ -72,3 +72,7 @@ export function standing(c: { annualReportsRead: number; reading: number; failed
   if (c.reading > 0) return `Reading ${c.reading} ${c.reading === 1 ? "filing" : "filings"}`;
   return c.annualReportsRead > 0 ? "Read" : "Nothing read yet";
 }
+
+/** The statements and bases as an investor says them, for the sentences a tool gives when it has no table. */
+export const STATEMENT_WORDS = { income_statement: "income statement", balance_sheet: "balance sheet", cash_flow: "cash flow statement" } as const;
+export const BASIS_WORDS = { consolidated: "consolidated", standalone: "standalone", unknown: "basis not stated" } as const;

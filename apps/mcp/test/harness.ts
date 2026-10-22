@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { JobTypes } from "@maester/contracts";
 import { closeDb, createDb, ensurePersonalWorkspace, runMigrations, schema, type Db, type WorkspaceRow } from "@maester/db";
+import type { Embedder } from "@maester/document-index";
 import { silentLogger, type Logger } from "../src/logger.js";
 import { createServer } from "../src/server.js";
 import { loadSettings, type Settings } from "../src/settings.js";
@@ -25,8 +26,12 @@ function moveDecimal(value: string, places: number): string {
   return sign && digits !== 0n ? `-${out}` : out;
 }
 
-export type Line = { label: string; period: string; printed: string; page?: number; section?: string; order?: number };
-export type SeedOpts = { kind?: "annual_report" | "financial_results"; intakeState?: "read" | "kept"; source?: "pdf" | "xbrl" };
+export type Line = {
+  label: string; period: string; printed: string; page?: number; section?: string; order?: number;
+  /** An XBRL fact's span (default "year") and its period start. */
+  span?: "quarter" | "half_year" | "nine_months" | "year" | "other"; periodStart?: string;
+};
+export type SeedOpts = { kind?: "annual_report" | "financial_results"; intakeState?: "read" | "kept"; source?: "pdf" | "xbrl"; name?: string };
 
 export type Seeded = {
   userId: string;
@@ -38,7 +43,7 @@ export type Seeded = {
 
 type CompanyIds = { cin?: string; bseCode?: string; nseSymbol?: string };
 
-export type HarnessOptions = { logger?: Logger; settings?: Partial<Record<string, string>> };
+export type HarnessOptions = { logger?: Logger; settings?: Partial<Record<string, string>>; embedder?: Embedder | null };
 
 /**
  * Two users, each with a workspace and companies, and a server over workspace `a` on a read-only pool. Seeding goes
@@ -76,7 +81,7 @@ export async function createHarness(opts: HarnessOptions = {}) {
     const documentId = crypto.randomUUID();
     const xbrl = seedOpts.source === "xbrl";
     await db.insert(schema.document).values({
-      id: documentId, workspaceId: ws, companyId, originalName: xbrl ? `results-${periodEnd}.xml` : `ar-${periodEnd}.pdf`, declaredSize: 10,
+      id: documentId, workspaceId: ws, companyId, originalName: seedOpts.name ?? (xbrl ? `results-${periodEnd}.xml` : `ar-${periodEnd}.pdf`), declaredSize: 10,
       declaredMime: xbrl ? "application/xml" : "application/pdf", format: xbrl ? "xbrl" : "pdf",
       storageKey: `workspaces/${ws}/documents/${documentId}/original.${xbrl ? "xml" : "pdf"}`, state: "stored", intakeState: seedOpts.intakeState ?? "read", createdByUserId: userId,
     });
@@ -98,7 +103,7 @@ export async function createHarness(opts: HarnessOptions = {}) {
       await db.insert(schema.financialFact).values({
         id: factId, workspaceId: ws, revisionId, companyId, statement: "income_statement", basis: "consolidated", section: line.section ?? "Income",
         lineOrder: line.order ?? 0, reportedLabel: line.label, isSubtotal: false, componentLabels: [], periodLabel: `Year ended ${line.period}`,
-        periodEnd: line.period, ...(xbrl ? { span: "year" as const } : {}), reportedText: line.printed, reportedValue: reported, valueStatus: "value",
+        periodEnd: line.period, ...(xbrl || line.span ? { span: line.span ?? ("year" as const) } : {}), ...(line.periodStart ? { periodStart: line.periodStart } : {}), reportedText: line.printed, reportedValue: reported, valueStatus: "value",
         unitLabel: "₹ in crore", scaleFactor: "10000000", currency: "INR", normalizedValue: moveDecimal(reported, 7),
       });
       if (xbrl) {
@@ -112,10 +117,16 @@ export async function createHarness(opts: HarnessOptions = {}) {
 
   const settings: Settings = loadSettings({ DATABASE_URL: TEST_DATABASE_URL, MAESTER_WORKSPACE_ID: a.workspace.id, ...opts.settings });
   const readDb = createDb(TEST_DATABASE_URL, { readOnly: true, max: 2 });
-  const server = createServer({ db: readDb, workspace: a.workspace, embedder: null, settings, logger: opts.logger ?? silentLogger });
-  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "test", version: "0.0.0" });
-  await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
+  /** Another server and client over the same read-only pool, without seeding or truncating: its own embedder, its own gate. */
+  async function connectServer(embedder: Embedder | null) {
+    const srv = createServer({ db: readDb, workspace: a.workspace, embedder, settings, logger: opts.logger ?? silentLogger });
+    const [c, s] = InMemoryTransport.createLinkedPair();
+    const cl = new Client({ name: "test", version: "0.0.0" });
+    await Promise.all([srv.connect(s), cl.connect(c)]);
+    return { client: cl, async close() { await cl.close(); await srv.close(); } };
+  }
+  const main = await connectServer(opts.embedder ?? null);
+  const client = main.client;
 
   return {
     client,
@@ -127,9 +138,9 @@ export async function createHarness(opts: HarnessOptions = {}) {
     b,
     seedFiling,
     settings,
+    connectServer,
     async close() {
-      await client.close();
-      await server.close();
+      await main.close();
       await closeDb(readDb);
       await closeDb(db);
     },

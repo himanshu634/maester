@@ -64,7 +64,7 @@ describe("tools", () => {
     const { TOOL_NAMES } = await import("../src/tools/index.js");
     const names = (await h.client.listTools()).tools.map((t) => t.name).sort();
     expect(names).toEqual([...TOOL_NAMES].sort());
-    expect(names).toEqual(["list_companies", "list_filings", "list_metrics"]);
+    expect(names).toEqual(["get_fact", "get_filing_facts", "get_statement", "list_companies", "list_filings", "list_metrics"]);
   });
 
   it("opens every description with the answer rules and ends with what to do without an answer", async () => {
