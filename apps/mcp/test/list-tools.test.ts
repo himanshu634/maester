@@ -155,8 +155,19 @@ describe("runTool", () => {
     expect(textOf(res)).toBe("UNAVAILABLE: Maester's database did not answer.");
     expect(res.structuredContent).toBeUndefined();
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatchObject({ tool: "list_companies", items: 0, code: "UNAVAILABLE" });
+    expect(lines[0]).toMatchObject({ tool: "list_companies", items: 0, code: "UNAVAILABLE", error: "Error", sqlstate: null });
     expect(JSON.stringify(lines)).not.toContain("12345.67");
+  });
+
+  it("tells a refused write from a lost database in the log, by SQLSTATE", async () => {
+    const { lines, logger } = recorder();
+    await runTool("list_companies", logger, async () => {
+      await h.readDb.insert(schema.workspace).values({ id: crypto.randomUUID(), name: "Secret name", ownerUserId: h.a.userId });
+      return answered({}, "", 0);
+    });
+    expect(lines[0]).toMatchObject({ code: "UNAVAILABLE", sqlstate: "25006" });
+    expect(typeof lines[0]!.error).toBe("string");
+    expect(JSON.stringify(lines)).not.toMatch(/Secret name|insert/i);
   });
 
   it("logs one line with the tool, milliseconds, item count and code, and nothing of the answer", async () => {

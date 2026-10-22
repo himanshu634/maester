@@ -23,19 +23,34 @@ export function answered<T extends Record<string, unknown>>(structured: T, text:
 
 export const UNAVAILABLE_SENTENCE = "Maester's database did not answer.";
 
+const SQLSTATE = /^[0-9A-Z]{5}$/;
+
 /**
- * Runs one tool call and logs one line: tool, milliseconds, items, error code. Never the arguments or the answer (a query
- * or a line name can carry a figure). A thrown error becomes `UNAVAILABLE`; its message, stack and query go nowhere.
+ * What threw, without its message: the error's class name and the Postgres SQLSTATE when there is one (drizzle wraps
+ * the driver's error in `cause`). A write refused as read-only (25006) and a lost connection then log apart.
+ */
+function whatThrew(err: unknown): { error: string; sqlstate: string | null } {
+  const e = err as { name?: unknown; code?: unknown; cause?: { code?: unknown } } | null;
+  const code = [e?.code, e?.cause?.code].find((c): c is string => typeof c === "string" && SQLSTATE.test(c)) ?? null;
+  return { error: typeof e?.name === "string" ? e.name : "unknown", sqlstate: code };
+}
+
+/**
+ * Runs one tool call and logs one line: tool, milliseconds, items, error code, and for a thrown error its class name and
+ * SQLSTATE. Never the arguments or the answer (a query or a line name can carry a figure). A thrown error becomes
+ * `UNAVAILABLE`; its message, stack and query go nowhere.
  */
 export async function runTool(name: string, logger: Logger, fn: () => Promise<ToolOutcome>): Promise<CallToolResult> {
   const started = performance.now();
   let outcome: ToolOutcome;
+  let thrown: { error: string; sqlstate: string | null } | null = null;
   try {
     outcome = await fn();
-  } catch {
+  } catch (err) {
     outcome = failed("UNAVAILABLE", UNAVAILABLE_SENTENCE);
+    thrown = whatThrew(err);
   }
-  const line = { tool: name, ms: Math.round(performance.now() - started), items: outcome.items, code: outcome.code ?? null };
+  const line = { tool: name, ms: Math.round(performance.now() - started), items: outcome.items, code: outcome.code ?? null, ...thrown };
   if (outcome.code) logger.warn(line, "tool call failed");
   else logger.info(line, "tool call");
   return outcome.result;

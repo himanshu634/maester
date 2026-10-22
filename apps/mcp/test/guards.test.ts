@@ -132,7 +132,10 @@ describe("a closed database", () => {
     for (const line of own.lines) {
       const rec = JSON.parse(line) as Record<string, unknown>;
       expect(rec.code).toBe("UNAVAILABLE");
-      expect(Object.keys(rec).sort()).toEqual(LOG_KEYS);
+      // A thrown error also says what threw, by class name and SQLSTATE, never by its message.
+      expect(Object.keys(rec).sort()).toEqual([...LOG_KEYS, "error", "sqlstate"].sort());
+      expect(typeof rec.error).toBe("string");
+      expect(rec.sqlstate).toBeNull();
       expect(line).not.toMatch(/select|insert|pool|"query"|stack/i);
     }
   });
