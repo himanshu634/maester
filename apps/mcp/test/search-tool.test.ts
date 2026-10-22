@@ -1,10 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-  chunksWithoutEmbedding, completeRevision, insertEmbeddings, schema, startOrResumeRevision, writeRange, type ChunkInput,
-} from "@maester/db";
+import { schema } from "@maester/db";
 import { FakeEmbedder } from "@maester/document-index";
 import { SEARCH_FIGURES_SENTENCE } from "../src/present/search.js";
-import { createHarness, textOf, type Harness } from "./harness.js";
+import { createHarness, textOf, type Chunk, type Harness } from "./harness.js";
 
 const embedder = new FakeEmbedder();
 const MODEL = embedder.model;
@@ -16,37 +14,8 @@ let mismatched: Awaited<ReturnType<Harness["connectServer"]>>;
 let arDoc: string;
 let xbrlDoc: string;
 
-type Chunk = { text: string; sectionPath?: string[]; pageNumber?: number | null; element?: string; textSource?: ChunkInput["textSource"] };
-
-/** One document with the given chunks, indexed and embedded with the fake embedder, as packages/document-index's search tests seed one. */
-async function seedIndexed(ws: string, userId: string, companyId: string | null, name: string, chunks: Chunk[]): Promise<string> {
-  const documentId = crypto.randomUUID();
-  await h.db.insert(schema.document).values({
-    id: documentId, workspaceId: ws, companyId, originalName: name, declaredSize: 10, declaredMime: "application/pdf",
-    storageKey: `workspaces/${ws}/documents/${documentId}/original.pdf`, state: "stored", intakeState: "read", createdByUserId: userId,
-  });
-  const jobId = crypto.randomUUID();
-  await h.db.insert(schema.job).values({
-    id: jobId, workspaceId: ws, type: "document.index", subjectType: "document_index", subjectId: documentId,
-    idempotencyKey: `document.index:${documentId}:${MODEL}`, state: "queued",
-  });
-  const rev = await startOrResumeRevision(h.db, ws, {
-    documentId, jobId,
-    versions: { doclingVersion: "2", ocrEngine: "rapidocr", readerOptions: "o", chunkerVersion: "c", tokenizer: MODEL, indexVersion: "1", embeddingModel: MODEL },
-  });
-  const inputs: ChunkInput[] = chunks.map((c, i) => ({
-    pageNumber: c.pageNumber === undefined ? 1 : c.pageNumber, element: c.element ?? null, seq: i, sectionPath: c.sectionPath ?? [], kind: "prose",
-    textSource: c.textSource ?? "text_layer", text: c.text, tokenCount: 4,
-  }));
-  await writeRange(h.db, ws, rev.id, documentId, [{ pageNumber: 1, text: "p", itemsTextLayer: 1, itemsOcr: 0, noneReason: null, sectionPathAfter: [] }], inputs, {
-    pageCount: 1, pagesRead: 1, pagesOcr: 0, warnings: [],
-  });
-  const rows = await chunksWithoutEmbedding(h.db, ws, rev.id, MODEL, inputs.length);
-  const vectors = await embedder.embed(rows.map((r) => r.text), "document");
-  await insertEmbeddings(h.db, ws, MODEL, rows.map((r, i) => ({ chunkId: r.id, embedding: vectors[i]! })));
-  await completeRevision(h.db, ws, rev.id);
-  return documentId;
-}
+/** One document with the given chunks, indexed with this file's embedder. */
+const seedIndexed = (ws: string, userId: string, companyId: string | null, name: string, chunks: Chunk[]) => h.seedIndexed(ws, userId, companyId, name, chunks, embedder);
 
 beforeAll(async () => {
   h = await createHarness();
