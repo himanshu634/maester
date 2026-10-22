@@ -46,7 +46,7 @@ Maester reads financial filings for an investor. The investor signs in to the we
 
 If an XBRL instance covers the statements of a results PDF, Maester does not read that PDF with a model. The numbers come from the instance.
 
-Maester also shows a market mood. It calculates the market mood from daily market data that the investor's own Dhan and FRED accounts give. The repository holds eight apps, nine shared packages and the deployment scripts.
+Maester also shows a market mood. It calculates the market mood from daily market data that the investor's own Dhan and FRED accounts give. The repository holds nine apps, nine shared packages and the deployment scripts.
 
 ## Parts
 
@@ -57,7 +57,8 @@ Maester also shows a market mood. It calculates the market mood from daily marke
 | [Extractor](extractor.md) | `apps/extractor` | Python HTTP service (FastAPI). It answers `POST /v1/classify` and `POST /v1/extract` for the worker and calls Gemini on Vertex AI. It also answers `POST /v1/xbrl` and `POST /v1/xbrl/pdf-check`, which call no model. It does not write data. |
 | [Indexer](indexer.md) | `apps/indexer` | Python HTTP service. It answers `POST /v1/index`, `POST /v1/chunk` and `POST /v1/chunk-text` for the worker. It reads the pages of a PDF with Docling and cuts them into chunks. It does not write data. |
 | [Web client](web.md) | `apps/web` | Static SvelteKit site. In a container, nginx serves it and sends `/api/auth/`, `/v1/` and `/dev/` to the API. |
-| [CLI](cli.md) | `apps/cli` | Python command `maester` with `ingest`, `ask` and `list-docs`. It keeps a JSON cache in `data/cache`. It does not use the API or the database. |
+| [CLI](cli.md) | `apps/cli` | Python command `maester` with `ingest`, `ask` (deprecated) and `list-docs`. It keeps a JSON cache in `data/cache`. It does not use the API or the database. |
+| [MCP server](mcp.md) | `apps/mcp` | TypeScript MCP server over standard input and output. It is read only, and it serves one workspace to an agent that the investor runs. It reads facts, statement tables, filings and search results. It works out no figure. |
 | [Evaluation harness](eval.md) | `apps/eval` | Python command `maester-eval` with `live`, `export`, `freeze`, `report`, `xbrl-elements` and `xbrl-map`. It runs the extraction workflow over the public filings in `data/eval/corpus` and scores a run against the gold files in `data/eval/gold`. It does not use the API or the database. |
 | [Contracts](packages.md) | `packages/contracts` | Zod shapes for requests, responses and the wire format of the extractor. |
 | [Database package](packages.md) | `packages/db` | Drizzle schema, queries and migrations for Postgres. |
@@ -72,7 +73,7 @@ Maester also shows a market mood. It calculates the market mood from daily marke
 
 The repository has three package managers:
 
-- The pnpm workspace at the root holds `apps/api`, `apps/worker`, `apps/import` and `packages/*`. Turborepo runs its scripts.
+- The pnpm workspace at the root holds `apps/api`, `apps/worker`, `apps/import`, `apps/mcp` and `packages/*`. Turborepo runs its scripts.
 - `apps/web` is a separate pnpm project with its own lockfile. A root `pnpm install` does not install it.
 - The uv workspace holds `apps/cli`, `apps/eval`, `apps/extractor` and `packages/financial-engine`.
 - `apps/indexer` is a separate uv project with its own `uv.lock`, because Docling needs torch.

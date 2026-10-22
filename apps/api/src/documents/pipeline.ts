@@ -1,7 +1,8 @@
 import { JobTypes, XbrlFormatKind, XbrlReadWarning, type DocumentPipeline } from "@maester/contracts";
 import { companyIdentities, loadPipelineInputs, loadWorkspaceXbrlDocs, type ClassificationRow, type Db, type PipelineInput } from "@maester/db";
 import { coveringXbrl, planPdfNumbers, type PdfNumbersPlan } from "@maester/financial-engine";
-import { pdfNumbersInput } from "@maester/jobs";
+// The subpath, not the barrel: the barrel also loads the Cloud Tasks client, which the read loaders (and apps/mcp) never need.
+import { pdfNumbersInput } from "@maester/jobs/intake";
 
 type Numbers = DocumentPipeline["numbers"];
 

@@ -17,7 +17,8 @@ docker compose up --build
 | Extractor | `apps/extractor` | Python, FastAPI | Running: stateless extraction service the worker calls ([README](../apps/extractor/README.md)) |
 | Indexer | `apps/indexer` | Python | Running: stateless page reader and chunker the worker calls ([README](../apps/indexer/README.md), [description](systems/indexer.md)) |
 | Web client | `apps/web` | SvelteKit, static | Running: public pages at `/`, sign-in and recovery pages (`/login`, `/signup`, `/verify-email`, `/forgot-password`, `/reset-password`), `/terminal`; investor journeys planned ([README](../apps/web/README.md)) |
-| CLI | `apps/cli` | Python, Typer | Running: `maester ingest`, `list-docs`, `ask` |
+| CLI | `apps/cli` | Python, Typer | Running: `maester ingest`, `list-docs`, `ask` (deprecated, section 9) |
+| MCP server | `apps/mcp` | TypeScript, MCP SDK | Running: a read-only stdio server that lets an agent read the filings (section 15, [description](systems/mcp.md)) |
 | Evaluation harness | `apps/eval` | Python, Typer | Running: `maester-eval live`, `export`, `freeze`, `report`, `xbrl-elements`, `xbrl-map` ([README](../apps/eval/README.md)) |
 | Document engine | `packages/financial-engine` | Python | Running: the LangGraph extraction workflow ([spec](EXTRACTION.md)), plus the CLI's extraction, checks, cache and Q&A |
 | API contracts | `packages/contracts` | TypeScript, Zod | Running: shared request and response shapes ([README](../packages/contracts/README.md)) |
@@ -231,6 +232,7 @@ Copy [`.env.example`](../.env.example) to `.env`. The TypeScript services valida
 | `MAX_UPLOAD_BYTES`, `UPLOAD_URL_TTL_SECONDS`, `DOWNLOAD_URL_TTL_SECONDS`, `LEASE_SECONDS` | api, worker | Defaulted | 50 MiB, 900 s, 300 s, 600 s |
 | `PORT`, `LOG_LEVEL`, `NODE_ENV` | api, worker | Defaulted | `8787`/`8788`, `info`, `development` |
 | `GOOGLE_CLOUD_PROJECT`, `GEMINI_MODEL`, `GOOGLE_APPLICATION_CREDENTIALS` | Python CLI | For `ingest` and `ask` | See section 9 |
+| `DATABASE_URL`, `MAESTER_WORKSPACE_ID` or `MAESTER_USER_EMAIL`, `EMBEDDER_URL`, `EMBEDDING_MODEL`, `XBRL_PDF_CHECK` | MCP server | `DATABASE_URL` and one of the two workspace settings. The agent host sets them, not `.env` | See section 15 |
 
 Never commit credentials. `.env` and `data/` are ignored by version control; keep it that way.
 
@@ -270,12 +272,13 @@ pnpm typecheck
 pnpm test
 ```
 
-The tests need Postgres and three separate databases, which `scripts/db/init.sql` creates the first time the Postgres volume is initialised. Point the suite at them:
+The tests need Postgres and four separate databases, which `scripts/db/init.sql` creates the first time the Postgres volume is initialised. A volume made before `maester_test_mcp` was added does not have it; create it once with `docker compose exec postgres createdb -U maester maester_test_mcp`. Point the suite at them:
 
 ```bash
 export DATABASE_URL_TEST_DB=postgres://maester:maester@localhost:5433/maester_test_db
 export DATABASE_URL_TEST_API=postgres://maester:maester@localhost:5433/maester_test_api
 export DATABASE_URL_TEST_WORKER=postgres://maester:maester@localhost:5433/maester_test_worker
+export DATABASE_URL_TEST_MCP=postgres://maester:maester@localhost:5433/maester_test_mcp
 pnpm test
 ```
 
@@ -308,7 +311,7 @@ uv run --locked maester ask "What changed in operating cash flow?"
 uv run --locked maester ask "What were total assets?" --doc DOCUMENT_HASH
 ```
 
-`ask` requires `--doc` once more than one document is cached. `ingest` reuses a matching cached hash unless you pass `--force`, which overwrites the cached extraction. Set `GOOGLE_CLOUD_PROJECT` in `.env`, and override `GEMINI_MODEL` if the inherited default is unavailable in your project.
+`ask` is deprecated: it prints a warning on stderr that points to section 15, and it is removed once the MCP server calculates. It requires `--doc` once more than one document is cached. `ingest` reuses a matching cached hash unless you pass `--force`, which overwrites the cached extraction. Set `GOOGLE_CLOUD_PROJECT` in `.env`, and override `GEMINI_MODEL` if the inherited default is unavailable in your project.
 
 Without uv:
 
@@ -424,3 +427,50 @@ The document engine and CLI carry the prototype's limits, and the hosted service
 - There is no ledger, market data, portfolio accounting, evidence-backed Analyst or autonomous loop. Extraction accuracy is not measured.
 
 Feature IDs F04–F09 address the evidence gaps and F17–F24 the accounting foundation; see the [feature roadmap](FEATURE_ROADMAP.md) and [delivery plan](DELIVERY_PLAN.md).
+
+## 15. Connect an agent
+
+`apps/mcp` is a read-only MCP server over stdio. An agent that you run, such as Claude Code or Claude Desktop, starts it and reads one workspace of your filings through seven tools. The tools are `list_companies`, `list_filings`, `get_statement`, `get_filing_facts`, `get_fact`, `search_filings` and `list_metrics`. Every figure comes back with its fact id and its source. Maester has no named calculation yet, so `list_metrics` is empty, and the agent must say so when you ask for a growth or a margin. The [system description](systems/mcp.md) has the detail, and the [design](superpowers/specs/2026-10-21-mcp-server-design.md) has the reasons.
+
+**Which database.** The server reads the Postgres of the main checkout's stack, on `localhost:5433`, where your real filings are. Never point it at a worktree's database: that database is empty or holds test data. Start the stack from the main checkout (`docker compose up`, section 3) so that Postgres is up. For search, the embedder on `localhost:8792` must also be up. Without `EMBEDDER_URL`, only `search_filings` fails, with `SEARCH_UNAVAILABLE`.
+
+**Build it.** The agent starts the built file, so build again after each change to the server:
+
+```bash
+pnpm install
+pnpm --filter @maester/mcp build
+```
+
+This writes `apps/mcp/dist/main.js`. Use the absolute path of the main checkout below (`<repo>`).
+
+**Claude Code:**
+
+```bash
+claude mcp add maester \
+  --env DATABASE_URL=postgres://maester:maester@localhost:5433/maester \
+  --env MAESTER_USER_EMAIL=you@example.com \
+  --env EMBEDDER_URL=http://localhost:8792 \
+  -- node <repo>/apps/mcp/dist/main.js
+```
+
+**Claude Desktop.** Add this to the `mcpServers` object in `claude_desktop_config.json`, then restart the app:
+
+```json
+{
+  "mcpServers": {
+    "maester": {
+      "command": "node",
+      "args": ["<repo>/apps/mcp/dist/main.js"],
+      "env": {
+        "DATABASE_URL": "postgres://maester:maester@localhost:5433/maester",
+        "MAESTER_USER_EMAIL": "you@example.com",
+        "EMBEDDER_URL": "http://localhost:8792"
+      }
+    }
+  }
+}
+```
+
+**Settings.** `DATABASE_URL` is required. One of `MAESTER_WORKSPACE_ID` (a workspace id, which wins when both are set) or `MAESTER_USER_EMAIL` (that user's first workspace) is required. `EMBEDDING_MODEL` defaults to `Snowflake/snowflake-arctic-embed-l-v2.0` and must be the model that the embedder serves. `XBRL_PDF_CHECK` is `true` unless you set it to `false`, and must match the API's value. A bad setting stops the server at start with one line on stderr that names the setting. The server also stops, naming `DATABASE_URL`, when Postgres says its session is not read-only: connect to Postgres directly, not through a pooler that drops startup options. A `?options=` in the URL is kept, but it cannot turn read-only off.
+
+**Check it.** Ask the agent: "What was the consolidated revenue from operations of the company in FY2025?" It must give the figure with its fact id, filing, page, basis, unit and period. Then ask: "What was its revenue growth?" It must say that Maester has no named calculation for it yet, and give no figure. A company whose filings do not state a basis is read with `basis: "unknown"`; `get_statement` names it in `read_bases` when it is the basis there is. The server logs one line for each tool call on stderr, with no arguments and no results. Your agent host shows stderr in its MCP log.

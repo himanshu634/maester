@@ -93,6 +93,7 @@ In this document, `...` in a path is `/v1/workspaces/:ws`.
 | Mood calculation | `apps/api/src/market-mood/compute.ts` | Calculates the readings, the ranks, the scores, the mood and the history. It uses no database and no clock. |
 | Connections routes | `apps/api/src/routes/connections.ts` | List, check, keep and remove the connections. |
 | Research routes | `apps/api/src/routes/research.ts` | Send the list of companies, the statement tables of one company and the stock of one company. |
+| Read loaders | `apps/api/src/read/` | `loadCompanyFinancials`, `listResearchCompanies` and `loadWorkspaceFilings`. The Research routes and the filings route call them. The MCP server calls them too, through `@maester/api/read`. They import nothing from Hono. |
 | Stitch | `apps/api/src/financials/stitch.ts` | `stitch` puts the facts of the read annual reports of one company into statement tables. It uses no database and no clock. |
 | Stock | `apps/api/src/financials/stock.ts` | `stockFrom` makes the stock from the points of one series. It uses no database. |
 | Logger | `apps/api/src/logger.ts` | Writes JSON log records with pino. Removes the `cookie` and `authorization` request headers from the log. |
@@ -379,14 +380,23 @@ Other rules for the mood:
 
 1. `GET .../search` takes the query `q` (1 to 500 characters), the query `limit` (1 to 50, default 10) and the optional query `company` (a UUID).
 2. If `EMBEDDER_URL` has no value, the route sends `SEARCH_UNAVAILABLE` with status 503.
-3. The route sends the query `q` to the embedder, with the model `EMBEDDING_MODEL`.
-4. `searchChunks` finds the 50 nearest chunks by vector and the 50 best chunks by keyword. It joins the two lists by reciprocal rank with k = 60. It searches only the current chunks of the workspace.
-5. The response is `{ "items" }`. Each item has the document, the company, the page, the section path, the text source, the kind, the text and the two ranks.
-6. If the embedder fails, the route sends `SEARCH_UNAVAILABLE` with status 503. The log has the error code and the trace ID. It does not have the query.
+3. The route asks the gate (`ServedModelGate` from `@maester/document-index`) which model the embedder serves. If the model is not `EMBEDDING_MODEL`, the route sends `SEARCH_UNAVAILABLE` with status 503. The gate keeps a pass, so it asks again only after a failure. The [MCP server](mcp.md) holds the same gate.
+4. The route sends the query `q` to the embedder, with the model `EMBEDDING_MODEL`.
+5. `searchChunks` finds the 50 nearest chunks by vector and the 50 best chunks by keyword. It joins the two lists by reciprocal rank with k = 60. It searches only the current chunks of the workspace.
+6. The response is `{ "items" }`. Each item has the document, the company, the page, the section path, the text source, the kind, the text and the two ranks.
+7. If the embedder fails, the route sends `SEARCH_UNAVAILABLE` with status 503. The log has the error code and the trace ID. It does not have the query.
 
 The search result has no figure. It has text and the place of the text.
 
 ### Research
+
+The steps of the routes for the companies, the statement tables and the filings are in three read loaders. The route calls the loader with the workspace ID and sends the result. A loader gives `null` when the company is not in the workspace, and the route then sends `NOT_FOUND`. The [MCP server](mcp.md) calls the same loaders. Thus an agent and the web client get the same statement tables.
+
+| Loader | Route | Result |
+| --- | --- | --- |
+| `listResearchCompanies(db, workspaceId)` | `GET .../research/companies` | The companies with the annual reports that Maester read. |
+| `loadCompanyFinancials(db, workspaceId, companyId, { xbrlPdfCheck })` | `GET .../companies/:id/financials` | The statement tables of the company, or `null`. |
+| `loadWorkspaceFilings(db, workspaceId, { embeddingModel, xbrlPdfCheck })` | `GET .../filings` | The filings of the workspace. |
 
 1. `GET .../research/companies` reads up to 100 companies and the filings of all companies in the workspace.
 2. For each company, the response gives `annualReportsRead`, the number of read annual reports, and `latestPeriodEnd`, the newest period end of these filings.
@@ -826,9 +836,11 @@ CAUTION: Set `DATABASE_URL_TEST_API` only to a test database. The test setup emp
 - [apps/api/src/serialize.ts](../../apps/api/src/serialize.ts)
 - [apps/api/src/market-mood/compute.ts](../../apps/api/src/market-mood/compute.ts)
 - [apps/api/src/financials/](../../apps/api/src/financials/)
+- [apps/api/src/read/](../../apps/api/src/read/)
 - [apps/api/src/middleware/](../../apps/api/src/middleware/)
 - [apps/api/src/routes/](../../apps/api/src/routes/)
 - [apps/api/src/routes/search.ts](../../apps/api/src/routes/search.ts)
+- [packages/document-index/src/gate.ts](../../packages/document-index/src/gate.ts)
 - [apps/api/src/jobs/create.ts](../../apps/api/src/jobs/create.ts)
 - [apps/api/src/dispatch/index.ts](../../apps/api/src/dispatch/index.ts)
 - [apps/api/src/mail/](../../apps/api/src/mail/)

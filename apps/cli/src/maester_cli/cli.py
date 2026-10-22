@@ -16,6 +16,12 @@ app = typer.Typer(
     pretty_exceptions_enable=False,
 )
 console = Console()
+err_console = Console(stderr=True)
+
+ASK_DEPRECATED = (
+    "`maester ask` is deprecated: connect an agent to Maester's MCP server instead "
+    "(see docs/DEVELOPMENT.md). It is removed once the server calculates."
+)
 
 
 def _load_settings() -> Settings:
@@ -60,7 +66,9 @@ def ask(
         None, "--doc", help="Cache hash of the document to ask against (see `list-docs`)."
     ),
 ):
-    """Ask a question grounded in a previously ingested PDF."""
+    """Deprecated: ask a question grounded in a previously ingested PDF."""
+    # On stderr, before anything else, so it shows whether or not the answer follows.
+    err_console.print(f"[yellow]{ASK_DEPRECATED}[/yellow]", soft_wrap=True, markup=True, highlight=False)
     settings = _load_settings()
 
     cached_docs = list_cached()

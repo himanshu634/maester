@@ -4,7 +4,7 @@
 
 | Term | Meaning |
 | --- | --- |
-| App | A directory under `apps/` that runs as a program: [`api`](api.md), [`worker`](worker.md), [`extractor`](extractor.md), [`web`](web.md), [`cli`](cli.md) or [`eval`](eval.md). |
+| App | A directory under `apps/` that runs as a program: [`api`](api.md), [`worker`](worker.md), [`extractor`](extractor.md), [`web`](web.md), [`cli`](cli.md), [`mcp`](mcp.md) or [`eval`](eval.md). |
 | Package | A directory under `packages/` with code for apps to import. It has a `package.json` (TypeScript) or a `pyproject.toml` (Python). |
 | Validator | A Zod object that `@maester/contracts` exports. It parses JSON and refuses JSON with a wrong shape. |
 | Database schema | The Drizzle table definitions in `packages/db/src/schema`. |
@@ -69,12 +69,12 @@ The name of the package in `packages/financial-engine-ts` is `@maester/financial
 | Package | Used by | File that shows it |
 | --- | --- | --- |
 | `@maester/config` | `apps/api`, `apps/worker`, each TypeScript package, `scripts/` | The `tsconfig.json` and `eslint.config.js` of each |
-| `@maester/contracts` | `apps/api`, `apps/worker`, `@maester/jobs` | `apps/api/src/serialize.ts`, `apps/worker/src/extractor.ts`, `packages/jobs/src/intake.ts` |
-| `@maester/db` | `apps/api`, `apps/worker`, `@maester/jobs` | `apps/api/src/app.ts`, `apps/worker/src/run.ts`, `packages/jobs/src/create.ts` |
+| `@maester/contracts` | `apps/api`, `apps/worker`, `apps/mcp`, `@maester/jobs` | `apps/api/src/serialize.ts`, `apps/worker/src/extractor.ts`, `apps/mcp/src/present/`, `packages/jobs/src/intake.ts` |
+| `@maester/db` | `apps/api`, `apps/worker`, `apps/mcp`, `@maester/jobs` | `apps/api/src/app.ts`, `apps/worker/src/run.ts`, `apps/mcp/src/main.ts`, `packages/jobs/src/create.ts` |
 | `@maester/jobs` | `apps/api`, `apps/worker` | `apps/api/src/dispatch/index.ts`, `apps/worker/src/dispatch.ts` |
 | `@maester/storage` | `apps/api`, `apps/worker` | `apps/api/src/store.ts`, `apps/worker/src/store.ts` |
 | `@maester/market` | `apps/api`, `apps/worker` | `apps/api/src/routes/connections.ts`, `apps/worker/src/market/build.ts` |
-| `@maester/document-index` | `apps/api`, `apps/worker` | `apps/api/src/routes/search.ts`, `apps/worker/src/jobs/document-index.ts` |
+| `@maester/document-index` | `apps/api`, `apps/worker`, `apps/mcp` | `apps/api/src/routes/search.ts`, `apps/worker/src/jobs/document-index.ts`, `apps/mcp/src/tools/` |
 | `maester-financial-engine` | `apps/extractor`, `apps/cli`, `apps/eval` | `apps/extractor/src/maester_extractor/app.py`, `apps/cli/src/maester_cli/cli.py`, `apps/eval/src/maester_eval/runner.py` |
 | `@maester/financial-engine` | `apps/api`, `apps/worker`, `@maester/jobs` | `apps/api/src/documents/pipeline.ts`, `apps/worker/src/jobs/document-classify.ts`, `packages/jobs/src/intake.ts` |
 | `@maester/import` | No app. A person runs it. | `apps/import/src/cli.ts` |
@@ -146,7 +146,7 @@ The connection validators give the shape of a market connection on the Settings 
 
 | Export | Function |
 | --- | --- |
-| `createDb(url)`, `closeDb(db)`, `Db` | Make a Drizzle client over a `pg` pool with a maximum of 10 connections. Close the pool. |
+| `createDb(url, options)`, `closeDb(db)`, `Db` | Make a Drizzle client over a `pg` pool. The option `max` sets the maximum number of connections (default 10). With the option `readOnly`, each session sets `default_transaction_read_only=on`, and Postgres refuses a write with code 25006. The MCP server uses this option. Close the pool. |
 | `schema` | All the table and enum definitions. |
 | `WorkspaceRow`, `MembershipRow`, `CompanyRow`, `DocumentRow`, `JobRow` | The row types of the platform tables. |
 | `ExtractionRevisionRow`, `FinancialFactRow`, `SourceReferenceRow`, `ExtractionCheckRow`, `XbrlSourceRow` | The row types of the extraction tables. |
@@ -156,6 +156,7 @@ The connection validators give the shape of a market connection on the Settings 
 | `listWorkspacesForUser`, `getWorkspaceForUser`, `ensurePersonalWorkspace` | Workspace queries. `ensurePersonalWorkspace` creates one workspace and one `owner` membership for a user, if the user has none. |
 | `getDocument`, `listDocuments`, `getJob`, `getLatestJobForSubject`, `getCompany`, `listCompanies` | Document, job and company queries. The lists give the newest row first. |
 | `getLatestRevision`, `getRevision`, `listChecks`, `listFactsWithSources` | Extraction queries. |
+| `getFactWithSource(db, workspaceId, factId)` | Gives one fact with its source, the document, the revision and the company IDs. It gives `null` if the fact is not in the workspace. |
 | `listCompanyFilings`, `listFactsWithSourcesForRevisions`, `listChecksForRevisions`, `CompanyFilingRow` | Research queries. `listCompanyFilings` gives the documents that have a company, newest first, with the kind and the period end of the current classification. The other two queries give the facts with their pages, and the checks, of a list of revisions. |
 | `getCurrentClassification`, `listEvidence`, `getCurrentRevision` | Classification queries. |
 | `loadWorkspaceXbrlDocs`, `companyIdentity`, `companyIdentities`, `listXbrlPdfChecks` | XBRL queries. `loadWorkspaceXbrlDocs` gives the XBRL documents of a workspace as the source rule needs them: state, company, period and coverage. `listXbrlPdfChecks` gives the `xbrl_in_pdf` rows of the current check version. |
@@ -233,6 +234,7 @@ The package has no runtime dependencies. It uses `fetch` and `node:crypto` from 
 | `INDEX_PIPELINE_VERSION`, `indexPipelineVersion` | The version of the index pipeline, with the model name. |
 | `Embedder`, `TeiEmbedder`, `EmbedderError` | The embedder interface and its client for text-embeddings-inference. The client posts to `/embed` with `normalize` true and `truncate` false. It tries again 3 times for status 429, status 500 or more, or no answer. The wait starts at 1 second and doubles. With `retryOnTimeout` false, it does not try again after a request runs past `timeoutMs` (the default is 60 seconds), because the embedder continues to work on that request. |
 | `FakeEmbedder` | An embedder for tests. It gives the same unit vector for the same text. `fail` makes the next calls fail. |
+| `ServedModelGate` | Asks the embedder which model it serves, before the caller embeds a query. It gives `{ ok: true }`, or a code that tells why the embedder cannot serve the query. The API search route and the MCP server both use it. |
 | `searchChunks`, `fuse` | The hybrid search. It joins a vector branch and a keyword branch by reciprocal rank with k = 60. |
 | `contextualize` | The text that the embedder gets: the section path and the text of the chunk. |
 

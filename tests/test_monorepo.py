@@ -122,6 +122,23 @@ class LocalWorkflowTests(unittest.TestCase):
         self.assertIn("Multiple documents", response.output)
         model_ask.assert_not_called()
 
+    def test_ask_warns_on_stderr_that_it_is_deprecated(self):
+        # The cache is empty, so the command stops before any model call.
+        with patch("maester_cli.cli._load_settings", return_value=Settings("test", "test", "test")), \
+             patch("maester_cli.cli.ask_question") as model_ask:
+            response = self.runner.invoke(app, ["ask", "What changed?"])
+        self.assertEqual(response.exit_code, 1)
+        warning = ("`maester ask` is deprecated: connect an agent to Maester's MCP server instead "
+                   "(see docs/DEVELOPMENT.md). It is removed once the server calculates.")
+        self.assertIn(warning, " ".join(response.stderr.split()))
+        self.assertNotIn("deprecated", response.stdout)
+        model_ask.assert_not_called()
+
+    def test_ask_warns_before_it_needs_cloud_settings(self):
+        with patch("maester_cli.cli._load_settings", side_effect=SystemExit(1)):
+            response = self.runner.invoke(app, ["ask", "What changed?"])
+        self.assertIn("`maester ask` is deprecated", " ".join(response.stderr.split()))
+
 
 class EngineTests(unittest.TestCase):
     def test_balanced_statement_has_no_identity_warning(self):

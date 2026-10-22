@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
 import type { Db } from "../client.js";
+import { document } from "../schema/platform.js";
 import {
   extractionCheck,
   extractionRevision,
@@ -11,6 +12,7 @@ import {
   type SourceReferenceRow,
 } from "../schema/extraction.js";
 import { xbrlSource, type XbrlSourceRow } from "../schema/xbrl.js";
+import { getCurrentClassification, getCurrentRevision } from "./classification.js";
 
 /**
  * The `xbrl_in_pdf` check version this package reads. It mirrors `XBRL_PDF_CHECK_VERSION` in @maester/contracts, which
@@ -84,4 +86,63 @@ export async function listXbrlPdfChecks(db: Db, workspaceId: string, factIds: st
         inArray(extractionCheck.factId, factIds),
       ),
     );
+}
+
+/** One fact with where it was read, and what a citation of it needs: the document, the revision it came from and the filing. */
+export type FactLookup = FactWithSource & {
+  documentId: string;
+  companyId: string | null;
+  revision: ExtractionRevisionRow;
+  /** True when the revision is the document's current one (`getCurrentRevision`); a fact of a replaced revision is false. */
+  isCurrentRevision: boolean;
+  /**
+   * The document's current revision: this fact's own, a newer read that replaced it, or null when no read is current
+   * (the document was changed to a kind Maester does not read, waits for its company, or its new read has not finished).
+   */
+  currentRevision: ExtractionRevisionRow | null;
+  /** Where the document stands now (`document.intake_state`), to say in words why no read is current. */
+  intakeState: string | null;
+  filing: { originalName: string; kind: string | null; periodEnd: string | null; pageCount: number };
+};
+
+/**
+ * One fact by id, read through its revision and document, every table filtered by the workspace: a fact of another
+ * workspace, or an id that does not exist, is null. The filing's kind and period are the document's current
+ * classification (the investor's correction is the truth about the document, even for a fact read under an earlier
+ * one); both are null for a document never classified.
+ */
+export async function getFactWithSource(db: Db, workspaceId: string, factId: string): Promise<FactLookup | null> {
+  const rows = await db
+    .select({ fact: financialFact, source: sourceReference, xbrl: xbrlSource, revision: extractionRevision, originalName: document.originalName, intakeState: document.intakeState })
+    .from(financialFact)
+    .innerJoin(extractionRevision, and(eq(extractionRevision.id, financialFact.revisionId), eq(extractionRevision.workspaceId, financialFact.workspaceId)))
+    .innerJoin(document, and(eq(document.id, extractionRevision.documentId), eq(document.workspaceId, extractionRevision.workspaceId)))
+    .leftJoin(sourceReference, and(eq(sourceReference.factId, financialFact.id), eq(sourceReference.workspaceId, financialFact.workspaceId)))
+    .leftJoin(xbrlSource, and(eq(xbrlSource.factId, financialFact.id), eq(xbrlSource.workspaceId, financialFact.workspaceId)))
+    .where(and(eq(financialFact.workspaceId, workspaceId), eq(financialFact.id, factId)))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  const documentId = row.revision.documentId;
+  const [current, classification] = await Promise.all([
+    getCurrentRevision(db, workspaceId, documentId),
+    getCurrentClassification(db, workspaceId, documentId),
+  ]);
+  return {
+    fact: row.fact,
+    source: row.source,
+    xbrl: row.xbrl,
+    documentId,
+    companyId: row.fact.companyId,
+    revision: row.revision,
+    isCurrentRevision: current?.id === row.revision.id,
+    currentRevision: current,
+    intakeState: row.intakeState,
+    filing: {
+      originalName: row.originalName,
+      kind: classification?.kind ?? null,
+      periodEnd: classification?.periodEnd ?? null,
+      pageCount: row.revision.pageCount,
+    },
+  };
 }

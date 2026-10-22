@@ -24,7 +24,7 @@ This document describes the Python command-line application in `apps/cli`. For t
 The CLI gets structured data from the PDF of a company's financial statements, and then answers questions about that PDF. A person runs it on a local computer, in a terminal. It gives three commands:
 
 - `ingest` sends a PDF to the model, checks the result and saves the result in the cache.
-- `ask` sends one result and a question to the model, and shows the answer.
+- `ask` sends one result and a question to the model, and shows the answer. It first writes a warning on standard error. The warning tells you to use the MCP server.
 - `list-docs` shows the results in the cache.
 
 The CLI owns only the command arguments and the terminal output. The engine does the extraction, the arithmetic checks, the cache and the questions. The CLI has no connection to the API, the worker or the database of the TypeScript platform.
@@ -42,7 +42,7 @@ The CLI owns only the command arguments and the terminal output. The engine does
 | `ask` (in the engine) | `packages/financial-engine/src/pdf_financial_qa/qa.py` | Sends one result and the question to the model. Returns the text of the answer. |
 | `hash_pdf`, `load`, `save`, `list_cached` | `packages/financial-engine/src/pdf_financial_qa/storage.py` | Calculate the hash. Read and write the cache. |
 | Pydantic classes | `packages/financial-engine/src/pdf_financial_qa/schema.py` | Define the fields of the result and the statement. |
-| Tests | `tests/test_monorepo.py` | 15 offline tests for the CLI and for the engine parts in this table. |
+| Tests | `tests/test_monorepo.py` | 17 offline tests for the CLI and for the engine parts in this table. |
 
 ## Operation
 
@@ -50,12 +50,12 @@ The CLI owns only the command arguments and the terminal output. The engine does
 
 Usage: `maester ingest <pdf_path> [--force]`.
 
-1. The CLI checks that the file at `pdf_path` exists. If the file does not exist, the CLI stops with exit code 1 (`cli.py:32-34`).
-2. The CLI loads the settings. If `GOOGLE_CLOUD_PROJECT` has no value, the CLI shows the error and stops with exit code 1 (`cli.py:21-26`, `config.py:25-34`).
-3. If you do not give `--force`, the CLI calculates the hash of the file and reads `data/cache/<hash>.json` (`cli.py:38-46`).
+1. The CLI checks that the file at `pdf_path` exists. If the file does not exist, the CLI stops with exit code 1 (`cli.py:38-40`).
+2. The CLI loads the settings. If `GOOGLE_CLOUD_PROJECT` has no value, the CLI shows the error and stops with exit code 1 (`cli.py:27-32`, `config.py:25-34`).
+3. If you do not give `--force`, the CLI calculates the hash of the file and reads `data/cache/<hash>.json` (`cli.py:44-52`).
 4. If that cache file exists, the CLI shows `Already ingested as <hash>` and the consistency warnings of that result. Then it stops with exit code 0 and does not call the model.
 5. The `extract` function of the engine reads the PDF. If the PDF is larger than 15 MiB, it raises `ValueError` (`extraction.py:40-48`).
-6. `extract` sends the PDF bytes and a system instruction to the model in one request. The terminal shows `Extracting <file> via <model>...` until the model replies (`cli.py:48-49`).
+6. `extract` sends the PDF bytes and a system instruction to the model in one request. The terminal shows `Extracting <file> via <model>...` until the model replies (`cli.py:54-55`).
 7. The model returns the statement and the full text as JSON, in the shape of `GeminiExtractionOutput` (`extraction.py:57-70`).
 8. `validate_statement` does two checks on each period of the statement (`validation.py:25-95`):
    - Each subtotal is equal to the sum of its component line items.
@@ -64,30 +64,37 @@ Usage: `maester ingest <pdf_path> [--force]`.
    If a subtotal names a line item that is not in its section, `validate_statement` gives a consistency warning. If it finds total assets but no total liabilities or no total equity, it also gives a consistency warning. If it finds no total assets, it does not do the second check.
 9. The checks ignore a difference of 1.0 or less. They also ignore a difference of 0.5% or less of the larger value (`validation.py:13-18`).
 10. `save` writes the result to `data/cache/<hash>.json`. It makes the folder if necessary and replaces a file that has the same name (`storage.py:25-29`).
-11. The CLI shows the path of the cache file and the hash. Then it shows each consistency warning (`cli.py:51-53`).
-12. If there are no consistency warnings, the CLI shows `Consistency checks passed (balance sheet identity, subtotals).` (`cli.py:108-114`).
+11. The CLI shows the path of the cache file and the hash. Then it shows each consistency warning (`cli.py:57-59`).
+12. If there are no consistency warnings, the CLI shows `Consistency checks passed (balance sheet identity, subtotals).` (`cli.py:116-122`).
 
 ### The `ask` command
 
 Usage: `maester ask "<question>" [--doc <hash>]`.
 
-1. The CLI loads the settings. If `GOOGLE_CLOUD_PROJECT` has no value, the CLI stops with exit code 1 (`cli.py:64`).
-2. `list_cached` reads and parses each JSON file in the cache (`storage.py:32-39`). If the cache is empty, the CLI stops with exit code 1 (`cli.py:66-69`).
-3. The CLI selects one result (`cli.py:71-83`):
+1. The CLI writes the deprecation warning to standard error, in yellow (`cli.py:19-24`, `cli.py:70-71`). It is the first output of the command, before the settings load. The text of the warning is in the code block after this list.
+2. The CLI loads the settings. If `GOOGLE_CLOUD_PROJECT` has no value, the CLI stops with exit code 1 (`cli.py:72`).
+3. `list_cached` reads and parses each JSON file in the cache (`storage.py:32-39`). If the cache is empty, the CLI stops with exit code 1 (`cli.py:74-77`).
+4. The CLI selects one result (`cli.py:79-91`):
    - If you give `--doc`, the CLI loads the result with that hash. If no cache file has that hash, the CLI stops with exit code 1.
    - If you do not give `--doc` and the cache has one result, the CLI uses that result.
    - If you do not give `--doc` and the cache has two or more results, the CLI shows the table of results. Then it stops with exit code 1.
-4. The `ask` function of the engine sends one request to the model (`qa.py:28-42`). The request contains the statement as JSON, the consistency warnings, the full text and the question.
-5. The system instruction of the request tells the model to use only this data. It also tells the model to say when the data has no answer (`qa.py:9-25`).
-6. The terminal shows `Thinking...` until the model replies. Then the CLI shows the text of the answer (`cli.py:85-88`).
+5. The `ask` function of the engine sends one request to the model (`qa.py:28-42`). The request contains the statement as JSON, the consistency warnings, the full text and the question.
+6. The system instruction of the request tells the model to use only this data. It also tells the model to say when the data has no answer (`qa.py:9-25`).
+7. The terminal shows `Thinking...` until the model replies. Then the CLI shows the text of the answer (`cli.py:93-96`).
+
+The text of the deprecation warning is:
+
+```text
+`maester ask` is deprecated: connect an agent to Maester's MCP server instead (see docs/DEVELOPMENT.md). It is removed once the server calculates.
+```
 
 ### The `list-docs` command
 
 Usage: `maester list-docs`.
 
 1. `list_cached` reads each JSON file in the cache, in the order of the file names (`storage.py:32-39`).
-2. If the cache is empty, the CLI shows `No documents ingested yet.` and stops with exit code 0 (`cli.py:94-97`).
-3. If the cache has results, the CLI shows a table with three columns: `Hash`, `File` and `Warnings`. The `Warnings` column gives the number of consistency warnings (`cli.py:101-105`).
+2. If the cache is empty, the CLI shows `No documents ingested yet.` and stops with exit code 0 (`cli.py:102-105`).
+3. If the cache has results, the CLI shows a table with three columns: `Hash`, `File` and `Warnings`. The `Warnings` column gives the number of consistency warnings (`cli.py:109-113`).
 
 The `list-docs` command does not load the settings. Thus it operates without a Google Cloud project (`tests/test_monorepo.py:93-97`).
 
@@ -100,6 +107,7 @@ The CLI shows an error in red, a consistency warning in yellow and a success mes
 | `No such file: <path>` | The `pdf_path` of `ingest` does not exist. | Exit code 1. The CLI does not load the settings. |
 | `GOOGLE_CLOUD_PROJECT is not set. …` | You run `ingest` or `ask`, and `GOOGLE_CLOUD_PROJECT` has no value. | Exit code 1. In `ask`, this check comes before the check of the cache. |
 | `Already ingested as <hash> — use --force to re-extract.` | The cache has a result with the same hash, and you did not give `--force`. | Exit code 0. The CLI does not call the model. It shows the consistency warnings from the cache. |
+| The deprecation warning | You run `ask`. | The CLI writes the warning to standard error before all other output. The command then continues as before. The warning does not change the exit code. |
 | `No documents ingested yet. Run …` | You run `ask`, and the cache is empty. | Exit code 1. |
 | `No cached document with hash '<hash>'.` | The value of `--doc` is not a hash in the cache. | Exit code 1. |
 | `Multiple documents are cached — pass --doc <hash> to pick one.` | You run `ask` without `--doc`, and the cache has two or more results. | Exit code 1. The CLI shows the table of results. |
@@ -268,7 +276,7 @@ Note: if the cache has only one result, you can run `ask` without `--doc`.
 
 2. Make sure that the output shows `OK`.
 
-Note: these 15 tests do not call Vertex AI (`tests/test_monorepo.py:1`). `make test` runs all the Python tests in `tests/`. `make check` also runs `scripts/check_workspace.py` before the tests. The GitHub workflow runs the same commands on Python 3.11 and 3.14.
+Note: these 17 tests do not call Vertex AI (`tests/test_monorepo.py:1`). `make test` runs all the Python tests in `tests/`. `make check` also runs `scripts/check_workspace.py` before the tests. The GitHub workflow runs the same commands on Python 3.11 and 3.14.
 
 ## Warnings and cautions
 
@@ -282,8 +290,9 @@ CAUTION: Use `--force` only when you want to replace the result. The `ingest --f
 - The code does not measure if the full text is complete. A long PDF can be too large for the output limit of the model (`docs/DEVELOPMENT.md` section 14).
 - The checks find line items through the words in their labels. A component with no value for a period counts as zero (`validation.py:1-9`, `validation.py:38-41`).
 - A clean check is not proof that the extraction is correct (`validation.py:1-9`).
+- The MCP server in [`apps/mcp`](mcp.md) replaces `ask`. The CLI loses `ask` when the server gets named calculations.
 - The answers of `ask` come from the model, with no fixed calculation and no check of citations (`qa.py`, `docs/DEVELOPMENT.md` section 14).
-- The `ask` command uses one result for each question. It cannot use two or more results together (`cli.py:71-83`).
+- The `ask` command uses one result for each question. It cannot use two or more results together (`cli.py:79-91`).
 - The hash has only 16 characters. The cache has no version field, no tenant boundary and no control of concurrent writes (`storage.py`, `docs/DEVELOPMENT.md` section 14).
 - The CLI has no command to delete a result from the cache (`cli.py`).
 
@@ -293,6 +302,7 @@ CAUTION: Use `--force` only when you want to replace the result. The `ingest --f
 - [apps/cli/src/maester_cli/\_\_main\_\_.py](../../apps/cli/src/maester_cli/__main__.py)
 - [apps/cli/pyproject.toml](../../apps/cli/pyproject.toml)
 - [apps/cli/README.md](../../apps/cli/README.md)
+- [MCP server design](../superpowers/specs/2026-10-21-mcp-server-design.md)
 - [packages/financial-engine/src/pdf_financial_qa/config.py](../../packages/financial-engine/src/pdf_financial_qa/config.py)
 - [packages/financial-engine/src/pdf_financial_qa/extraction.py](../../packages/financial-engine/src/pdf_financial_qa/extraction.py)
 - [packages/financial-engine/src/pdf_financial_qa/qa.py](../../packages/financial-engine/src/pdf_financial_qa/qa.py)

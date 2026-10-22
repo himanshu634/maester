@@ -27,7 +27,8 @@ jobs:
         run: |
           psql postgres://maester:maester@localhost:5433/postgres -c "CREATE DATABASE maester_test_db" \
             -c "CREATE DATABASE maester_test_api" \
-            -c "CREATE DATABASE maester_test_worker"
+            -c "CREATE DATABASE maester_test_worker" \
+            -c "CREATE DATABASE maester_test_mcp"
         env:
           PGPASSWORD: maester
       - uses: pnpm/action-setup@v4
@@ -43,6 +44,7 @@ jobs:
           DATABASE_URL_TEST_DB: postgres://maester:maester@localhost:5433/maester_test_db
           DATABASE_URL_TEST_API: postgres://maester:maester@localhost:5433/maester_test_api
           DATABASE_URL_TEST_WORKER: postgres://maester:maester@localhost:5433/maester_test_worker
+          DATABASE_URL_TEST_MCP: postgres://maester:maester@localhost:5433/maester_test_mcp
       - run: pnpm build
 
   deploy:
