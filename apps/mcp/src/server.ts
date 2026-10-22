@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Db, WorkspaceRow } from "@maester/db";
-import type { Embedder } from "@maester/document-index";
+import { ServedModelGate, type Embedder } from "@maester/document-index";
 import { INSTRUCTIONS } from "./instructions.js";
 import type { Logger } from "./logger.js";
 import type { Settings } from "./settings.js";
@@ -19,6 +19,7 @@ export function createServer(deps: ServerDeps): McpServer {
   // McpServer answers tools/list only once a tool is registered, so an empty server would say "method not found".
   // This is its own idempotent handler setup (the one registerTool runs); it is private in the typings only.
   server["setToolRequestHandlers"]();
-  registerTools(server, deps);
+  // One gate for the process: a success is kept next to the embedder it checked, a failure is asked again.
+  registerTools(server, deps, deps.embedder ? new ServedModelGate(deps.embedder) : null);
   return server;
 }
