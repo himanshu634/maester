@@ -20,7 +20,8 @@ const log = recorder();
 const LOG_KEYS = ["code", "hostname", "items", "level", "message", "ms", "pid", "time", "tool"];
 const LINE_NAME = "Freight and forwarding";
 const OTHER_LINE = "Zircon royalty income";
-const QUERY = "kilns quartzite throughput";
+// Shares its words with PASSAGE, so the passage is found by keyword as well as by the fake embedder's vectors.
+const QUERY = "kilns ran at capacity quartzite";
 const PASSAGE = "Kilns ran at ninety percent of capacity";
 
 let h: Harness;
@@ -37,6 +38,7 @@ beforeAll(async () => {
     { label: LINE_NAME, period: "2026-03-31", printed: "2,602.15", order: 0 },
     { label: OTHER_LINE, period: "2026-03-31", printed: "88.50", order: 1 },
   ]);
+  await h.seedIndexed(workspace.id, userId, co, "AR 2026 text.pdf", [{ text: PASSAGE, sectionPath: ["Operations"], pageNumber: 12 }]);
   const res = await h.client.callTool({ name: "get_filing_facts", arguments: { document_id: doc } });
   factId = (res.structuredContent as { facts: { fact_id: string }[] }).facts[0]!.fact_id;
   search = await h.connectServer(new FakeEmbedder());
@@ -150,8 +152,17 @@ describe("logs", () => {
       [h.client, "list_metrics", {}],
       [search.client, "search_filings", { query: QUERY, company_id: co }],
     ];
-    for (const [client, name, args] of calls) await client.callTool({ name, arguments: args });
+    const results: Record<string, string> = {};
+    for (const [client, name, args] of calls) results[name] = (results[name] ?? "") + JSON.stringify(await client.callTool({ name, arguments: args }));
     expect(log.lines).toHaveLength(calls.length);
+
+    // The secrets did reach the answers, so their absence from the logs means something.
+    expect(results.search_filings).toContain(PASSAGE);
+    expect(results.get_statement).toContain(LINE_NAME);
+    expect(results.get_statement).toContain("2602.15");
+    expect(results.get_filing_facts).toContain(OTHER_LINE);
+    expect(results.get_filing_facts).toContain("2,602.15");
+    expect(results.get_fact).toContain(LINE_NAME);
 
     const all = log.lines.join("");
     for (const secret of [LINE_NAME, OTHER_LINE, "2,602.15", "2602.15", "260.215", "88.50", QUERY, "quartzite", PASSAGE, co, doc, factId]) {
