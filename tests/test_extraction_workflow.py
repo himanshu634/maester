@@ -9,7 +9,7 @@ from pdf_fixtures import make_pdf
 from test_extraction_values import api_error
 
 from pdf_financial_qa.workflow import ExtractionError, WorkflowSettings, run_extraction
-from pdf_financial_qa.workflow.errors import ModelOutputError
+from pdf_financial_qa.workflow.errors import ModelOutputError, PermanentModelError
 from pdf_financial_qa.workflow.pdf import PdfDocument
 from pdf_financial_qa.workflow.model import (
     ExtractedLine, ExtractedSection, ExtractedValue, LocatedStatement, LocateOutput, StatementOutput,
@@ -215,6 +215,15 @@ class SelfCorrectionTests(unittest.TestCase):
         self.assertTrue(any(w.code == "CORRECTION_FAILED" for w in result.warnings))
         self.assertEqual(next(f.reported_text for f in result.facts if f.reported_label == "Total assets"), "2,100")
 
+    def test_a_refused_correction_keeps_the_original_reading(self):
+        wrong_total = balance_sheet(total="2,100")
+        model = ScriptedModel(extract={"balance_sheet": [wrong_total], "income_statement": [income_statement()], "cash_flow": [cash_flow()]},
+                              correct=[PermanentModelError("MODEL_REFUSED", "declined")])
+        result = run_extraction(PDF, model=model, settings=FAST)
+        self.assertEqual(result.state, "complete")
+        self.assertTrue(any(w.code == "CORRECTION_FAILED" for w in result.warnings))
+        self.assertEqual(next(f.reported_text for f in result.facts if f.reported_label == "Total assets"), "2,100")
+
 
 class FailureTests(unittest.TestCase):
     def test_a_failing_statement_makes_the_result_partial(self):
@@ -227,6 +236,32 @@ class FailureTests(unittest.TestCase):
         self.assertIn("ModelOutputError", failed.message)
         self.assertEqual(sum(1 for c in model.calls if c[:2] == ("extract", "cash_flow")), FAST.retry_attempts)
         self.assertFalse(any(f.statement == "cash_flow" for f in result.facts))
+
+    def test_a_refused_or_cut_off_statement_fails_only_itself(self):
+        for code in ("MODEL_REFUSED", "MODEL_OUTPUT_TOO_LONG"):
+            model = ScriptedModel(extract={"balance_sheet": [balance_sheet()], "income_statement": [income_statement()],
+                                           "cash_flow": [PermanentModelError(code, "no usable answer")]})
+            with self.subTest(code):
+                result = run_extraction(PDF, model=model, settings=FAST)
+                self.assertEqual(result.state, "partial")
+                self.assertEqual(next(c.status for c in result.coverage if c.statement == "cash_flow"), "failed")
+                self.assertTrue(any(f.statement == "balance_sheet" for f in result.facts))
+                self.assertTrue(any(f.statement == "income_statement" for f in result.facts))
+                self.assertEqual(sum(1 for c in model.calls if c[:2] == ("extract", "cash_flow")), 1)  # not retried
+
+    def test_every_statement_refused_is_permanent(self):
+        refused = PermanentModelError("MODEL_REFUSED", "declined")
+        model = ScriptedModel(extract={"balance_sheet": [refused], "income_statement": [refused], "cash_flow": [refused]})
+        with self.assertRaises(ExtractionError) as ctx:
+            run_extraction(PDF, model=model, settings=FAST)
+        self.assertEqual((ctx.exception.code, ctx.exception.retryable), ("NO_STATEMENTS_EXTRACTED", False))
+
+    def test_a_refused_locate_ends_the_run_with_its_code(self):
+        model = ScriptedModel(locate=[PermanentModelError("MODEL_REFUSED", "declined")])
+        with self.assertRaises(ExtractionError) as ctx:
+            run_extraction(PDF, model=model, settings=FAST)
+        self.assertEqual((ctx.exception.code, ctx.exception.retryable), ("MODEL_REFUSED", False))
+        self.assertEqual(model.count("locate"), 1)
 
     def test_a_transient_locate_failure_is_retried(self):
         model = ScriptedModel(locate=[ModelOutputError("try again"), LOCATED])

@@ -13,7 +13,7 @@ from pdf_financial_qa.classify.contracts import ClassificationResult, Evidence, 
 from pdf_financial_qa.classify.model import Answer, ClassificationModel, ClassifyOutput, Question
 from pdf_financial_qa.classify.prompts import PROMPT_VERSION
 from pdf_financial_qa.workflow.contracts import ExtractionWarning
-from pdf_financial_qa.workflow.errors import ExtractionError, is_transient
+from pdf_financial_qa.workflow.errors import ExtractionError, PermanentModelError, is_transient
 from pdf_financial_qa.workflow.pdf import PdfDocument
 from pdf_financial_qa.workflow.values import parse_label_date
 
@@ -110,7 +110,7 @@ def _call(model: ClassificationModel, pdf: bytes, page_count: int, questions: li
 
 
 def _reason(exc: Exception) -> str:
-    return exc.code if isinstance(exc, ExtractionError) else type(exc).__name__
+    return exc.code if isinstance(exc, (ExtractionError, PermanentModelError)) else type(exc).__name__
 
 
 def run_classification(pdf: bytes, *, model_factory: ModelFactory | None,

@@ -9,7 +9,7 @@ from typing import Literal, NamedTuple, Protocol, TypeVar
 from pydantic import BaseModel, Field, ValidationError
 
 from pdf_financial_qa.workflow import prompts
-from pdf_financial_qa.workflow.errors import ExtractionError, ModelOutputError
+from pdf_financial_qa.workflow.errors import ModelOutputError, PermanentModelError
 
 
 class LocatedStatement(BaseModel):
@@ -122,8 +122,8 @@ def structured_call(client, *, model: str, effort: Effort, max_tokens: int, sche
                     cache: bool = False, system: str | None = None, usage: TokenUsage | None = None) -> T:
     """One streamed request whose answer is constrained to ``schema`` and validated against it.
 
-    A refusal or an answer cut off at ``max_tokens`` would come back the same on a retry, so both are
-    permanent; JSON that does not validate is a ``ModelOutputError``, which the callers retry."""
+    A refusal or an answer cut off at ``max_tokens`` would come back the same on a retry, so both are a
+    ``PermanentModelError``; JSON that does not validate is a ``ModelOutputError``, which the callers retry."""
     import anthropic
 
     output_config = {"effort": effort, "format": {"type": "json_schema", "schema": anthropic.transform_schema(schema)}}
@@ -134,9 +134,9 @@ def structured_call(client, *, model: str, effort: Effort, max_tokens: int, sche
     if usage is not None:
         usage.add(message.usage)
     if message.stop_reason == "refusal":
-        raise ExtractionError("MODEL_REFUSED", "the model declined to read the document", retryable=False)
+        raise PermanentModelError("MODEL_REFUSED", "the model declined to read the document")
     if message.stop_reason == "max_tokens":
-        raise ExtractionError("MODEL_OUTPUT_TOO_LONG", f"the answer did not fit in {max_tokens} tokens", retryable=False)
+        raise PermanentModelError("MODEL_OUTPUT_TOO_LONG", f"the answer did not fit in {max_tokens} tokens")
     text_out = next((block.text for block in message.content if block.type == "text"), None)
     if text_out is None:
         raise ModelOutputError(f"model returned no {schema.__name__}")

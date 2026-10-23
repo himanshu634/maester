@@ -19,9 +19,22 @@ class ModelOutputError(Exception):
     """The model answered, but not with something usable (e.g. a page outside the file)."""
 
 
+class PermanentModelError(Exception):
+    """The model answered in a way a retry would repeat: it refused, or its answer was cut off.
+
+    It fails the one call, not the run, so a statement branch or a correction can fail on its own;
+    it becomes a permanent ``ExtractionError`` with the same code only if it ends the run.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
 def is_transient(exc: BaseException) -> bool:
     """Whether a failed model call is worth retrying."""
-    if isinstance(exc, ExtractionError):
+    if isinstance(exc, (ExtractionError, PermanentModelError)):
         return False
     if isinstance(exc, (ModelOutputError, TimeoutError, ConnectionError)):
         return True

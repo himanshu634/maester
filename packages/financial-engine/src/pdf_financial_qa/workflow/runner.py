@@ -34,7 +34,7 @@ from pdf_financial_qa.workflow.drafts import (
     StatementDraft,
     check_statement,
 )
-from pdf_financial_qa.workflow.errors import ExtractionError, ModelOutputError, is_transient
+from pdf_financial_qa.workflow.errors import ExtractionError, ModelOutputError, PermanentModelError, is_transient
 from pdf_financial_qa.workflow.model import (
     ExtractedLine,
     ExtractedSection,
@@ -473,6 +473,8 @@ def run_extraction(
 def _classify(exc: Exception) -> ExtractionError:
     import anthropic
 
+    if isinstance(exc, PermanentModelError):  # a call outside a statement branch, such as locate
+        return ExtractionError(exc.code, exc.message, retryable=False)
     if isinstance(exc, (anthropic.AuthenticationError, anthropic.PermissionDeniedError, anthropic.CredentialsError)):
         return ExtractionError("EXTRACTOR_NOT_CONFIGURED", "no usable Anthropic API key is available", retryable=False)
     if is_transient(exc):

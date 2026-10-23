@@ -115,7 +115,7 @@ The CLI shows an error in red, a consistency warning in yellow and a success mes
 | `<n> consistency warning(s):` | `validate_statement` finds one or more failed checks. | The CLI shows each consistency warning. The result goes into the cache with its consistency warnings. The `ask` request also sends them to the model. |
 | `ValueError: PDF is … over the 15 MB inline limit …` | The PDF is larger than 15 MiB (15 × 1024 × 1024 bytes). | The CLI does not catch the error. Python shows a traceback. No request goes to the model. |
 | An error from the Anthropic API or from the network | Not known. The CLI makes one try for each call (`max_retries=0`) and does not catch the error. | Python shows a traceback. |
-| `MODEL_REFUSED` or `MODEL_OUTPUT_TOO_LONG` | In `ingest`, the model refuses the document, or its answer does not fit in the output limit (`workflow/model.py`). | The CLI does not catch the `ExtractionError`. Python shows a traceback. In `ask`, a refusal raises `RuntimeError` (`qa.py:40-41`). |
+| `MODEL_REFUSED` or `MODEL_OUTPUT_TOO_LONG` | In `ingest`, the model refuses the document, or its answer does not fit in the output limit (`workflow/model.py`). | The CLI does not catch the `PermanentModelError`. Python shows a traceback. In `ask`, a refusal raises `RuntimeError` (`qa.py:40-41`). |
 | A cache file that does not parse | `model_validate_json` cannot read a JSON file in the cache as a result. | The CLI does not catch the error. `ask` and `list-docs` stop with a traceback, also when you give `--doc`. |
 
 ## Data

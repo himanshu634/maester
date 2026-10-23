@@ -313,8 +313,8 @@ The extraction stream sends an error as an `error` event. The classification rou
 | `EXTRACTION_FAILED` | No statement has the status `extracted`, and a branch failed with a transient error. Or the workflow raised an unexpected exception. | Error, `retryable` `true`. |
 | `MODEL_UNAVAILABLE` (error) | A transient error continues after all tries, outside a `statement` branch. | Error, `retryable` `true`. |
 | `MODEL_REQUEST_REJECTED` | A model call gets an `APIStatusError` that is not transient and not an authentication or permission error. Examples: a code 400, 404 or 413, an unknown model, a PDF over the request limit. | Error, `retryable` `false`. |
-| `MODEL_REFUSED` | The `stop_reason` of the answer is `refusal`. | Error, `retryable` `false`. |
-| `MODEL_OUTPUT_TOO_LONG` | The `stop_reason` of the answer is `max_tokens`. | Error, `retryable` `false`. |
+| `MODEL_REFUSED` | The `stop_reason` of the answer is `refusal`, outside a `statement` branch (for example `locate`). In a branch, only that statement fails; in a correction, the original reading stays with a `CORRECTION_FAILED` warning. | Error, `retryable` `false`. |
+| `MODEL_OUTPUT_TOO_LONG` | The `stop_reason` of the answer is `max_tokens`, outside a `statement` branch. In a branch or a correction it fails only that call, as for `MODEL_REFUSED`. | Error, `retryable` `false`. |
 | `MODEL_CALL_BUDGET_EXCEEDED` | The request needs more than 40 model calls. | Error, `retryable` `false`. |
 | `DEADLINE_EXCEEDED` | The time since the start is more than `EXTRACT_DEADLINE_SECONDS` before a model call. | Error, `retryable` `false`. |
 | `CANCELLED` | The stream stopped before the workflow finished. | Error, `retryable` `true`. |

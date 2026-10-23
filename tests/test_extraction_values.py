@@ -6,7 +6,7 @@ import unittest
 from types import SimpleNamespace
 
 from pdf_financial_qa.workflow.drafts import DraftLine, DraftSection, DraftValue, StatementDraft, check_statement
-from pdf_financial_qa.workflow.errors import ExtractionError, ModelOutputError, is_transient
+from pdf_financial_qa.workflow.errors import ModelOutputError, PermanentModelError, is_transient
 from pdf_financial_qa.workflow.values import (
     format_decimal, parse_label_date, parse_reported, same_company, scale_for, text_layer_match,
 )
@@ -241,7 +241,7 @@ class ModelMessageTests(unittest.TestCase):
 
         usage = TokenUsage()
         self.call(FakeClient(text='{"statements": []}'), usage=usage)
-        with self.assertRaises(ExtractionError):
+        with self.assertRaises(PermanentModelError):
             self.call(FakeClient(stop_reason="max_tokens", text="{"), usage=usage)
         self.assertEqual(usage.snapshot(), (20, 40, 0, 10))
 
@@ -252,9 +252,10 @@ class ModelMessageTests(unittest.TestCase):
 
     def test_a_refusal_and_a_cut_off_answer_are_permanent(self):
         for stop, code in (("refusal", "MODEL_REFUSED"), ("max_tokens", "MODEL_OUTPUT_TOO_LONG")):
-            with self.subTest(stop), self.assertRaises(ExtractionError) as ctx:
+            with self.subTest(stop), self.assertRaises(PermanentModelError) as ctx:
                 self.call(FakeClient(stop_reason=stop, text='{"statem'))
-            self.assertEqual((ctx.exception.code, ctx.exception.retryable), (code, False))
+            self.assertEqual(ctx.exception.code, code)
+            self.assertFalse(is_transient(ctx.exception))
 
     def test_no_text_or_invalid_json_is_a_model_output_error(self):
         for text in (None, '{"statements": "not a list"}'):
