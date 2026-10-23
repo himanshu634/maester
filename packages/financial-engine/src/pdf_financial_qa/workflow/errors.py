@@ -25,13 +25,10 @@ def is_transient(exc: BaseException) -> bool:
         return False
     if isinstance(exc, (ModelOutputError, TimeoutError, ConnectionError)):
         return True
-    try:
-        import anthropic
+    import anthropic
 
-        if isinstance(exc, (anthropic.APIConnectionError, anthropic.RateLimitError)):  # timeouts are connection errors
-            return True
-        if isinstance(exc, anthropic.APIStatusError):
-            return exc.status_code >= 500  # 529 (overloaded) included
-    except ImportError:  # pragma: no cover - anthropic is a declared dependency
-        pass
+    if isinstance(exc, (anthropic.APIConnectionError, anthropic.RateLimitError)):  # timeouts are connection errors
+        return True
+    if isinstance(exc, anthropic.APIStatusError):
+        return exc.status_code >= 500  # 529 (overloaded) included
     return False

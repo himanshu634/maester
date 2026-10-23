@@ -107,8 +107,9 @@ def run_live(filings: list[Filing], corpus: Path, run_dir: Path, model_factory: 
         outcome = artefact.result["state"] if artefact.result else artefact.error.code
         log(f"{filing.id}: {outcome} in {artefact.seconds}s, {artefact.model_calls.total} model calls")
         if before is not None:
-            spent = [after - b for after, b in zip(usage.snapshot(), before)]
-            log(f"{filing.id}: tokens in {spent[0]}, cache write {spent[1]}, cache read {spent[2]}, out {spent[3]}")
+            spent = usage.snapshot() - before
+            log(f"{filing.id}: tokens in {spent.input}, cache write {spent.cache_write}, "
+                f"cache read {spent.cache_read}, out {spent.output}")
         artefacts.append(artefact)
     record["finished_at"] = datetime.now(timezone.utc).isoformat()
     record["model"] = artefacts[0].model if artefacts else None
@@ -120,10 +121,10 @@ def claude_model_factory() -> ModelFactory:
     """The model the extractor runs, from the same variables (apps/extractor settings.py)."""
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise EvalConfigError("ANTHROPIC_API_KEY is not set; copy .env.example to .env and fill it in")
-    model_name = os.environ.get("EXTRACTOR_MODEL") or "claude-opus-5-5"
-    effort = os.environ.get("EXTRACTOR_EFFORT") or "high"
-    from pdf_financial_qa.workflow.model import ClaudeExtractionModel
+    from pdf_financial_qa.workflow.model import DEFAULT_MODEL, ClaudeExtractionModel
 
+    model_name = os.environ.get("EXTRACTOR_MODEL") or DEFAULT_MODEL
+    effort = os.environ.get("EXTRACTOR_EFFORT") or "high"
     instance = ClaudeExtractionModel(model=model_name, effort=effort)
     return lambda: instance
 

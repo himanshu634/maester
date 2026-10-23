@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
+from pdf_financial_qa.workflow.model import DEFAULT_MODEL
+
 load_dotenv()
 
 # The Messages API takes a request of up to 32 MB, and base64 makes a PDF a third
@@ -27,5 +29,5 @@ class Settings:
                 "ANTHROPIC_API_KEY is not set. Copy .env.example to .env "
                 "and fill in your Anthropic API key."
             )
-        return cls(model=os.environ.get("EXTRACTOR_MODEL") or "claude-opus-5-5",
+        return cls(model=os.environ.get("EXTRACTOR_MODEL") or DEFAULT_MODEL,
                    effort=os.environ.get("EXTRACTOR_EFFORT") or "high")

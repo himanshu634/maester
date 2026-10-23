@@ -180,7 +180,7 @@ class LiveCommandTests(unittest.TestCase):
         (self.paths.corpus / "synthetic-industries").mkdir(parents=True)
         (self.paths.corpus / FILING.file).write_bytes(PDF)
         self.write_manifest(IN_SCOPE, OUT_OF_SCOPE)
-        # `_main` loads the repository's real .env before every command. Nothing here may read it, reach Vertex AI
+        # `_main` loads the repository's real .env before every command. Nothing here may read it, reach the Anthropic API
         # or leave a variable behind for the tests that run after this one.
         for patcher in (
             mock.patch.dict(os.environ),

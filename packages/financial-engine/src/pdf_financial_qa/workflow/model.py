@@ -4,7 +4,7 @@ import base64
 import json
 import threading
 from dataclasses import dataclass, field
-from typing import Literal, Protocol, TypeVar
+from typing import Literal, NamedTuple, Protocol, TypeVar
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -67,6 +67,16 @@ Effort = Literal["low", "medium", "high", "xhigh", "max"]
 T = TypeVar("T", bound=BaseModel)
 
 
+class Tokens(NamedTuple):
+    input: int
+    cache_write: int
+    cache_read: int
+    output: int
+
+    def __sub__(self, other: "Tokens") -> "Tokens":  # type: ignore[override]
+        return Tokens(*(a - b for a, b in zip(self, other)))
+
+
 @dataclass
 class TokenUsage:
     """Tokens a model has spent, summed over its calls. Thread-safe: statement branches run in parallel."""
@@ -80,13 +90,13 @@ class TokenUsage:
     def add(self, usage) -> None:
         with self._lock:
             self.input += usage.input_tokens or 0
-            self.cache_write += getattr(usage, "cache_creation_input_tokens", None) or 0
-            self.cache_read += getattr(usage, "cache_read_input_tokens", None) or 0
+            self.cache_write += usage.cache_creation_input_tokens or 0
+            self.cache_read += usage.cache_read_input_tokens or 0
             self.output += usage.output_tokens or 0
 
-    def snapshot(self) -> tuple[int, int, int, int]:
+    def snapshot(self) -> Tokens:
         with self._lock:
-            return self.input, self.cache_write, self.cache_read, self.output
+            return Tokens(self.input, self.cache_write, self.cache_read, self.output)
 
 
 def claude_client(timeout_seconds: float):
@@ -99,7 +109,8 @@ def claude_client(timeout_seconds: float):
 
 def pdf_content(text: str, pdf: bytes, *, cache: bool = False) -> list[dict]:
     """The PDF as a base64 document block, then the instruction. ``cache`` marks the document for
-    reuse by a later call on the same pages (a correction re-sends its statement's pages)."""
+    reuse by a later call on the same pages with the same output schema: a changed schema breaks the
+    cache, so only corrections, which re-send their statement's pages one section at a time, use it."""
     document: dict = {"type": "document",
                       "source": {"type": "base64", "media_type": "application/pdf", "data": base64.b64encode(pdf).decode()}}
     if cache:
@@ -158,7 +169,7 @@ class ClaudeExtractionModel:
 
     def extract(self, pdf: bytes, page_count: int, statement: str, basis: str) -> StatementOutput:
         text = prompts.EXTRACT.format(statement=statement, basis=basis) + f"\nThe PDF has {page_count} pages."
-        return self._structured(StatementOutput, text, pdf, cache=True)
+        return self._structured(StatementOutput, text, pdf)
 
     def correct(self, pdf: bytes, page_count: int, statement: str, basis: str,
                 section: ExtractedSection, problems: list[str]) -> ExtractedSection:

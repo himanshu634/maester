@@ -4,6 +4,8 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from pdf_financial_qa.workflow.model import DEFAULT_MODEL
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -12,9 +14,9 @@ class Settings:
     # where IAM (roles/run.invoker) authenticates the worker instead.
     secret: str | None = None
     api_key_set: bool = False
-    model: str = "claude-opus-5-5"
+    model: str = DEFAULT_MODEL
     effort: str = "high"
-    classify_model: str = "claude-opus-5-5"
+    classify_model: str = DEFAULT_MODEL
     classify_effort: str = "medium"
     classify_model_seconds: float = 60.0
     max_bytes: int = 50 * 1024 * 1024
@@ -31,9 +33,9 @@ class Settings:
             secret=env.get("EXTRACTOR_SECRET") or None,
             # The SDK reads the key itself; settings only record that there is one.
             api_key_set=bool(env.get("ANTHROPIC_API_KEY")),
-            model=env.get("EXTRACTOR_MODEL") or "claude-opus-5-5",
+            model=env.get("EXTRACTOR_MODEL") or DEFAULT_MODEL,
             effort=env.get("EXTRACTOR_EFFORT") or "high",
-            classify_model=env.get("EXTRACTOR_CLASSIFY_MODEL") or "claude-opus-5-5",
+            classify_model=env.get("EXTRACTOR_CLASSIFY_MODEL") or DEFAULT_MODEL,
             classify_effort=env.get("EXTRACTOR_CLASSIFY_EFFORT") or "medium",
             classify_model_seconds=float(env.get("CLASSIFY_MODEL_TIMEOUT_SECONDS", "60")),
             max_bytes=int(env.get("EXTRACT_MAX_BYTES", str(50 * 1024 * 1024))),

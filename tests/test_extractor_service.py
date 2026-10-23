@@ -67,7 +67,7 @@ class ExtractorServiceTests(unittest.TestCase):
         self.assertIsInstance(stream[-1], ErrorEvent)
         self.assertEqual((stream[-1].code, stream[-1].retryable), ("UNREADABLE_PDF", False))
 
-    def test_missing_vertex_configuration_is_a_permanent_error(self):
+    def test_a_missing_api_key_is_a_permanent_error(self):
         def not_configured():
             raise ExtractionError("EXTRACTOR_NOT_CONFIGURED", "ANTHROPIC_API_KEY is not set", retryable=False)
 

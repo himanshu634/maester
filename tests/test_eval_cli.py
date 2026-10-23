@@ -89,7 +89,7 @@ class CommandCase(unittest.TestCase):
         (self.paths.corpus / FILING.file).write_bytes(PDF)
         self.paths.manifest.write_text(json.dumps({"filings": [FILING.model_dump(mode="json")]}), encoding="utf-8")
         # `_main` loads the repository's real .env before every command, and DEFAULT is the real data/eval. Nothing
-        # here may read the one, write into the other, reach Vertex AI or leave a variable behind for the tests after this one.
+        # here may read the one, write into the other, reach the Anthropic API or leave a variable behind for the tests after this one.
         for patcher in (
             mock.patch.dict(os.environ, {"EXTRACT_DEADLINE_SECONDS": "60"}),
             mock.patch.object(cli, "load_dotenv"),
