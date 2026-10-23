@@ -35,29 +35,3 @@ def is_transient(exc: BaseException) -> bool:
     except ImportError:  # pragma: no cover - anthropic is a declared dependency
         pass
     return False
-    if isinstance(exc, (ModelOutputError, TimeoutError, ConnectionError)):
-        return True
-    try:
-        import anthropic
-
-        if isinstance(exc, (anthropic.APIConnectionError, anthropic.RateLimitError)):  # timeouts are connection errors
-            return True
-        if isinstance(exc, anthropic.APIStatusError):
-            return exc.status_code >= 500  # 529 (overloaded) included
-    except ImportError:  # pragma: no cover - anthropic is a declared dependency
-        pass
-    try:
-        from langchain_core.exceptions import OutputParserException
-
-        if isinstance(exc, OutputParserException):
-            return True
-    except ImportError:  # pragma: no cover
-        pass
-    try:
-        import httpx
-
-        if isinstance(exc, (httpx.TimeoutException, httpx.TransportError)):
-            return True
-    except ImportError:  # pragma: no cover
-        pass
-    return False
