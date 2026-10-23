@@ -94,7 +94,7 @@ class CommandCase(unittest.TestCase):
             mock.patch.dict(os.environ, {"EXTRACT_DEADLINE_SECONDS": "60"}),
             mock.patch.object(cli, "load_dotenv"),
             mock.patch.object(cli, "DEFAULT", self.paths),
-            mock.patch.object(cli, "gemini_model_factory", return_value=lambda: ScriptedModel()),
+            mock.patch.object(cli, "claude_model_factory", return_value=lambda: ScriptedModel()),
         ):
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -221,7 +221,7 @@ class LivePairedTests(CommandCase):
     def test_the_model_is_never_built_for_a_paired_run_that_reads_nothing(self):
         self.paths.manifest.write_text(
             json.dumps(Manifest(filings=[self.annual]).model_dump(mode="json")), encoding="utf-8")
-        with mock.patch.object(cli, "gemini_model_factory") as factory:
+        with mock.patch.object(cli, "claude_model_factory") as factory:
             result = self.run_command("live", "--paired")
         self.assert_refused(result, "paired: 0 of 1", "nothing to read")
         factory.assert_not_called()

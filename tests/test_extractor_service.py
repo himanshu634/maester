@@ -69,14 +69,14 @@ class ExtractorServiceTests(unittest.TestCase):
 
     def test_missing_vertex_configuration_is_a_permanent_error(self):
         def not_configured():
-            raise ExtractionError("EXTRACTOR_NOT_CONFIGURED", "GOOGLE_CLOUD_PROJECT is not set", retryable=False)
+            raise ExtractionError("EXTRACTOR_NOT_CONFIGURED", "ANTHROPIC_API_KEY is not set", retryable=False)
 
         stream = events(post(client(factory=not_configured)))
         self.assertEqual([e.type for e in stream], ["started", "error"])
         self.assertEqual((stream[-1].code, stream[-1].retryable), ("EXTRACTOR_NOT_CONFIGURED", False))
 
-    def test_default_factory_without_a_project_is_not_configured(self):
-        app = create_app(Settings(secret=SECRET, project=None), workflow=FAST)
+    def test_default_factory_without_an_api_key_is_not_configured(self):
+        app = create_app(Settings(secret=SECRET, api_key_set=False), workflow=FAST)
         stream = events(post(TestClient(app)))
         self.assertEqual(stream[-1].code, "EXTRACTOR_NOT_CONFIGURED")
 
@@ -152,7 +152,7 @@ class ClassifyEndpointTests(unittest.TestCase):
 
     def test_a_missing_model_still_classifies_with_a_warning(self):
         def missing():
-            raise ExtractionError("EXTRACTOR_NOT_CONFIGURED", "GOOGLE_CLOUD_PROJECT is not set", retryable=False)
+            raise ExtractionError("EXTRACTOR_NOT_CONFIGURED", "ANTHROPIC_API_KEY is not set", retryable=False)
         body = CLASSIFY_RESPONSE.validate_python(classify_post(classify_client(missing)).json())
         self.assertEqual((body.result.kind, [w.code for w in body.result.warnings]), ("not_sure", ["MODEL_UNAVAILABLE"]))
 

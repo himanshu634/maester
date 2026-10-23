@@ -1,13 +1,15 @@
-"""The model boundary of the workflow: structured outputs and the Gemini implementation."""
+"""The model boundary of the workflow: structured outputs and the Claude implementation."""
 
 import base64
 import json
-from typing import Literal, Protocol
+import threading
+from dataclasses import dataclass, field
+from typing import Literal, Protocol, TypeVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from pdf_financial_qa.workflow import prompts
-from pdf_financial_qa.workflow.errors import ModelOutputError
+from pdf_financial_qa.workflow.errors import ExtractionError, ModelOutputError
 
 
 class LocatedStatement(BaseModel):
@@ -60,46 +62,103 @@ class ExtractionModel(Protocol):
                 section: ExtractedSection, problems: list[str]) -> ExtractedSection: ...
 
 
-def pdf_message(text: str, pdf: bytes) -> list:
-    """System-free human message carrying the instruction and the PDF as a v1 file block."""
-    from langchain_core.messages import HumanMessage
-
-    return [
-        HumanMessage(content=[
-            {"type": "text", "text": text},
-            {"type": "file", "base64": base64.b64encode(pdf).decode(), "mime_type": "application/pdf"},
-        ])
-    ]
+DEFAULT_MODEL = "claude-opus-5-5"
+Effort = Literal["low", "medium", "high", "xhigh", "max"]
+T = TypeVar("T", bound=BaseModel)
 
 
-class GeminiExtractionModel:
-    """Gemini on Vertex AI through LangChain's ``ChatGoogleGenerativeAI``.
+@dataclass
+class TokenUsage:
+    """Tokens a model has spent, summed over its calls. Thread-safe: statement branches run in parallel."""
+
+    input: int = 0
+    cache_write: int = 0
+    cache_read: int = 0
+    output: int = 0
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+
+    def add(self, usage) -> None:
+        with self._lock:
+            self.input += usage.input_tokens or 0
+            self.cache_write += getattr(usage, "cache_creation_input_tokens", None) or 0
+            self.cache_read += getattr(usage, "cache_read_input_tokens", None) or 0
+            self.output += usage.output_tokens or 0
+
+    def snapshot(self) -> tuple[int, int, int, int]:
+        with self._lock:
+            return self.input, self.cache_write, self.cache_read, self.output
+
+
+def claude_client(timeout_seconds: float):
+    """An Anthropic client that makes one attempt per call: the workflow and the classifier retry a
+    transient failure themselves, so SDK retries would multiply both spend and the deadline."""
+    import anthropic
+
+    return anthropic.Anthropic(timeout=timeout_seconds, max_retries=0)
+
+
+def pdf_content(text: str, pdf: bytes, *, cache: bool = False) -> list[dict]:
+    """The PDF as a base64 document block, then the instruction. ``cache`` marks the document for
+    reuse by a later call on the same pages (a correction re-sends its statement's pages)."""
+    document: dict = {"type": "document",
+                      "source": {"type": "base64", "media_type": "application/pdf", "data": base64.b64encode(pdf).decode()}}
+    if cache:
+        document["cache_control"] = {"type": "ephemeral"}
+    return [document, {"type": "text", "text": text}]
+
+
+def structured_call(client, *, model: str, effort: Effort, max_tokens: int, schema: type[T], text: str, pdf: bytes,
+                    cache: bool = False, system: str | None = None, usage: TokenUsage | None = None) -> T:
+    """One streamed request whose answer is constrained to ``schema`` and validated against it.
+
+    A refusal or an answer cut off at ``max_tokens`` would come back the same on a retry, so both are
+    permanent; JSON that does not validate is a ``ModelOutputError``, which the callers retry."""
+    import anthropic
+
+    output_config = {"effort": effort, "format": {"type": "json_schema", "schema": anthropic.transform_schema(schema)}}
+    extra = {"system": system} if system else {}
+    with client.messages.stream(model=model, max_tokens=max_tokens, output_config=output_config, **extra,
+                                messages=[{"role": "user", "content": pdf_content(text, pdf, cache=cache)}]) as stream:
+        message = stream.get_final_message()
+    if usage is not None:
+        usage.add(message.usage)
+    if message.stop_reason == "refusal":
+        raise ExtractionError("MODEL_REFUSED", "the model declined to read the document", retryable=False)
+    if message.stop_reason == "max_tokens":
+        raise ExtractionError("MODEL_OUTPUT_TOO_LONG", f"the answer did not fit in {max_tokens} tokens", retryable=False)
+    text_out = next((block.text for block in message.content if block.type == "text"), None)
+    if text_out is None:
+        raise ModelOutputError(f"model returned no {schema.__name__}")
+    try:
+        return schema.model_validate_json(text_out)
+    except ValidationError as exc:
+        raise ModelOutputError(f"model returned an invalid {schema.__name__}") from exc
+
+
+class ClaudeExtractionModel:
+    """Claude through the Anthropic SDK, with structured outputs.
 
     Retries are left to the workflow's retry policy, so the client makes one attempt.
     """
 
-    def __init__(self, *, project: str, location: str, model: str, timeout_seconds: float = 300) -> None:
-        from langchain_google_genai import ChatGoogleGenerativeAI
-
+    def __init__(self, *, model: str = DEFAULT_MODEL, effort: Effort = "high", timeout_seconds: float = 300,
+                 max_tokens: int = 64000) -> None:
         self.name = model
-        self._llm = ChatGoogleGenerativeAI(
-            model=model, vertexai=True, project=project, location=location,
-            temperature=0, max_retries=1, timeout=timeout_seconds,
-        )
+        self._effort, self._max_tokens = effort, max_tokens
+        self._client = claude_client(timeout_seconds)
+        self.usage = TokenUsage()
 
-    def _structured(self, schema: type[BaseModel], text: str, pdf: bytes) -> BaseModel:
-        result = self._llm.with_structured_output(schema).invoke(pdf_message(text, pdf))
-        if not isinstance(result, schema):
-            raise ModelOutputError(f"model returned no {schema.__name__}")
-        return result
+    def _structured(self, schema: type[T], text: str, pdf: bytes, *, cache: bool = False) -> T:
+        return structured_call(self._client, model=self.name, effort=self._effort, max_tokens=self._max_tokens,
+                               schema=schema, text=text, pdf=pdf, cache=cache, usage=self.usage)
 
     def locate(self, pdf: bytes, page_count: int) -> LocateOutput:
         text = f"{prompts.LOCATE}\nThe PDF has {page_count} pages."
-        return self._structured(LocateOutput, text, pdf)  # type: ignore[return-value]
+        return self._structured(LocateOutput, text, pdf)
 
     def extract(self, pdf: bytes, page_count: int, statement: str, basis: str) -> StatementOutput:
         text = prompts.EXTRACT.format(statement=statement, basis=basis) + f"\nThe PDF has {page_count} pages."
-        return self._structured(StatementOutput, text, pdf)  # type: ignore[return-value]
+        return self._structured(StatementOutput, text, pdf, cache=True)
 
     def correct(self, pdf: bytes, page_count: int, statement: str, basis: str,
                 section: ExtractedSection, problems: list[str]) -> ExtractedSection:
@@ -108,4 +167,4 @@ class GeminiExtractionModel:
             problems="\n".join(f"- {p}" for p in problems),
             previous=json.dumps(section.model_dump(), ensure_ascii=False, indent=1),
         ) + f"\nThe PDF has {page_count} pages."
-        return self._structured(ExtractedSection, text, pdf)  # type: ignore[return-value]
+        return self._structured(ExtractedSection, text, pdf, cache=True)

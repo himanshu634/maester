@@ -14,10 +14,10 @@ from typer.testing import CliRunner
 
 from maester_cli.cli import app
 from pdf_financial_qa.config import MAX_INLINE_PDF_BYTES, Settings
-from pdf_financial_qa.extraction import _build_pdf_part, extract
+from pdf_financial_qa.extraction import _check_size, extract
 from pdf_financial_qa.qa import ask
 from pdf_financial_qa.schema import (
-    ExtractionResult, FinancialStatement, GeminiExtractionOutput, LineItem,
+    ExtractionResult, FinancialStatement, ModelExtractionOutput, LineItem,
     PeriodValue, StatementSection,
 )
 from pdf_financial_qa import storage
@@ -105,7 +105,7 @@ class LocalWorkflowTests(unittest.TestCase):
         with tempfile.NamedTemporaryFile(suffix=".pdf") as pdf:
             cached = result(storage.hash_pdf(b""))
             storage.save(cached)
-            with patch("maester_cli.cli._load_settings", return_value=Settings("test", "test", "test")), \
+            with patch("maester_cli.cli._load_settings", return_value=Settings("test", "high")), \
                  patch("maester_cli.cli.extract") as model_extract:
                 response = self.runner.invoke(app, ["ingest", pdf.name])
             self.assertEqual(response.exit_code, 0, response.output)
@@ -115,7 +115,7 @@ class LocalWorkflowTests(unittest.TestCase):
     def test_ask_requires_document_selection_for_multiple_documents(self):
         storage.save(result("first"))
         storage.save(result("second"))
-        with patch("maester_cli.cli._load_settings", return_value=Settings("test", "test", "test")), \
+        with patch("maester_cli.cli._load_settings", return_value=Settings("test", "high")), \
              patch("maester_cli.cli.ask_question") as model_ask:
             response = self.runner.invoke(app, ["ask", "What changed?"])
         self.assertEqual(response.exit_code, 1)
@@ -124,7 +124,7 @@ class LocalWorkflowTests(unittest.TestCase):
 
     def test_ask_warns_on_stderr_that_it_is_deprecated(self):
         # The cache is empty, so the command stops before any model call.
-        with patch("maester_cli.cli._load_settings", return_value=Settings("test", "test", "test")), \
+        with patch("maester_cli.cli._load_settings", return_value=Settings("test", "high")), \
              patch("maester_cli.cli.ask_question") as model_ask:
             response = self.runner.invoke(app, ["ask", "What changed?"])
         self.assertEqual(response.exit_code, 1)
@@ -159,26 +159,29 @@ class EngineTests(unittest.TestCase):
 
     def test_local_pdf_limit_remains_enforced(self):
         with self.assertRaisesRegex(ValueError, "over the"):
-            _build_pdf_part(b"x" * (MAX_INLINE_PDF_BYTES + 1))
+            _check_size(b"x" * (MAX_INLINE_PDF_BYTES + 1))
 
     def test_extraction_composes_sdk_and_shared_validation_offline(self):
-        parsed = GeminiExtractionOutput(statement=statement(200), full_text="Synthetic")
+        parsed = ModelExtractionOutput(statement=statement(200), full_text="Synthetic")
         with tempfile.NamedTemporaryFile(suffix=".pdf") as pdf, \
-             patch("pdf_financial_qa.extraction.genai.Client") as client:
-            client.return_value.models.generate_content.return_value = SimpleNamespace(parsed=parsed)
-            extracted = extract(Path(pdf.name), Settings("test", "test", "fake-model"))
+             patch("pdf_financial_qa.extraction.claude_client"), \
+             patch("pdf_financial_qa.extraction.structured_call", return_value=parsed) as call:
+            extracted = extract(Path(pdf.name), Settings("fake-model", "high"))
+        self.assertEqual((call.call_args.kwargs["model"], call.call_args.kwargs["schema"]), ("fake-model", ModelExtractionOutput))
         self.assertEqual(extracted.source_pdf_hash, storage.hash_pdf(b""))
         self.assertTrue(extracted.validation_warnings)
         self.assertEqual(extracted.statement.scale_factor, 1_000_000)
 
     def test_qa_passes_cached_context_and_returns_response_offline(self):
-        with patch("pdf_financial_qa.qa.genai.Client") as client:
-            client.return_value.models.generate_content.return_value = SimpleNamespace(text="Synthetic answer")
-            answer = ask("What changed?", result(), Settings("test", "test", "fake-model"))
-            call = client.return_value.models.generate_content.call_args.kwargs
+        with patch("pdf_financial_qa.qa.claude_client") as client:
+            client.return_value.messages.create.return_value = SimpleNamespace(
+                stop_reason="end_turn", content=[SimpleNamespace(type="text", text="Synthetic answer")])
+            answer = ask("What changed?", result(), Settings("fake-model", "high"))
+            call = client.return_value.messages.create.call_args.kwargs
         self.assertEqual(answer, "Synthetic answer")
-        self.assertIn("Synthetic source text", call["contents"][0])
-        self.assertIn("scale_factor", call["contents"][0])
+        self.assertEqual(call["model"], "fake-model")
+        self.assertIn("Synthetic source text", call["messages"][0]["content"])
+        self.assertIn("scale_factor", call["messages"][0]["content"])
 
 
 if __name__ == "__main__":

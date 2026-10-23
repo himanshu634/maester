@@ -36,8 +36,8 @@ class FinancialStatement(BaseModel):
     sections: list[StatementSection]
 
 
-class GeminiExtractionOutput(BaseModel):
-    """Schema Gemini is asked to fill in directly."""
+class ModelExtractionOutput(BaseModel):
+    """Schema the model is asked to fill in directly."""
 
     statement: FinancialStatement
     # Full text/markdown rendition of the entire document (including notes,

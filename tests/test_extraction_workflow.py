@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 
 from pdf_fixtures import make_pdf
+from test_extraction_values import api_error
 
 from pdf_financial_qa.workflow import ExtractionError, WorkflowSettings, run_extraction
 from pdf_financial_qa.workflow.errors import ModelOutputError
@@ -240,13 +241,19 @@ class FailureTests(unittest.TestCase):
         self.assertEqual((ctx.exception.code, ctx.exception.retryable), ("MODEL_UNAVAILABLE", True))
 
     def test_a_rejected_model_request_is_permanent(self):
-        from google.genai import errors
-
-        model = ScriptedModel(locate=[errors.ClientError(403, {"error": {"message": "permission denied"}})])
+        model = ScriptedModel(locate=[api_error("BadRequestError", 400)])
         with self.assertRaises(ExtractionError) as ctx:
             run_extraction(PDF, model=model, settings=FAST)
         self.assertEqual((ctx.exception.code, ctx.exception.retryable), ("MODEL_REQUEST_REJECTED", False))
         self.assertEqual(model.count("locate"), 1)
+
+    def test_a_refused_api_key_is_not_configured(self):
+        for name, status in (("AuthenticationError", 401), ("PermissionDeniedError", 403)):
+            model = ScriptedModel(locate=[api_error(name, status)])
+            with self.subTest(name), self.assertRaises(ExtractionError) as ctx:
+                run_extraction(PDF, model=model, settings=FAST)
+            self.assertEqual((ctx.exception.code, ctx.exception.retryable), ("EXTRACTOR_NOT_CONFIGURED", False))
+            self.assertEqual(model.count("locate"), 1)
 
     def test_no_statements_found_is_permanent(self):
         with self.assertRaises(ExtractionError) as ctx:

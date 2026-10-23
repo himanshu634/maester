@@ -3,9 +3,10 @@
 from datetime import date
 from decimal import Decimal
 import unittest
+from types import SimpleNamespace
 
 from pdf_financial_qa.workflow.drafts import DraftLine, DraftSection, DraftValue, StatementDraft, check_statement
-from pdf_financial_qa.workflow.errors import ModelOutputError, is_transient
+from pdf_financial_qa.workflow.errors import ExtractionError, ModelOutputError, is_transient
 from pdf_financial_qa.workflow.values import (
     format_decimal, parse_label_date, parse_reported, same_company, scale_for, text_layer_match,
 )
@@ -175,29 +176,101 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(identity.sections_involved, ("Assets", "Liabilities", "Equity"))
 
 
+def api_error(cls_name: str, status: int):
+    import anthropic
+    import httpx2
+
+    request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+    return getattr(anthropic, cls_name)("synthetic", response=httpx2.Response(status, request=request), body=None)
+
+
+class FakeClient:
+    """Stands in for ``anthropic.Anthropic``: records each streamed request and returns one scripted message."""
+
+    def __init__(self, stop_reason: str = "end_turn", text: str | None = None) -> None:
+        self.calls: list[dict] = []
+        content = [SimpleNamespace(type="thinking", thinking="")]
+        if text is not None:
+            content.append(SimpleNamespace(type="text", text=text))
+        self._message = SimpleNamespace(stop_reason=stop_reason, content=content, usage=SimpleNamespace(
+            input_tokens=10, cache_creation_input_tokens=20, cache_read_input_tokens=None, output_tokens=5))
+        self.messages = self
+
+    def stream(self, **kwargs):
+        self.calls.append(kwargs)
+        message = self._message
+
+        class Stream:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def get_final_message(self):
+                return message
+
+        return Stream()
+
+
 class ModelMessageTests(unittest.TestCase):
-    def test_pdf_travels_as_a_base64_file_block(self):
+    def call(self, client, **kwargs):
+        from pdf_financial_qa.workflow.model import LocateOutput, structured_call
+
+        return structured_call(client, model="m", effort="high", max_tokens=100, schema=LocateOutput,
+                               text="read this", pdf=b"%PDF-1.4 bytes", **kwargs)
+
+    def test_the_pdf_goes_first_as_a_base64_document_then_the_instruction(self):
         import base64
 
-        from pdf_financial_qa.workflow.model import pdf_message
-
-        [message] = pdf_message("read this", b"%PDF-1.4 bytes")
-        text, file = message.content
+        client = FakeClient(text='{"company_name": "Synthetic Ltd", "statements": []}')
+        out = self.call(client)
+        self.assertEqual(out.company_name, "Synthetic Ltd")
+        [call] = client.calls
+        document, text = call["messages"][0]["content"]
         self.assertEqual(text, {"type": "text", "text": "read this"})
-        self.assertEqual((file["type"], file["mime_type"]), ("file", "application/pdf"))
-        self.assertEqual(base64.b64decode(file["base64"]), b"%PDF-1.4 bytes")
+        self.assertEqual((document["type"], document["source"]["media_type"]), ("document", "application/pdf"))
+        self.assertEqual(base64.b64decode(document["source"]["data"]), b"%PDF-1.4 bytes")
+        self.assertNotIn("cache_control", document)
+        self.assertEqual(call["output_config"]["effort"], "high")
+        self.assertEqual(call["output_config"]["format"]["type"], "json_schema")
+        self.assertNotIn("temperature", call)
+
+    def test_tokens_are_summed_over_calls_even_when_the_answer_is_unusable(self):
+        from pdf_financial_qa.workflow.model import TokenUsage
+
+        usage = TokenUsage()
+        self.call(FakeClient(text='{"statements": []}'), usage=usage)
+        with self.assertRaises(ExtractionError):
+            self.call(FakeClient(stop_reason="max_tokens", text="{"), usage=usage)
+        self.assertEqual(usage.snapshot(), (20, 40, 0, 10))
+
+    def test_a_cached_call_marks_the_document(self):
+        client = FakeClient(text='{"statements": []}')
+        self.call(client, cache=True)
+        self.assertEqual(client.calls[0]["messages"][0]["content"][0]["cache_control"], {"type": "ephemeral"})
+
+    def test_a_refusal_and_a_cut_off_answer_are_permanent(self):
+        for stop, code in (("refusal", "MODEL_REFUSED"), ("max_tokens", "MODEL_OUTPUT_TOO_LONG")):
+            with self.subTest(stop), self.assertRaises(ExtractionError) as ctx:
+                self.call(FakeClient(stop_reason=stop, text='{"statem'))
+            self.assertEqual((ctx.exception.code, ctx.exception.retryable), (code, False))
+
+    def test_no_text_or_invalid_json_is_a_model_output_error(self):
+        for text in (None, '{"statements": "not a list"}'):
+            with self.subTest(text), self.assertRaises(ModelOutputError):
+                self.call(FakeClient(text=text))
 
 
 class TransientTests(unittest.TestCase):
     def test_classification(self):
-        from google.genai import errors
-
-        self.assertTrue(is_transient(errors.ServerError(503, {"error": {"message": "unavailable"}})))
-        self.assertTrue(is_transient(errors.ClientError(429, {"error": {"message": "quota"}})))
-        self.assertFalse(is_transient(errors.ClientError(400, {"error": {"message": "bad request"}})))
+        self.assertTrue(is_transient(api_error("InternalServerError", 500)))
+        self.assertTrue(is_transient(api_error("OverloadedError", 529)))
+        self.assertTrue(is_transient(api_error("RateLimitError", 429)))
+        self.assertFalse(is_transient(api_error("BadRequestError", 400)))
+        self.assertFalse(is_transient(api_error("AuthenticationError", 401)))
         self.assertTrue(is_transient(ModelOutputError("bad page")))
         self.assertFalse(is_transient(ValueError("bug")))
-
 
 if __name__ == "__main__":
     unittest.main()

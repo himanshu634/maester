@@ -11,10 +11,11 @@ class Settings:
     # Shared secret the worker sends in x-extractor-secret. Unset on Cloud Run,
     # where IAM (roles/run.invoker) authenticates the worker instead.
     secret: str | None = None
-    project: str | None = None
-    location: str = "us-central1"
-    model: str = "gemini-2.5-pro"
-    classify_model: str = "gemini-2.5-flash"
+    api_key_set: bool = False
+    model: str = "claude-opus-5-5"
+    effort: str = "high"
+    classify_model: str = "claude-opus-5-5"
+    classify_effort: str = "medium"
     classify_model_seconds: float = 60.0
     max_bytes: int = 50 * 1024 * 1024
     heartbeat_seconds: float = 15.0
@@ -28,10 +29,12 @@ class Settings:
         return cls(
             port=int(env.get("PORT", "8790")),
             secret=env.get("EXTRACTOR_SECRET") or None,
-            project=env.get("GOOGLE_CLOUD_PROJECT") or None,
-            location=env.get("VERTEX_LOCATION") or "us-central1",
-            model=env.get("GEMINI_MODEL") or "gemini-2.5-pro",
-            classify_model=env.get("GEMINI_CLASSIFY_MODEL") or "gemini-2.5-flash",
+            # The SDK reads the key itself; settings only record that there is one.
+            api_key_set=bool(env.get("ANTHROPIC_API_KEY")),
+            model=env.get("EXTRACTOR_MODEL") or "claude-opus-5-5",
+            effort=env.get("EXTRACTOR_EFFORT") or "high",
+            classify_model=env.get("EXTRACTOR_CLASSIFY_MODEL") or "claude-opus-5-5",
+            classify_effort=env.get("EXTRACTOR_CLASSIFY_EFFORT") or "medium",
             classify_model_seconds=float(env.get("CLASSIFY_MODEL_TIMEOUT_SECONDS", "60")),
             max_bytes=int(env.get("EXTRACT_MAX_BYTES", str(50 * 1024 * 1024))),
             heartbeat_seconds=float(env.get("EXTRACT_HEARTBEAT_SECONDS", "15")),

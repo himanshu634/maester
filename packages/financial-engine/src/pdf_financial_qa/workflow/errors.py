@@ -26,13 +26,25 @@ def is_transient(exc: BaseException) -> bool:
     if isinstance(exc, (ModelOutputError, TimeoutError, ConnectionError)):
         return True
     try:
-        from google.genai import errors as genai_errors
+        import anthropic
 
-        if isinstance(exc, genai_errors.ServerError):
+        if isinstance(exc, (anthropic.APIConnectionError, anthropic.RateLimitError)):  # timeouts are connection errors
             return True
-        if isinstance(exc, genai_errors.ClientError):
-            return getattr(exc, "code", None) == 429
-    except ImportError:  # pragma: no cover - google-genai is a declared dependency
+        if isinstance(exc, anthropic.APIStatusError):
+            return exc.status_code >= 500  # 529 (overloaded) included
+    except ImportError:  # pragma: no cover - anthropic is a declared dependency
+        pass
+    return False
+    if isinstance(exc, (ModelOutputError, TimeoutError, ConnectionError)):
+        return True
+    try:
+        import anthropic
+
+        if isinstance(exc, (anthropic.APIConnectionError, anthropic.RateLimitError)):  # timeouts are connection errors
+            return True
+        if isinstance(exc, anthropic.APIStatusError):
+            return exc.status_code >= 500  # 529 (overloaded) included
+    except ImportError:  # pragma: no cover - anthropic is a declared dependency
         pass
     try:
         from langchain_core.exceptions import OutputParserException

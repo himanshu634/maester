@@ -472,20 +472,20 @@ def run_extraction(
 
 def _classify(exc: Exception) -> ExtractionError:
     try:
-        from google.auth.exceptions import DefaultCredentialsError
+        import anthropic
 
-        if isinstance(exc, DefaultCredentialsError):
-            return ExtractionError("EXTRACTOR_NOT_CONFIGURED", "no Google Cloud credentials are available", retryable=False)
+        if isinstance(exc, (anthropic.AuthenticationError, anthropic.PermissionDeniedError, anthropic.CredentialsError)):
+            return ExtractionError("EXTRACTOR_NOT_CONFIGURED", "no usable Anthropic API key is available", retryable=False)
     except ImportError:  # pragma: no cover
         pass
     if is_transient(exc):
         return ExtractionError("MODEL_UNAVAILABLE", f"the model call failed: {type(exc).__name__}", retryable=True)
     try:
-        from google.genai import errors as genai_errors
+        import anthropic
 
-        if isinstance(exc, genai_errors.ClientError):
-            # Wrong project, missing permission or an unknown model: retrying cannot help.
-            return ExtractionError("MODEL_REQUEST_REJECTED", f"the model rejected the request ({exc.code})", retryable=False)
+        if isinstance(exc, anthropic.APIStatusError):
+            # An unknown model, a file too large or a malformed request: retrying cannot help.
+            return ExtractionError("MODEL_REQUEST_REJECTED", f"the model rejected the request ({exc.status_code})", retryable=False)
     except ImportError:  # pragma: no cover
         pass
     return ExtractionError("EXTRACTION_FAILED", f"unexpected {type(exc).__name__}", retryable=True)

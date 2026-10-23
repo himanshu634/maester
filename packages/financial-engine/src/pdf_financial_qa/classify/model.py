@@ -5,8 +5,7 @@ from typing import Literal, Protocol
 from pydantic import BaseModel, Field
 
 from pdf_financial_qa.classify import prompts
-from pdf_financial_qa.workflow.errors import ModelOutputError
-from pdf_financial_qa.workflow.model import pdf_message
+from pdf_financial_qa.workflow.model import DEFAULT_MODEL, Effort, claude_client, structured_call
 
 QuestionField = Literal["kind", "other_type", "company", "period", "results_span"]
 
@@ -37,19 +36,16 @@ def render_questions(questions: list[Question]) -> str:
     return "\n".join(f"- {q.field}: {', '.join(q.allowed) if q.allowed else 'as printed'}" for q in questions)
 
 
-class GeminiClassificationModel:
-    """Gemini on Vertex AI. One attempt per call; the runner retries a transient failure once."""
+class ClaudeClassificationModel:
+    """Claude through the Anthropic SDK. One attempt per call; the runner retries a transient failure once."""
 
-    def __init__(self, *, project: str, location: str, model: str, timeout_seconds: float = 60) -> None:
-        from langchain_google_genai import ChatGoogleGenerativeAI
-
+    def __init__(self, *, model: str = DEFAULT_MODEL, effort: Effort = "medium", timeout_seconds: float = 60,
+                 max_tokens: int = 16000) -> None:
         self.name = model
-        self._llm = ChatGoogleGenerativeAI(model=model, vertexai=True, project=project, location=location,
-                                           temperature=0, max_retries=0, timeout=timeout_seconds)
+        self._effort, self._max_tokens = effort, max_tokens
+        self._client = claude_client(timeout_seconds)
 
     def classify(self, pdf: bytes, page_count: int, questions: list[Question]) -> ClassifyOutput:
         text = prompts.CLASSIFY.format(questions=render_questions(questions)) + f"\nThe PDF has {page_count} pages."
-        result = self._llm.with_structured_output(ClassifyOutput).invoke(pdf_message(text, pdf))
-        if not isinstance(result, ClassifyOutput):
-            raise ModelOutputError("model returned no ClassifyOutput")
-        return result
+        return structured_call(self._client, model=self.name, effort=self._effort, max_tokens=self._max_tokens,
+                               schema=ClassifyOutput, text=text, pdf=pdf)
