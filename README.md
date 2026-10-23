@@ -126,25 +126,31 @@ How a company filing moves through it:
 
 ![How Maester processes a company filing: intake, worker jobs, the extractor, Postgres and Research are built; automatic filing fetch, quarterly results, review, accuracy measurement, calculations, the Analyst, alerts and hosting are pending](docs/diagrams/filing-pipeline.png)
 
-Both diagrams are Excalidraw files in [`docs/diagrams/`](docs/diagrams/); open one at [excalidraw.com](https://excalidraw.com) to edit it.
+Both diagrams are Excalidraw files in [`docs/diagrams/`](docs/diagrams/); open one at [excalidraw.com](https://excalidraw.com) to edit it. They were drawn on 15 October 2026, before the XBRL reader, search, the agent tools and the evaluation app landed; the lists below are current.
 
 **Working now**
 
 - Sign in with Google or with email and password, behind an invite waitlist. Each account gets a private workspace, and no other workspace can see its companies, documents or jobs.
-- Upload a financial-statement PDF for a company. It is stored privately and checked by a background job that survives restarts, can be retried and reports its progress live.
-- Extract the statements into versioned facts. Each fact keeps the page it was read from, its period, unit and reporting basis, and the arithmetic checks it passed or failed. This step needs a Google Cloud project.
+- **Documents.** Drop annual reports and results as PDFs or XBRL files, one at a time or a whole folder. Maester works out what each file is and which company it belongs to, and groups a filing's PDF and XBRL together. A company it has not seen waits until you confirm it, once. Each filing shows its progress in words, and a step that stops can be tried again on its own.
+- **Numbers from the filing.** Figures come from XBRL when the filing has it and are read from the PDF otherwise (this needs a Google Cloud project). Each fact is versioned and keeps its source page or XBRL element, its period, unit and reporting basis, and the arithmetic checks it passed or failed. Unknown stays unknown, never zero.
+- **Research.** A company page with its NSE, BSE and CIN codes, a stock summary (last close, 52-week range, price to earnings, latest revenue and profit), and the profit and loss, balance sheet and cash flow year by year, consolidated and standalone kept apart. Any figure opens a panel saying where it came from, whether it adds up and whether it was restated, with a link to the PDF at that page.
+- **Search.** Every page of every filing is read, scanned pages by OCR, and indexed on your own machine. An agent can search it today; there is no search screen yet.
+- **Market mood.** How cautious or eager the market is, on a 0 to 100 scale built from 10 readings, with each reading's history. It uses your own Dhan and FRED keys, which you save in Settings and which are stored encrypted.
+- **Agent access.** A read-only MCP server lets an agent such as Claude read your filings. Every figure it returns carries its fact id and source.
+- **Measurement.** An evaluation harness for extraction and retrieval. The first report, on the XBRL element maps over 807 filings, is in [`docs/eval/`](docs/eval/).
 - The public site, the sign-in pages and the error pages, all built on the design system in [DESIGN.md](docs/DESIGN.md).
-- The portfolio overview (what is due, headline figures, holdings and allocation) as a read-only demo on a synthetic portfolio.
+- The portfolio overview (what is due, headline figures, holdings and allocation) as a read-only demo on a synthetic portfolio. Holdings, Watchlist, Analyst and Activity are coming-soon pages in the terminal.
 - The original command-line engine, which extracts a PDF and answers questions about it.
 
 **Not yet**
 
-- No screen shows an uploaded document, its facts or its source page. Today that runs through the API and a developer upload page.
-- Companies have a name and a country only, with no exchange-listed security. A running job cannot be cancelled.
-- Extraction accuracy is not measured.
-- No calculations, Analyst, notes, holdings, ledger, market data or autonomous monitoring.
+- No review or correction of a figure. A running job cannot be cancelled.
+- Quarterly and half-year results are read but not shown in the statement tables yet.
+- Accuracy of figures read from PDFs is not measured; the baseline run is owed. The check that looks for each XBRL figure in its PDF is too weak to trust, so the screens say "Not checked" for now.
+- Filings are added by hand; nothing fetches them automatically.
+- No calculations, Analyst, notes, holdings, ledger or autonomous monitoring. Broker connections for holdings are on branches that are not merged.
 
-**Next:** close R1 · A with the screens that complete it. Upload a filing, watch the job finish, read the company's financial table, and open the exact source page from any cell.
+**Next:** close R1 · A with figure review and correction, then start R1 · B with named, versioned calculations, so that a growth rate or a margin is a calculation you can inspect, never a model's arithmetic.
 
 We say this plainly because trust is the whole product.
 
