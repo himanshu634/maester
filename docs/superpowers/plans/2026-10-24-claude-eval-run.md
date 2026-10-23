@@ -31,6 +31,12 @@ uv run --locked maester-eval live --only voltas/results-2025-12 --label claude-s
 
 Work out from the line: the filing's cost, the input tokens per page, and the cost per statement read (extract and correct, without `locate`).
 
+### Result (run `20261023T170035Z-claude-smoke`)
+
+Complete in 126.9 s. Six calls: 1 locate, 2 extracts (the two income statements, one page each), 3 corrections. Tokens: in 60,954, cache write 4,191, cache read 8,382, out 22,038. That is **about $0.71**, of which output (thinking included) is $0.44. Pages run at about 2,100 input tokens each, so `locate` costs about $0.0084 a page, and a statement read with its corrections about $0.27.
+
+Estimates from these numbers: tier A about $23 (30 filings, 658 pages, mostly June quarters with the income statement only), tier B about $26 (1,407 pages, up to 6 statements each), tier C about $64 (30 filings, 1,013 pages, mostly March year-ends with all three statements). **A + B + C ≈ $113**, under the $170 line, so the run reads all three tiers.
+
 ## Step 2: the subset
 
 Fixed before the smoke numbers are known, so the choice of filings cannot follow the results. Add tiers in this order while the estimate stays under **$170** (keep $30 for retries and the estimate's error):
