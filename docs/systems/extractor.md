@@ -9,7 +9,7 @@ This document describes `apps/extractor`, the Python service that reads financia
 | extractor | The Python HTTP service in `apps/extractor`. |
 | worker | The TypeScript service in `apps/worker`. It sends requests to the extractor. |
 | engine | The Python package in `packages/financial-engine`. Its import name is `pdf_financial_qa`. It holds the workflow, the classifier and the rules. |
-| model | Gemini, a large language model from Google, on Vertex AI. The engine gets access to it through `langchain-google-genai`. |
+| model | Claude, a large language model from Anthropic. The engine gets access to it through the Anthropic Python SDK (`anthropic`). |
 | model call | One request from the engine to the model. |
 | classification | The answer to the question "What type of document is this PDF?". The `/v1/classify` route returns it. |
 | extraction | The values of the financial statements in a PDF, as facts. The `/v1/extract` route returns it. |
@@ -66,7 +66,7 @@ For each answer and each fact from a PDF, the extractor records the page index o
 | Entry point | `apps/extractor/src/maester_extractor/__main__.py` | Starts `uvicorn`. The command `maester-extractor` runs it. |
 | Container | `apps/extractor/Dockerfile` | Builds an image with Python 3.12. The image runs `maester-extractor` as the user `app` on port 8790. |
 | Workflow | `packages/financial-engine/src/pdf_financial_qa/workflow/runner.py` | Holds the LangGraph graph, the model call budget and `run_extraction`. |
-| Extraction model | `pdf_financial_qa/workflow/model.py` | Holds `GeminiExtractionModel` with its three model calls: `locate`, `extract` and `correct`. |
+| Extraction model | `pdf_financial_qa/workflow/model.py` | Holds `ClaudeExtractionModel` with its three model calls: `locate`, `extract` and `correct`. |
 | Extraction prompts | `pdf_financial_qa/workflow/prompts.py` | Holds the prompt texts and `PROMPT_VERSION`. |
 | PDF access | `pdf_financial_qa/workflow/pdf.py` | Opens the PDF, gets the text layer of each page and makes excerpts. |
 | Value rules | `pdf_financial_qa/workflow/values.py` | Parses printed values, unit labels and dates. Compares a value with the text layer. |
@@ -75,7 +75,7 @@ For each answer and each fact from a PDF, the extractor records the page index o
 | Wire format | `pdf_financial_qa/workflow/contracts.py`, `pdf_financial_qa/classify/contracts.py` | Pydantic classes of the events, the results and the errors. |
 | Classifier | `pdf_financial_qa/classify/runner.py` | Holds `run_classification`. It uses the rules first and the model for open questions. |
 | Classification rules | `pdf_financial_qa/classify/rules.py` | Regular expressions that find answers in the text layer. |
-| Classification model | `pdf_financial_qa/classify/model.py`, `pdf_financial_qa/classify/prompts.py` | Holds `GeminiClassificationModel` and its prompt. |
+| Classification model | `pdf_financial_qa/classify/model.py`, `pdf_financial_qa/classify/prompts.py` | Holds `ClaudeClassificationModel` and its prompt. |
 | XBRL parser | `pdf_financial_qa/xbrl/parser.py` | Reads an instance with `lxml` and hard limits. It refuses a DOCTYPE. |
 | XBRL format | `pdf_financial_qa/xbrl/formats.py`, `formats.json` | Finds the family and the kind of an instance from its elements. |
 | XBRL classification | `pdf_financial_qa/xbrl/classify.py`, `identity.py` | Answers the classification questions from the identity facts. |
@@ -96,7 +96,7 @@ For each answer and each fact from a PDF, the extractor records the page index o
 3. `create_app` sets `LANGSMITH_TRACING` and `LANGCHAIN_TRACING_V2` to `false`. Thus no document content goes to LangSmith.
 4. If `EXTRACTOR_SECRET` has no value, the extractor writes a log message at the level `WARNING`. Then it accepts all requests without a secret.
 5. The extractor does not connect to the model at start. It makes the model object at the first request that needs it, and keeps it for later requests.
-6. Before it makes the model object, `_vertex_factory` looks for `GOOGLE_CLOUD_PROJECT` and the Application Default Credentials of Google. If one of the two is not available, it raises `ExtractionError` with the code `EXTRACTOR_NOT_CONFIGURED`.
+6. Before it makes the model object, `_claude_factory` looks for `ANTHROPIC_API_KEY`. If the key has no value, it raises `ExtractionError` with the code `EXTRACTOR_NOT_CONFIGURED`.
 
 ### Routes
 
@@ -129,7 +129,7 @@ The extractor uses `x-document-id` only in log messages. The JSON field names on
 4. Each rule hit records the rule ID, the page index and a quote. If two rules give different types of document, the rules leave the type open.
 5. `_questions` makes a list of the questions that the rules did not answer. If the rules found a statement, the model can only answer `annual_report` or `financial_results` for the type.
 6. If the list has questions, the classifier makes an excerpt. The excerpt holds the first 5 pages and the pages with rule evidence, with a maximum of 10 pages.
-7. The classifier sends the excerpt and the questions to the model in one model call. The model is `GEMINI_CLASSIFY_MODEL`.
+7. The classifier sends the excerpt and the questions to the model in one model call. The model is `EXTRACTOR_CLASSIFY_MODEL`, with the effort `EXTRACTOR_CLASSIFY_EFFORT`.
 8. If the model call fails with a transient error, the classifier waits 1 second and tries one more time.
 9. `_apply` keeps a model answer only if all of these conditions are true:
    - The classifier asked the question, and no earlier answer settled the same field.
@@ -192,9 +192,9 @@ The workflow has two levels. The main graph is `prepare`, `locate`, one `stateme
 3. The workflow tries again only after a transient error. These errors are transient:
    - `ModelOutputError`, for example a line on a page outside the excerpt.
    - `TimeoutError` and `ConnectionError`.
-   - A Gemini server error, or a Gemini client error with the code 429.
-   - `OutputParserException` from LangChain.
-   - A timeout or transport error from `httpx`.
+   - An `anthropic.APIConnectionError`. A timeout is also an `APIConnectionError`.
+   - An `anthropic.RateLimitError` (the code 429).
+   - An `anthropic.APIStatusError` with a code of 500 or more. The code 529 (overloaded) is in this group.
 4. Before each model call, `_Budget` examines three conditions:
    - If the cancel signal is on, the workflow stops with the error `CANCELLED`.
    - If the time since the start is more than `EXTRACT_DEADLINE_SECONDS`, the workflow stops with the error `DEADLINE_EXCEEDED`.
@@ -203,13 +203,16 @@ The workflow has two levels. The main graph is `prepare`, `locate`, one `stateme
 
 ### Model calls
 
-The extractor uses one model provider: Gemini on Vertex AI, in the region `VERTEX_LOCATION`. Both model classes use `ChatGoogleGenerativeAI` with `vertexai=True` and the temperature 0. The PDF goes to the model as a base64 file block in one human message. The model returns structured output that a Pydantic schema validates (`with_structured_output`).
+The extractor uses one model provider: Claude, through the Anthropic Python SDK. Both model classes call `structured_call` (`pdf_financial_qa/workflow/model.py`). It makes one streamed `client.messages.stream` request. The PDF goes to the model first, as a base64 `document` block. The instruction follows it as a text block. The request has an `output_config` with the effort and a JSON schema. The schema comes from the Pydantic class (`anthropic.transform_schema`). Pydantic validates the answer. The request has no temperature, because the API does not accept sampling parameters.
 
-| Use | Model | Timeout for one call | Client setting |
+The client is `anthropic.Anthropic(timeout=…, max_retries=0)`. The SDK makes one try for each call. The workflow and the classifier do the retries. The `extract` and `correct` calls mark the document block with `cache_control` `ephemeral`. Thus a correction on the same pages reads the prompt cache. The `locate` call does not mark it.
+
+| Use | Model and effort | Timeout for one call | Largest answer (`max_tokens`) |
 | --- | --- | --- | --- |
-| Extraction (`locate`, `extract`, `correct`) | `GEMINI_MODEL`, default `gemini-2.5-pro` | 300 seconds | `max_retries=1` |
-| Classification | `GEMINI_CLASSIFY_MODEL`, default `gemini-2.5-flash` | `CLASSIFY_MODEL_TIMEOUT_SECONDS`, default 60 seconds | `max_retries=0` |
+| Extraction (`locate`, `extract`, `correct`) | `EXTRACTOR_MODEL`, default `claude-opus-5-5`. `EXTRACTOR_EFFORT`, default `high`. | 300 seconds | 64000 |
+| Classification | `EXTRACTOR_CLASSIFY_MODEL`, default `claude-opus-5-5`. `EXTRACTOR_CLASSIFY_EFFORT`, default `medium`. | `CLASSIFY_MODEL_TIMEOUT_SECONDS`, default 60 seconds | 16000 |
 
+The effort is one of `low`, `medium`, `high`, `xhigh` and `max`.
 `PROMPT_VERSION` is a hash of the prompt texts. Thus it changes when a prompt changes. `PIPELINE_VERSION` is the constant `extract-2`. The classification result has `rulesVersion`, which is `classify-rules-2`.
 
 ### Page provenance
@@ -303,13 +306,15 @@ The extraction stream sends an error as an `error` event. The classification rou
 | `401` `EXTRACTOR_UNAUTHORIZED` | The secret has a value, and `x-extractor-secret` is different or not there. | HTTP error. No stream. |
 | `413` `TOO_LARGE_FOR_EXTRACTION` | The body is larger than `EXTRACT_MAX_BYTES`. | HTTP error. No stream. |
 | `400` `EMPTY_BODY` | The body is empty. | HTTP error. No stream. |
-| `EXTRACTOR_NOT_CONFIGURED` | `GOOGLE_CLOUD_PROJECT` has no value, or no Application Default Credentials are available. | Extraction: a `started` event, then an error with `retryable` `false`. Classification: a result with only the rule answers and `MODEL_UNAVAILABLE`. |
+| `EXTRACTOR_NOT_CONFIGURED` | `ANTHROPIC_API_KEY` has no value, or Anthropic returns an authentication or permission error (`AuthenticationError`, `PermissionDeniedError`). | Extraction: a `started` event, then an error with `retryable` `false`. Classification: a result with only the rule answers and `MODEL_UNAVAILABLE`. |
 | `UNREADABLE_PDF` | `pypdf` cannot open the PDF, the PDF has no pages, or an empty password does not decrypt the PDF. | Error, `retryable` `false`, on both routes. |
 | `NO_STATEMENTS_FOUND` | `locate` finds no statement. | Error, `retryable` `false`. |
 | `NO_STATEMENTS_EXTRACTED` | No statement has the status `extracted`, and no branch failed with a transient error. | Error, `retryable` `false`. |
 | `EXTRACTION_FAILED` | No statement has the status `extracted`, and a branch failed with a transient error. Or the workflow raised an unexpected exception. | Error, `retryable` `true`. |
 | `MODEL_UNAVAILABLE` (error) | A transient error continues after all tries, outside a `statement` branch. | Error, `retryable` `true`. |
-| `MODEL_REQUEST_REJECTED` | In `locate`, Gemini returns a client error other than 429. Examples: a wrong project, a permission problem, an unknown model. | Error, `retryable` `false`. |
+| `MODEL_REQUEST_REJECTED` | A model call gets an `APIStatusError` that is not transient and not an authentication or permission error. Examples: a code 400, 404 or 413, an unknown model, a PDF over the request limit. | Error, `retryable` `false`. |
+| `MODEL_REFUSED` | The `stop_reason` of the answer is `refusal`. | Error, `retryable` `false`. |
+| `MODEL_OUTPUT_TOO_LONG` | The `stop_reason` of the answer is `max_tokens`. | Error, `retryable` `false`. |
 | `MODEL_CALL_BUDGET_EXCEEDED` | The request needs more than 40 model calls. | Error, `retryable` `false`. |
 | `DEADLINE_EXCEEDED` | The time since the start is more than `EXTRACT_DEADLINE_SECONDS` before a model call. | Error, `retryable` `false`. |
 | `CANCELLED` | The stream stopped before the workflow finished. | Error, `retryable` `true`. |
@@ -344,23 +349,24 @@ The extractor reads:
 - The PDF in the request body.
 - The headers `x-extractor-secret`, `x-document-id`, `x-company-name` and `content-length`.
 - The environment variables in the table below. `main` also loads the `.env` file of the repository with `load_dotenv`, if the file is there.
-- The Application Default Credentials of Google.
+- The key `ANTHROPIC_API_KEY`. The SDK reads it. The settings only record that the key has a value.
 
 The extractor writes:
 
 - The response, to the client.
 - Log messages, to the standard output. A log message contains the document ID, the codes, the counts, the time in seconds, and the state or the type of document. It does not contain document text.
 
-An XBRL read sends nothing to Vertex AI. The extractor sends PDF pages to Vertex AI for each model call of a classification or an extraction. It writes no files and has no database connection.
+An XBRL read sends nothing to Anthropic. The extractor sends PDF pages to the Anthropic API for each model call of a classification or an extraction. It writes no files and has no database connection.
 
 | Variable | Default | Function |
 | --- | --- | --- |
 | `PORT` | `8790` | The port of the HTTP server. |
 | `EXTRACTOR_SECRET` | No value | The secret. With no value, the extractor accepts all requests. |
-| `GOOGLE_CLOUD_PROJECT` | No value | The Vertex AI project. With no value, the model is not available. |
-| `VERTEX_LOCATION` | `us-central1` | The Vertex AI region. |
-| `GEMINI_MODEL` | `gemini-2.5-pro` | The model for extraction. |
-| `GEMINI_CLASSIFY_MODEL` | `gemini-2.5-flash` | The model for classification. |
+| `ANTHROPIC_API_KEY` | No value | The Anthropic API key. With no value, the model is not available. |
+| `EXTRACTOR_MODEL` | `claude-opus-5-5` | The model for extraction. |
+| `EXTRACTOR_EFFORT` | `high` | The effort for extraction: `low`, `medium`, `high`, `xhigh` or `max`. |
+| `EXTRACTOR_CLASSIFY_MODEL` | `claude-opus-5-5` | The model for classification. |
+| `EXTRACTOR_CLASSIFY_EFFORT` | `medium` | The effort for classification. |
 | `CLASSIFY_MODEL_TIMEOUT_SECONDS` | `60` | The timeout for one classification model call. |
 | `EXTRACT_MAX_BYTES` | 52428800 (50 MiB) | The largest body that the extractor accepts. |
 | `EXTRACT_HEARTBEAT_SECONDS` | `15` | The time without events before a `heartbeat` event. |
@@ -369,7 +375,7 @@ An XBRL read sends nothing to Vertex AI. The extractor sends PDF pages to Vertex
 | `XBRL_MAX_FACTS` | `100000` | The largest number of facts in one instance. |
 | `XBRL_DEADLINE_SECONDS` | `30` | The time limit of one parse. |
 
-The extractor depends on the engine, `fastapi` and `uvicorn` (`apps/extractor/pyproject.toml`). The engine depends on `langgraph`, `langchain-google-genai`, `google-genai`, `pydantic` and `pypdf`. The wire format in the engine mirrors the Zod schemas in `packages/contracts/src/extraction.ts` and `packages/contracts/src/classification.ts`.
+The extractor depends on the engine, `fastapi` and `uvicorn` (`apps/extractor/pyproject.toml`). The engine depends on `anthropic`, `langgraph`, `langchain-core`, `pydantic` and `pypdf`. The wire format in the engine mirrors the Zod schemas in `packages/contracts/src/extraction.ts` and `packages/contracts/src/classification.ts`.
 
 ## Procedures
 
@@ -388,34 +394,27 @@ The tests make no model calls. They use scripted replacements of the model and s
 
 ### To run the extractor as a local process
 
-1. Set `GOOGLE_CLOUD_PROJECT` in the `.env` file at the root of the repository.
-2. Get Application Default Credentials:
-
-   ```bash
-   gcloud auth application-default login
-   ```
-
-3. Set `EXTRACTOR_SECRET` in the `.env` file to the same value as the worker.
-4. Go to the root of the repository.
-5. Start the extractor:
+1. Set `ANTHROPIC_API_KEY` in the `.env` file at the root of the repository.
+2. Set `EXTRACTOR_SECRET` in the `.env` file to the same value as the worker.
+3. Go to the root of the repository.
+4. Start the extractor:
 
    ```bash
    uv run --locked maester-extractor
    ```
 
-6. Send a request to the health route:
+5. Send a request to the health route:
 
    ```bash
    curl http://localhost:8790/healthz
    ```
 
-7. Make sure that the response is `{"status":"ok"}`.
+6. Make sure that the response is `{"status":"ok"}`.
 
 ### To run the extractor with Docker Compose
 
-1. Set `GOOGLE_CLOUD_PROJECT` in the `.env` file at the root of the repository.
-2. Set `GCLOUD_CONFIG_DIR` in the `.env` file to the absolute path of your gcloud configuration directory.
-3. Start the service:
+1. Set `ANTHROPIC_API_KEY` in the `.env` file at the root of the repository.
+2. Start the service:
 
    ```bash
    docker compose up --build extractor
@@ -429,7 +428,7 @@ WARNING: Do not write document text, a quote or the message of an exception to a
 
 WARNING: Do not remove the lines in `create_app` that set `LANGSMITH_TRACING` and `LANGCHAIN_TRACING_V2` to `false`. If you remove them, LangSmith can get the content of the documents.
 
-CAUTION: Set `EXTRACTOR_SECRET` on a host that other computers can connect to. With no secret, all clients can send requests, and each extraction can make 40 model calls on your Google Cloud project.
+CAUTION: Set `EXTRACTOR_SECRET` on a host that other computers can connect to. With no secret, all clients can send requests, and each extraction can make 40 model calls on your Anthropic account.
 
 ## Limits
 

@@ -107,10 +107,10 @@ statement branch:  extract → check ─┬─► done
 | correct | model | Re-extracts only a section with a failed check, given the expected and actual values. At most 2 attempts per statement. A corrected value that differs from the original must appear on its page's text layer (when the page has one), otherwise the correction is rejected, the original kept and a `CORRECTION_REJECTED` warning added. A correction call that still fails after retries keeps the original and adds `CORRECTION_FAILED`. |
 | assemble | deterministic | State is `complete` when every located statement extracted, else `partial`. Warns `COMPANY_NAME_MISMATCH` when the printed name differs from the chosen company's. |
 
-- Model: Gemini on Vertex AI through `langchain-google-genai` (`ChatGoogleGenerativeAI(vertexai=True)`) with `with_structured_output` and Pydantic schemas. Model calls sit behind an `ExtractionModel` interface so tests inject a scripted model.
-- Transient model errors (429, 5xx, timeouts, unparseable output) retry up to 3 times with backoff through LangGraph's node retry policy. A statement branch that still fails is recorded in coverage as `failed` and the revision is `partial`. If no statement succeeds, the request fails with a retryable error.
+- Model: Claude through the Anthropic Python SDK (`ClaudeExtractionModel`). Each model call is one streamed request. The PDF goes first as a base64 `document` block, then the instruction. The answer is constrained to a JSON schema made from the Pydantic model, and Pydantic validates it. The model and its effort come from `EXTRACTOR_MODEL` and `EXTRACTOR_EFFORT`. The extract and correct calls mark the document for the prompt cache, so a correction on the same pages reads the cache. The SDK makes one attempt per call (`max_retries=0`); the workflow retries. Model calls sit behind an `ExtractionModel` interface so tests inject a scripted model.
+- Transient model errors (429, 5xx including 529 overloaded, connection errors and timeouts, unparseable output) retry up to 3 times with backoff through LangGraph's node retry policy. A statement branch that still fails is recorded in coverage as `failed` and the revision is `partial`. If no statement succeeds, the request fails with a retryable error.
 - Budget: at most 40 model calls and 15 minutes per request.
-- Versions: `pipeline_version` is a constant, `prompt_version` is a hash of the prompt texts, `model` is the configured Gemini model.
+- Versions: `pipeline_version` is a constant, `prompt_version` is a hash of the prompt texts, `model` is the configured Claude model.
 - LangSmith tracing stays disabled (it would send document content to a third party). No document text is logged.
 
 ## 5. Contracts and errors
@@ -130,8 +130,8 @@ Decimals travel as plain decimal strings (`DecimalString`, never exponent notati
 
 | Failure | Where | Job outcome |
 | --- | --- | --- |
-| `EXTRACTOR_NOT_CONFIGURED` (no Vertex project or credentials) | extractor error event | permanent failure |
-| `UNREADABLE_PDF`, `NO_STATEMENTS_FOUND`, `NO_STATEMENTS_EXTRACTED`, `MODEL_REQUEST_REJECTED` (Vertex 4xx other than 429), `MODEL_CALL_BUDGET_EXCEEDED`, `DEADLINE_EXCEEDED` | extractor error event | permanent failure |
+| `EXTRACTOR_NOT_CONFIGURED` (no `ANTHROPIC_API_KEY`, or Anthropic refused the key with 401 or 403) | extractor error event | permanent failure |
+| `UNREADABLE_PDF`, `NO_STATEMENTS_FOUND`, `NO_STATEMENTS_EXTRACTED`, `MODEL_REQUEST_REJECTED` (Anthropic 4xx other than 401, 403 and 429), `MODEL_REFUSED` (the model declined the document), `MODEL_OUTPUT_TOO_LONG` (the answer did not fit its token limit), `MODEL_CALL_BUDGET_EXCEEDED`, `DEADLINE_EXCEEDED` | extractor error event | permanent failure |
 | `TOO_LARGE_FOR_EXTRACTION` (over `EXTRACT_MAX_BYTES`, default 50 MiB) | worker before calling, or extractor `413` | permanent failure |
 | `EXTRACTOR_UNAUTHORIZED` (`401`/`403`) | worker | permanent failure |
 | `EXTRACTION_FAILED`, `MODEL_UNAVAILABLE`, `EXTRACTOR_UNAVAILABLE`, `EXTRACTOR_HTTP_5xx`, `EXTRACTOR_STREAM_INTERRUPTED` (stream ended without a terminal event), timeout | worker or extractor | retry with the job's attempt budget |
@@ -162,11 +162,11 @@ The write is idempotent for each job. `extraction_revision.job_id` is unique. A 
   - The extract handler, against a fake extractor HTTP server. The cases are success, partial results, permanent and retryable errors, an interrupted stream, an idempotent rewrite and lease renewal.
   - The chain from verify to classify and from classify to extract.
   - The routes that read facts and extractions, including isolation between workspaces.
-- A live Vertex run is manual and never part of CI.
+- A live run against Claude is manual and never part of CI.
 
 ## 7. Local and deployed operation
 
-- Docker Compose adds `extractor` (port 8790). Extraction needs `GOOGLE_CLOUD_PROJECT` and Application Default Credentials. Without them, extract jobs fail with `EXTRACTOR_NOT_CONFIGURED` and uploads still work.
+- Docker Compose adds `extractor` (port 8790). Extraction needs `ANTHROPIC_API_KEY`. Without it, extract jobs fail with `EXTRACTOR_NOT_CONFIGURED` and uploads still work.
 - Deployment is a follow-up and is not part of this change. Before you enable extraction in Cloud Run, do these steps:
   - Deploy `maester-extractor` with internal ingress and `--timeout` above 30 minutes.
   - Give the worker service account `run.invoker` on it.

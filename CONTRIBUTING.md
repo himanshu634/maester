@@ -20,11 +20,11 @@ Maester is a two-language monorepo: a Python document engine, extraction service
 
 Working now:
 
-- Extract a financial-statement PDF into structured statements with Gemini on Vertex AI, from the command line.
+- Extract a financial-statement PDF into structured statements with Claude, from the command line.
 - Store structured data and a text rendition in a local JSON cache, run heuristic arithmetic checks on subtotals and the balance-sheet identity, and ask questions about a cached document.
 - Sign up, get a personal workspace, create a company, upload a document for it to object storage, and watch a durable verification job run to completion over Server-Sent Events.
 - Upload a PDF on the Documents page without choosing a company; Maester works out whether it is an annual report, financial results or another company document, for which company and period, with the page each answer came from, then reads it, holds it for you or keeps it.
-- Extract the uploaded statements into versioned facts with page references and arithmetic checks, through a LangGraph workflow with self-correction ([document extraction](docs/EXTRACTION.md)). This needs a Google Cloud project with Vertex AI.
+- Extract the uploaded statements into versioned facts with page references and arithmetic checks, through a LangGraph workflow with self-correction ([document extraction](docs/EXTRACTION.md)). This needs an Anthropic API key.
 - Sign in with Google or email and password behind an invite waitlist, through the web client, which proxies the API.
 - Serve the public pages, the sign-in pages and the error pages, which carry the design system in [DESIGN.md](docs/DESIGN.md), and the portfolio overview as a read-only demo on a synthetic portfolio at `/terminal/demo`.
 - See how cautious or eager the market is, from your own Dhan and FRED data (Market mood), and save, replace or remove those two keys in Settings.
@@ -40,7 +40,7 @@ Not yet implemented: fact review and correction, verified citations, a determini
 - Docker with Compose v2, to run the API, worker, database and web client.
 - Node 22 and pnpm 11, for the TypeScript services, shared packages and the web client.
 - Python 3.11 or newer and [uv](https://docs.astral.sh/uv/getting-started/installation/), for the CLI and the document engine.
-- A Google Cloud project with Vertex AI enabled and billing, only for CLI ingestion and Q&A. Nothing else needs credentials.
+- An Anthropic API key, only for CLI ingestion and Q&A, extraction in the stack and the evaluation harness's `live` command. Nothing else needs credentials.
 
 Take only what your change touches. A Python-only contribution needs no Node; a web-only contribution needs no Python.
 
@@ -64,17 +64,16 @@ uv run --locked maester --help
 uv run --locked maester list-docs
 ```
 
-For cloud features, copy `.env.example` to `.env` and set `GOOGLE_CLOUD_PROJECT`. Keep an existing `.env` when upgrading. The example file lists region and model overrides.
+For cloud features, copy `.env.example` to `.env` and set `ANTHROPIC_API_KEY`. Keep an existing `.env` when upgrading. The example file lists the model and effort overrides.
 
 ```bash
-gcloud auth application-default login
 uv run --locked maester ingest path/to/statement.pdf
 uv run --locked maester list-docs
 uv run --locked maester ask "How did operating cash flow change year over year?"
 uv run --locked maester ask "What were total assets?" --doc DOCUMENT_HASH
 ```
 
-`ingest --force` re-extracts a document and overwrites its cached JSON. Model calls run against your configured project and can incur charges. The inherited default model is `gemini-2.5-pro`; verify availability in your project and override `GEMINI_MODEL` as needed. The original `pdf-financial-qa` command remains available as an alias of `maester`.
+`ingest --force` re-extracts a document and overwrites its cached JSON. Model calls use your Anthropic account and can incur charges. The default model is `claude-opus-5-5`; override `EXTRACTOR_MODEL` and `EXTRACTOR_EFFORT` as needed. The original `pdf-financial-qa` command remains available as an alias of `maester`.
 
 ### pip-only installation
 

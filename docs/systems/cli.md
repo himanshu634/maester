@@ -9,8 +9,8 @@ This document describes the Python command-line application in `apps/cli`. For t
 | CLI | The Python command-line application in `apps/cli`. Its distribution name is `maester-cli`. |
 | command | A program or subcommand that you start from a terminal. The CLI has three commands: `ingest`, `ask` and `list-docs`. |
 | engine | The Python package in `packages/financial-engine`. Its distribution name is `maester-financial-engine`. Its import name is `pdf_financial_qa`. |
-| model | The Gemini model on Vertex AI that the engine calls. The `GEMINI_MODEL` variable gives its name. |
-| settings | The `Settings` object of the engine. It holds the Google Cloud project, the Vertex AI location and the name of the model. |
+| model | The Claude model that the engine calls through the Anthropic API. The `EXTRACTOR_MODEL` variable gives its name. |
+| settings | The `Settings` object of the engine. It holds the name of the model and its effort. |
 | hash | The first 16 hexadecimal characters of the SHA-256 digest of the PDF bytes. |
 | statement | One `FinancialStatement` object: the line items of the financial statements, with the periods, the units and a scale factor. |
 | full text | The `full_text` field: a Markdown copy of the full PDF that the model writes. |
@@ -51,12 +51,12 @@ The CLI owns only the command arguments and the terminal output. The engine does
 Usage: `maester ingest <pdf_path> [--force]`.
 
 1. The CLI checks that the file at `pdf_path` exists. If the file does not exist, the CLI stops with exit code 1 (`cli.py:38-40`).
-2. The CLI loads the settings. If `GOOGLE_CLOUD_PROJECT` has no value, the CLI shows the error and stops with exit code 1 (`cli.py:27-32`, `config.py:25-34`).
+2. The CLI loads the settings. If `ANTHROPIC_API_KEY` has no value, the CLI shows the error and stops with exit code 1 (`cli.py:27-32`, `config.py:23-31`).
 3. If you do not give `--force`, the CLI calculates the hash of the file and reads `data/cache/<hash>.json` (`cli.py:44-52`).
 4. If that cache file exists, the CLI shows `Already ingested as <hash>` and the consistency warnings of that result. Then it stops with exit code 0 and does not call the model.
-5. The `extract` function of the engine reads the PDF. If the PDF is larger than 15 MiB, it raises `ValueError` (`extraction.py:40-48`).
-6. `extract` sends the PDF bytes and a system instruction to the model in one request. The terminal shows `Extracting <file> via <model>...` until the model replies (`cli.py:54-55`).
-7. The model returns the statement and the full text as JSON, in the shape of `GeminiExtractionOutput` (`extraction.py:57-70`).
+5. The `extract` function of the engine reads the PDF. If the PDF is larger than 15 MiB, it raises `ValueError` (`extraction.py:38-44`).
+6. `extract` sends the PDF bytes and a system instruction to the model in one streamed request, with a timeout of 1800 seconds and at most 128000 output tokens (`extraction.py:53-57`). The terminal shows `Extracting <file> via <model>...` until the model replies (`cli.py:54-55`).
+7. The model returns the statement and the full text as JSON, in the shape of `ModelExtractionOutput` (`extraction.py:53-67`).
 8. `validate_statement` does two checks on each period of the statement (`validation.py:25-95`):
    - Each subtotal is equal to the sum of its component line items.
    - Total assets are equal to total liabilities plus total equity.
@@ -72,14 +72,14 @@ Usage: `maester ingest <pdf_path> [--force]`.
 Usage: `maester ask "<question>" [--doc <hash>]`.
 
 1. The CLI writes the deprecation warning to standard error, in yellow (`cli.py:19-24`, `cli.py:70-71`). It is the first output of the command, before the settings load. The text of the warning is in the code block after this list.
-2. The CLI loads the settings. If `GOOGLE_CLOUD_PROJECT` has no value, the CLI stops with exit code 1 (`cli.py:72`).
+2. The CLI loads the settings. If `ANTHROPIC_API_KEY` has no value, the CLI stops with exit code 1 (`cli.py:72`).
 3. `list_cached` reads and parses each JSON file in the cache (`storage.py:32-39`). If the cache is empty, the CLI stops with exit code 1 (`cli.py:74-77`).
 4. The CLI selects one result (`cli.py:79-91`):
    - If you give `--doc`, the CLI loads the result with that hash. If no cache file has that hash, the CLI stops with exit code 1.
    - If you do not give `--doc` and the cache has one result, the CLI uses that result.
    - If you do not give `--doc` and the cache has two or more results, the CLI shows the table of results. Then it stops with exit code 1.
-5. The `ask` function of the engine sends one request to the model (`qa.py:28-42`). The request contains the statement as JSON, the consistency warnings, the full text and the question.
-6. The system instruction of the request tells the model to use only this data. It also tells the model to say when the data has no answer (`qa.py:9-25`).
+5. The `ask` function of the engine sends one request to the model (`qa.py:26-42`). The request contains the statement as JSON, the consistency warnings, the full text and the question.
+6. The system instruction of the request tells the model to use only this data. It also tells the model to say when the data has no answer (`qa.py:7-23`).
 7. The terminal shows `Thinking...` until the model replies. Then the CLI shows the text of the answer (`cli.py:93-96`).
 
 The text of the deprecation warning is:
@@ -96,7 +96,7 @@ Usage: `maester list-docs`.
 2. If the cache is empty, the CLI shows `No documents ingested yet.` and stops with exit code 0 (`cli.py:102-105`).
 3. If the cache has results, the CLI shows a table with three columns: `Hash`, `File` and `Warnings`. The `Warnings` column gives the number of consistency warnings (`cli.py:109-113`).
 
-The `list-docs` command does not load the settings. Thus it operates without a Google Cloud project (`tests/test_monorepo.py:93-97`).
+The `list-docs` command does not load the settings. Thus it operates without an Anthropic API key (`tests/test_monorepo.py:93-97`).
 
 ## States and errors
 
@@ -105,7 +105,7 @@ The CLI shows an error in red, a consistency warning in yellow and a success mes
 | State or error | Cause | Result |
 | --- | --- | --- |
 | `No such file: <path>` | The `pdf_path` of `ingest` does not exist. | Exit code 1. The CLI does not load the settings. |
-| `GOOGLE_CLOUD_PROJECT is not set. …` | You run `ingest` or `ask`, and `GOOGLE_CLOUD_PROJECT` has no value. | Exit code 1. In `ask`, this check comes before the check of the cache. |
+| `ANTHROPIC_API_KEY is not set. …` | You run `ingest` or `ask`, and `ANTHROPIC_API_KEY` has no value. | Exit code 1. In `ask`, this check comes before the check of the cache. |
 | `Already ingested as <hash> — use --force to re-extract.` | The cache has a result with the same hash, and you did not give `--force`. | Exit code 0. The CLI does not call the model. It shows the consistency warnings from the cache. |
 | The deprecation warning | You run `ask`. | The CLI writes the warning to standard error before all other output. The command then continues as before. The warning does not change the exit code. |
 | `No documents ingested yet. Run …` | You run `ask`, and the cache is empty. | Exit code 1. |
@@ -114,7 +114,8 @@ The CLI shows an error in red, a consistency warning in yellow and a success mes
 | `No documents ingested yet.` | You run `list-docs`, and the cache is empty. | Exit code 0. |
 | `<n> consistency warning(s):` | `validate_statement` finds one or more failed checks. | The CLI shows each consistency warning. The result goes into the cache with its consistency warnings. The `ask` request also sends them to the model. |
 | `ValueError: PDF is … over the 15 MB inline limit …` | The PDF is larger than 15 MiB (15 × 1024 × 1024 bytes). | The CLI does not catch the error. Python shows a traceback. No request goes to the model. |
-| An error from Vertex AI or from the network | Not known. The code of the CLI and the engine names no such error. | The CLI does not catch the error. Python shows a traceback. |
+| An error from the Anthropic API or from the network | Not known. The CLI makes one try for each call (`max_retries=0`) and does not catch the error. | Python shows a traceback. |
+| `MODEL_REFUSED` or `MODEL_OUTPUT_TOO_LONG` | In `ingest`, the model refuses the document, or its answer does not fit in the output limit (`workflow/model.py`). | The CLI does not catch the `ExtractionError`. Python shows a traceback. In `ask`, a refusal raises `RuntimeError` (`qa.py:40-41`). |
 | A cache file that does not parse | `model_validate_json` cannot read a JSON file in the cache as a result. | The CLI does not catch the error. `ask` and `list-docs` stop with a traceback, also when you give `--doc`. |
 
 ## Data
@@ -124,15 +125,15 @@ The CLI shows an error in red, a consistency warning in yellow and a success mes
 - The PDF file at `pdf_path`, for the `ingest` command.
 - The JSON files in `data/cache`, for all three commands.
 - The `.env` file. When Python imports `config.py`, `config.py` calls `load_dotenv()` from `python-dotenv`. This occurs before each command runs (`config.py:6-8`).
-- The environment variables in this table (`config.py:25-34`):
+- The environment variables in this table (`config.py:25-31`):
 
 | Variable | Default | Use |
 | --- | --- | --- |
-| `GOOGLE_CLOUD_PROJECT` | No default. `ingest` and `ask` stop without it. | The Google Cloud project for Vertex AI. |
-| `GOOGLE_CLOUD_LOCATION` | `us-central1` | The Vertex AI location. |
-| `GEMINI_MODEL` | `gemini-2.5-pro` | The name of the model. |
+| `ANTHROPIC_API_KEY` | No default. `ingest` and `ask` stop without it. | The Anthropic API key. |
+| `EXTRACTOR_MODEL` | `claude-opus-5-5` | The name of the model. |
+| `EXTRACTOR_EFFORT` | `high` | The effort of the model: `low`, `medium`, `high`, `xhigh` or `max`. |
 
-The engine gives no key to `genai.Client` (`extraction.py:55`, `qa.py:29`). The repository docs tell you to use Application Default Credentials, or a key file in `GOOGLE_APPLICATION_CREDENTIALS` (`.env.example`).
+The engine gives no key to the client. `claude_client` makes `anthropic.Anthropic(timeout=…, max_retries=0)`, and the SDK reads `ANTHROPIC_API_KEY` itself (`workflow/model.py`).
 
 ### What the CLI writes
 
@@ -143,10 +144,10 @@ The engine gives no key to `genai.Client` (`extraction.py:55`, `qa.py:29`). The 
 
 The hash comes from the bytes of the file only. Thus two files with the same bytes get the same hash, and the same cache file.
 
-### What the CLI sends to Google
+### What the CLI sends to Anthropic
 
-- `ingest` sends the full PDF bytes to the `generate_content` function of Vertex AI (`extraction.py:55-68`).
-- `ask` sends the statement, the consistency warnings, the full text and the question (`qa.py:31-41`).
+- `ingest` sends the full PDF bytes to the Messages API of Anthropic, as a base64 `document` block (`extraction.py:53-57`).
+- `ask` sends the statement, the consistency warnings, the full text and the question, with `messages.create` (`qa.py:27-39`).
 
 ## Procedures
 
@@ -188,7 +189,7 @@ Note: `make sync` runs the same command. The `Makefile` also sets `UV_CACHE_DIR`
 
 Note: this path does not use `uv.lock`.
 
-### To prepare the Google Cloud settings
+### To prepare the Anthropic settings
 
 You must do this procedure before you use `ingest` or `ask`.
 
@@ -198,13 +199,8 @@ You must do this procedure before you use `ingest` or `ask`.
    cp .env.example .env
    ```
 
-2. In `.env`, set `GOOGLE_CLOUD_PROJECT` to the ID of your Google Cloud project.
-3. If your project cannot use `gemini-2.5-pro`, set `GEMINI_MODEL` to a different model name.
-4. Log in with Application Default Credentials:
-
-   ```bash
-   gcloud auth application-default login
-   ```
+2. In `.env`, set `ANTHROPIC_API_KEY` to your key from the Anthropic Console.
+3. To use a different model or effort, set `EXTRACTOR_MODEL` or `EXTRACTOR_EFFORT`.
 
 ### To show the help
 
@@ -224,9 +220,9 @@ Note: `make cli` runs `uv run --locked maester --help`. The `pdf-financial-qa` c
 
 ### To get the data from a PDF
 
-WARNING: Use only a PDF that you can send to Google. The `ingest` and `ask` commands send private data to Vertex AI. Each call can cause charges.
+WARNING: Use only a PDF that you can send to Anthropic. The `ingest` and `ask` commands send private data to the Anthropic API. Each call can cause charges.
 
-1. Do the procedure "To prepare the Google Cloud settings".
+1. Do the procedure "To prepare the Anthropic settings".
 2. Run the `ingest` command with the path of the PDF:
 
    ```bash
@@ -253,9 +249,9 @@ CAUTION: The `--force` option replaces the cache file of that PDF. You lose the 
 
 ### To ask a question
 
-WARNING: Use only a PDF that you can send to Google. The `ingest` and `ask` commands send private data to Vertex AI. Each call can cause charges.
+WARNING: Use only a PDF that you can send to Anthropic. The `ingest` and `ask` commands send private data to the Anthropic API. Each call can cause charges.
 
-1. Do the procedure "To prepare the Google Cloud settings".
+1. Do the procedure "To prepare the Anthropic settings".
 2. Run `list-docs`.
 3. Copy the hash of the result that you want.
 4. Run the `ask` command with the question and the hash:
@@ -276,17 +272,17 @@ Note: if the cache has only one result, you can run `ask` without `--doc`.
 
 2. Make sure that the output shows `OK`.
 
-Note: these 17 tests do not call Vertex AI (`tests/test_monorepo.py:1`). `make test` runs all the Python tests in `tests/`. `make check` also runs `scripts/check_workspace.py` before the tests. The GitHub workflow runs the same commands on Python 3.11 and 3.14.
+Note: these 17 tests do not call the Anthropic API (`tests/test_monorepo.py:1`). `make test` runs all the Python tests in `tests/`. `make check` also runs `scripts/check_workspace.py` before the tests. The GitHub workflow runs the same commands on Python 3.11 and 3.14.
 
 ## Warnings and cautions
 
-WARNING: Use only a PDF that you can send to Google. The `ingest` command sends the full PDF to Vertex AI. The `ask` command sends the full text of the PDF. Each call can cause charges to the Google Cloud project.
+WARNING: Use only a PDF that you can send to Anthropic. The `ingest` command sends the full PDF to the Anthropic API. The `ask` command sends the full text of the PDF. Each call can cause charges to your Anthropic account.
 
 CAUTION: Use `--force` only when you want to replace the result. The `ingest --force` command writes over the cache file that has the same hash. You lose the earlier result.
 
 ## Limits
 
-- The CLI sends a PDF in one request, and only up to 15 MiB. It cannot divide a PDF into batches of pages (`extraction.py:40-48`).
+- The CLI sends a PDF in one request, and only up to 15 MiB. It cannot divide a PDF into batches of pages (`extraction.py:38-44`).
 - The code does not measure if the full text is complete. A long PDF can be too large for the output limit of the model (`docs/DEVELOPMENT.md` section 14).
 - The checks find line items through the words in their labels. A component with no value for a period counts as zero (`validation.py:1-9`, `validation.py:38-41`).
 - A clean check is not proof that the extraction is correct (`validation.py:1-9`).

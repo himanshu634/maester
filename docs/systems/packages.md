@@ -23,7 +23,7 @@
 | Fact | One row in `financial_fact`. It is one value from a financial statement, as printed and as a decimal. |
 | Check | An arithmetic comparison of the values of one statement: a subtotal check or the balance sheet check. |
 | Intake state | The value of `document.intake_state`. It shows the next step for a stored document. |
-| Model | A Gemini language model on Vertex AI. The Python engine calls it through LangChain or `google-genai`. |
+| Model | A Claude language model from Anthropic. The Python engine calls it through the Anthropic Python SDK (`anthropic`). |
 | Rule | A regular expression in `classify/rules.py` that finds an answer in the text of a page. |
 | XBRL instance | An XML file in the XBRL 2.1 format with the facts of a results filing. |
 | Source rule | The function `planPdfNumbers` and its companions in `@maester/financial-engine`. It says which source gives the numbers of a statement, and if a results PDF is read, skipped or held. |
@@ -247,7 +247,7 @@ The package reads no environment variable. The apps give it the URL and the mode
 | `pdf_financial_qa.classify` | `run_classification`, `ClassifySettings`, `ClassificationModel`, `ClassificationResult`, `RULES_VERSION` | `apps/extractor` |
 | `pdf_financial_qa.workflow` | `run_extraction`, `WorkflowSettings`, `ExtractionModel`, `ExtractionResult`, `ExtractionError`, `PIPELINE_VERSION` | `apps/extractor`, `apps/eval` |
 | `classify.contracts`, `workflow.contracts` | `CLASSIFY_RESPONSE`, `EXTRACTOR_EVENT` and the Pydantic classes of the wire format | `apps/extractor` |
-| `classify.model`, `workflow.model` | `GeminiClassificationModel`, `GeminiExtractionModel` | `apps/extractor`, `apps/eval` (`GeminiExtractionModel` only) |
+| `classify.model`, `workflow.model` | `ClaudeClassificationModel`, `ClaudeExtractionModel` | `apps/extractor`, `apps/eval` (`ClaudeExtractionModel` only) |
 | `workflow.pdf`, `workflow.values` | `PdfDocument`, `parse_reported`, `parse_label_date`, `format_decimal` | `apps/eval` |
 | `config`, `extraction`, `qa`, `storage` | `Settings`, `extract`, `ask`, `hash_pdf`, `load`, `save`, `list_cached` | `apps/cli` |
 
@@ -517,9 +517,9 @@ The source text of a market point starts with `Dhan ·` or `FRED ·`. `lastMarke
 | `DATABASE_URL` | `migrate-cli.ts`, `waitlist-cli.ts`, `drizzle.config.ts` | The address of the database. If it is empty, `drizzle.config.ts` uses `postgres://maester:maester@localhost:5433/maester`. |
 | `MIGRATIONS_FOLDER` | `migrate-cli.ts`, `apps/api/src/migrate.ts` | The folder of the migrations. The API image gives it the value `/app/drizzle`. |
 | `DATABASE_URL_TEST_DB` | `packages/db/test/helpers.ts` | The test database. The default is `postgres://maester:maester@localhost:5433/maester_test_db`. |
-| `GOOGLE_CLOUD_PROJECT` | `pdf_financial_qa/config.py` | The Google Cloud project of the first extraction path. It is necessary. |
-| `GOOGLE_CLOUD_LOCATION` | `pdf_financial_qa/config.py` | The Vertex AI location. The default is `us-central1`. |
-| `GEMINI_MODEL` | `pdf_financial_qa/config.py` | The model name. The default is `gemini-2.5-pro`. |
+| `ANTHROPIC_API_KEY` | `pdf_financial_qa/config.py` | The Anthropic API key of the first extraction path. It is necessary. The SDK reads it. |
+| `EXTRACTOR_MODEL` | `pdf_financial_qa/config.py` | The model name. The default is `claude-opus-5-5`. |
+| `EXTRACTOR_EFFORT` | `pdf_financial_qa/config.py` | The effort of the model: `low`, `medium`, `high`, `xhigh` or `max`. The default is `high`. |
 | `CONNECTIONS_KEY` | `apps/api/src/env.ts`, `apps/worker/src/env.ts` | The connections key, as 32 bytes in base64. The apps refuse a value of a different length. The packages do not read it. The apps decode it and give the bytes to `@maester/market`. |
 
 ### Files
