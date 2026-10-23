@@ -148,7 +148,7 @@ export const researchContent = {
 		yearSources: {
 			label: 'Where each year’s statements come from',
 			xbrl: 'the XBRL',
-			page: 'the annual report, read by Gemini',
+			page: 'the annual report, read by a model',
 			/** "Profit and loss and balance sheet from the XBRL" */
 			from: (statements: string, source: string) => `${statements} from ${source}`
 		},

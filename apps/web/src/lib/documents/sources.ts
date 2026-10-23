@@ -4,9 +4,9 @@
  * 2). Free of Svelte and of the page: every function takes what it reads. Counts of figures found
  * are counts, not figures; no figure value is read or computed here.
  *
- * The one rule that costs money: a PDF is sent to `extract` (a paid Gemini read) only when the
+ * The one rule that costs money: a PDF is sent to `extract` (a paid model read) only when the
  * filing's statement `sources` say its numbers are needed (`pdfNeeded`), never because the PDF's
- * own `numbers` say `done` or `failed`. A PDF Gemini read before its XBRL arrived still says
+ * own `numbers` say `done` or `failed`. A PDF the model read before its XBRL arrived still says
  * `source: pdf`, `done`, after XBRL owns every one of its slots. One more case holds a needed PDF
  * back (`pdfWorthReading`): a PDF whose only claim is `xbrl_read_failed`, beside a failed XBRL
  * file of that basis in the same send set. The free XBRL read goes alone. And no PDF is sent while
@@ -245,7 +245,7 @@ export function sourceRows(
  * The files "Read it again" sends to `extract`, in file order: XBRL files whose numbers are done or
  * failed (a free read), and PDFs whose numbers are done or failed AND that the filing's sources
  * still need (`pdfWorthReading`). Never a PDF the XBRL covers, whatever its own `numbers.source` says: that would be
- * a paid Gemini call for numbers XBRL already owns. An unsorted file passes `sources` `[]`.
+ * a paid model call for numbers XBRL already owns. An unsorted file passes `sources` `[]`.
  */
 export function readAgainIds(files: FilingFile[], sources: BasisSources[]): string[] {
 	return files
