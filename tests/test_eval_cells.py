@@ -1,4 +1,4 @@
-"""Cells: the source rule's slot for a Gemini, XBRL or gold fact, and figures that agree exactly or at the coarser
+"""Cells: the source rule's slot for a PDF, XBRL or gold fact, and figures that agree exactly or at the coarser
 precision. Offline. Every expected value is worked out by hand in the comment beside it."""
 
 from decimal import Decimal
@@ -10,7 +10,7 @@ from maester_eval.artefacts import Artefact, ModelCalls
 from maester_eval.cells import (
     COMPARE_RULE_VERSION,
     Placed,
-    gemini_slot,
+    pdf_slot,
     gold_slot,
     printed_exponent,
     same_figure,
@@ -63,34 +63,34 @@ class FixtureTests(unittest.TestCase):
 
 class SlotTests(unittest.TestCase):
     def test_a_quarter_and_its_half_year_never_share_a_slot(self):
-        q = gemini_slot(C, K, pdf_fact())
-        h = gemini_slot(C, K, pdf_fact(periodLabel="Six months ended 30.09.2025"))
+        q = pdf_slot(C, K, pdf_fact())
+        h = pdf_slot(C, K, pdf_fact(periodLabel="Six months ended 30.09.2025"))
         self.assertNotEqual(q.key, h.key)
         self.assertEqual(q.key, xbrl_slot(C, K, xbrl_fact()))
         self.assertEqual(h.key, xbrl_slot(C, K, xbrl_fact(span="half_year", periodStart="2025-04-01", contextId="FourD")))
 
     def test_a_header_with_no_span_or_no_date_is_not_placed(self):
-        self.assertEqual(gemini_slot(C, K, pdf_fact(periodLabel="Current period ended 30.09.2025")), Placed(None, "no_span"))
-        ytd = gemini_slot(C, K, pdf_fact(periodLabel="Year to date figures for current period ended 30.09.2025"))
+        self.assertEqual(pdf_slot(C, K, pdf_fact(periodLabel="Current period ended 30.09.2025")), Placed(None, "no_span"))
+        ytd = pdf_slot(C, K, pdf_fact(periodLabel="Year to date figures for current period ended 30.09.2025"))
         self.assertEqual(ytd.key, xbrl_slot(C, K, xbrl_fact(span="half_year", periodStart="2025-04-01", contextId="FourD")))
-        self.assertEqual(gemini_slot(C, K, pdf_fact(periodEnd=None)), Placed(None, "no_period"))
+        self.assertEqual(pdf_slot(C, K, pdf_fact(periodEnd=None)), Placed(None, "no_period"))
 
     def test_balance_sheet_has_no_span_and_opening_cash_keys_on_the_column(self):
-        bs = gemini_slot(C, K, pdf_fact(statement="balance_sheet", periodLabel="Half year ended 30.09.2025", periodEnd=None,
+        bs = pdf_slot(C, K, pdf_fact(statement="balance_sheet", periodLabel="Half year ended 30.09.2025", periodEnd=None,
                                         asOfDate="2025-09-30"))
         self.assertEqual(bs.key, xbrl_slot(C, K, xbrl_fact(statement="balance_sheet", span=None, periodEnd=None,
                                                            asOfDate="2025-09-30")))
         opening = xbrl_fact(statement="cash_flow", span="half_year", periodEnd="2025-09-30", asOfDate="2025-03-31",
                             contextId="PY_I")
         self.assertEqual(xbrl_slot(C, K, opening),
-                         gemini_slot(C, K, pdf_fact(statement="cash_flow", periodLabel="Half year ended 30.09.2025")).key)
+                         pdf_slot(C, K, pdf_fact(statement="cash_flow", periodLabel="Half year ended 30.09.2025")).key)
 
     def test_bases_never_share_a_slot(self):
         self.assertNotEqual(xbrl_slot(C, K, xbrl_fact()), xbrl_slot(C, K, xbrl_fact(basis="standalone")))
 
     def test_the_key_is_the_source_rules_slot(self):
         # The fields of the slot joined by "|", a balance sheet line as an instant (phase 4's `slot_key`).
-        self.assertEqual(gemini_slot(C, K, pdf_fact()),
+        self.assertEqual(pdf_slot(C, K, pdf_fact()),
                          Placed("synthetic-cements|financial_results|income_statement|consolidated|2025-09-30|quarter", None))
         self.assertEqual(xbrl_slot(C, K, xbrl_fact(statement="balance_sheet", span="quarter")),
                          "synthetic-cements|financial_results|balance_sheet|consolidated|2025-09-30|instant")
@@ -99,11 +99,11 @@ class SlotTests(unittest.TestCase):
         self.assertIsNone(xbrl_slot(C, K, xbrl_fact(periodEnd=None, asOfDate=None)))
 
     def test_gold_facts_take_the_same_slot(self):
-        self.assertEqual(gold_slot(C, K, gold_fact()), gemini_slot(C, K, pdf_fact()))
+        self.assertEqual(gold_slot(C, K, gold_fact()), pdf_slot(C, K, pdf_fact()))
         self.assertEqual(gold_slot(C, K, gold_fact(span="half_year")).key,
                          xbrl_slot(C, K, xbrl_fact(span="half_year", periodStart="2025-04-01", contextId="FourD")))
         # A gold file from before gold facts carried a span: the header's words give it.
-        self.assertEqual(gold_slot(C, K, gold_fact(span=None)), gemini_slot(C, K, pdf_fact()))
+        self.assertEqual(gold_slot(C, K, gold_fact(span=None)), pdf_slot(C, K, pdf_fact()))
         self.assertEqual(gold_slot(C, K, gold_fact(span=None, period_label="Current period ended 30.09.2025")),
                          Placed(None, "no_span"))
         self.assertEqual(gold_slot(C, K, gold_fact(period_end=None)), Placed(None, "no_period"))

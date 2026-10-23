@@ -402,7 +402,7 @@ def compare(
     to: Annotated[Optional[Path], typer.Option(help="Also copy the Markdown here, e.g. docs/eval/2026-10-21-compare.md.")] = None,
     force: Annotated[bool, typer.Option(help="Overwrite a settle sheet that exists.")] = False,
 ) -> None:
-    """Set Gemini against XBRL, cell by cell, on every selected results filing that has both. No model, no cost.
+    """Set the PDF facts against XBRL, cell by cell, on every selected results filing that has both. No model, no cost.
 
     Writes compare-xbrl.md and compare-xbrl.json into the PDF run's folder, and a settle sheet per dev filing with a
     disagreement to data/eval/settle. A settle sheet that exists is a person's work: kept unless --force. A held-out

@@ -365,7 +365,7 @@ def _tag_lines(scores: list[RunScore], tags: dict[str, dict[str, str]], unit_che
 
 def _settled_lines(settled: list[RunScore]) -> list[str]:
     lines = ["## Settled disagreements", "",
-             "Gold facts frozen from settled disagreements. They exist only where Gemini and XBRL disagreed, so they are "
+             "Gold facts frozen from settled disagreements. They exist only where the model and XBRL disagreed, so they are "
              "scored apart from every rate above.", "",
              "| Source | Filings | Settled facts | Exact match | Not in this run |", _row(["---"] * 5)]
     for score in settled:

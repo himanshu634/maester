@@ -828,7 +828,7 @@ class SettledTests(NumbersCase):
         after = md.split("## Settled disagreements")[1]
         self.assertIn("| pdf | 0 | 0 | — | 1 |", after)
         self.assertIn("| xbrl | 1 | 1 | 100.0% | 0 |", after)
-        self.assertIn("They exist only where Gemini and XBRL disagreed", after)
+        self.assertIn("They exist only where the model and XBRL disagreed", after)
         self.assertNotIn("results-2025-06", md.split("## Settled disagreements")[0])  # never "Not run" in the headline
         self.assertIn("| Source | Filings | Settled facts | Exact match | Not in this run |", after)
 
@@ -993,7 +993,7 @@ class NumbersCommandTests(ReportCase):
     def test_settled_facts_are_scored_apart_and_said_on_the_console(self):
         write_gold(self.paths.gold, gold_of(gold_fact(**SETTLED_Q1), filing=RESULTS_Q1))
         self.write_manifest(*self.filings, RESULTS_Q1)
-        # Gemini read the June filing too, but its only gold fact is a settled one: the headline has no gold for it.
+        # The model read the June filing too, but its only gold fact is a settled one: the headline has no gold for it.
         write_artefact(self.pdf_run, pdf_artefact(RESULTS_Q1, PDF_FACTS[:1]))
         result = self.numbers("--run", self.pdf_run.name, "--run", self.xbrl_run.name)
         self.assertEqual(result.exit_code, 0, result.output)

@@ -43,7 +43,7 @@ def scored_row(**values):
 
 
 def pdf_fact(**values):
-    """A Gemini fact as the extractor's wire result holds it (every key of `ExtractedFact.to_wire()`): the Q2 FY26
+    """A PDF fact as the extractor's wire result holds it (every key of `ExtractedFact.to_wire()`): the Q2 FY26
     quarter's consolidated revenue, printed in lakh."""
     base = dict(statement="income_statement", basis="consolidated", section="Income", lineOrder=1,
                 reportedLabel="Revenue from operations", isSubtotal=False, componentLabels=[],
@@ -95,7 +95,7 @@ def _artefact(filing, result, **values):
 
 
 def pdf_artefact(filing, facts, coverage=(("income_statement", "consolidated"), ("income_statement", "standalone"))):
-    """A Gemini artefact of `filing` holding `facts`, each `(statement, basis)` of `coverage` extracted on the first page."""
+    """A PDF artefact of `filing` holding `facts`, each `(statement, basis)` of `coverage` extracted on the first page."""
     return _artefact(filing, {"state": "complete", "facts": list(facts), "checks": [], "warnings": [],
                               "coverage": [{"statement": statement, "basis": basis, "pages": [0], "status": "extracted"}
                                            for statement, basis in coverage]})

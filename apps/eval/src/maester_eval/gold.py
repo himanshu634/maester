@@ -85,7 +85,7 @@ class GoldFact(BaseModel):
     normalized_value: str | None
     page_index: int
     dimensions: dict[str, str] = Field(default_factory=dict)
-    # "sheet": a row a person labelled from a sheet of a run. "settled": a cell the investor settled where Gemini and
+    # "sheet": a row a person labelled from a sheet of a run. "settled": a cell the investor settled where the model and
     # XBRL disagreed. Headline rates count the first only, because the second was labelled with the XBRL value in view.
     origin: Literal["sheet", "settled"] = "sheet"
 

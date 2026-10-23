@@ -1,5 +1,5 @@
 """`maester-eval settle`: the investor's settled disagreements join the filing's gold file, never replacing a gold fact.
-Offline. The fixture is compare's: Gemini read the standalone revenue as 10,500.00 lakh, XBRL holds 10,000.00, and the
+Offline. The fixture is compare's: the model read the standalone revenue as 10,500.00 lakh, XBRL holds 10,000.00, and the
 investor settles it at 10,000.00 (scale 100000, so 1000000000.00)."""
 
 from datetime import datetime, timezone
