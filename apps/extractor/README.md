@@ -16,10 +16,11 @@ Status: implemented. A stateless Python HTTP service ([FastAPI](https://fastapi.
 | --- | --- |
 | `PORT` | Listen port, default `8790` |
 | `EXTRACTOR_SECRET` | Shared secret expected in `x-extractor-secret`. Leave unset on Cloud Run, where IAM authenticates the worker |
-| `GOOGLE_CLOUD_PROJECT` | Vertex AI project. Without it, or without Application Default Credentials, every request ends with `EXTRACTOR_NOT_CONFIGURED` |
-| `VERTEX_LOCATION` | Vertex AI region for Gemini, default `us-central1` |
-| `GEMINI_MODEL` | Default `gemini-2.5-pro` |
-| `GEMINI_CLASSIFY_MODEL` | Model for `/v1/classify`, default `gemini-2.5-flash` |
+| `ANTHROPIC_API_KEY` | Anthropic API key. Without it, every request that needs the model ends with `EXTRACTOR_NOT_CONFIGURED` |
+| `EXTRACTOR_MODEL` | Claude model for extraction, default `claude-opus-5-5` |
+| `EXTRACTOR_EFFORT` | Effort for extraction: `low`, `medium`, `high`, `xhigh` or `max`, default `high` |
+| `EXTRACTOR_CLASSIFY_MODEL` | Claude model for `/v1/classify`, default `claude-opus-5-5` |
+| `EXTRACTOR_CLASSIFY_EFFORT` | Effort for `/v1/classify`, same values, default `medium` |
 | `CLASSIFY_MODEL_TIMEOUT_SECONDS` | Time allowed for one classification model call, default `60` |
 | `EXTRACT_MAX_BYTES` | Largest accepted PDF, default 50 MiB |
 | `EXTRACT_HEARTBEAT_SECONDS` | Heartbeat interval while a model call runs, default `15` |

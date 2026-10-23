@@ -53,7 +53,7 @@ describe('the Numbers track', () => {
 		expect(numbersTrack([x, p], [], ctx)).toEqual({
 			state: 'now',
 			first: 'From XBRL · reading now',
-			second: 'The PDF waits for it, so Gemini reads only what XBRL doesn’t cover.'
+			second: 'The PDF waits for it, so the model reads only what XBRL doesn’t cover.'
 		});
 	});
 
@@ -244,7 +244,7 @@ describe('the Numbers track', () => {
 		);
 	});
 
-	it('a PDF Gemini read before its XBRL, now covered whole, is not a source (Review Focus 1)', () => {
+	it('a PDF the model read before its XBRL, now covered whole, is not a source (Review Focus 1)', () => {
 		expect(
 			numbersTrack([xbrlDone('x1'), pdfDone('p1')], one([stmt({ inPdf: found(38, 38) })]), ctx)
 		).toEqual({
@@ -333,13 +333,13 @@ describe('the Numbers track', () => {
 			state: 'next',
 			first: 'Waiting for XBRL',
 			second:
-				'500999_Q2_FY27_Consolidated.xml is being read. Gemini reads only what it doesn’t cover.'
+				'500999_Q2_FY27_Consolidated.xml is being read. The model reads only what it doesn’t cover.'
 		});
 		expect(numbersTrack([waiting(['x-other'])], [], ctx).second).toBe(
-			'An XBRL file is being read. Gemini reads only what it doesn’t cover.'
+			'An XBRL file is being read. The model reads only what it doesn’t cover.'
 		);
 		expect(numbersTrack([waiting(['x-q2', 'x-q3'])], [], ctx).second).toBe(
-			'2 XBRL files are being read. Gemini reads only what they don’t cover.'
+			'2 XBRL files are being read. The model reads only what they don’t cover.'
 		);
 	});
 
@@ -355,7 +355,7 @@ describe('the Numbers track', () => {
 		});
 	});
 
-	it('the XBRL failed and Gemini reads the PDF', () => {
+	it('the XBRL failed and the model reads the PDF', () => {
 		expect(numbersTrack([xbrlFailed('x1'), pdfNow()], [], ctx)).toEqual({
 			state: 'now',
 			first: 'Read from the PDF · now',
@@ -385,7 +385,7 @@ describe('the Numbers track', () => {
 		).toEqual({
 			state: 'stopped',
 			first: 'Stopped',
-			second: 'xs.xml couldn’t be read. Gemini read the PDF.'
+			second: 'xs.xml couldn’t be read. The model read the PDF.'
 		});
 		expect(numbersTrack([xbrlFailed('x1')], [], ctx).second).toBe(
 			'Maester couldn’t read the XBRL file.'
@@ -544,7 +544,7 @@ describe('pdfNeeded', () => {
 		expect(pdfNeeded(p, [p], [])).toBe(true);
 	});
 
-	it('a failed PDF waits while its XBRL is read: From XBRL, never Stopped (no Try again, no Gemini call)', () => {
+	it('a failed PDF waits while its XBRL is read: From XBRL, never Stopped (no Try again, no model call)', () => {
 		const x = fileOf({
 			documentId: 'x1',
 			format: 'xbrl',

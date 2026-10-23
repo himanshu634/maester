@@ -98,8 +98,8 @@ def _line(event: WireModel) -> bytes:
     return (json.dumps(event.to_wire(), ensure_ascii=False, separators=(",", ":")) + "\n").encode()
 
 
-def _vertex_factory(settings: Settings, build: Callable[[], T]) -> Callable[[], T]:
-    """Build a Vertex model on first use and reuse it; report missing configuration
+def _claude_factory(settings: Settings, build: Callable[[], T]) -> Callable[[], T]:
+    """Build a Claude model on first use and reuse it; report missing configuration
     as a permanent, typed error rather than failing at startup."""
     cached: list[T] = []
     lock = threading.Lock()
@@ -108,43 +108,35 @@ def _vertex_factory(settings: Settings, build: Callable[[], T]) -> Callable[[], 
         with lock:
             if cached:
                 return cached[0]
-            if not settings.project:
-                raise ExtractionError("EXTRACTOR_NOT_CONFIGURED", "GOOGLE_CLOUD_PROJECT is not set", retryable=False)
-            import google.auth
-            from google.auth.exceptions import DefaultCredentialsError
-
-            try:
-                google.auth.default()
-            except DefaultCredentialsError as exc:
-                raise ExtractionError("EXTRACTOR_NOT_CONFIGURED", "no Google Cloud credentials are available",
-                                      retryable=False) from exc
+            if not settings.api_key_set:
+                raise ExtractionError("EXTRACTOR_NOT_CONFIGURED", "ANTHROPIC_API_KEY is not set", retryable=False)
             cached.append(build())
             return cached[0]
 
     return factory
 
 
-def vertex_model_factory(settings: Settings) -> ModelFactory:
+def claude_model_factory(settings: Settings) -> ModelFactory:
     def build() -> ExtractionModel:
-        from pdf_financial_qa.workflow.model import GeminiExtractionModel
-        return GeminiExtractionModel(project=settings.project, location=settings.location, model=settings.model)
-    return _vertex_factory(settings, build)
+        from pdf_financial_qa.workflow.model import ClaudeExtractionModel
+        return ClaudeExtractionModel(model=settings.model, effort=settings.effort)
+    return _claude_factory(settings, build)
 
 
-def vertex_classify_factory(settings: Settings) -> ClassifyModelFactory:
+def claude_classify_factory(settings: Settings) -> ClassifyModelFactory:
     def build() -> ClassificationModel:
-        from pdf_financial_qa.classify.model import GeminiClassificationModel
-        return GeminiClassificationModel(project=settings.project, location=settings.location,
-                                         model=settings.classify_model, timeout_seconds=settings.classify_model_seconds)
-    return _vertex_factory(settings, build)
+        from pdf_financial_qa.classify.model import ClaudeClassificationModel
+        return ClaudeClassificationModel(model=settings.classify_model, effort=settings.classify_effort,
+                                         timeout_seconds=settings.classify_model_seconds)
+    return _claude_factory(settings, build)
 
 
 def create_app(settings: Settings | None = None, model_factory: ModelFactory | None = None,
                workflow: WorkflowSettings | None = None, classify_model_factory: ClassifyModelFactory | None = None,
                classify_settings: ClassifySettings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
-    model_factory = model_factory or vertex_model_factory(settings)
-    classify_model_factory = classify_model_factory or vertex_classify_factory(settings)
+    model_factory = model_factory or claude_model_factory(settings)
+    classify_model_factory = classify_model_factory or claude_classify_factory(settings)
     classify_settings = classify_settings or ClassifySettings()
     workflow = workflow or WorkflowSettings(deadline_seconds=settings.deadline_seconds)
     # LangSmith tracing would send document contents to a third party.

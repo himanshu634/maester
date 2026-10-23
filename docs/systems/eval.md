@@ -25,7 +25,8 @@ This document describes the Python command-line application in `apps/eval`. For 
 | PDF page | A page of the PDF, counted from 1. The retrieval set uses PDF pages. It does not use printed pages. |
 | engine | The Python package in `packages/financial-engine`. Its import name is `pdf_financial_qa`. |
 | workflow | The extraction workflow of the engine. The function `run_extraction` starts it. |
-| model | The Gemini model on Vertex AI that the workflow calls. |
+| model | The Claude model that the workflow calls through the Anthropic API. |
+| Gemini fact | A fact that the model read from the PDF. The name comes from the first model of the harness. The code, the reports and this document keep it, for example `gemini_slot` and the title `Gemini against XBRL`. The fact is from the PDF reader, whichever model reads. |
 | model call | One request from the workflow to the model. The harness counts three kinds: `locate`, `extract` and `correct`. |
 | filing | The annual report or the financial results of one company for one period. The corpus keeps it as one PDF. |
 | corpus | The folder `data/eval/corpus`. It holds the PDFs of public filings. Git ignores it. |
@@ -119,7 +120,7 @@ A person corrects each sheet against the PDF between `export` and `freeze`. The 
 | Paths | `apps/eval/src/maester_eval/paths.py` | Gives the folders under `data/eval` and the path of the taxonomy. Makes a run folder. Finds a run from `latest`, a name or a path, and can ask for the source of the run. |
 | Manifest | `apps/eval/src/maester_eval/manifest.py` | Reads, checks and writes the manifest. Selects the filings of a set. Lists the filings that are out of scope. Checks the pairs and the format tags of a filing. |
 | Taxonomy | `apps/eval/src/maester_eval/concepts.py` | Reads `packages/contracts/concepts.json`. |
-| Runner | `apps/eval/src/maester_eval/runner.py` | `live`: builds the Gemini model and runs `run_extraction` with a model that counts its calls. |
+| Runner | `apps/eval/src/maester_eval/runner.py` | `live`: builds the Claude model (`claude_model_factory`) and runs `run_extraction` with a model that counts its calls. |
 | Artefacts | `apps/eval/src/maester_eval/artefacts.py` | Defines the artefact, with the source and the instances of an XBRL run. Writes and reads the artefacts and `run.json`. |
 | Sheets | `apps/eval/src/maester_eval/sheets.py` | `export`: writes the sheets. Also writes the settle sheets for `compare`. |
 | Gold | `apps/eval/src/maester_eval/gold.py` | `freeze`: reads a sheet and writes a gold file. Reads the gold files. Gives the view of the gold files for one origin. |
@@ -143,7 +144,7 @@ A person corrects each sheet against the PDF between `export` and `freeze`. The 
 | Retrieval report | `apps/eval/src/maester_eval/retrieval_report.py` | Reads the run folder of a retrieval run and writes its report. |
 | Wire shapes | `apps/eval/src/maester_eval/eval_wire.py` | The shapes of the JSON files that the worker commands read and write. |
 | Text helper | `apps/eval/src/maester_eval/text.py` | `normalise`: makes lower case, changes `&` to `and`, removes punctuation and joins spaces. It follows `normalise` in `apps/api/src/financials/stitch.ts`. |
-| Engine functions | `packages/financial-engine/src/pdf_financial_qa/workflow/`, `packages/financial-engine/src/pdf_financial_qa/xbrl/` | The harness calls `run_extraction`, `GeminiExtractionModel`, `PdfDocument`, `parse_reported`, `parse_label_date` and `format_decimal`. For XBRL it calls `parse_instance`, `detect_format`, `classify_instance` and `read_instance`. |
+| Engine functions | `packages/financial-engine/src/pdf_financial_qa/workflow/`, `packages/financial-engine/src/pdf_financial_qa/xbrl/` | The harness calls `run_extraction`, `ClaudeExtractionModel`, `PdfDocument`, `parse_reported`, `parse_label_date` and `format_decimal`. For XBRL it calls `parse_instance`, `detect_format`, `classify_instance` and `read_instance`. |
 | Tests | `tests/test_eval_*.py`, `tests/test_concepts_json.py` | Offline tests. They make no model call. |
 
 ## Operation
@@ -159,7 +160,7 @@ Usage: `maester-eval live [--set <set>] [--only <filing id>] [--label <word>] [-
 5. With `--only`, the harness reads a named filing also when the filing is out of scope.
 6. With `--paired`, it keeps only the selected filings that have pairs. It shows `paired: <n> of <m>`. The number `<m>` is the count of selected filings. The number `<n>` is the count that it keeps. It shows this line before the run starts.
 7. If the corpus does not hold a PDF of a filing that it keeps, the harness stops and names the files. If the selection is empty, it stops.
-8. It builds the model from `GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION` and `GEMINI_MODEL`, as the extractor does. If `GOOGLE_CLOUD_PROJECT` has no value, it stops.
+8. It builds the model from `EXTRACTOR_MODEL` and `EXTRACTOR_EFFORT`, as the extractor does. If `ANTHROPIC_API_KEY` has no value, it stops.
 9. It reads `EXTRACT_DEADLINE_SECONDS`. If the value is not a number, the harness stops. Thus a wrong value leaves no empty run folder.
 10. It makes the run folder in `data/eval/runs`. The name is the UTC start time as `YYYYMMDDTHHMMSSZ`, then `-<label>` if you give `--label`.
 11. A label has letters, digits, dots, dashes and underscores only. With any other character the harness stops and makes no folder.
@@ -711,7 +712,7 @@ In the first table, "Listed under Mismatches" means the part Mismatches for the 
 | `<id> is in set <a>, not <b>` | `--only` of `live` names a filing of another set than `--set`. | Exit code 1. |
 | `missing under data/eval/corpus: <files>` | The corpus does not hold the PDF of a selected filing, or (`xbrl-read`) an instance of a selected filing. | Exit code 1. No run folder. |
 | `nothing to read: the selection is empty` | The set has no filing that is in scope, or `--paired` leaves no filing. | Exit code 1. No run folder. |
-| `GOOGLE_CLOUD_PROJECT is not set; …` | `live` runs and the variable has no value. | Exit code 1. No run folder. |
+| `ANTHROPIC_API_KEY is not set; copy .env.example to .env and fill it in` | `live` runs and the variable has no value. | Exit code 1. No run folder. |
 | `EXTRACT_DEADLINE_SECONDS: <reason>` | The value is not a number. | Exit code 1. No run folder. |
 | `run label '<label>': use letters, digits, dot, dash or underscore` | `--label` has another character. | Exit code 1. No run folder. |
 | `no runs under <path>`, `no runs under <path> with source <source>` or `no run '<name>' under <path>` | `--run`, `--xbrl` or `--against` does not lead to a run. | Exit code 1. |
@@ -754,12 +755,12 @@ In the first table, "Listed under Mismatches" means the part Mismatches for the 
 
 | Variable | Default | Use |
 | --- | --- | --- |
-| `GOOGLE_CLOUD_PROJECT` | No default. `live` stops without it. | The Google Cloud project for Vertex AI. |
-| `VERTEX_LOCATION` | `us-central1` | The Vertex AI location. |
-| `GEMINI_MODEL` | `gemini-2.5-pro` | The name of the model. |
+| `ANTHROPIC_API_KEY` | No default. `live` stops without it. | The Anthropic API key. |
+| `EXTRACTOR_MODEL` | `claude-opus-5-5` | The name of the model. |
+| `EXTRACTOR_EFFORT` | `high` | The effort of the model: `low`, `medium`, `high`, `xhigh` or `max`. |
 | `EXTRACT_DEADLINE_SECONDS` | `840` | The time in seconds that the workflow can use for one filing. |
 
-These are the variables of the extractor, with the same defaults. Thus a run measures the configuration that the product runs. The model uses the Application Default Credentials of Google. If the model finds no credentials, each filing fails with the error `EXTRACTOR_NOT_CONFIGURED`.
+These are the variables of the extractor, with the same defaults. Thus a run measures the configuration that the product runs. The Anthropic SDK reads `ANTHROPIC_API_KEY`. If Anthropic refuses the key, each filing fails with the error `EXTRACTOR_NOT_CONFIGURED`. Each `live` call uses Anthropic credit.
 
 ### What the harness writes
 
@@ -1048,13 +1049,8 @@ You must do this procedure before you use `live`.
    cp .env.example .env
    ```
 
-2. In `.env`, put the ID of your Google Cloud project in `GOOGLE_CLOUD_PROJECT`.
-3. If your project cannot use `gemini-2.5-pro`, put another model name in `GEMINI_MODEL`.
-4. Log in with Application Default Credentials:
-
-   ```bash
-   gcloud auth application-default login
-   ```
+2. In `.env`, put your key from the Anthropic Console in `ANTHROPIC_API_KEY`.
+3. To use a different model or effort, put them in `EXTRACTOR_MODEL` or `EXTRACTOR_EFFORT`.
 
 ### To show the help
 
@@ -1244,7 +1240,7 @@ WARNING: `live` costs model calls. State the count of filings before you run it.
 2. Read the filings that have pairs with `live`:
 
    ```bash
-   uv run --locked maester-eval live --set dev --paired --label gemini
+   uv run --locked maester-eval live --set dev --paired --label claude
    ```
 
 3. Make sure that each company has a sheet with the column `concept` filled for its lines.
@@ -1258,7 +1254,7 @@ WARNING: `live` costs model calls. State the count of filings before you run it.
 6. Run `compare` with the names of the two runs:
 
    ```bash
-   uv run --locked maester-eval compare --run 20261021T090000Z-gemini --xbrl 20261021T100000Z-xbrl --set dev
+   uv run --locked maester-eval compare --run 20261021T090000Z-claude --xbrl 20261021T100000Z-xbrl --set dev
    ```
 
 7. Open `compare-xbrl.md` in the folder of the PDF run.
@@ -1292,7 +1288,7 @@ Note: If Gemini did not read some filings, or some companies have no sheet with 
 11. Run `settle` with the filing id and the name of the PDF run:
 
     ```bash
-    uv run --locked maester-eval settle synthetic-cements/results-2025-09 --run 20261021T090000Z-gemini
+    uv run --locked maester-eval settle synthetic-cements/results-2025-09 --run 20261021T090000Z-claude
     ```
 
 12. If the message says that gold already has the cell with another figure, find which figure is right.
@@ -1463,7 +1459,7 @@ Note: the tests in `tests/test_eval_*.py` and `tests/test_concepts_json.py` use 
 
 WARNING: Put only public filings in the corpus. `live` sends each PDF to Google. The sheets, the gold files and the reports keep figures from the filings, and you can commit them.
 
-WARNING: Use `--only` to read one filing first. `live` can cause charges to your Google Cloud project. This is also true with `--paired`.
+WARNING: Use `--only` to read one filing first. `live` can cause charges to your Anthropic account. This is also true with `--paired`.
 
 CAUTION: Use `export --force` only to replace a sheet on purpose. It writes over the sheet, and you lose the corrections in it.
 

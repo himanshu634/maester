@@ -97,12 +97,19 @@ def run_live(filings: list[Filing], corpus: Path, run_dir: Path, model_factory: 
     }
     write_run(run_dir, record)
     artefacts: list[Artefact] = []
+    # The factory hands out one model for the run; one that sums its tokens shows each filing's spend.
+    usage = getattr(model_factory(), "usage", None)
     for filing in filings:
         log(f"{filing.id}: reading…")
+        before = usage.snapshot() if usage is not None else None
         artefact = run_filing(filing, (corpus / filing.file).read_bytes(), model_factory, settings)
         write_artefact(run_dir, artefact)
         outcome = artefact.result["state"] if artefact.result else artefact.error.code
         log(f"{filing.id}: {outcome} in {artefact.seconds}s, {artefact.model_calls.total} model calls")
+        if before is not None:
+            spent = usage.snapshot() - before
+            log(f"{filing.id}: tokens in {spent.input}, cache write {spent.cache_write}, "
+                f"cache read {spent.cache_read}, out {spent.output}")
         artefacts.append(artefact)
     record["finished_at"] = datetime.now(timezone.utc).isoformat()
     record["model"] = artefacts[0].model if artefacts else None
@@ -110,16 +117,15 @@ def run_live(filings: list[Filing], corpus: Path, run_dir: Path, model_factory: 
     return artefacts
 
 
-def gemini_model_factory() -> ModelFactory:
+def claude_model_factory() -> ModelFactory:
     """The model the extractor runs, from the same variables (apps/extractor settings.py)."""
-    project = os.environ.get("GOOGLE_CLOUD_PROJECT")
-    if not project:
-        raise EvalConfigError("GOOGLE_CLOUD_PROJECT is not set; copy .env.example to .env and fill it in")
-    location = os.environ.get("VERTEX_LOCATION") or "us-central1"
-    model_name = os.environ.get("GEMINI_MODEL") or "gemini-2.5-pro"
-    from pdf_financial_qa.workflow.model import GeminiExtractionModel
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise EvalConfigError("ANTHROPIC_API_KEY is not set; copy .env.example to .env and fill it in")
+    from pdf_financial_qa.workflow.model import DEFAULT_MODEL, ClaudeExtractionModel
 
-    instance = GeminiExtractionModel(project=project, location=location, model=model_name)
+    model_name = os.environ.get("EXTRACTOR_MODEL") or DEFAULT_MODEL
+    effort = os.environ.get("EXTRACTOR_EFFORT") or "high"
+    instance = ClaudeExtractionModel(model=model_name, effort=effort)
     return lambda: instance
 
 

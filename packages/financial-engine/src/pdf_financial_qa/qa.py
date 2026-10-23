@@ -1,10 +1,8 @@
 """Question answering over a cached financial statement."""
 
-from google import genai
-from google.genai import types
-
 from pdf_financial_qa.config import Settings
 from pdf_financial_qa.schema import ExtractionResult
+from pdf_financial_qa.workflow.model import claude_client
 
 SYSTEM_INSTRUCTION = """\
 You answer questions about a company's financial statements using ONLY the \
@@ -26,17 +24,19 @@ them.
 
 
 def ask(question: str, result: ExtractionResult, settings: Settings) -> str:
-    client = genai.Client(vertexai=True, project=settings.project, location=settings.location)
-
     context = (
         f"STRUCTURED DATA (JSON):\n{result.statement.model_dump_json(indent=2)}\n\n"
         f"VALIDATION WARNINGS:\n{result.validation_warnings or 'none'}\n\n"
         f"FULL DOCUMENT TEXT:\n{result.full_text}"
     )
 
-    response = client.models.generate_content(
+    response = claude_client(timeout_seconds=600).messages.create(
         model=settings.model,
-        contents=[context, f"Question: {question}"],
-        config=types.GenerateContentConfig(system_instruction=SYSTEM_INSTRUCTION),
+        max_tokens=16000,
+        system=SYSTEM_INSTRUCTION,
+        output_config={"effort": settings.effort},
+        messages=[{"role": "user", "content": f"{context}\n\nQuestion: {question}"}],
     )
-    return response.text
+    if response.stop_reason == "refusal":
+        raise RuntimeError("the model declined to answer")
+    return "".join(block.text for block in response.content if block.type == "text")

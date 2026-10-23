@@ -54,7 +54,7 @@ Maester also shows a market mood. It calculates the market mood from daily marke
 | --- | --- | --- |
 | [API](api.md) | `apps/api` | TypeScript HTTP service (Hono). It serves sign-in at `/api/auth/*` through Better Auth and the routes for workspaces, companies, documents and jobs at `/v1`. It writes documents and jobs and dispatches jobs. It also serves the market mood at `/v1/market-mood`, the market connections at `/v1/settings/connections` and the statements and prices of a company for Research. |
 | [Worker](worker.md) | `apps/worker` | TypeScript HTTP service (Hono). In the `queue` mode, it claims each job from the database. In the `cloud-tasks` mode, it receives a dispatch at `POST /tasks/:type`. It takes a lease and runs `document.verify`, `document.classify`, `document.extract`, `document.index`, `document.xbrl` or `document.xbrl_check`. If `CONNECTIONS_KEY` has a value, it also runs the market refresh on a timer. |
-| [Extractor](extractor.md) | `apps/extractor` | Python HTTP service (FastAPI). It answers `POST /v1/classify` and `POST /v1/extract` for the worker and calls Gemini on Vertex AI. It also answers `POST /v1/xbrl` and `POST /v1/xbrl/pdf-check`, which call no model. It does not write data. |
+| [Extractor](extractor.md) | `apps/extractor` | Python HTTP service (FastAPI). It answers `POST /v1/classify` and `POST /v1/extract` for the worker and calls Claude through the Anthropic API. It also answers `POST /v1/xbrl` and `POST /v1/xbrl/pdf-check`, which call no model. It does not write data. |
 | [Indexer](indexer.md) | `apps/indexer` | Python HTTP service. It answers `POST /v1/index`, `POST /v1/chunk` and `POST /v1/chunk-text` for the worker. It reads the pages of a PDF with Docling and cuts them into chunks. It does not write data. |
 | [Web client](web.md) | `apps/web` | Static SvelteKit site. In a container, nginx serves it and sends `/api/auth/`, `/v1/` and `/dev/` to the API. |
 | [CLI](cli.md) | `apps/cli` | Python command `maester` with `ingest`, `ask` (deprecated) and `list-docs`. It keeps a JSON cache in `data/cache`. It does not use the API or the database. |
@@ -201,7 +201,7 @@ A person can add a whole folder of PDFs and instances from the command line. See
 | Permanent error, or the last run | The handler failed with a permanent `JobFailure`, or the job has no runs left. | The job goes to `failed`. The handler can set `identify_failed` or `read_failed`. |
 | `lease_held` (409 from the worker) | Another run holds a lease that did not expire. | The worker does not run the job. |
 | `CLASSIFIER_NOT_CONFIGURED` | The worker has no `EXTRACTOR_URL`. | The classify job fails without a second run. The intake state goes to `identify_failed`. |
-| `EXTRACTOR_NOT_CONFIGURED` | The extractor has no `GOOGLE_CLOUD_PROJECT` or no Google credentials. | The job fails without a second run. |
+| `EXTRACTOR_NOT_CONFIGURED` | The extractor has no `ANTHROPIC_API_KEY`, or Anthropic refuses the key. | The job fails without a second run. |
 | `EXTRACTOR_UNAUTHORIZED` | The worker and the extractor have different values of `EXTRACTOR_SECRET`. | The job fails without a second run. |
 | `UNAUTHENTICATED` (401) | A `/v1` request has no session. | The API returns the error. |
 | `WAITLISTED` | A Google sign-in for an email without an approved row in `waitlist_entry`. | Maester creates no account. The browser goes to `/login` with this error. The email gets a `pending` row. |
@@ -231,7 +231,7 @@ A person can add a whole folder of PDFs and instances from the command line. See
 | `migrate` | `apps/api/Dockerfile` | None | `postgres`. It applies the migrations and stops. |
 | `api` | `apps/api/Dockerfile` | 8787 | `postgres`, `embedder`, the `blobs` volume |
 | `worker` | `apps/worker/Dockerfile` | 8788 | `postgres`, `extractor`, `indexer`, `embedder`, the `blobs` volume |
-| `extractor` | `apps/extractor/Dockerfile` | 8790 | Vertex AI. It reads Google credentials from a folder that it mounts read-only. |
+| `extractor` | `apps/extractor/Dockerfile` | 8790 | The Anthropic API. It reads `ANTHROPIC_API_KEY` from `.env`. It mounts no folder. |
 | `models` | `apps/indexer/Dockerfile` | None | The `models` volume. It runs one time, by hand, in the profile `setup`. It gets the weights and stops. |
 | `indexer` | `apps/indexer/Dockerfile` | 8791 | The `models` volume, read-only |
 | `embedder` | `ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-1.9` | 8792 (container port 80) | The `models` volume, read-only |
@@ -270,7 +270,7 @@ Maester has no separate queue in the local stack. The `job` table holds the stat
 | Google OAuth | API | Sign-in with Google. It is off when `GOOGLE_CLIENT_ID` has no value. |
 | Resend | API | Confirmation and reset mail when `MAIL_DRIVER` is `resend`. |
 | Hugging Face | `models` service | The weights, one time. Nothing is fetched at run time. |
-| Gemini on Vertex AI | Extractor, CLI, evaluation harness | Classification, extraction and the answers of the CLI. The `live` command of the evaluation harness runs extraction. |
+| Anthropic API (Claude) | Extractor, CLI, evaluation harness | Classification, extraction and the answers of the CLI. The `live` command of the evaluation harness runs extraction. |
 | Cloud Storage | API, worker | PDFs when `STORAGE_DRIVER` is `gcs`. |
 | Cloud Tasks | API, worker | Dispatch when `DISPATCH_MODE` is `cloud-tasks`. In `queue` mode, Postgres does this work. |
 | Cloud Run, Cloud SQL, Secret Manager, Artifact Registry | `infra` scripts | Deployment of the API, the worker and the web client. |
@@ -350,17 +350,11 @@ You can send a folder of PDFs and XBRL instances through the API. The command re
 
 The command sends four files at a time. A second run of the same folder makes duplicates. Maester does not read a duplicate again.
 
-### To let the extractor call Gemini
+### To let the extractor call Claude
 
-1. Get Application Default Credentials:
-
-   ```bash
-   gcloud auth application-default login
-   ```
-
-2. In `.env`, set `GOOGLE_CLOUD_PROJECT` to your Google Cloud project.
-3. In `.env`, set `GCLOUD_CONFIG_DIR` to the absolute path of your gcloud configuration folder.
-4. Start the extractor again:
+1. In `.env`, set `ANTHROPIC_API_KEY` to your key from the Anthropic Console.
+2. To use a different model or effort, set `EXTRACTOR_MODEL`, `EXTRACTOR_EFFORT`, `EXTRACTOR_CLASSIFY_MODEL` or `EXTRACTOR_CLASSIFY_EFFORT`.
+3. Start the extractor again:
 
    ```bash
    docker compose up -d extractor

@@ -16,7 +16,7 @@ from maester_eval.artefacts import artefact_path, read_artefacts, read_run, writ
 from maester_eval.manifest import Filing
 from maester_eval.paths import EvalPaths
 from maester_eval.runner import (
-    CountingModel, EvalConfigError, gemini_model_factory, pages_without_text, run_filing, run_live,
+    CountingModel, EvalConfigError, claude_model_factory, pages_without_text, run_filing, run_live,
     workflow_settings_from_env,
 )
 from pdf_financial_qa.workflow import PIPELINE_VERSION
@@ -180,13 +180,13 @@ class LiveCommandTests(unittest.TestCase):
         (self.paths.corpus / "synthetic-industries").mkdir(parents=True)
         (self.paths.corpus / FILING.file).write_bytes(PDF)
         self.write_manifest(IN_SCOPE, OUT_OF_SCOPE)
-        # `_main` loads the repository's real .env before every command. Nothing here may read it, reach Vertex AI
+        # `_main` loads the repository's real .env before every command. Nothing here may read it, reach the Anthropic API
         # or leave a variable behind for the tests that run after this one.
         for patcher in (
             mock.patch.dict(os.environ),
             mock.patch.object(cli, "load_dotenv"),
             mock.patch.object(cli, "DEFAULT", self.paths),
-            mock.patch.object(cli, "gemini_model_factory", return_value=lambda: ScriptedModel()),
+            mock.patch.object(cli, "claude_model_factory", return_value=lambda: ScriptedModel()),
             mock.patch.object(cli, "workflow_settings_from_env", return_value=FAST),
         ):
             patcher.start()
@@ -259,28 +259,27 @@ class LiveCommandTests(unittest.TestCase):
 class EnvConfigTests(unittest.TestCase):
     """The model and the settings come from the extractor's variables, with the extractor's defaults."""
 
-    def test_a_missing_project_is_a_config_error(self):
+    def test_a_missing_api_key_is_a_config_error(self):
         with mock.patch.dict(os.environ, {}, clear=True):
-            with self.assertRaisesRegex(EvalConfigError, "GOOGLE_CLOUD_PROJECT is not set"):
-                gemini_model_factory()
+            with self.assertRaisesRegex(EvalConfigError, "ANTHROPIC_API_KEY is not set"):
+                claude_model_factory()
 
     def test_one_model_is_built_with_the_defaults(self):
-        with mock.patch.dict(os.environ, {"GOOGLE_CLOUD_PROJECT": "a-project"}, clear=True), \
-                mock.patch("pdf_financial_qa.workflow.model.GeminiExtractionModel") as gemini:
-            factory = gemini_model_factory()
+        with mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "a-key"}, clear=True), \
+                mock.patch("pdf_financial_qa.workflow.model.ClaudeExtractionModel") as claude:
+            factory = claude_model_factory()
             self.assertIs(factory(), factory())
             self.assertEqual(workflow_settings_from_env().deadline_seconds, 840)
-        gemini.assert_called_once_with(project="a-project", location="us-central1", model="gemini-2.5-pro")
+        claude.assert_called_once_with(model="claude-opus-5-5", effort="high")
 
     def test_the_variables_override_the_defaults(self):
-        env = {"GOOGLE_CLOUD_PROJECT": "a-project", "VERTEX_LOCATION": "asia-south1", "GEMINI_MODEL": "gemini-x",
+        env = {"ANTHROPIC_API_KEY": "a-key", "EXTRACTOR_MODEL": "claude-x", "EXTRACTOR_EFFORT": "medium",
                "EXTRACT_DEADLINE_SECONDS": "30"}
         with mock.patch.dict(os.environ, env, clear=True), \
-                mock.patch("pdf_financial_qa.workflow.model.GeminiExtractionModel") as gemini:
-            gemini_model_factory()
+                mock.patch("pdf_financial_qa.workflow.model.ClaudeExtractionModel") as claude:
+            claude_model_factory()
             self.assertEqual(workflow_settings_from_env().deadline_seconds, 30)
-        gemini.assert_called_once_with(project="a-project", location="asia-south1", model="gemini-x")
-
+        claude.assert_called_once_with(model="claude-x", effort="medium")
 
 if __name__ == "__main__":
     unittest.main()

@@ -399,7 +399,7 @@ describe('a year from two sources is named; one source names nothing', () => {
 			{
 				year: '2025–26',
 				words:
-					'Profit and loss and balance sheet from the XBRL; cash flow from the annual report, read by Gemini.'
+					'Profit and loss and balance sheet from the XBRL; cash flow from the annual report, read by a model.'
 			}
 		]);
 	});

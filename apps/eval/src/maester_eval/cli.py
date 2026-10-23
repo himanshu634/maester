@@ -37,7 +37,7 @@ from maester_eval.report import score_run_dir, score_xbrl_run_dir, write_report
 from maester_eval.retrieval import build_request, check_set, corpus_filings, read_corpus, read_questions
 from maester_eval.retrieval_report import read_lock_revisions, read_retrieval_run, render_retrieval_report
 from maester_eval.retrieval_scoring import choose_model, needs_granite
-from maester_eval.runner import gemini_model_factory, run_live, workflow_settings_from_env
+from maester_eval.runner import claude_model_factory, run_live, workflow_settings_from_env
 from maester_eval.settle import check_provenance, merge_gold
 from maester_eval.sheets import export_run, sheet_path, write_sheet
 from maester_eval.scoring import RunScore, rate_text, score_shown
@@ -143,7 +143,7 @@ def live(
         _fail("missing under data/eval/corpus: " + ", ".join(absent))
     if not filings:
         _fail("nothing to read: the selection is empty")
-    factory = gemini_model_factory()
+    factory = claude_model_factory()
     settings = workflow_settings_from_env()  # before the run folder exists: a bad setting must not leave an empty one
     run_dir = DEFAULT.new_run(label)
     console.print(f"run {run_dir.name}: {len(filings)} filing(s), set {chosen}", markup=False)

@@ -95,7 +95,7 @@ export function pdfNeeded(file: FilingFile, files: FilingFile[], sources: BasisS
 }
 
 /**
- * Whether "Read it again" and "Try again" may send a PDF to `extract` (a paid Gemini read): its
+ * Whether "Read it again" and "Try again" may send a PDF to `extract` (a paid model read): its
  * numbers are needed (`pdfNeeded`), and it is not held back for a free read. A PDF is held back
  * when its only claim on its statements is `xbrl_read_failed` (the API fell back to it because the
  * XBRL could not be read) and a failed XBRL file of each of those bases is in the same send set:
@@ -392,8 +392,8 @@ export function numbersTrack(
 				: failed.length === 1
 					? words.xbrlFailedNamed(failed[0].originalName)
 					: words.xbrlFailedMany(failed.length);
-		const geminiRead = pdf.some((f) => numbers(f).state === 'done' && needed(f));
-		return say('stopped', words.stopped, geminiRead ? `${what}${words.geminiReadPdf}` : what);
+		const modelRead = pdf.some((f) => numbers(f).state === 'done' && needed(f));
+		return say('stopped', words.stopped, modelRead ? `${what}${words.modelReadPdf}` : what);
 	}
 
 	// Rows 16 to 18: read.

@@ -70,7 +70,7 @@ describe('sourceRows', () => {
 		expect(rows.map((r) => [r.label, r.from.text, r.from.note, r.inPdf.text])).toEqual([
 			['Profit and loss', 'XBRL · quarter and half year', null, 'Found: 38 of 38'],
 			['Balance sheet', 'XBRL · at 30 Sep 2026', null, 'Found: 51 of 52'],
-			['Cash flow', 'PDF, read by Gemini · pages 7–8', 'The quarter’s XBRL has no cash flow', '—']
+			['Cash flow', 'PDF, read by a model · pages 7–8', 'The quarter’s XBRL has no cash flow', '—']
 		]);
 		expect(rows[1].inPdf).toMatchObject({
 			strong: true,
@@ -142,7 +142,7 @@ describe('sourceRows', () => {
 		expect(lacks(['nine_months', 'half_year']).note).toBe('The half year’s XBRL has no cash flow');
 		expect(lacks(['full_year']).note).toBe('The year’s XBRL has no cash flow');
 		expect(lacks(['nine_months']).note).toBe('The nine months’ XBRL has no cash flow');
-		expect(lacks([])).toEqual({ text: 'PDF, read by Gemini', note: 'The XBRL has no cash flow' });
+		expect(lacks([])).toEqual({ text: 'PDF, read by a model', note: 'The XBRL has no cash flow' });
 	});
 
 	it('unmapped, no XBRL, not in the filing, not read yet, read failed', () => {
@@ -194,8 +194,8 @@ describe('sourceRows', () => {
 			null
 		);
 		expect(rows.map((r) => [r.from.text, r.from.note])).toEqual([
-			['PDF, read by Gemini · page 4', 'The XBRL is in the banking format, not mapped yet.'],
-			['PDF, read by Gemini', 'No XBRL for this filing.'],
+			['PDF, read by a model · page 4', 'The XBRL is in the banking format, not mapped yet.'],
+			['PDF, read by a model', 'No XBRL for this filing.'],
 			['Not in this filing', null]
 		]);
 		const later = sourceRows(
@@ -253,7 +253,7 @@ describe('sourceRows', () => {
 		);
 		expect(rows.map((r) => [r.from.text, r.from.note])).toEqual([
 			['—', 'The XBRL file couldn’t be read.'],
-			['PDF, read by Gemini · pages 5–6', 'The XBRL file couldn’t be read.'],
+			['PDF, read by a model · pages 5–6', 'The XBRL file couldn’t be read.'],
 			['—', 'Not read yet.']
 		]);
 	});
@@ -273,7 +273,7 @@ describe('sourceRows', () => {
 			null
 		);
 		expect(rows[0].from).toEqual({
-			text: 'PDF, read by Gemini · page 2',
+			text: 'PDF, read by a model · page 2',
 			note: 'The XBRL file isn’t read yet.'
 		});
 	});
@@ -435,7 +435,7 @@ describe('sourceRows', () => {
 });
 
 describe('readAgainIds', () => {
-	it('the XBRL only when it covers the PDF, even a PDF Gemini read first (no Gemini call)', () => {
+	it('the XBRL only when it covers the PDF, even a PDF the model read first (no model call)', () => {
 		const covered = one([stmt({ xbrlDocumentId: 'x1', pdfDocumentId: 'p1' })]);
 		expect(readAgainIds([xbrlDone('x1'), pdfNotNeeded('p1', ['x1'])], covered)).toEqual(['x1']);
 		// numbers { state: 'done', source: 'pdf' }, read before its XBRL arrived; every statement of
@@ -443,7 +443,7 @@ describe('readAgainIds', () => {
 		expect(readAgainIds([xbrlDone('x1'), pdfDone('p1')], covered)).toEqual(['x1']);
 	});
 
-	it('a PDF read by Gemini, and both when they split', () => {
+	it('a PDF read by a model, and both when they split', () => {
 		expect(readAgainIds([pdfDone('p1')], [])).toEqual(['p1']);
 		const split = one([
 			stmt({ xbrlDocumentId: 'x1', pdfDocumentId: 'p1' }),
@@ -561,7 +561,7 @@ describe('readAgainIds', () => {
 
 describe('stale sources (Review Focus 1)', () => {
 	// The 2 s poll patches the files only; the sources stay as the last filings read built them.
-	// The PDF was read by Gemini before its XBRL arrived; the XBRL has been read since, and the
+	// The PDF was read by a model before its XBRL arrived; the XBRL has been read since, and the
 	// filings read that would rebuild the sources failed.
 	const x = fileOf({
 		documentId: 'x1',

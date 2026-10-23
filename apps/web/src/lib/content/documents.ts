@@ -231,18 +231,18 @@ export const documentsContent = {
 		pdfNext: 'Read from the PDF · next',
 		pdfDone: 'Read from the PDF · done',
 		waitingForXbrl: 'Waiting for XBRL',
-		pdfWaitsForIt: 'The PDF waits for it, so Gemini reads only what XBRL doesn’t cover.',
+		pdfWaitsForIt: 'The PDF waits for it, so the model reads only what XBRL doesn’t cover.',
 		/** One XBRL file is read first; its name is "An XBRL file" when the page does not know it. */
 		beingRead: (name: string | null) =>
-			`${name ?? 'An XBRL file'} is being read. Gemini reads only what it doesn’t cover.`,
+			`${name ?? 'An XBRL file'} is being read. The model reads only what it doesn’t cover.`,
 		manyBeingRead: (count: number) =>
-			`${count} XBRL files are being read. Gemini reads only what they don’t cover.`,
+			`${count} XBRL files are being read. The model reads only what they don’t cover.`,
 		noXbrl: noXbrlWords,
 		xbrlUnreadable: xbrlUnreadableWords,
 		xbrlFailedOne: 'Maester couldn’t read the XBRL file.',
 		xbrlFailedNamed: (name: string) => `${name} couldn’t be read.`,
 		xbrlFailedMany: (count: number) => `${count} XBRL files couldn’t be read.`,
-		geminiReadPdf: ' Gemini read the PDF.',
+		modelReadPdf: ' The model read the PDF.',
 		notReadFromXbrl: 'Not read from XBRL',
 		keptKind: 'Maester reads annual reports and financial results for now.',
 		/** "The XBRL is in the banking format, not mapped yet." */
@@ -362,8 +362,8 @@ export const documentsContent = {
 			year: 'year',
 			other: 'other periods'
 		},
-		pdf: 'PDF, read by Gemini',
-		pdfPages: (pages: string) => `PDF, read by Gemini · ${pages}`,
+		pdf: 'PDF, read by a model',
+		pdfPages: (pages: string) => `PDF, read by a model · ${pages}`,
 		notInFiling: 'Not in this filing',
 		notReadYet: 'Not read yet.',
 		readStopped: 'The read stopped.',

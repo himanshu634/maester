@@ -8,12 +8,10 @@
 # Cloud Tasks pushing them. Nothing here is a deployment template — see
 # infra/README.md for how Maester is deployed.
 #
-# Fact extraction (the extractor service) calls Gemini on Vertex AI, which does
-# need Google Cloud. Without GOOGLE_CLOUD_PROJECT and Application Default
-# Credentials, extract jobs fail with EXTRACTOR_NOT_CONFIGURED and everything
-# else keeps working. To enable it, set in the root .env:
-#   GOOGLE_CLOUD_PROJECT=<your project>
-#   GCLOUD_CONFIG_DIR=<absolute path to ~/.config/gcloud>  (after gcloud auth application-default login)
+# Fact extraction (the extractor service) calls Claude through the Anthropic
+# API. Without ANTHROPIC_API_KEY, extract jobs fail with EXTRACTOR_NOT_CONFIGURED
+# and everything else keeps working. To enable it, set in the root .env:
+#   ANTHROPIC_API_KEY=<your key from the Anthropic Console>
 #
 # Indexing and search need the models volume. Once, before the first up:
 #   docker compose build indexer && docker compose --profile setup run --rm models
@@ -149,7 +147,7 @@ services:
       retries: 12
 
   # Stateless Python service the worker streams PDFs to; it reads them with
-  # Gemini and never touches the database or the blobs volume.
+  # Claude and never touches the database or the blobs volume.
   extractor:
     build:
       context: .
@@ -158,18 +156,16 @@ services:
     environment:
       PORT: 8790
       EXTRACTOR_SECRET: local-extractor-secret
-      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
-      VERTEX_LOCATION: ${VERTEX_LOCATION:-us-central1}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-pro}
-      GEMINI_CLASSIFY_MODEL: ${GEMINI_CLASSIFY_MODEL:-gemini-2.5-flash}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      EXTRACTOR_MODEL: ${EXTRACTOR_MODEL:-claude-opus-5-5}
+      EXTRACTOR_EFFORT: ${EXTRACTOR_EFFORT:-high}
+      EXTRACTOR_CLASSIFY_MODEL: ${EXTRACTOR_CLASSIFY_MODEL:-claude-opus-5-5}
+      EXTRACTOR_CLASSIFY_EFFORT: ${EXTRACTOR_CLASSIFY_EFFORT:-medium}
       # XBRL limits. A file over any of them is refused XBRL_UNREADABLE and never retried.
       XBRL_MAX_BYTES: ${XBRL_MAX_BYTES:-20971520}
       XBRL_MAX_FACTS: ${XBRL_MAX_FACTS:-100000}
       XBRL_DEADLINE_SECONDS: ${XBRL_DEADLINE_SECONDS:-30}
-      GOOGLE_APPLICATION_CREDENTIALS: /var/lib/maester/gcloud/application_default_credentials.json
     cpus: 2
-    volumes:
-      - ${GCLOUD_CONFIG_DIR:-./data/gcloud}:/var/lib/maester/gcloud:ro
     ports:
       - "8790:8790"
     healthcheck:

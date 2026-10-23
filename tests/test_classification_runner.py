@@ -6,8 +6,9 @@ from unittest import mock
 from pdf_fixtures import make_pdf
 
 from pdf_financial_qa.classify import ClassifySettings, run_classification
-from pdf_financial_qa.classify.model import Answer, ClassifyOutput, GeminiClassificationModel
+from pdf_financial_qa.classify.model import Answer, ClassifyOutput, ClaudeClassificationModel
 from pdf_financial_qa.workflow import ExtractionError
+from pdf_financial_qa.workflow.errors import PermanentModelError
 
 FAST = ClassifySettings(retry_interval=0.0)
 ANNUAL = make_pdf([
@@ -111,7 +112,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_a_factory_error_falls_back_to_rules(self):
         def broken():
-            raise ExtractionError("EXTRACTOR_NOT_CONFIGURED", "GOOGLE_CLOUD_PROJECT is not set", retryable=False)
+            raise ExtractionError("EXTRACTOR_NOT_CONFIGURED", "ANTHROPIC_API_KEY is not set", retryable=False)
         r = run_classification(UNKNOWN, model_factory=broken, settings=FAST)
         self.assertEqual(([w.code for w in r.warnings], r.model), (["MODEL_UNAVAILABLE"], None))
 
@@ -172,6 +173,12 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual((len(model.calls), r.kind, r.model), (1, "not_sure", None))
         self.assertEqual([w.code for w in r.warnings], ["MODEL_UNAVAILABLE"])
 
+    def test_a_refusal_degrades_to_rules_and_names_its_code(self):
+        model = ScriptedClassifier(fail_first=PermanentModelError("MODEL_REFUSED", "declined"))
+        r = run_classification(UNKNOWN, model_factory=lambda: model, settings=FAST)
+        self.assertEqual((len(model.calls), r.kind, r.model), (1, "not_sure", None))
+        self.assertIn("MODEL_REFUSED", r.warnings[0].message)
+
     def test_a_later_page_maps_back_to_its_original_index(self):
         quote = "Standalone Balance Sheet as at 31 March 2026"
         pdf = make_pdf([["Filler text"]] * 6 + [[quote]])
@@ -191,9 +198,9 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class GeminiModelTests(unittest.TestCase):
+class ClaudeModelTests(unittest.TestCase):
     def test_the_client_does_not_retry_on_its_own(self):
         # The runner retries a transient failure once; a client retry on top would double the wait.
-        with mock.patch("langchain_google_genai.ChatGoogleGenerativeAI") as chat:
-            GeminiClassificationModel(project="p", location="l", model="m")
-        self.assertEqual(chat.call_args.kwargs["max_retries"], 0)
+        with mock.patch("anthropic.Anthropic") as client:
+            ClaudeClassificationModel(model="m")
+        self.assertEqual(client.call_args.kwargs["max_retries"], 0)

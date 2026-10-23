@@ -37,7 +37,7 @@ Two independent language workspaces share the repository. The TypeScript side us
 | Work on the API, worker or shared packages | Node 22 (`.nvmrc`), pnpm 11, Docker for Postgres |
 | Work on the web client | Node 22, pnpm 11 |
 | Work on the CLI, the extractor or the document engine | Python 3.11+ and [uv](https://docs.astral.sh/uv/getting-started/installation/) |
-| Extract facts from a real PDF, in the stack or with the CLI | A Google Cloud project with Vertex AI enabled and Application Default Credentials |
+| Extract facts from a real PDF, in the stack or with the CLI | An Anthropic API key (`ANTHROPIC_API_KEY`) |
 
 Nothing but Docker is required for the first section below.
 
@@ -83,7 +83,7 @@ Docker Desktop's VM has 7.75 GiB by default. The compose file caps four services
 | postgres | 1g | 2 | Records, queue and vectors. An HNSW build needs `maintenance_work_mem`; a rebuild wants 1 to 2 GB, so raise Docker's limit first |
 | embedder | 2560m | 8 | The embedding model in fp32 is about 2.3 GB |
 | indexer | 2304m | 8 | Docling's peak is unpublished; one job at a time, 20-page ranges, page batch 4 |
-| extractor | no limit | 2 | Gemini calls; holds whole PDFs |
+| extractor | no limit | 2 | Claude calls; holds whole PDFs |
 | api | no limit | 2 | |
 | worker | no limit | 2 | Holds a whole PDF per running job: up to 2 extract, 2 classify and 1 index at 50 MB each, briefly doubled while the buffer is built |
 | web | 96m | 1 | nginx |
@@ -104,11 +104,11 @@ Containers do not hot-reload. After changing TypeScript under `apps/` or `packag
 
 ### What the stack does not include
 
-The Python CLI is not containerised; run it with uv (section 9). Cloud Tasks and Cloud Storage are not part of the local stack. The extractor is, but it only calls Gemini (a paid API) once you give it a Google Cloud project and credentials (section 7); until then every extract job fails fast with `EXTRACTOR_NOT_CONFIGURED`.
+The Python CLI is not containerised; run it with uv (section 9). Cloud Tasks and Cloud Storage are not part of the local stack. The extractor is, but it only calls Claude (a paid API) once you give it an Anthropic API key (section 7); until then every extract job fails fast with `EXTRACTOR_NOT_CONFIGURED`.
 
 ## 4. Try it
 
-**In a browser.** Open <http://localhost:5173/dev/upload> (the web origin, so the session cookie is first-party), sign up with the pre-filled credentials (the page approves the email and confirms the account for you), keep or change the company, choose a PDF, and press *Upload, verify and extract*. The page picks or creates the company, creates a document for it, uploads the bytes to a signed URL, finalises it, and streams job progress over Server-Sent Events until the document reaches `stored`. Verification then enqueues `document.classify`, which enqueues `document.extract` for an annual report or financial results with a known company; the page follows the extract job too and, when it succeeds, prints the revision, its coverage and checks, and the first facts with their page numbers. Without Vertex AI configured the extract job fails with `EXTRACTOR_NOT_CONFIGURED`, which is expected.
+**In a browser.** Open <http://localhost:5173/dev/upload> (the web origin, so the session cookie is first-party), sign up with the pre-filled credentials (the page approves the email and confirms the account for you), keep or change the company, choose a PDF, and press *Upload, verify and extract*. The page picks or creates the company, creates a document for it, uploads the bytes to a signed URL, finalises it, and streams job progress over Server-Sent Events until the document reaches `stored`. Verification then enqueues `document.classify`, which enqueues `document.extract` for an annual report or financial results with a known company; the page follows the extract job too and, when it succeeds, prints the revision, its coverage and checks, and the first facts with their page numbers. Without `ANTHROPIC_API_KEY` set the extract job fails with `EXTRACTOR_NOT_CONFIGURED`, which is expected.
 
 **From the terminal.** The same journey, scripted:
 
@@ -193,7 +193,7 @@ The workflow [`indexer.yml`](../.github/workflows/indexer.yml) runs the second f
 
 ## 6. Configuration
 
-Copy [`.env.example`](../.env.example) to `.env`. The TypeScript services validate their environment at boot and refuse to start on anything invalid, so a typo is a clear error rather than a runtime surprise. The compose file sets its own values inline; from `.env` it reads only `GOOGLE_CLOUD_PROJECT`, `GCLOUD_CONFIG_DIR`, `VERTEX_LOCATION`, `GEMINI_MODEL` and `GEMINI_CLASSIFY_MODEL`, for the extractor, and `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, for Google sign-in, and `EMBEDDING_MODEL`.
+Copy [`.env.example`](../.env.example) to `.env`. The TypeScript services validate their environment at boot and refuse to start on anything invalid, so a typo is a clear error rather than a runtime surprise. The compose file sets its own values inline; from `.env` it reads only `ANTHROPIC_API_KEY`, `EXTRACTOR_MODEL`, `EXTRACTOR_EFFORT`, `EXTRACTOR_CLASSIFY_MODEL` and `EXTRACTOR_CLASSIFY_EFFORT`, for the extractor, and `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, for Google sign-in, and `EMBEDDING_MODEL`.
 
 **Upgrading an older `.env`.** `cp -n` keeps the `.env` you already have, so it may still set `DISPATCH_MODE=local` and `DISPATCH_SECRET`. The API and the worker read `local` as `queue` and log "DISPATCH_MODE=local is now queue; update .env" at start; change it to `queue` when convenient. `DISPATCH_SECRET` is ignored and can be deleted. Recreate the Postgres container once for the pgvector image (`docker compose up -d --force-recreate postgres`, see section 3).
 
@@ -228,10 +228,10 @@ Copy [`.env.example`](../.env.example) to `.env`. The TypeScript services valida
 | `CANDIDATE_MODEL` | Compose, `eval` profile | The embedding model that `embedder-candidate` and `indexer-candidate` serve. Unset, they cannot start | Unset |
 | `EXTRACT_TIMEOUT_SECONDS`, `EXTRACT_MAX_BYTES` | worker | Defaulted | 1800 s, 50 MiB |
 | `GOOGLE_CLOUD_PROJECT`, `WORKER_INVOKER_SA`, `CLOUD_TASKS_QUEUE`, `TASK_DISPATCH_DEADLINE_SECONDS` | worker | To enqueue extraction when the mode is `cloud-tasks` | Unset |
-| `EXTRACTOR_SECRET`, `GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION`, `GEMINI_MODEL`, `GEMINI_CLASSIFY_MODEL` | extractor | The project and Application Default Credentials for any extraction | See the [extractor README](../apps/extractor/README.md) |
+| `EXTRACTOR_SECRET`, `ANTHROPIC_API_KEY`, `EXTRACTOR_MODEL`, `EXTRACTOR_EFFORT`, `EXTRACTOR_CLASSIFY_MODEL`, `EXTRACTOR_CLASSIFY_EFFORT` | extractor | `ANTHROPIC_API_KEY`, for any extraction | See the [extractor README](../apps/extractor/README.md) |
 | `MAX_UPLOAD_BYTES`, `UPLOAD_URL_TTL_SECONDS`, `DOWNLOAD_URL_TTL_SECONDS`, `LEASE_SECONDS` | api, worker | Defaulted | 50 MiB, 900 s, 300 s, 600 s |
 | `PORT`, `LOG_LEVEL`, `NODE_ENV` | api, worker | Defaulted | `8787`/`8788`, `info`, `development` |
-| `GOOGLE_CLOUD_PROJECT`, `GEMINI_MODEL`, `GOOGLE_APPLICATION_CREDENTIALS` | Python CLI | For `ingest` and `ask` | See section 9 |
+| `ANTHROPIC_API_KEY`, `EXTRACTOR_MODEL`, `EXTRACTOR_EFFORT` | Python CLI | For `ingest` and `ask` | See section 9 |
 | `DATABASE_URL`, `MAESTER_WORKSPACE_ID` or `MAESTER_USER_EMAIL`, `EMBEDDER_URL`, `EMBEDDING_MODEL`, `XBRL_PDF_CHECK` | MCP server | `DATABASE_URL` and one of the two workspace settings. The agent host sets them, not `.env` | See section 15 |
 
 Never commit credentials. `.env` and `data/` are ignored by version control; keep it that way.
@@ -244,11 +244,12 @@ Two settings decide whether a service talks to Google Cloud or to something loca
 
 **`DISPATCH_MODE=queue`** (the default) makes the worker pull its jobs from Postgres, in place of Cloud Tasks pushing them to `/tasks/:type`; in this mode that route does not exist. The API and the worker send `pg_notify('job_ready', <type>)` after they commit a job. The worker runs one claim loop for each job type. It wakes on `LISTEN job_ready` and also polls every `JOB_POLL_MS`, so a lost notification costs at most one poll. A claim is one `FOR UPDATE SKIP LOCKED` statement, so two workers never take the same job. A worker runs at most 4 `document.verify`, 2 `document.classify`, 2 `document.extract` and 1 of any other type at once; `JOB_CONCURRENCY=document.extract=3,document.verify=8` changes that, and a value that is not `type=n`, a type with no handler or a limit below 1 stops the worker at start-up. A failed job waits before it runs again (`run_after`: 30 s, doubling to 900 s, plus up to 20% jitter) until `maxAttempts`: 2 for `document.classify` and `document.extract`, which call a paid model, and 5 for every other type. At start the worker logs how many jobs of each type are queued or running, because its first claims take all of them. A timer renews the lease of a running job every `JOB_HEARTBEAT_MS`. A sweep every `JOB_SWEEP_MS` gives back a job whose lease ended, with the code `LEASE_EXPIRED`, or fails it when its attempts are spent. On `SIGTERM` the worker stops claiming and waits up to 25 s for running jobs, then gives back any job still running (queued, ready now, its attempt restored), so a restart costs it no attempt; compose gives it 30 s. A document extraction can take up to `EXTRACT_TIMEOUT_SECONDS` (30 minutes). Everything else — leasing, progress, state transitions — behaves the same as with Cloud Tasks, because it lives in the database rather than in the queue.
 
-**Extraction.** When `document.verify` stores a document it enqueues `document.classify`, which sends the PDF to the extractor to work out what it is (this needs the worker's `EXTRACTOR_URL`; without it the job fails with `CLASSIFIER_NOT_CONFIGURED` and the document is `identify_failed`). For an annual report or financial results with a known company it then enqueues `document.extract`. That job streams the PDF to the extractor, which answers with NDJSON progress, heartbeats and finally a result; the worker writes the result as a new `extraction_revision` with its facts, page references and checks, in one transaction. The extractor runs a LangGraph workflow: locate the statements, extract each from its own pages, check the arithmetic, and re-read only failing sections. The design is in [document extraction](EXTRACTION.md). To let the compose stack call Gemini, run `gcloud auth application-default login`, then set in `.env`:
+**Extraction.** When `document.verify` stores a document it enqueues `document.classify`, which sends the PDF to the extractor to work out what it is (this needs the worker's `EXTRACTOR_URL`; without it the job fails with `CLASSIFIER_NOT_CONFIGURED` and the document is `identify_failed`). For an annual report or financial results with a known company it then enqueues `document.extract`. That job streams the PDF to the extractor, which answers with NDJSON progress, heartbeats and finally a result; the worker writes the result as a new `extraction_revision` with its facts, page references and checks, in one transaction. The extractor runs a LangGraph workflow: locate the statements, extract each from its own pages, check the arithmetic, and re-read only failing sections. The design is in [document extraction](EXTRACTION.md). To let the compose stack call Claude, create an API key in the Anthropic Console and set it in `.env`:
 
 ```bash
-GOOGLE_CLOUD_PROJECT=your-project-id
-GCLOUD_CONFIG_DIR=/Users/you/.config/gcloud     # absolute path; compose mounts it read-only
+ANTHROPIC_API_KEY=sk-ant-...
+# optional: EXTRACTOR_MODEL, EXTRACTOR_EFFORT (low|medium|high|xhigh|max),
+# EXTRACTOR_CLASSIFY_MODEL, EXTRACTOR_CLASSIFY_EFFORT
 ```
 
 and restart the extractor (`docker compose up -d extractor`). Re-run extraction for a stored document with `POST /v1/workspaces/{ws}/documents/{id}/extract`; read the result with `GET …/extraction` and `GET …/facts`.
@@ -302,16 +303,15 @@ uv run --locked maester --help
 uv run --locked maester list-docs
 ```
 
-Extraction and Q&A call Gemini on Vertex AI and can incur charges:
+Extraction and Q&A call Claude through the Anthropic API and can incur charges:
 
 ```bash
-gcloud auth application-default login
 uv run --locked maester ingest path/to/statement.pdf
 uv run --locked maester ask "What changed in operating cash flow?"
 uv run --locked maester ask "What were total assets?" --doc DOCUMENT_HASH
 ```
 
-`ask` is deprecated: it prints a warning on stderr that points to section 15, and it is removed once the MCP server calculates. It requires `--doc` once more than one document is cached. `ingest` reuses a matching cached hash unless you pass `--force`, which overwrites the cached extraction. Set `GOOGLE_CLOUD_PROJECT` in `.env`, and override `GEMINI_MODEL` if the inherited default is unavailable in your project.
+`ask` is deprecated: it prints a warning on stderr that points to section 15, and it is removed once the MCP server calculates. It requires `--doc` once more than one document is cached. `ingest` reuses a matching cached hash unless you pass `--force`, which overwrites the cached extraction. Set `ANTHROPIC_API_KEY` in `.env`, and override `EXTRACTOR_MODEL` or `EXTRACTOR_EFFORT` to change the model or its effort.
 
 Without uv:
 
@@ -335,8 +335,8 @@ Uninstall any older `pdf-financial-qa` distribution first; it owned the same con
 | A job stays `queued` | The worker is down, or it has no handler for the job type (it logs "queued jobs of a type this worker has no handler for" at start-up), or the limit for that type is reached, or `run_after` is still in the future after a failure. Check `docker compose logs worker`. |
 | A document is rejected with `OBJECT_MISSING` | The API and the worker are pointed at different `STORAGE_DIR` paths, so the worker cannot find what the API wrote. Outside Docker the default resolves against each service's own directory; use `../../data/blobs` as `.env.example` does. |
 | Code changes do nothing | Containers do not hot-reload. Rebuild the service, or run it as a local process. |
-| Extract jobs fail with `EXTRACTOR_NOT_CONFIGURED` | The extractor has no `GOOGLE_CLOUD_PROJECT` or cannot find Application Default Credentials. See section 7; the job does not retry. |
-| Extract jobs fail with `MODEL_REQUEST_REJECTED` | Vertex AI refused the request: wrong project, Vertex AI not enabled, or `GEMINI_MODEL` unavailable in `VERTEX_LOCATION`. |
+| Extract jobs fail with `EXTRACTOR_NOT_CONFIGURED` | The extractor has no `ANTHROPIC_API_KEY`, or Anthropic refused the key (authentication or permission error). See section 7; the job does not retry. |
+| Extract jobs fail with `MODEL_REQUEST_REJECTED` | Anthropic refused the request (a 4xx other than 401, 403 and 429): for example an unknown `EXTRACTOR_MODEL`, or a PDF over the request limit. The job does not retry. Two other permanent codes come from the model itself: `MODEL_REFUSED` (the model declined to read the document) and `MODEL_OUTPUT_TOO_LONG` (the answer did not fit its token limit). They fail the job only when they stop the step that finds the statements; on one statement, only that statement fails. |
 | After verify a `document.classify` job appears but no `document.extract` | Extract follows only when the document is an annual report or financial results with a known company. Without `EXTRACTOR_URL` on the worker, classify fails with `CLASSIFIER_NOT_CONFIGURED`. |
 | Extract jobs fail with `EXTRACTOR_UNAUTHORIZED` | `EXTRACTOR_SECRET` differs between the worker and the extractor. |
 | `pnpm test` fails to connect | The three test databases only exist on a freshly initialised Postgres volume. `pnpm stack:reset`, start again, and export the `DATABASE_URL_TEST_*` variables. |
@@ -364,7 +364,7 @@ The prototype was a single package. The engine kept its `pdf_financial_qa` impor
 
 ## 13. The evaluation harness
 
-`maester-eval` measures the extraction workflow on real filings; nothing about how figures are read changes without a run (`CLAUDE.md`, "Financial figures"). `live` calls Gemini on Vertex AI, so it needs `GOOGLE_CLOUD_PROJECT` in `.env` and Application Default Credentials, as in section 9, and can incur charges. Public filings go under `data/eval/corpus/<company-folder>/<name>.pdf` (git-ignored) and are listed in `data/eval/manifest.json`:
+`maester-eval` measures the extraction workflow on real filings; nothing about how figures are read changes without a run (`CLAUDE.md`, "Financial figures"). `live` calls Claude, so it needs `ANTHROPIC_API_KEY` in `.env`, as in section 9, and uses Anthropic credit. Public filings go under `data/eval/corpus/<company-folder>/<name>.pdf` (git-ignored) and are listed in `data/eval/manifest.json`:
 
 ```json
 {
@@ -385,7 +385,7 @@ uv run --locked maester-eval freeze synthetic-cements/ar-2025-26 --run latest
 uv run --locked maester-eval report --run latest --set dev --to docs/eval/2026-10-16-baseline.md
 ```
 
-Keep every sheet column as text and every date as `YYYY-MM-DD` in your spreadsheet application. `freeze --run` reads the machine columns (`statement`, `basis`, `section`, `label`, `period_label`, `period_end`, `span`, `printed`, `scale_factor`, `page`) back from the run's artefact, so a cell you edit there must still agree with it; put a correction in the matching `gold_` column (`gold_text`, `gold_scale`, `gold_page`, `gold_period_end`, `gold_span`) instead. The model comes from the same variables as the extractor (`GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION`, `GEMINI_MODEL`). The console shows ids, codes and counts; figures are only in the files. The full description is [System: evaluation harness](systems/eval.md).
+Keep every sheet column as text and every date as `YYYY-MM-DD` in your spreadsheet application. `freeze --run` reads the machine columns (`statement`, `basis`, `section`, `label`, `period_label`, `period_end`, `span`, `printed`, `scale_factor`, `page`) back from the run's artefact, so a cell you edit there must still agree with it; put a correction in the matching `gold_` column (`gold_text`, `gold_scale`, `gold_page`, `gold_period_end`, `gold_span`) instead. The model comes from the same variables as the extractor (`ANTHROPIC_API_KEY`, `EXTRACTOR_MODEL`, `EXTRACTOR_EFFORT`). The console shows ids, codes and counts; figures are only in the files. The full description is [System: evaluation harness](systems/eval.md).
 
 ### Measure the index
 
@@ -397,7 +397,7 @@ Ingestion phase 3 chooses the OCR engine, the table cell-matching setting and th
 4. **Report.** Write `run.json` by hand, then `maester-eval retrieval report --to docs/eval/<date>-retrieval.md`.
 5. **Switch.** Only if a report names a challenger: change `EMBEDDING_MODEL`, `OCR_ENGINE` or `INDEX_TABLE_CELL_MATCHING`, raise `INDEX_PIPELINE_VERSION` for a reader change, and run `index:backfill`. Each switch reads or embeds every document again. This is expected to take days; phase 3 has not measured it. `index:prune` deletes a candidate's revisions afterwards.
 
-Run one `index:candidate` at a time: two runs fail each other's `document.index.eval` jobs. A runner sweeps only the job types it has a handler for, so an expired `document.index.eval` job is swept only by the next `index:candidate` run, not by the live worker. Do not upload documents while a candidate run uses the stack: an upload starts a Gemini classification, which is a paid call.
+Run one `index:candidate` at a time: two runs fail each other's `document.index.eval` jobs. A runner sweeps only the job types it has a handler for, so an expired `document.index.eval` job is swept only by the next `index:candidate` run, not by the live worker. Do not upload documents while a candidate run uses the stack: an upload starts a Claude classification, which is a paid call.
 
 The candidate pair adds 5.25 GiB (3072m + 2304m) to the live stack's capped total of 5.9 GiB, so raise Docker Desktop's memory limit before it starts (the memory budget above). The details are in the [worker](systems/worker.md), [indexer](systems/indexer.md) and [evaluation harness](systems/eval.md) descriptions.
 
@@ -416,7 +416,7 @@ The document engine and CLI carry the prototype's limits, and the hosted service
 
 **API, worker and web**
 
-- Extraction accuracy is not measured. The workflow has offline tests with a scripted model only; a run against Gemini is manual.
+- Extraction accuracy is not measured. The workflow has offline tests with a scripted model only; a live run against Claude is manual.
 - Each fact has one page reference and no bounding box. Statements spanning more than six pages are not extracted. Dimensions, restatement links and printed page labels are not modelled.
 - The correction guard checks changed values against the page's text layer, so it cannot protect scanned pages, and it does not stop a correction from changing which components a subtotal lists.
 - There is no review or correction flow for facts yet (F06). The web client shows facts, with their pages and checks, only on a company's Research page, from its read annual reports (F07).
