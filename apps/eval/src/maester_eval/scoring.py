@@ -525,7 +525,7 @@ def _shown_filing(gold: GoldFiling, pdf: FilingScore, xbrl: FilingScore | None, 
             outside += 1
             continue
         from_pdf = pdf.facts[index].model_copy(update={"source": "pdf", "gold_index": index})
-        if not usable:  # no XBRL to show: the filing is read by Gemini
+        if not usable:  # no XBRL to show: the filing is read by the model
             facts.append(from_pdf)
             continue
         placed = gold_slot(company, gold.kind, g)

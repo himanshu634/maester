@@ -1,6 +1,6 @@
 """Settled disagreements join the filing's gold file.
 
-`compare` writes a settle sheet of the cells where Gemini and XBRL disagree. The investor checks each against the PDF,
+`compare` writes a settle sheet of the cells where the model and XBRL disagree. The investor checks each against the PDF,
 types the figure the page prints in `gold_text` and marks the row verified. `settle` freezes those rows with
 `freeze_sheet`, and merges them into the filing's gold file as facts of `origin "settled"`.
 

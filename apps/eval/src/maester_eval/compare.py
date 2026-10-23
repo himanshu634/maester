@@ -1,26 +1,26 @@
-"""Gemini against XBRL, cell by cell, on every results filing that has both (rule `COMPARE_RULE_VERSION`).
+"""PDF against XBRL, cell by cell, on every results filing that has both (rule `COMPARE_RULE_VERSION`).
 
 A cell is a source-rule slot of the filing's used XBRL instances (`owners.slot_owners`) plus a concept. XBRL facts
-take their concept from the element map; Gemini facts take theirs from the company's labelling sheets
-(`sheet_concepts`, carry rule `CONCEPT_CARRY_VERSION`). A Gemini fact is placed first, and only then is its concept
-looked up, so a line with no concept never reads as a line Gemini missed:
+take their concept from the element map; PDF facts take theirs from the company's labelling sheets
+(`sheet_concepts`, carry rule `CONCEPT_CARRY_VERSION`). A PDF fact is placed first, and only then is its concept
+looked up, so a line with no concept never reads as a line the model missed:
 
 - not placed (`no_period`, `no_span`): never compared, and never outside a slot;
 - placed in a slot no used instance holds (a comparative column): `outside_instance`;
 - placed in a slot of the instances: the slot is read. A fact with no concept counts in `no_concept`, and makes
   an XBRL line of that slot `unlabelled` rather than `xbrl_only`, because the unlabelled line may be it.
 
-A slot no Gemini fact is placed in is `not_read`, or `span_unknown` when a Gemini fact with no span has the slot's
+A slot no PDF fact is placed in is `not_read`, or `span_unknown` when a PDF fact with no span has the slot's
 statement, basis and date. Two figures for one cell, on either side, are `ambiguous`, never a silent pick. A pooled
 slot (refilings with no order) whose instances hold a cell differently is `instances_differ`.
 
 Agreement is over the cells that both sides read with one figure each: `agree`, `agree_at_precision` and
 `agree_dash_zero` over those and `disagree_value`, `disagree_scale`, `disagree_status` and `ambiguous`. A sign apart
-(`disagree_sign`) and `instances_differ` are outside it: a sign convention and an XBRL refiling are not Gemini's
+(`disagree_sign`) and `instances_differ` are outside it: a sign convention and an XBRL refiling are not the model's
 reading. Rates are whole tenths of a percent; every figure is a Decimal, compared, never changed.
 
 Two `span="other"` XBRL durations of different lengths ending on one day share a slot under `slot_key`. The span rule
-never gives `other`, so no Gemini fact is placed in such a slot and it cannot make a disagreement: its cells are
+never gives `other`, so no PDF fact is placed in such a slot and it cannot make a disagreement: its cells are
 `not_read` (or `span_unknown`).
 
 Figures go only into the report files and the settle sheets under `data/eval/`, never onto the console.
@@ -37,7 +37,7 @@ from pydantic import BaseModel
 
 from maester_eval.artefacts import Artefact
 from maester_eval.cells import (
-    COMPARE_RULE_VERSION, company_id, gemini_slot, printed_exponent, read_figure, same_figure, xbrl_exponent, xbrl_slot,
+    COMPARE_RULE_VERSION, company_id, pdf_slot, printed_exponent, read_figure, same_figure, xbrl_exponent, xbrl_slot,
 )
 from maester_eval.concepts import Taxonomy
 from maester_eval.files import write_text_atomically
@@ -62,8 +62,8 @@ CompareOutcome = Literal["agree", "agree_at_precision", "agree_dash_zero", "disa
                          "disagree_status", "disagree_sign", "ambiguous", "instances_differ", "pdf_unknown", "xbrl_unknown",
                          "pdf_only", "xbrl_only", "unlabelled", "span_unknown", "not_read"]
 COMPARE_OUTCOMES: tuple[str, ...] = get_args(CompareOutcome)
-# What happened to each Gemini fact of a compared filing.
-GEMINI_COUNTS = ("no_period", "no_span", "outside_instance", "no_concept", "concept_own", "concept_company")
+# What happened to each PDF fact of a compared filing.
+PDF_COUNTS = ("no_period", "no_span", "outside_instance", "no_concept", "concept_own", "concept_company")
 NotCompared = Literal["no_pdf_artefact", "pdf_failed", "no_xbrl_artefact", "no_mapped_instance", "pair_mismatch", "no_concepts"]
 
 _AGREE = ("agree", "agree_at_precision", "agree_dash_zero")
@@ -84,13 +84,13 @@ class CellCompare(BaseModel):
     basis: str
     span: str | None
     period_end: str
-    # The XBRL fact's, else the Gemini fact's.
+    # The XBRL fact's, else the PDF fact's.
     period_label: str
     concept: str
     outcome: CompareOutcome
     concept_from: Literal["own", "company"] | None = None
-    # The Gemini fact shown: its 1-based place in the artefact (the sheet's `row`), and its page from 1. None when
-    # Gemini has no fact for the cell, or has two figures for it and none is picked.
+    # The PDF fact shown: its 1-based place in the artefact (the sheet's `row`), and its page from 1. None when
+    # The PDF has no fact for the cell, or has two figures for it and none is picked.
     pdf_row: int | None = None
     pdf_printed: str | None = None
     pdf_page: int | None = None
@@ -130,11 +130,11 @@ class CompareRun(BaseModel):
         total: Counter = Counter()
         for filing in self.filings:
             total.update(filing.counts)
-        return {name: total.get(name, 0) for name in (*COMPARE_OUTCOMES, *GEMINI_COUNTS)}
+        return {name: total.get(name, 0) for name in (*COMPARE_OUTCOMES, *PDF_COUNTS)}
 
 
 def _zero_counts() -> dict[str, int]:
-    return {name: 0 for name in (*COMPARE_OUTCOMES, *GEMINI_COUNTS)}
+    return {name: 0 for name in (*COMPARE_OUTCOMES, *PDF_COUNTS)}
 
 
 def _denominator(counts: dict[str, int]) -> int:
@@ -158,7 +158,7 @@ def exact_agreement_tenths(counts: dict[str, int]) -> int | None:
 
 
 def _one(facts: list, figure) -> dict | None:
-    """The first of `facts` when they all hold one figure; None when they hold two or more. A Gemini figure is
+    """The first of `facts` when they all hold one figure; None when they hold two or more. A PDF figure is
     `cells.read_figure`, an XBRL one `owners.fact_figure`, as the scorer tells them apart."""
     return facts[0] if len({figure(f) for f in facts}) == 1 else None
 
@@ -170,21 +170,21 @@ def _xbrl_number(fact: dict) -> Decimal | None:
     return Decimal(fact["normalizedValue"])
 
 
-def _both(gemini: dict, xbrl: dict) -> CompareOutcome:
-    """One Gemini figure against one XBRL figure, by the rules in this order."""
+def _both(pdf_fact: dict, xbrl: dict) -> CompareOutcome:
+    """One PDF figure against one XBRL figure, by the rules in this order."""
     read = _xbrl_number(xbrl)
-    if gemini["valueStatus"] == "dash":  # a printed dash is a reading, not an unknown
+    if pdf_fact["valueStatus"] == "dash":  # a printed dash is a reading, not an unknown
         if read is None:
             return "xbrl_unknown"
         return "agree_dash_zero" if read == 0 else "disagree_status"
     if read is None:
         return "xbrl_unknown"
-    if gemini["valueStatus"] != "value" or gemini["normalizedValue"] is None:
+    if pdf_fact["valueStatus"] != "value" or pdf_fact["normalizedValue"] is None:
         return "pdf_unknown"
-    printed = Decimal(gemini["normalizedValue"])
+    printed = Decimal(pdf_fact["normalizedValue"])
     if printed != 0 and read == 0:
         return "disagree_status"  # the filer may have tagged a printed dash 0; compare cannot see the page
-    printed_exp = printed_exponent(gemini["reportedValue"], gemini["scaleFactor"])
+    printed_exp = printed_exponent(pdf_fact["reportedValue"], pdf_fact["scaleFactor"])
     read_exp = xbrl_exponent(xbrl["decimals"], xbrl["normalizedValue"])
     agreement = same_figure(printed, printed_exp, read, read_exp)
     if agreement == "exact":
@@ -194,8 +194,8 @@ def _both(gemini: dict, xbrl: dict) -> CompareOutcome:
     if (printed != 0 and read != 0 and (printed < 0) != (read < 0)
             and same_figure(-printed, printed_exp, read, read_exp) != "different"):
         return "disagree_sign"
-    if (gemini["reportedValue"] is not None and xbrl["reportedValue"] is not None
-            and Decimal(gemini["reportedValue"]) == Decimal(xbrl["reportedValue"])):
+    if (pdf_fact["reportedValue"] is not None and xbrl["reportedValue"] is not None
+            and Decimal(pdf_fact["reportedValue"]) == Decimal(xbrl["reportedValue"])):
         return "disagree_scale"
     return "disagree_value"
 
@@ -224,7 +224,7 @@ def _listed(filing_id: str, company: str, eval_set: str, tags: dict[str, str], r
 
 
 def compare_filing(pdf: Artefact, xbrl: Artefact, concepts: CompanyConcepts, tags: dict[str, str]) -> FilingCompare:
-    """Each cell of the instances' slots, Gemini against XBRL. Cells are sorted by slot, then concept."""
+    """Each cell of the instances' slots, PDF against XBRL. Cells are sorted by slot, then concept."""
     reason = _not_compared(pdf, xbrl, concepts)
     if reason is not None:
         return _listed(pdf.filing_id, pdf.company, pdf.set, tags, reason)
@@ -242,13 +242,13 @@ def compare_filing(pdf: Artefact, xbrl: Artefact, concepts: CompanyConcepts, tag
     for key in pooled_differ:
         xbrl_cells.setdefault(key, [])
 
-    # Gemini facts, each with its 1-based place in the artefact, placed before their concept is looked up.
-    gemini_cells: dict[tuple[str, str], list[tuple[int, dict, ConceptPick]]] = {}
+    # PDF facts, each with its 1-based place in the artefact, placed before their concept is looked up.
+    pdf_cells: dict[tuple[str, str], list[tuple[int, dict, ConceptPick]]] = {}
     read: set[str] = set()
     unlabelled: set[str] = set()
     no_span: set[tuple[str, str, str]] = set()
     for number, fact in enumerate(pdf.result["facts"], start=1):
-        placed = gemini_slot(company, pdf.kind, fact)
+        placed = pdf_slot(company, pdf.kind, fact)
         if placed.key is None:
             counts[placed.reason] += 1
             if placed.reason == "no_span":
@@ -264,29 +264,29 @@ def compare_filing(pdf: Artefact, xbrl: Artefact, concepts: CompanyConcepts, tag
             unlabelled.add(placed.key)
             continue
         counts[f"concept_{pick.source}"] += 1
-        gemini_cells.setdefault((placed.key, pick.concept), []).append((number, fact, pick))
+        pdf_cells.setdefault((placed.key, pick.concept), []).append((number, fact, pick))
 
     cells: list[CellCompare] = []
-    for key in sorted(xbrl_cells.keys() | gemini_cells.keys()):
+    for key in sorted(xbrl_cells.keys() | pdf_cells.keys()):
         slot, concept = key
         statement, basis, period_end, span = _slot_fields(slot)
-        x_facts, g_facts = xbrl_cells.get(key, []), gemini_cells.get(key, [])
+        x_facts, p_facts = xbrl_cells.get(key, []), pdf_cells.get(key, [])
         x = _one(x_facts, fact_figure) if x_facts else None
-        g = _one(g_facts, lambda item: read_figure(item[1])) if g_facts else None
+        p = _one(p_facts, lambda item: read_figure(item[1])) if p_facts else None
         if slot not in read:
             outcome: CompareOutcome = "span_unknown" if (statement, basis, period_end) in no_span else "not_read"
         elif key in pooled_differ:
-            outcome = "instances_differ" if g_facts else ("unlabelled" if slot in unlabelled else "xbrl_only")
-        elif x_facts and g_facts:
-            outcome = "ambiguous" if g is None or x is None else _both(g[1], x)
+            outcome = "instances_differ" if p_facts else ("unlabelled" if slot in unlabelled else "xbrl_only")
+        elif x_facts and p_facts:
+            outcome = "ambiguous" if p is None or x is None else _both(p[1], x)
         elif x_facts:
             outcome = "unlabelled" if slot in unlabelled else "xbrl_only"
         else:
             outcome = "pdf_only"
         counts[outcome] += 1
-        number, fact, pick = g if g is not None else (None, None, None)
-        # The period label of the XBRL fact, else of the Gemini fact: the one shown, or the first of the cell.
-        labelled_by = x_facts[0] if x_facts else (g_facts[0][1] if g_facts else None)
+        number, fact, pick = p if p is not None else (None, None, None)
+        # The period label of the XBRL fact, else of the PDF fact: the one shown, or the first of the cell.
+        labelled_by = x_facts[0] if x_facts else (p_facts[0][1] if p_facts else None)
         label = labelled_by["periodLabel"] if labelled_by is not None else ""
         cells.append(CellCompare(
             slot=slot, statement=statement, basis=basis, span=span, period_end=period_end, period_label=label,
@@ -303,7 +303,7 @@ def compare_filing(pdf: Artefact, xbrl: Artefact, concepts: CompanyConcepts, tag
 
 
 def settle_rows(fc: FilingCompare, pdf: Artefact, xbrl_run: str, map_version: str | None) -> list[dict[str, str]]:
-    """For each `disagree_value`, `disagree_scale` or `disagree_status` cell, its Gemini fact's labelling sheet row with
+    """For each `disagree_value`, `disagree_scale` or `disagree_status` cell, its PDF fact's labelling sheet row with
     the concept filled, the XBRL side, and the XBRL run and map version it was compared under (no version is "").
     A sign apart or instances that differ never get a row."""
     rows = sheet_rows(pdf)
@@ -403,10 +403,10 @@ def _summary_lines(run: CompareRun) -> list[str]:
               "status, and ambiguous cells. Exact agreement is agree alone over the same cells.", "",
               "### Cells by outcome", "", "| Outcome | Cells |", "| --- | --- |"]
     lines += [_row([name, counts[name]]) for name in COMPARE_OUTCOMES]
-    lines += ["", "### Gemini facts", "",
-              "Each Gemini fact is placed in a slot first, and only then is its concept looked up.", "",
+    lines += ["", "### PDF facts", "",
+              "Each PDF fact is placed in a slot first, and only then is its concept looked up.", "",
               "| What happened | Facts |", "| --- | --- |"]
-    lines += [_row([name, counts[name]]) for name in GEMINI_COUNTS]
+    lines += [_row([name, counts[name]]) for name in PDF_COUNTS]
     return lines + [""]
 
 
@@ -445,7 +445,7 @@ def _disagreement_lines(run: CompareRun) -> list[str]:
 
 def _sign_lines(run: CompareRun) -> list[str]:
     lines = ["## Sign only", "",
-             "Gemini and XBRL hold the same figure with opposite signs. This is a convention of the element, not a misread, "
+             "The PDF and XBRL hold the same figure with opposite signs. This is a convention of the element, not a misread, "
              "and it is outside agreement.", ""]
     found = Counter(c.xbrl_element or "—" for f in run.filings for c in f.cells if c.outcome == "disagree_sign")
     if not found:
@@ -501,21 +501,21 @@ def _against_lines(run: CompareRun, against: CompareRun) -> list[str]:
     lines.append(_row(["Cells in the agreement denominator", a, b, count_change(a, b)]))
     for (label, a), (_, b) in zip(_filing_counts(run), _filing_counts(against)):
         lines.append(_row([label, a, b, count_change(a, b)]))
-    for name in (*COMPARE_OUTCOMES, *GEMINI_COUNTS):
+    for name in (*COMPARE_OUTCOMES, *PDF_COUNTS):
         lines.append(_row([name, now[name], before[name], count_change(now[name], before[name])]))
     return lines + [""]
 
 
 def render_compare_markdown(run: CompareRun, against: CompareRun | None) -> str:
     v = run.versions
-    lines = [f"# Gemini against XBRL: {run.pdf_run} and {run.xbrl_run}", "",
+    lines = [f"# PDF against XBRL: {run.pdf_run} and {run.xbrl_run}", "",
              f"Set `{run.eval_set}` · {to_utc(run.generated_at).strftime('%Y-%m-%d %H:%M UTC')} · PDF run `{run.pdf_run}` · "
              f"XBRL run `{run.xbrl_run}`.", "",
              f"Versions: span rule {v['span_rule']}, compare rule {v['compare_rule']}, concept carry rule {v['concept_carry']}, "
              f"owner rule {v['owner_rule']}, source rule {v['source_rule']}, XBRL parser {v['parser'] or 'unknown'}, "
              f"XBRL element map {v['map'] or 'unknown'}.", "",
-             "A cell is a slot of the filing's own XBRL instances and a concept. Gemini's concepts come from the company's "
-             "labelling sheets. A Gemini line in a comparative column is outside the instance, never a line XBRL lacks.", ""]
+             "A cell is a slot of the filing's own XBRL instances and a concept. The PDF facts' concepts come from the company's "
+             "labelling sheets. A PDF line in a comparative column is outside the instance, never a line XBRL lacks.", ""]
     lines += _summary_lines(run) + _tag_lines(run) + _statement_lines(run) + _disagreement_lines(run) + _sign_lines(run)
     lines += _differ_lines(run) + _unused_lines(run)
     if against is not None:

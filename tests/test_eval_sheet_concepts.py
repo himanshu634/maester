@@ -1,4 +1,4 @@
-"""A Gemini fact's concept from its company's labelling sheets, by section and label. Offline."""
+"""A PDF fact's concept from its company's labelling sheets, by section and label. Offline."""
 
 from pathlib import Path
 import tempfile

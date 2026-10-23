@@ -2,8 +2,8 @@
 
 A cell is a source-rule slot (`source_rule.slot_key`) plus a concept. The slot carries the company, the filing kind,
 the statement, the basis, the period end and the span, so consolidated and standalone never meet, and a quarter never
-meets the half year that ends on the same day. A Gemini or gold fact takes its span from its column header
-(`periods.span_of_label`); an XBRL fact carries its own. A Gemini or gold fact with no date or, off the balance sheet,
+meets the half year that ends on the same day. A PDF or gold fact takes its span from its column header
+(`periods.span_of_label`); an XBRL fact carries its own. A PDF or gold fact with no date or, off the balance sheet,
 no span is not placed (`no_period`, `no_span`): it is never keyed as an instant, and never counted outside a slot. An
 XBRL fact with no date has no slot; one with a null span is keyed as `instant` whatever its statement, as the source
 rule's `slot_key` keys it. A null span is not an unknown span: phase 4's reader gives every duration a span
@@ -24,7 +24,7 @@ from maester_eval.source_rule import Slot, Span, slot_key
 from pdf_financial_qa.xbrl.read import integer_decimals
 
 __all__ = [
-    "COMPARE_RULE_VERSION", "Placed", "company_id", "gemini_slot", "gold_slot", "printed_exponent", "read_figure",
+    "COMPARE_RULE_VERSION", "Placed", "company_id", "pdf_slot", "gold_slot", "printed_exponent", "read_figure",
     "same_figure", "xbrl_exponent", "xbrl_slot",
 ]
 
@@ -48,7 +48,7 @@ def company_id(file: str) -> str:
 
 
 def read_figure(fact: dict) -> tuple:
-    """What a Gemini fact says, to tell two of them apart: its status and its printed and normalised values as decimals.
+    """What a PDF fact says, to tell two of them apart: its status and its printed and normalised values as decimals.
 
     The printed value is in it because a fact with no scale has no normalised value. As decimals, `2000` and `2000.0`
     are one figure, which a comparison of their text would call two. An XBRL fact is told apart by `owners.fact_figure`."""
@@ -75,8 +75,8 @@ def _placed(company_id: str, filing_kind: str, statement: str, basis: str, perio
     return Placed(_key(company_id, filing_kind, statement, basis, period_end, span), None)
 
 
-def gemini_slot(company_id: str, filing_kind: str, fact: dict) -> Placed:
-    """A Gemini wire fact's slot: its period end, else its as-of date, and the span its column header names."""
+def pdf_slot(company_id: str, filing_kind: str, fact: dict) -> Placed:
+    """A PDF wire fact's slot: its period end, else its as-of date, and the span its column header names."""
     return _placed(company_id, filing_kind, fact["statement"], fact["basis"], fact["periodEnd"] or fact["asOfDate"],
                    lambda period_end: span_of_label(fact["periodLabel"], period_end))
 

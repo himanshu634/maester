@@ -26,7 +26,7 @@ This document describes the Python command-line application in `apps/eval`. For 
 | engine | The Python package in `packages/financial-engine`. Its import name is `pdf_financial_qa`. |
 | workflow | The extraction workflow of the engine. The function `run_extraction` starts it. |
 | model | The Claude model that the workflow calls through the Anthropic API. |
-| Gemini fact | A fact that the model read from the PDF. The name comes from the first model of the harness. The code, the reports and this document keep it, for example `gemini_slot` and the title `Gemini against XBRL`. The fact is from the PDF reader, whichever model reads. |
+| Gemini fact | A fact that the model read from the PDF. The name comes from the first model of the harness. This document keeps it. The code and the reports call it a PDF fact, for example `pdf_slot` and the title `PDF against XBRL`. The fact is from the PDF reader, whichever model reads. |
 | model call | One request from the workflow to the model. The harness counts three kinds: `locate`, `extract` and `correct`. |
 | filing | The annual report or the financial results of one company for one period. The corpus keeps it as one PDF. |
 | corpus | The folder `data/eval/corpus`. It holds the PDFs of public filings. Git ignores it. |
@@ -1020,8 +1020,8 @@ Each entry of `sources` holds `summary`, `strata` and `mismatches`. `mismatches`
 
 `compare-xbrl.md` has these parts, in this order:
 
-1. The title `Gemini against XBRL: <PDF run> and <XBRL run>`. Then a line with the set, the UTC time and the two runs. Then a line with the versions of the five rules, the XBRL parser and the element map.
-2. Summary: the count of compared filings, and the filings that `compare` left out, each with its reason. Then the measures Agreement, Exact agreement, Of which at precision, Of which dash against 0, Sign only and Instances that differ. Then the cells by outcome and the Gemini facts by what happened to them (`no_period`, `no_span`, `outside_instance`, `no_concept`, `concept_own` and `concept_company`).
+1. The title `PDF against XBRL: <PDF run> and <XBRL run>`. Then a line with the set, the UTC time and the two runs. Then a line with the versions of the five rules, the XBRL parser and the element map.
+2. Summary: the count of compared filings, and the filings that `compare` left out, each with its reason. Then the measures Agreement, Exact agreement, Of which at precision, Of which dash against 0, Sign only and Instances that differ. Then the cells by outcome and the PDF facts by what happened to them (`no_period`, `no_span`, `outside_instance`, `no_concept`, `concept_own` and `concept_company`).
 3. By format tag: one table for each of the five tags. Each row gives the filings, the agreement, the exact agreement and the cells of each outcome.
 4. By statement: the same columns, for each statement.
 5. Disagreements: one row for each cell with the outcome `disagree_value`, `disagree_scale`, `disagree_status` or `ambiguous`, with the PDF figure and its page and the XBRL figure.

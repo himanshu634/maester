@@ -1,4 +1,4 @@
-"""`maester-eval compare`: Gemini against XBRL, cell by cell, within the instances' own slots. Offline.
+"""`maester-eval compare`: PDF against XBRL, cell by cell, within the instances' own slots. Offline.
 
 Every expected outcome is worked out by hand in the comment beside it."""
 
@@ -92,11 +92,11 @@ class CompareCase(unittest.TestCase):
         xbrl = xbrl if xbrl is not None else xbrl_artefact(RESULTS_Q2, xbrl_facts)
         return compare_filing(pdf_artefact(RESULTS_Q2, pdf_facts), xbrl, self.concepts, self.tags)
 
-    def one_cell(self, gemini, xbrl):
-        """The revenue cell of a filing of one Gemini fact against a.xml holding `xbrl` (when given) and other income
+    def one_cell(self, fact, xbrl):
+        """The revenue cell of a filing of one PDF fact against a.xml holding `xbrl` (when given) and other income
         of the same slot, so the slot is read whatever `xbrl` is."""
         facts = [other_income()] if xbrl is None else [xbrl, other_income()]
-        fc = self.compare([gemini], facts)
+        fc = self.compare([fact], facts)
         (cell,) = [c for c in fc.cells if c.concept == "revenue_from_operations"]
         return cell
 
@@ -115,7 +115,7 @@ class CellTests(CompareCase):
         self.assertEqual(agreement_tenths(fc.counts), 500)                  # 1 of 2
         self.assertEqual(exact_agreement_tenths(fc.counts), 500)
         self.assertEqual((fc.compared, fc.reason, fc.filing_id, fc.set), (True, None, RESULTS_Q2.id, "dev"))
-        self.assertEqual(len(COMPARE_OUTCOMES) + 6, len(fc.counts))          # every outcome and every Gemini count, zero or not
+        self.assertEqual(len(COMPARE_OUTCOMES) + 6, len(fc.counts))          # every outcome and every PDF count, zero or not
 
     def test_a_cell_carries_both_sides(self):
         fc = compare_filing(self.pdf, self.xbrl, self.concepts, self.tags)
@@ -137,8 +137,8 @@ class CellTests(CompareCase):
         self.assertEqual(nonzero(fc.counts), {"agree": 2, "disagree_value": 1, "outside_instance": 1, "concept_own": 1,
                                               "concept_company": 2})
 
-    def test_xbrl_only_needs_every_gemini_line_of_the_slot_labelled(self):
-        # The same filing with fact 4 labelled other_expenses: XBRL's other income is xbrl_only and Gemini's other expenses pdf_only.
+    def test_xbrl_only_needs_every_pdf_line_of_the_slot_labelled(self):
+        # The same filing with fact 4 labelled other_expenses: XBRL's other income is xbrl_only and the PDF's other expenses pdf_only.
         self.label_sheet(label(), label("Other income", "other_expenses", "2"))
         fc = compare_filing(self.pdf, self.xbrl, self.concepts, self.tags)
         self.assertEqual(nonzero(fc.counts), {"agree": 1, "disagree_value": 1, "xbrl_only": 1, "pdf_only": 1,
@@ -152,7 +152,7 @@ class CellTests(CompareCase):
                          (False, "no_concepts", [], {}, []))
 
     def test_a_header_with_no_span_makes_its_slot_span_unknown(self):
-        # Gemini "Current period ended 30.09.2025" (no_span); XBRL FourD half-year facts:
+        # PDF "Current period ended 30.09.2025" (no_span); XBRL FourD half-year facts:
         # each XBRL half-year cell is span_unknown, none not_read.
         fc = self.compare([pdf_fact(periodLabel="Current period ended 30.09.2025")],
                           [xbrl_fact(**HALF_YEAR, normalizedValue="2469000000"), other_income(**HALF_YEAR)])
@@ -165,7 +165,7 @@ class CellTests(CompareCase):
         self.assertEqual(nonzero(fc.counts), {"not_read": 1, "no_span": 1})
 
     def test_a_quarter_never_meets_its_half_year(self):
-        # Gemini: quarter 1234500000 and "Half year ended 30.09.2025" 2469000000; XBRL OneD 1234500000, FourD 2469000000.
+        # PDF: quarter 1234500000 and "Half year ended 30.09.2025" 2469000000; XBRL OneD 1234500000, FourD 2469000000.
         fc = self.compare([pdf_fact(), pdf_fact(periodLabel="Half year ended 30.09.2025", reportedText="24,690.00",
                                                 reportedValue="24690.00", normalizedValue="2469000000")],
                           [xbrl_fact(), xbrl_fact(**HALF_YEAR, normalizedValue="2469000000", reportedValue="24690.00")])
@@ -177,16 +177,16 @@ class CellTests(CompareCase):
 
     def test_two_instances_of_one_slot(self):
         # Two consolidated instances filed the same day, "…_29052026075158.xml" (revenue 1234500000) and "…_1572026202819.xml"
-        # (1234600000); Gemini 1234600000: agree (the owner is the later stamp, the smaller name).
-        gemini = pdf_fact(reportedText="12,346.00", reportedValue="12346.00", normalizedValue="1234600000")
-        fc = self.compare([gemini], [xbrl_fact(instance=OLDER),
+        # (1234600000); PDF 1234600000: agree (the owner is the later stamp, the smaller name).
+        fact = pdf_fact(reportedText="12,346.00", reportedValue="12346.00", normalizedValue="1234600000")
+        fc = self.compare([fact], [xbrl_fact(instance=OLDER),
                                      xbrl_fact(normalizedValue="1234600000", reportedValue="12346.00", instance=NEWER)])
         self.assertEqual([(c.concept, c.outcome) for c in fc.cells], [("revenue_from_operations", "agree")])
         (differ,) = fc.instances_differ
         self.assertEqual((differ.element, differ.owner, differ.others), ("RevenueFromOperations", NEWER, [OLDER]))
         # The same two with the stamps "…_1062025211739.xml" and "…_1062025221059.xml" (no order): the cell is
         # instances_differ, outside agreement, and no settle row.
-        pdf = pdf_artefact(RESULTS_Q2, [gemini])
+        pdf = pdf_artefact(RESULTS_Q2, [fact])
         pooled = xbrl_artefact(RESULTS_Q2, [xbrl_fact(instance=FIRST),
                                             xbrl_fact(normalizedValue="1234600000", reportedValue="12346.00", instance=SECOND)])
         fc = compare_filing(pdf, pooled, self.concepts, self.tags)
@@ -200,7 +200,7 @@ class CellTests(CompareCase):
 
     def test_dash_zero_nil_status_sign_scale_and_precision(self):
         dash = dict(reportedText="-", reportedValue=None, valueStatus="dash", normalizedValue=None)
-        cases = [  # (Gemini fact, XBRL fact or None, outcome)
+        cases = [  # (PDF fact, XBRL fact or None, outcome)
             (pdf_fact(**dash), xbrl_fact(normalizedValue="0", reportedValue="0"), "agree_dash_zero"),
             (pdf_fact(**dash), xbrl_fact(), "disagree_status"),
             (pdf_fact(**dash), xbrl_fact(valueStatus="unparsed", nil=True, normalizedValue=None, reportedValue=None), "xbrl_unknown"),
@@ -222,9 +222,9 @@ class CellTests(CompareCase):
             (pdf_fact(reportedText="(12,346.00)", reportedValue="-12346.00", normalizedValue="-1234600000"), xbrl_fact(), "disagree_value"),
             (pdf_fact(reportedText="0", reportedValue="0", normalizedValue="0"), xbrl_fact(normalizedValue="0", reportedValue="0"), "agree"),
         ]
-        for gemini, xbrl, outcome in cases:
-            with self.subTest(gemini=gemini["reportedText"], xbrl=None if xbrl is None else xbrl["normalizedValue"], outcome=outcome):
-                self.assertEqual(self.one_cell(gemini, xbrl).outcome, outcome)
+        for fact, xbrl, outcome in cases:
+            with self.subTest(pdf=fact["reportedText"], xbrl=None if xbrl is None else xbrl["normalizedValue"], outcome=outcome):
+                self.assertEqual(self.one_cell(fact, xbrl).outcome, outcome)
         self.assertEqual(agreement_tenths({"agree_dash_zero": 1, "disagree_status": 1, "disagree_sign": 5}), 500)   # sign only is outside
         self.assertEqual(exact_agreement_tenths({"agree": 1, "agree_at_precision": 2}), 333)                       # 1 of 3
         self.assertIsNone(agreement_tenths({"disagree_sign": 1, "instances_differ": 2, "pdf_only": 3}))
@@ -239,8 +239,8 @@ class CellTests(CompareCase):
         gold = gold_fact(printed="0.04", value="0.04", scale="10000000", normalized_value="400000")
         self.assertEqual(compare_xbrl(gold, zero), "match_at_precision")
 
-    def test_a_column_gemini_did_not_read(self):
-        # XBRL cash_flow consolidated half_year facts; no Gemini cash-flow fact at all: each is not_read, none xbrl_only.
+    def test_a_column_the_model_did_not_read(self):
+        # XBRL cash_flow consolidated half_year facts; no PDF cash-flow fact at all: each is not_read, none xbrl_only.
         cash = dict(statement="cash_flow", **HALF_YEAR)
         fc = self.compare([pdf_fact()], [
             xbrl_fact(),
@@ -251,7 +251,7 @@ class CellTests(CompareCase):
         self.assertEqual(nonzero(fc.counts), {"agree": 1, "not_read": 2, "concept_own": 1})
 
     def test_ambiguous_and_not_compared(self):
-        # Two Gemini facts, one cell, two figures: ambiguous, with no Gemini figure picked.
+        # Two PDF facts, one cell, two figures: ambiguous, with no PDF figure picked.
         fc = self.compare([pdf_fact(), pdf_fact(lineOrder=5, reportedText="12,346.00", reportedValue="12346.00",
                                                 normalizedValue="1234600000")], [xbrl_fact()])
         (cell,) = fc.cells
@@ -335,7 +335,7 @@ class RunTests(CompareCase):
         pdf = pdf_artefact(RESULTS_Q2, [REVENUE, REVENUE_STANDALONE, COMPARATIVE, sign])
         run = self.run_of(manifest, [pdf], [self.xbrl])
         md = render_compare_markdown(run, None)
-        self.assertIn("# Gemini against XBRL: p and x", md)
+        self.assertIn("# PDF against XBRL: p and x", md)
         for text in ("compare rule 1", "concept carry rule 1", "owner rule 1", "span rule 2", f"source rule {SOURCE_RULE_VERSION}",
                      "XBRL parser xbrl-parser-1", "XBRL element map map-3"):
             self.assertIn(text, md)

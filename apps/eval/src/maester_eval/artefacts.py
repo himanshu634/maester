@@ -31,7 +31,7 @@ class ModelCalls(BaseModel):
         return self.locate + self.extract + self.correct
 
 
-# What read a run: the Gemini workflow on the PDF, or the XBRL parser on the paired instances.
+# What read a run: the extraction workflow's model on the PDF, or the XBRL parser on the paired instances.
 RunSource = Literal["pdf", "xbrl"]
 
 

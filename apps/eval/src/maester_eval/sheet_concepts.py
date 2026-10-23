@@ -1,4 +1,4 @@
-"""A Gemini fact's concept, from the concepts the investor recorded in the company's labelling sheets.
+"""A PDF fact's concept, from the concepts the investor recorded in the company's labelling sheets.
 
 The rule (`CONCEPT_CARRY_VERSION`): a concept comes from a `concept` cell of any sheet of the same company, keyed by
 statement, normalised section and normalised label; without the section, by statement and label alone, but only when
