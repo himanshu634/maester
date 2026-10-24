@@ -28,6 +28,25 @@
    "note": "Angel One (question 1) and Groww (question 3) are drawn so you can decide on them. Upstox and ICICI Direct sit side by side here to compare; on the page one form shows at a time, with one filled button."
   }
  ],
+ "round4": {
+  "constraint": "Your words (24 Oct 2026): “I think the PNL should use distinct colors, such as red and green, that align with the theme. We also need a tertiary color to highlight text or specific areas when required.”\n\nThis changes the design system. docs/DESIGN.md §2 today says “No accent colour, no semantic green or red” and that direction is shown by a sign, never a colour. On your go, ADR 0002, DESIGN.md §2 and §5, tokens.css and the design guard change together. Until then nothing in the app changes.",
+  "questions": "Questions, each answerable in a word:\n\n1. The highlight: G (recommended), H or J?\n2. Gain and loss colour: Holdings only, or every signed change in the terminal (a share’s day change in Research, a reading’s change in Market mood)?\n3. The day’s change on Holdings (today versus yesterday’s close): add it as a column now, or later?",
+  "shared": "The rules that come with the colours:\n\n• Gain and loss colour only a signed P&L figure and its %. The + or − stays; the colour repeats it.\n• Text only: no green or red fills, rows, bars or borders. Unknown stays “—” in ink.\n• On an ink panel, the lighter pair (9.63:1 and 8.14:1 on ink).\n• The highlight marks something that needs the investor, or a match, in words that already say so. Never the only signal, and at most a few on a screen.\n• The illustration yellow stays for drawings only; the highlight is its own token.",
+  "rows": [
+   {
+    "title": "Palette · gain, loss and one highlight",
+    "note": "Researched and computed, not picked by eye (docs/research/2026-10-24-pnl-and-highlight-colours.md).\n\n• Gain #006B55 and loss #BA2C1A pass AA for text on paper (5.53:1 and 5.16:1), for the 14–17px figures in the tables.\n• A common red and green (#2E7D32, #C62828) all but merge for deuteranopia (4.3 apart). Leaning the green teal and the red vermilion triples that (12.1) at the same contrast.\n• Highlight options: G · Highlighter #F9DC5C, H · Signal orange #FF5F1F, J · Blue pencil #1F4FBF."
+   },
+   {
+    "title": "D with colour",
+    "note": "Round 3’s D with the proposal on: P&L and P&L % in gain or loss on every line, the strip’s unrealized P&L too, and G’s highlight on the two things that need you: the lede’s “Three need a sign-in today” and each account’s state when it is signed out or not approved.\n\nE and F take the same colours on the same figures; they aren’t redrawn."
+   },
+   {
+    "title": "The highlight, three ways",
+    "note": "The same lines of Ravi’s accounts with each highlight.\n\nI’d pick G: a highlighter is what a person does to a ledger, ink stays fully readable on it, and it stays apart from gain and loss for every kind of colour vision. H competes with the loss colour; J looks like a link."
+   }
+  ]
+ },
  "round3": {
   "constraint": "Your words (24 Oct 2026), after round 2: “I’m not getting clear information about which broker’s account holds which positions, and the columns lack profit-and-loss data. This needs to be fixed first before we can proceed.”\n\nSo D, E and F keep their ideas, and the holdings table changes in all three. Round 2 is on the next page, unchanged.",
   "shared": "In every direction now:\n\n• Each holding opens into one line per account that holds it: “Zerodha · Asha” with its client ID and when it was read, then its quantity, the broker’s average cost, invested, value, P&L and P&L %.\n• The company line adds its accounts up; the total line adds up the page.\n• “Show by: Company | Account”. By account gives each account its own ledger and account total.\n• The strip shows Invested and Unrealized P&L with its %.\n• P&L is unrealized, at Maester’s NSE close, with a sign, never a colour. A part read before its account signed out is starred.\n\nCosts: per-account P&L and P&L % are two new named calculations in the engine, beside holding_cost and holdings_totals. The broker’s average cost is shown as the broker reports it.",

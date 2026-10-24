@@ -14,6 +14,23 @@ import {
 } from "./holdings-base.mjs"
 import { PEOPLE, ACCTS, byKey, accName, needsYou, combineAccts, keysOf, sum, acctValue } from "./accounts-base.mjs"
 import { NEED, TOP5 } from "./accounts-brokers.mjs"
+import { HUE, MARK, SIM } from "./accounts-colour.mjs"
+
+// Round 4 switches: COLOUR paints a signed P&L in gain or loss; MODE (G, H or J) marks what needs
+// the investor. Off for rounds 2 and 3, which stay as the user saw them.
+let COLOUR = false
+let MODE = null
+const tone = (delta, onInk = false) => (COLOUR ? { color: delta < 0 ? (onInk ? HUE.lossOnInk : HUE.loss) : onInk ? HUE.gainOnInk : HUE.gain } : {})
+const mark = (t) => {
+  if (!MODE) return esc(t)
+  const m = MARK[MODE]
+  return m.kind === "fill"
+    ? `<mark style="background: ${m.hex}; color: ${T.ink}; padding: 0 4px; box-decoration-break: clone; -webkit-box-decoration-break: clone">${esc(t)}</mark>`
+    : `<span style="color: ${m.hex}; font-weight: 700">${esc(t)}</span>`
+}
+function withColour(mode, render) {
+  return () => { COLOUR = true; MODE = mode; try { return render() } finally { COLOUR = false; MODE = null } }
+}
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const OUT = path.join(HERE, "..", "canvas")
@@ -45,21 +62,22 @@ function toggles(labels, pressed) {
   return row({ gap: 0, flexWrap: "wrap" }, labels.map((l, i) =>
     el("button", { minHeight: 44, padding: "0 20px", fontFamily: "inherit", fontSize: 16, fontWeight: 700, border: `2px solid ${T.ink}`, marginLeft: i ? -2 : 0, background: l === pressed ? T.ink : "transparent", color: l === pressed ? T.paper : T.ink, borderRadius: 0 }, esc(l), { type: "button", "aria-pressed": l === pressed ? "true" : "false" })))
 }
-function pageHead({ phone = false, asOf, action, extra }) {
+function pageHead({ phone = false, asOf, asOfHtml, action, extra }) {
   return col({ gap: 12 }, [
     row({ gap: 16, alignItems: phone ? "flex-start" : "center", justifyContent: "space-between", flexWrap: "wrap" }, [
       col({ gap: 10 }, [appH1("Holdings", phone ? 32 : 40), row({ gap: 8, flexWrap: "wrap" }, [tag("Holdings snapshot"), synth()])]),
       action && !phone ? action : "",
     ]),
     asOf ? body(asOf, { maxWidth: 760 }) : "",
+    asOfHtml ? el("p", { margin: 0, fontSize: 17, lineHeight: 1.5, maxWidth: 760 }, asOfHtml) : "",
     extra || "",
   ])
 }
 function strip(cells, { phone = false } = {}) {
-  const cell = ([label, value, n], i) =>
+  const cell = ([label, value, n, st], i) =>
     col({ gap: 6, padding: phone ? "14px 0" : "16px 20px", borderLeft: !phone && i ? `1px solid ${T.inkMuted}` : "0", borderTop: phone && i ? `1px solid ${T.inkMuted}` : "0", minWidth: 0 }, [
       muted(label, { fontSize: 14 }),
-      div({ fontStretch: "110%", fontWeight: 700, fontSize: phone ? 28 : 32, lineHeight: 1.05, letterSpacing: "-0.02em", ...NUM }, esc(value)),
+      div({ fontStretch: "110%", fontWeight: 700, fontSize: phone ? 28 : 32, lineHeight: 1.05, letterSpacing: "-0.02em", ...NUM, ...(st || {}) }, esc(value)),
       note(n),
     ])
   return div({ display: "grid", gridTemplateColumns: phone ? "1fr" : `repeat(${cells.length}, minmax(0, 1fr))`, borderTop: `2px solid ${T.ink}`, borderBottom: `2px solid ${T.ink}` }, cells.map(cell))
@@ -142,7 +160,7 @@ function personBlock(p, { firstFill }) {
       rows: accts.map((a) => {
         const [s, d] = STATE[a.state](a)
         const act = actionFor(a)
-        return [col({ gap: 2 }, [bold(NEED[a.bk].name), mutedCell(a.id)]), col({ gap: 2 }, [div({ fontWeight: needsYou(a) ? 700 : 400 }, esc(s)), mutedCell(d)]), num(a.read), num(inr0(acctValue(a.key)) + (needsYou(a) ? "*" : "")), a.key === firstFill ? fill(act) : out(act)]
+        return [col({ gap: 2 }, [bold(NEED[a.bk].name), mutedCell(a.id)]), col({ gap: 2 }, [div({ fontWeight: needsYou(a) ? 700 : 400 }, needsYou(a) ? mark(s) : esc(s)), mutedCell(d)]), num(a.read), num(inr0(acctValue(a.key)) + (needsYou(a) ? "*" : "")), a.key === firstFill ? fill(act) : out(act)]
       }),
     }),
   ])
@@ -460,7 +478,7 @@ const blank = () => div({})
 const stripPnl = (phone = false) => [
   ["Known value", inr0(VALUE), "7 of 7 holdings priced, at Friday’s NSE close."],
   ["Invested", inr0(COST), "Quantity × each broker’s average cost, account by account."],
-  ["Unrealized P&L", signed(VALUE - COST), `${spct(VALUE - COST, COST)} on what was invested, at Friday’s close.`],
+  ["Unrealized P&L", signed(VALUE - COST), `${spct(VALUE - COST, COST)} on what was invested, at Friday’s close.`, tone(VALUE - COST)],
   ...(phone ? [] : [["Accounts read today", "3 of 6", "Starred lines are Friday’s quantities."]]),
 ]
 const showBy = (pressed) => row({ gap: 12, alignItems: "center" }, [div({ fontWeight: 700, fontSize: 16 }, "Show by"), toggles(["Company", "Account"], pressed)])
@@ -474,18 +492,18 @@ function groupedTable(keys = ALL) {
   const head = gRow(["Company, then each account holding it", "Quantity", "Avg cost", "Invested", "Close", "Value", "P&L", "P&L %", "Weight"].map((h, i) => div({ textAlign: i ? "right" : "left" }, esc(h))), { borderBottom: `2px solid ${T.ink}`, fontSize: 14, color: T.inkMuted, padding: "12px 14px" })
   const groups = rows.map((r, gi) => {
     const top = gRow([
-      bold(r.name, { fontSize: 17 }), rnum(qty(r.q), B), blank(), rnum(inr0(r.cost), B), rnum(inr(CLOSES[r.name])), rnum(inr0(r.value), B), rnum(pnl(r.value, r.cost), B), rnum(spct(r.value - r.cost, r.cost), B), rnum(pct1(r.value, V)),
+      bold(r.name, { fontSize: 17 }), rnum(qty(r.q), B), blank(), rnum(inr0(r.cost), B), rnum(inr(CLOSES[r.name])), rnum(inr0(r.value), B), rnum(pnl(r.value, r.cost), { ...B, ...tone(r.value - r.cost) }), rnum(spct(r.value - r.cost, r.cost), { ...B, ...tone(r.value - r.cost) }), rnum(pct1(r.value, V)),
     ], { paddingTop: 14, fontSize: 16 })
     const subs = r.at.map(([k]) => {
       const p = part(k, r.name), a = byKey[k]
       return gRow([
         col({ gap: 0, paddingLeft: 14, marginLeft: 2, borderLeft: `2px solid ${T.ink}` }, [div({ fontSize: 16 }, esc(acctLabel(a) + (STALE_KEYS.includes(k) ? "*" : ""))), mutedCell(readLine(a))]),
-        rnum(qty(p.q)), rnum(inr(p.avg)), rnum(inr0(p.cost)), blank(), rnum(inr0(p.value)), rnum(pnl(p.value, p.cost)), rnum(spct(p.value - p.cost, p.cost)), blank(),
+        rnum(qty(p.q)), rnum(inr(p.avg)), rnum(inr0(p.cost)), blank(), rnum(inr0(p.value)), rnum(pnl(p.value, p.cost), tone(p.value - p.cost)), rnum(spct(p.value - p.cost, p.cost), tone(p.value - p.cost)), blank(),
       ], { fontSize: 16 })
     })
     return div({ borderTop: gi ? `1px solid ${T.inkMuted}` : "0", paddingBottom: 10 }, [top, ...subs])
   })
-  const tot = gRow([bold("Total"), blank(), blank(), rnum(inr0(C), B), blank(), rnum(inr0(V), B), rnum(pnl(V, C), B), rnum(spct(V - C, C), B), rnum("100%", B)], { borderTop: `2px solid ${T.ink}`, padding: "12px 14px", fontSize: 16 })
+  const tot = gRow([bold("Total"), blank(), blank(), rnum(inr0(C), B), blank(), rnum(inr0(V), B), rnum(pnl(V, C), { ...B, ...tone(V - C) }), rnum(spct(V - C, C), { ...B, ...tone(V - C) }), rnum("100%", B)], { borderTop: `2px solid ${T.ink}`, padding: "12px 14px", fontSize: 16 })
   return div({ border: `2px solid ${T.ink}`, flexShrink: 0 }, [head, ...groups, tot], { role: "table", "aria-label": "Holdings, by company and account" })
 }
 function groupedPhone(keys = ALL) {
@@ -493,12 +511,14 @@ function groupedPhone(keys = ALL) {
   return col({ borderTop: `2px solid ${T.ink}`, borderBottom: `2px solid ${T.ink}` }, rows.map((r, i) =>
     col({ gap: 8, padding: "14px 0", borderTop: i ? `1px solid ${T.inkMuted}` : "0" }, [
       row({ justifyContent: "space-between", gap: 12, alignItems: "baseline" }, [bold(r.name, { fontSize: 17 }), num(inr0(r.value), B)]),
-      row({ justifyContent: "space-between", gap: 12, fontSize: 16 }, [div({}, esc(`${qty(r.q)} shares`)), num(`${pnl(r.value, r.cost)} · ${spct(r.value - r.cost, r.cost)}`, B)]),
+      row({ justifyContent: "space-between", gap: 12, fontSize: 16 }, [div({}, esc(`${qty(r.q)} shares`)), num(`${pnl(r.value, r.cost)} · ${spct(r.value - r.cost, r.cost)}`, { ...B, ...tone(r.value - r.cost) })]),
       ...r.at.map(([k]) => {
         const p = part(k, r.name), a = byKey[k]
         return col({ gap: 2, paddingLeft: 12, borderLeft: `2px solid ${T.ink}` }, [
           row({ justifyContent: "space-between", gap: 12, fontSize: 16 }, [div({}, esc(acctLabel(a) + (STALE_KEYS.includes(k) ? "*" : ""))), num(qty(p.q))]),
-          mutedCell(`Avg ${inr(p.avg)} · ${pnl(p.value, p.cost)} · ${spct(p.value - p.cost, p.cost)}`),
+          COLOUR
+            ? div({ fontSize: 14, lineHeight: 1.45, color: T.inkMuted, ...NUM }, `${esc(`Avg ${inr(p.avg)} · `)}<span style="color: ${p.value < p.cost ? HUE.loss : HUE.gain}">${esc(`${pnl(p.value, p.cost)} · ${spct(p.value - p.cost, p.cost)}`)}</span>`)
+            : mutedCell(`Avg ${inr(p.avg)} · ${pnl(p.value, p.cost)} · ${spct(p.value - p.cost, p.cost)}`),
         ])
       }),
     ])))
@@ -602,6 +622,98 @@ function R3S2() {
   })
 }
 
+// ---------- Round 4 · colour for P&L and one highlight ----------
+// The user (24 Oct 2026): "I think the PNL should use distinct colors, such as red and green, that align
+// with the theme. We also need a tertiary color to highlight text or specific areas when required."
+// A proposal against docs/DESIGN.md §2, which today allows ink, paper and muted ink only.
+const FONT_STACK = "'Archivo', 'Helvetica Neue', Arial, sans-serif"
+const bare = (w, content) => div({ width: w, height: 900, boxSizing: "border-box", padding: "40px 48px 56px", display: "flex", flexDirection: "column", gap: 32, fontFamily: FONT_STACK, color: T.ink, background: T.paper, overflow: "hidden" }, content)
+const chip = (hex, label, sub) => col({ gap: 6, minWidth: 0 }, [div({ height: 64, background: hex, border: `2px solid ${T.ink}` }), bold(label, { fontSize: 16 }), mutedCell(`${hex} · ${sub}`, NUM)])
+const pl2 = (gain, loss, s = {}) => row({ gap: 24, fontSize: 18, fontWeight: 700, ...NUM, ...s }, [div({ color: gain }, "+₹47,284 · +14.1%"), div({ color: loss }, "−₹2,423 · −3.7%")])
+const markSample = (k) => {
+  const m = MARK[k]
+  const words = m.kind === "fill"
+    ? `<mark style="background: ${m.hex}; color: ${T.ink}; padding: 0 4px">Three need a sign-in today.</mark>`
+    : `<span style="color: ${m.hex}; font-weight: 700">Three need a sign-in today.</span>`
+  return el("p", { margin: 0, fontSize: 17, lineHeight: 1.5 }, `Six accounts, valued at Friday’s close. ${words}`)
+}
+const MARK_WHY = {
+  G: ["Reads as a highlighter on a ledger; ink text keeps its full contrast.", "Far from gain and loss under every kind of colour vision.", "Faint against paper (1.16:1), so it marks words that already say what they mean, never on its own."],
+  H: ["Unmissable, and ink is still readable on it (6.9:1).", "Shouts on every page it touches.", "Close to loss red under tritanopia and to gain green under protanopia: a marked loss reads muddled."],
+  J: ["A text colour readable on paper (6.1:1), apart from red under every vision.", "Blue text reads as a link here, where links are underlined ink.", "It can’t be a fill (ink on it fails), and it nears gain green under tritanopia."],
+}
+function R4P() {
+  const simRow = (label, k) => [div({ fontWeight: 700, fontSize: 16 }, esc(label)), ...["classic", "proposed"].map((p) => col({ gap: 4 }, [pl2(SIM[p][k][0], SIM[p][k][1], { fontSize: 17 }), k === "normal" ? "" : mutedCell(`Difference between the two: ${SIM[p].dE[k]}`)]))]
+  return bare(W, [
+    col({ gap: 12 }, [appH1("Colour for P&L, and one highlight"), body("A proposal for the design system, which today has ink, paper and muted ink only. It adds a gain and a loss colour for P&L, and one highlight. Nothing changes in the app until you say go.", { maxWidth: 820 })]),
+    el("section", { display: "flex", flexDirection: "column", gap: 16 }, [
+      h2("Gain and loss"),
+      div({ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 24 }, [
+        chip(HUE.gain, "Gain, on paper", "5.53:1 on paper"), chip(HUE.loss, "Loss, on paper", "5.16:1 on paper"),
+        chip(HUE.gainOnInk, "Gain, on an ink panel", "9.63:1 on ink"), chip(HUE.lossOnInk, "Loss, on an ink panel", "8.14:1 on ink"),
+      ]),
+      div({ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 24 }, [
+        col({ border: `2px solid ${T.ink}`, padding: "18px 20px", gap: 8 }, [mutedCell("On paper"), pl2(HUE.gain, HUE.loss)]),
+        col({ background: T.ink, padding: "20px 22px", gap: 8 }, [div({ fontSize: 14, color: T.paperMuted }, "On an ink panel"), pl2(HUE.gainOnInk, HUE.lossOnInk)]),
+      ]),
+      spec([
+        ["Where", "On a signed P&L figure and its %. Never on a price, a value, a weight or a quantity."],
+        ["The sign stays", "+ and − carry the meaning; the colour repeats it. Unknown stays “—” in ink."],
+        ["Text only", "No green or red fills, rows, bars or borders."],
+      ], { termW: 160 }),
+    ]),
+    el("section", { display: "flex", flexDirection: "column", gap: 16 }, [
+      h2("Seen with colour-blindness"),
+      body("Red–green colour blindness affects about 1 man in 12 of European descent. Under deuteranopia a common pair differs by only 4.3 (distance in OKLab ×100); the proposed pair by 12.1, because its green leans teal and its red leans vermilion. That is still close, which is why the sign stays.", { maxWidth: 900 }),
+      ledger({
+        label: "The two pairs as each kind of colour vision sees them",
+        cols: [{ label: "Colour vision", w: "200px" }, { label: "A common pair, #2E7D32 and #C62828", w: "minmax(0, 1fr)" }, { label: "Proposed, #006B55 and #BA2C1A", w: "minmax(0, 1fr)" }],
+        rows: [simRow("Typical", "normal"), simRow("Protanopia", "protan"), simRow("Deuteranopia", "deutan"), simRow("Tritanopia", "tritan")],
+      }),
+    ]),
+    el("section", { display: "flex", flexDirection: "column", gap: 16 }, [
+      h2("One highlight: three options"),
+      div({ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 24 }, ["G", "H", "J"].map((k) => col({ gap: 12, borderTop: `2px solid ${T.ink}`, paddingTop: 16 }, [
+        h3(`${k} · ${MARK[k].name}${k === "G" ? " (recommended)" : ""}`),
+        chip(MARK[k].hex, MARK[k].kind === "fill" ? "A fill behind ink text" : "A text colour and a 3px rule", `ink on it ${MARK[k].inkOn} · against paper ${MARK[k].vsPaper}`),
+        markSample(k),
+        el("ul", { margin: 0, paddingLeft: 20, fontSize: 16, lineHeight: 1.45 }, MARK_WHY[k].map((t) => el("li", {}, esc(t)))),
+      ]))),
+    ]),
+  ])
+}
+function R4D() {
+  return appPage({
+    content: [
+      pageHead({
+        asOfHtml: `${esc("Six accounts for two people, valued at the NSE close of Friday 23 Oct.")} ${mark("Three need a sign-in today.")}`,
+        action: out("Add an account"),
+        extra: row({ gap: 16, alignItems: "center", marginTop: 4 }, [div({ fontWeight: 700, fontSize: 16 }, "Whose holdings"), toggles(["Everyone", "Asha", "Ravi"], "Everyone")]),
+      }),
+      strip(stripPnl()),
+      el("section", { display: "flex", flexDirection: "column", gap: 20 }, [h2("Accounts"), personBlock("asha", { firstFill: "g1" }), personBlock("ravi", { firstFill: null })]),
+      col({ gap: 12 }, [row({ justifyContent: "space-between", alignItems: "center", gap: 16 }, [h2("Holdings"), showBy("Company")]), groupedTable(), note(staleNote)]),
+    ],
+  })
+}
+function R4S() {
+  return appPhone({
+    content: [
+      pageHead({ phone: true, asOfHtml: `${esc("Six accounts, valued at Friday’s NSE close.")} ${mark("Three need a sign-in.")}` }),
+      strip(stripPnl(true), { phone: true }),
+      h2("Holdings"), showBy("Company"),
+      groupedPhone(),
+      note(staleNote),
+    ],
+  })
+}
+const excerpt = (k) => () => bare(1100, [
+  h2(`${k} · ${MARK[k].name}, on Ravi’s accounts`),
+  el("p", { margin: 0, fontSize: 17, lineHeight: 1.5 }, `${esc("Ravi’s three accounts, valued at Friday’s close.")} ${mark("Two need a sign-in today.")}`),
+  personBlock("ravi", { firstFill: "z2" }),
+  pl2(HUE.gain, HUE.loss),
+])
+
 // ---------- the document ----------
 const BASE_CSS = `body{margin:0;background:${T.paper};font-family:'Archivo', 'Helvetica Neue', Arial, sans-serif}button{font-family:inherit;margin:0}a{color:inherit}h1,h2,h3,p,dl,dd,figure,ol{margin:0}a:hover{background:#000000;color:#EDEDE8;text-decoration:none}button:focus-visible,a:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:3px solid #000000;outline-offset:2px}`
 function dcHtml({ title, w, h, body }) {
@@ -658,11 +770,17 @@ const FRAMES = [
   { id: "R3F.dc.html", title: "F · Accounts as columns — each cell with its P&L %, each account with its P&L", w: W, h: 900, render: R3F, row: 2, page: "round3" },
   { id: "R3S1.dc.html", title: "Every direction · Show by account: each account’s holdings and P&L", w: W, h: 900, render: R3S1, row: 3, page: "round3" },
   { id: "R3S2.dc.html", title: "Every direction · phone 390, by company then account", w: P, h: 844, render: R3S2, row: 3, page: "round3", phone: true },
+  { id: "R4P.dc.html", title: "Palette · gain, loss and three highlight options, with contrast and colour-blind checks", w: W, h: 900, render: R4P, row: 0, page: "round4" },
+  { id: "R4D.dc.html", title: "D with colour · P&L in gain and loss, G’s highlight on what needs you", w: W, h: 900, render: withColour("G", R4D), row: 1, page: "round4" },
+  { id: "R4S.dc.html", title: "D with colour · phone 390", w: P, h: 844, render: withColour("G", R4S), row: 1, page: "round4", phone: true },
+  { id: "R4G.dc.html", title: "G · Highlighter, on Ravi’s accounts", w: 1100, h: 900, min: 400, render: withColour("G", excerpt("G")), row: 2, page: "round4" },
+  { id: "R4H.dc.html", title: "H · Signal orange, on Ravi’s accounts", w: 1100, h: 900, min: 400, render: withColour("H", excerpt("H")), row: 2, page: "round4" },
+  { id: "R4J.dc.html", title: "J · Blue pencil, on Ravi’s accounts", w: 1100, h: 900, min: 400, render: withColour("J", excerpt("J")), row: 2, page: "round4" },
 ]
 for (const f of FRAMES) f.page ??= "round2"
 for (const f of FRAMES) {
   const m = HEIGHTS[f.id]
-  if (m) f.h = Math.max(f.phone ? 844 : 900, m.content)
+  if (m) f.h = Math.max(f.min ?? (f.phone ? 844 : 900), m.content)
 }
 fs.mkdirSync(path.join(OUT, "project"), { recursive: true })
 fs.mkdirSync(path.join(OUT, "twins"), { recursive: true })
@@ -712,12 +830,13 @@ function layout(page, pageNotes, prefix) {
 }
 layout("round2", NOTES, "r2")
 layout("round3", NOTES.round3, "r3")
+layout("round4", NOTES.round4, "r4")
 const canvas = {
   v: 3,
   createdOnFiles: { v: 1, at: "2026-10-24T10:00:00Z" },
   title: "Maester Broker Accounts",
-  launch: { view: "canvas", page: "round3" },
-  pages: [{ id: "round3", name: "Round 3 · Which account, and P&L" }, { id: "round2", name: "Round 2 · Several accounts" }],
+  launch: { view: "canvas", page: "round4" },
+  pages: [{ id: "round4", name: "Round 4 · Colour for P&L, and a highlight" }, { id: "round3", name: "Round 3 · Which account, and P&L" }, { id: "round2", name: "Round 2 · Several accounts" }],
   boards,
   order: FRAMES.map((f) => f.id),
   notes,
