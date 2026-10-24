@@ -14,8 +14,9 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
 const clone = (from: unknown = kite) => JSON.parse(JSON.stringify(from)) as Record<string, any>;
 
 describe("definitions", () => {
-  it("ships Kite and Dhan, enabled", () => {
-    expect([...builtInDefinitions().keys()]).toEqual(["kite", "dhan"]);
+  it("ships Kite, Dhan, Upstox and Groww enabled, and ICICI Direct switched off", () => {
+    expect([...builtInDefinitions().keys()]).toEqual(["kite", "dhan", "upstox", "groww", "icici"]);
+    expect(builtInDefinitions().get("upstox")!.enabled).toBe(true);
     expect(kite.enabled).toBe(true);
     expect(dhan.enabled).toBe(true);
     expect(dhan.signIn).toEqual({ kind: "settings-connection", provider: "dhan" });
@@ -161,6 +162,167 @@ describe("BrokerClient for Kite", () => {
     const err = await new BrokerClient(kite, { fetch }).holdings(creds, { accessToken: "tok", accountId: null }).catch((e) => e);
     expect(err.code).toBe("BROKER_UNAVAILABLE");
     expect(err.message).not.toContain("kitekey123");
+  });
+});
+
+// Groww's calls, from its own docs (24 Oct 2026): groww.in/trade-api/docs/curl (the token call)
+// and /curl/portfolio (holdings). The answers below follow the documented shapes.
+describe("BrokerClient for Groww", () => {
+  const groww = builtInDefinitions().get("groww")!;
+  const gcreds = { apiKey: "growwkey123", apiSecret: "growwsecret456" };
+
+  it("signs in from Maester with the key and SHA-256(secret + timestamp), as strings in JSON", async () => {
+    const fetch = vi.fn(async () => json(200, { token: "tok", tokenRefId: "ref-1", sessionName: "s", expiry: "2026-10-25T06:00:00", isActive: true }));
+    const now = new Date("2026-10-24T03:30:00Z");
+    const s = await new BrokerClient(groww, { fetch }).startSession(gcreds, now);
+    expect(s).toMatchObject({ accessToken: "tok", accountId: null });
+    // Signed in 09:00 IST: it lasts until 06:00 IST the next morning.
+    expect(s.expiresAt.toISOString()).toBe("2026-10-25T00:30:00.000Z");
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://api.groww.in/v1/token/api/access");
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>)).toMatchObject({ Authorization: "Bearer growwkey123", "Content-Type": "application/json" });
+    const ts = String(Math.floor(now.getTime() / 1000));
+    expect(JSON.parse(init.body as string)).toEqual({
+      key_type: "approval",
+      checksum: createHash("sha256").update(`growwsecret456${ts}`).digest("hex"),
+      timestamp: ts,
+    });
+    expect(init.body as string).not.toContain("growwsecret456");
+  });
+
+  it("calls a 200 with no token a refusal: the key was not approved today", async () => {
+    const fetch = vi.fn(async () => json(200, { isActive: false }));
+    const err = await new BrokerClient(groww, { fetch }).startSession(gcreds, new Date()).catch((e) => e);
+    expect(err.code).toBe("BROKER_REFUSED");
+  });
+
+  it("reads holdings from payload.holdings, on NSE since Groww names no exchange", async () => {
+    const fetch = vi.fn(async () =>
+      json(200, { status: "SUCCESS", payload: { holdings: [{ isin: "INE154A01025", trading_symbol: "ITC", quantity: 150, average_price: 438, t1_quantity: 0, pledge_quantity: 0 }] } }),
+    );
+    const lines = await new BrokerClient(groww, { fetch }).holdings(gcreds, { accessToken: "tok", accountId: null });
+    expect(lines).toEqual([{ isin: "INE154A01025", symbol: "ITC", exchange: "NSE", quantity: "150", t1Quantity: "0", averagePrice: "438", lastPrice: null }]);
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://api.groww.in/v1/holdings/user");
+    expect((init.headers as Record<string, string>)).toMatchObject({ Authorization: "Bearer tok", "X-API-VERSION": "1.0" });
+  });
+});
+
+// ICICI Direct's Breeze calls, from its own docs (api.icicidirect.com/breezeapi/documents, 24 Oct
+// 2026) and its official Python SDK: GET with a JSON body, every call signed with
+// SHA-256(timestamp + body + secret), demat holdings joined to portfolio holdings on stock_code.
+describe("BrokerClient for ICICI Direct", () => {
+  const icici = builtInDefinitions().get("icici")!;
+  const icreds = { apiKey: "iciciappkey", apiSecret: "icicisecret789" };
+  const now = () => new Date("2026-10-24T10:23:56.789Z");
+  type Sent = { url: string; headers: Record<string, string>; body: string };
+
+  it("ships switched off, saying why", () => {
+    expect(icici.enabled).toBe(false);
+    expect(icici.notOfferedReason).toMatch(/nothing back that Maester can check/);
+  });
+
+  it("joins demat holdings to portfolio holdings on stock code, signing each call", async () => {
+    const sent: Sent[] = [];
+    const getWithBody = vi.fn(async (url: string, init: { headers: Record<string, string>; body: string }) => {
+      sent.push({ url, headers: init.headers, body: init.body });
+      if (url.endsWith("/dematholdings")) {
+        return json(200, { Success: [
+          { stock_code: "HDFBAN", stock_ISIN: "INE040A01034", quantity: "40", demat_total_bulk_quantity: "40", demat_avail_quantity: "40", blocked_quantity: "0", demat_allocated_quantity: "0" },
+          { stock_code: "LARTOU", stock_ISIN: "INE018A01030", quantity: "10", demat_total_bulk_quantity: "10", demat_avail_quantity: "10", blocked_quantity: "0", demat_allocated_quantity: "0" },
+        ], Status: 200, Error: null });
+      }
+      return json(200, { Success: [{ stock_code: "HDFBAN", exchange_code: "NSE", quantity: "40", average_price: "1450.00", current_market_price: "1742.60" }], Status: 200, Error: null });
+    });
+    const fetch = vi.fn();
+    const lines = await new BrokerClient(icici, { fetch, getWithBody, now }).holdings(icreds, { accessToken: "c2Vzc2lvbg==", accountId: "U1" });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(lines).toEqual([
+      { isin: "INE040A01034", symbol: "HDFBAN", exchange: "ICICI", quantity: "40", t1Quantity: "0", averagePrice: "1450.00", lastPrice: "1742.60" },
+      // No portfolio line for it: the cost is not known, said as 0, which the engine reads as unknown.
+      { isin: "INE018A01030", symbol: "LARTOU", exchange: "ICICI", quantity: "10", t1Quantity: "0", averagePrice: "0", lastPrice: null },
+    ]);
+    expect(sent.map((s) => s.url)).toEqual([
+      "https://api.icicidirect.com/breezeapi/api/v1/dematholdings",
+      "https://api.icicidirect.com/breezeapi/api/v1/portfolioholdings",
+    ]);
+    const ts = "2026-10-24T10:23:56.000Z";
+    for (const s of sent) {
+      expect(s.headers).toMatchObject({ "X-Timestamp": ts, "X-AppKey": "iciciappkey", "X-SessionToken": "c2Vzc2lvbg==", "Content-Type": "application/json" });
+      expect(s.headers["X-Checksum"]).toBe(`token ${createHash("sha256").update(ts + s.body + "icicisecret789").digest("hex")}`);
+      expect(JSON.stringify(s)).not.toContain("icicisecret789");
+    }
+    expect(sent[0]!.body).toBe("{}");
+    expect(JSON.parse(sent[1]!.body)).toEqual({ exchange_code: "NSE", from_date: "", to_date: "", stock_code: "", portfolio_type: "" });
+  });
+
+  it("refuses a body that holds the body's own signature", () => {
+    const d = clone(icici);
+    d.reads.holdings.json = { sig: "{checksum}" };
+    expect(() => parseDefinition(d, "x.json")).toThrow(/unknown placeholder \{checksum\}/);
+  });
+
+  it("refuses holdings with no average price anywhere", () => {
+    const d = clone(icici);
+    delete d.reads.holdings.join.fields.averagePrice;
+    expect(() => parseDefinition(d, "x.json")).toThrow(/average price/);
+  });
+});
+
+// Upstox's calls, from its own docs (24 Oct 2026): upstox.com/developer/api-documentation/authentication,
+// /get-token and /get-holdings. The answers below follow the documented shapes.
+describe("BrokerClient for Upstox", () => {
+  const upstox = builtInDefinitions().get("upstox")!;
+  const ucreds = { apiKey: "upkey123", apiSecret: "upsecret456" };
+  const back = "https://maester.example/v1/brokers/upstox/return";
+
+  it("builds the login URL with the key, Maester's redirect URL and the state", () => {
+    const url = new URL(new BrokerClient(upstox).loginUrl(ucreds, "nonce-1", back));
+    expect(url.origin + url.pathname).toBe("https://api.upstox.com/v2/login/authorization/dialog");
+    expect(Object.fromEntries(url.searchParams)).toEqual({ response_type: "code", client_id: "upkey123", redirect_uri: back, state: "nonce-1" });
+  });
+
+  it("reads the return: the code and the state, unchanged", () => {
+    expect(new BrokerClient(upstox).readReturn({ code: "c1", state: "nonce-1" })).toEqual({ code: "c1", state: "nonce-1" });
+    expect(new BrokerClient(upstox).readReturn({ state: "nonce-1" })).toEqual({ refused: true, state: "nonce-1" });
+  });
+
+  it("exchanges the code with the secret and the same redirect URL; the token lasts until 03:30", async () => {
+    const fetch = vi.fn(async () => json(200, { email: "x@example.com", user_id: "7ABC12", access_token: "tok", extended_token: "ext" }));
+    const s = await new BrokerClient(upstox, { fetch }).signIn(ucreds, "c1", new Date("2026-10-24T14:30:00Z"), back);
+    expect(s).toMatchObject({ accessToken: "tok", accountId: "7ABC12" });
+    // Signed in 20:00 IST on 24 Oct: it lasts until 03:30 IST on 25 Oct = 22:00 UTC on 24 Oct.
+    expect(s.expiresAt.toISOString()).toBe("2026-10-24T22:00:00.000Z");
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://api.upstox.com/v2/login/authorization/token");
+    expect(init.method).toBe("POST");
+    expect(Object.fromEntries(new URLSearchParams(init.body as string))).toEqual({
+      code: "c1", client_id: "upkey123", client_secret: "upsecret456", redirect_uri: back, grant_type: "authorization_code",
+    });
+  });
+
+  it("reads long-term holdings with the bearer token", async () => {
+    const fetch = vi.fn(async () =>
+      json(200, { status: "success", data: [{ isin: "INE528G01035", trading_symbol: "YESBANK", tradingsymbol: "YESBANK", exchange: "NSE", quantity: 36, t1_quantity: 0, average_price: 18.75, last_price: 17.05 }] }),
+    );
+    const lines = await new BrokerClient(upstox, { fetch }).holdings(ucreds, { accessToken: "tok", accountId: "7ABC12" });
+    expect(lines).toEqual([{ isin: "INE528G01035", symbol: "YESBANK", exchange: "NSE", quantity: "36", t1Quantity: "0", averagePrice: "18.75", lastPrice: "17.05" }]);
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://api.upstox.com/v2/portfolio/long-term-holdings");
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok");
+  });
+
+  it("refuses a definition that names no exchange for holdings", () => {
+    const d = clone(upstox);
+    delete d.reads.holdings.fields.exchange;
+    expect(() => parseDefinition(d, "x.json")).toThrow(/exchangeIs/);
+  });
+
+  it("says Upstox signed Maester out on a 401", async () => {
+    const fetch = vi.fn(async () => json(401, { status: "error", errors: [{ message: "Invalid token" }] }));
+    const err = await new BrokerClient(upstox, { fetch }).holdings(ucreds, { accessToken: "tok", accountId: null }).catch((e) => e);
+    expect(err.code).toBe("BROKER_SIGNED_OUT");
   });
 });
 

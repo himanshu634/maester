@@ -17,7 +17,9 @@
 	import Hatch from '$lib/components/loading/Hatch.svelte';
 	import AccountsLedger from './AccountsLedger.svelte';
 	import AddBroker from './AddBroker.svelte';
+	import HoldingsByBroker from './HoldingsByBroker.svelte';
 	import HoldingsLedger from './HoldingsLedger.svelte';
+	import HoldingsNudge from './HoldingsNudge.svelte';
 	import HoldingsStrip from './HoldingsStrip.svelte';
 
 	const id = $props.id();
@@ -28,6 +30,7 @@
 	let brokers = $state.raw<BrokerSummary[]>([]);
 	let snapshot = $state.raw<HoldingsSnapshot | null>(null);
 	let adding = $state(false);
+	let showBy = $state<'company' | 'broker'>('company');
 	let message = $state<ReturnMessage | null>(null);
 	let announcement = $state('');
 	let addButton = $state<HTMLButtonElement>();
@@ -90,6 +93,11 @@
 		<div class="title">
 			<h1>{copy.heading}</h1>
 			<span class="tag">{copy.tag}</span>
+			{#if load === 'ready' && !empty && offered.length && !adding}
+				<button type="button" class="button outline add" bind:this={addButton} onclick={openAdd}
+					>{copy.accounts.add}</button
+				>
+			{/if}
 		</div>
 		{#if snapshot && !empty}
 			<p class="lede">
@@ -133,27 +141,43 @@
 		{#if empty}
 			<AddBroker {api} {brokers} first oncancel={closeAdd} onadded={added} />
 		{:else}
-			<section class="block" aria-labelledby="{id}-accounts">
-				<div class="head">
-					<h2 id="{id}-accounts">{copy.accounts.heading}</h2>
-					{#if offered.length && !adding}
-						<button type="button" class="button outline" bind:this={addButton} onclick={openAdd}
-							>{copy.accounts.add}</button
-						>
-					{/if}
-				</div>
-				<AccountsLedger {api} {brokers} accounts={snapshot.accounts} onchanged={refresh} />
-			</section>
-
 			{#if adding}
 				<AddBroker {api} brokers={offered} oncancel={closeAdd} onadded={added} />
 			{/if}
 
+			<HoldingsNudge {api} {brokers} {snapshot} onchanged={refresh} />
+
 			<HoldingsStrip {snapshot} />
 
 			<section class="block" aria-labelledby="{id}-table">
-				<h2 id="{id}-table">{copy.table.heading}</h2>
-				<HoldingsLedger {snapshot} {brokers} />
+				<div class="head">
+					<h2 id="{id}-table">{copy.table.heading}</h2>
+					<div class="show-by" role="group" aria-labelledby="{id}-show-by">
+						<span id="{id}-show-by" class="show-by-label">{copy.showBy.label}</span>
+						<button
+							type="button"
+							class="toggle"
+							aria-pressed={showBy === 'company'}
+							onclick={() => (showBy = 'company')}>{copy.showBy.company}</button
+						>
+						<button
+							type="button"
+							class="toggle"
+							aria-pressed={showBy === 'broker'}
+							onclick={() => (showBy = 'broker')}>{copy.showBy.broker}</button
+						>
+					</div>
+				</div>
+				{#if showBy === 'company'}
+					<HoldingsLedger {snapshot} {brokers} />
+				{:else}
+					<HoldingsByBroker {snapshot} />
+				{/if}
+			</section>
+
+			<section class="block" aria-labelledby="{id}-accounts">
+				<h2 id="{id}-accounts">{copy.accounts.heading}</h2>
+				<AccountsLedger {api} {brokers} accounts={snapshot.accounts} onchanged={refresh} />
 			</section>
 		{/if}
 	{/if}
@@ -224,6 +248,46 @@
 		font-size: 1.375rem;
 		line-height: 1.1;
 		letter-spacing: var(--tracking-heading);
+	}
+
+	.add {
+		margin-left: auto;
+	}
+
+	.show-by {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0;
+	}
+
+	.show-by-label {
+		margin-right: var(--space-3);
+		font-weight: 700;
+		font-size: 1rem;
+	}
+
+	/* A pressed toggle is an ink block, as the current page is in the rail. */
+	.toggle {
+		min-height: var(--target);
+		padding: 0 var(--space-5);
+		border: var(--rule) solid var(--ink);
+		background: transparent;
+		color: var(--ink);
+		font: inherit;
+		font-size: 1rem;
+		font-weight: 700;
+		cursor: pointer;
+	}
+
+	.toggle + .toggle {
+		margin-left: calc(-1 * var(--rule));
+	}
+
+	.toggle[aria-pressed='true'],
+	.toggle:hover {
+		background: var(--ink);
+		color: var(--paper);
 	}
 
 	.skeleton-stack {

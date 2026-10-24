@@ -43,3 +43,18 @@ export function shares(value: string): string {
 export function percentText(value: string): string {
 	return `${value}%`;
 }
+
+/** A signed per cent the API worked out to one place: `+15.2%`, `−7.8%`, `0.0%`. */
+export function signedPercent(value: string): string {
+	const { negative, whole, fraction } = parts(value);
+	const body = `${whole}${fraction ? `.${fraction}` : ''}%`;
+	if (negative) return MINUS + body;
+	return /[1-9]/.test(value) ? `+${body}` : body;
+}
+
+/** Which way a signed figure points, read from its sign (nothing is compared): for its colour, after the sign. */
+export function direction(value: string): 'gain' | 'loss' | 'flat' {
+	const { negative } = parts(value);
+	if (negative) return 'loss';
+	return /[1-9]/.test(value) ? 'gain' : 'flat';
+}

@@ -20,6 +20,7 @@ type Answer = { status: number; body: unknown };
 let session: Answer;
 let holdings: Answer;
 let dhanHoldings: Answer;
+let growwSession: Answer = { status: 200, body: { token: "growwTOKENleak555", isActive: true } };
 const calls: { url: string; init: RequestInit }[] = [];
 const json = (a: Answer) => new Response(JSON.stringify(a.body), { status: a.status, headers: { "Content-Type": "application/json" } });
 const brokerFetch = (async (url: string | URL, init?: RequestInit) => {
@@ -27,6 +28,8 @@ const brokerFetch = (async (url: string | URL, init?: RequestInit) => {
   if (String(url) === "https://api.kite.trade/session/token") return json(session);
   if (String(url) === "https://api.kite.trade/portfolio/holdings") return json(holdings);
   if (String(url) === "https://api.dhan.co/v2/holdings") return json(dhanHoldings);
+  if (String(url) === "https://api.groww.in/v1/token/api/access") return json(growwSession);
+  if (String(url) === "https://api.groww.in/v1/holdings/user") return json({ status: 200, body: { status: "SUCCESS", payload: { holdings: [{ isin: "INE154A01025", trading_symbol: "ITC", quantity: 150, average_price: 438, t1_quantity: 0 }] } } });
   throw new Error(`unexpected ${String(url)}`);
 }) as typeof fetch;
 
@@ -97,10 +100,15 @@ async function signIn(query: Record<string, string> = { request_token: "rt-1", s
 }
 
 describe("GET /v1/brokers", () => {
-  it("lists Kite and Dhan from their JSON definitions, with no calls in them", async () => {
+  it("lists the brokers from their JSON definitions, with no calls in them", async () => {
     const res = await ctx.app.request("/v1/brokers", { headers: { cookie } });
     const body = BrokerList.parse(await res.json());
-    expect(body.items.map((b) => b.id)).toEqual(["kite", "dhan"]);
+    expect(body.items.map((b) => b.id)).toEqual(["kite", "dhan", "upstox", "groww", "icici"]);
+    expect(body.items[3]).toMatchObject({ name: "Groww", signIn: { kind: "direct" }, returnUrl: null });
+    expect(body.items[4]).toMatchObject({ name: "ICICI Direct", enabled: false, notOfferedReason: expect.stringMatching(/^Not yet/) });
+    expect(JSON.stringify(body)).not.toContain("api.icicidirect.com");
+    expect(body.items[2]).toMatchObject({ name: "Upstox", signIn: { kind: "redirect" }, returnUrl: "http://localhost/v1/brokers/upstox/return" });
+    expect(JSON.stringify(body)).not.toContain("api.upstox.com");
     expect(body.items[0]).toMatchObject({ name: "Zerodha", enabled: true, signIn: { kind: "redirect" }, returnUrl: "http://localhost/v1/brokers/kite/return" });
     expect(body.items[1]).toMatchObject({ name: "Dhan", enabled: true, credentials: [], signIn: { kind: "settings-connection", provider: "dhan" }, returnUrl: null });
     expect(JSON.stringify(body)).not.toContain("api.kite.trade");
@@ -200,9 +208,71 @@ describe("GET /holdings", () => {
       ["HDFCBANK", "120", "181488.00", "209112.00", "100.0", []],
       ["TITAN", "15", "50250.00", null, null, ["NO_CLOSE"]],
     ]);
-    expect(snap.totals).toEqual({ knownValue: "209112.00", priced: 1, count: 2, cost: "231738.00", costed: 2, unrealizedGain: "27624.00", gainCovers: 1 });
+    // Gain on HDFC Bank 209,112 − 181,488 = 27,624.00; 27,624 / 181,488 = 0.152208 → 15.2. Titan has no gain.
+    expect(snap.rows.map((r) => [r.symbol, r.gain, r.gainPercent])).toEqual([["HDFCBANK", "27624.00", "15.2"], ["TITAN", null, null]]);
+    expect(snap.totals).toEqual({ knownValue: "209112.00", priced: 1, count: 2, cost: "231738.00", costed: 2, unrealizedGain: "27624.00", gainCovers: 1, gainPercent: "15.2" });
     expect(snap.closeDay).toBe("2026-10-16");
-    expect(snap.rows[1]?.parts[0]).toMatchObject({ broker: "kite", accountId: "AB1234", quantity: "15", stale: false });
+    expect(snap.rows[0]?.parts).toEqual([
+      { broker: "kite", accountId: "AB1234", quantity: "120", averagePrice: "1512.4", cost: "181488.00", value: "209112.00", gain: "27624.00", gainPercent: "15.2", readAt: expect.any(String), stale: false },
+    ]);
+    expect(snap.rows[1]?.parts[0]).toMatchObject({ broker: "kite", accountId: "AB1234", quantity: "15", cost: "50250.00", value: null, gain: null, stale: false });
+    // Zerodha's totals: value 209,112.00 (1 of 2 priced); cost 181,488 + 50,250 = 231,738.00; gain 27,624.00 over 1.
+    expect(snap.accountTotals).toEqual([
+      { broker: "kite", knownValue: "209112.00", priced: 1, count: 2, cost: "231738.00", costed: 2, gain: "27624.00", gainCovers: 1, gainPercent: "15.2" },
+    ]);
+  });
+
+  it("makes one part of a broker's NSE and BSE lines for the same share", async () => {
+    holdings = {
+      status: 200,
+      body: { status: "success", data: [
+        { tradingsymbol: "HDFCBANK", exchange: "NSE", isin: "INE040A01034", quantity: 100, t1_quantity: 0, average_price: 1500, last_price: 1745 },
+        { tradingsymbol: "HDFCBANK", exchange: "BSE", isin: "INE040A01034", quantity: 20, t1_quantity: 0, average_price: 1600, last_price: 1745 },
+      ] },
+    };
+    await upsertMarketPoints(ctx.db, [{ series: "eq:HDFCBANK", day: "2026-10-16", value: 1742.6, source: "Dhan · NSE close" }]);
+    await signIn();
+    const snap = HoldingsSnapshot.parse(await clean(await ctx.app.request(`${base()}/holdings`, { headers: { cookie } })));
+    // 100 @ 1500 + 20 @ 1600 = 150,000 + 32,000 = 182,000.00 for 120; average 182,000 / 120 = 1,516.666… → 1516.67.
+    // Value 120 × 1742.60 = 209,112.00; gain 27,112.00; 27,112 / 182,000 = 0.148967 → 14.9.
+    expect(snap.rows).toHaveLength(1);
+    expect(snap.rows[0]?.parts).toEqual([
+      { broker: "kite", accountId: "AB1234", quantity: "120", averagePrice: "1516.67", cost: "182000.00", value: "209112.00", gain: "27112.00", gainPercent: "14.9", readAt: expect.any(String), stale: false },
+    ]);
+  });
+});
+
+describe("signing in to Groww from Maester", () => {
+  const GROWW_KEY = "growwKEYleak111";
+  const GROWW_SECRET = "growwSECRETleak222";
+  const saveGroww = () =>
+    ctx.app.request(`${base()}/brokers/groww`, { method: "PUT", headers: headers(), body: JSON.stringify({ credentials: { apiKey: GROWW_KEY, apiSecret: GROWW_SECRET } }) });
+  const start = () => ctx.app.request(`${base()}/brokers/groww/session`, { method: "POST", headers: headers() });
+
+  it("signs in with the saved key once it is approved, and reads at once", async () => {
+    growwSession = { status: 200, body: { token: "growwTOKENleak555", isActive: true } };
+    expect((await saveGroww()).status).toBe(200);
+    const res = await start();
+    expect(res.status).toBe(200);
+    expect(BrokerAccount.parse(await res.json())).toMatchObject({ broker: "groww", state: "signed_in", lastReadCount: 1, errorCode: null });
+    const call = calls.find((c) => c.url === "https://api.groww.in/v1/token/api/access")!;
+    expect(String(call.init.body)).not.toContain(GROWW_SECRET);
+    const row = await getBrokerConnection(ctx.db, ws, "groww");
+    expect(decryptSecret(row!.tokenCiphertext!, KEY)).toBe("growwTOKENleak555");
+    for (const line of logLines) for (const s of [GROWW_KEY, GROWW_SECRET, "growwTOKENleak555"]) expect(line).not.toContain(s);
+  });
+
+  it("keeps a refusal as the account's error, and says nothing of the broker's own text", async () => {
+    growwSession = { status: 200, body: { isActive: false, message: "secret detail" } };
+    expect((await saveGroww()).status).toBe(200);
+    const account = BrokerAccount.parse(await (await start()).json());
+    expect(account).toMatchObject({ broker: "groww", state: "failing", errorCode: "BROKER_REFUSED" });
+    expect(JSON.stringify(account)).not.toContain("secret detail");
+  });
+
+  it("is refused for a broker that signs in on its own page", async () => {
+    expect((await save()).status).toBe(200);
+    expect((await ctx.app.request(`${base()}/brokers/kite/session`, { method: "POST", headers: headers() })).status).toBe(409);
   });
 });
 

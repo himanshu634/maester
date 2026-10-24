@@ -34,7 +34,11 @@ export interface BrokerSummary {
 	 * How the account signs in: on the broker's own page (`redirect`), or with the connection the
 	 * investor saved in Settings (`settings-connection`), which asks for nothing here.
 	 */
-	signIn: { kind: 'redirect' } | { kind: 'settings-connection'; provider: string };
+	signIn:
+		| { kind: 'redirect' }
+		| { kind: 'settings-connection'; provider: string }
+		/** Maester signs in itself with the saved key, once the investor approved it on the broker's side (Groww). */
+		| { kind: 'direct' };
 	/** What to paste into the broker's app as its redirect URL. Null when there is no redirect. */
 	returnUrl: string | null;
 }
@@ -62,6 +66,10 @@ export interface HoldingPart {
 	accountId: string | null;
 	quantity: string;
 	averagePrice: string;
+	cost: string | null;
+	value: string | null;
+	gain: string | null;
+	gainPercent: string | null;
 	readAt: string;
 	/** Read before the broker signed Maester out. */
 	stale: boolean;
@@ -77,7 +85,22 @@ export interface HoldingRow {
 	close: { value: string; day: string; source: string } | null;
 	value: string | null;
 	weight: string | null;
+	gain: string | null;
+	gainPercent: string | null;
 	unknown: HoldingUnknown[];
+}
+
+/** One broker account's totals over its parts, with how many parts each figure covers. */
+export interface HoldingAccountTotals {
+	broker: string;
+	knownValue: string | null;
+	priced: number;
+	count: number;
+	cost: string | null;
+	costed: number;
+	gain: string | null;
+	gainCovers: number;
+	gainPercent: string | null;
 }
 
 export interface HoldingsSnapshot {
@@ -91,7 +114,9 @@ export interface HoldingsSnapshot {
 		costed: number;
 		unrealizedGain: string | null;
 		gainCovers: number;
+		gainPercent: string | null;
 	};
+	accountTotals: HoldingAccountTotals[];
 	closeDay: string | null;
 	calculations: { id: string; version: number }[];
 }

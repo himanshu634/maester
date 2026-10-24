@@ -44,10 +44,11 @@ Settle question 1 (Angel One in or out) before writing `typed`.
 
 The built calculations stay as they are: `holding_quantity`, `holding_cost`, `holding_value`, `holdings_totals` and `holding_weight`, all v1. Holdings shows P&L for each broker's part of a share, which needs:
 
-- **Two new calculations**, each with its own fixture worked out by hand, the working in a comment:
-  - `holding_part_gain`: one broker's quantity × the close, less its quantity × the broker's average price. It is unknown without a close.
-  - `holding_gain_percent`: gain ÷ cost, as a per cent to one place. It is unknown when the cost is zero or unknown.
-- **Per-broker totals:** value, invested and P&L, summed over that broker's parts.
+- **New calculations**, each with its own fixture worked out by hand, the working in a comment. Built 24 Oct 2026 on `feat/holdings-top-five`:
+  - `holding_gain`: value less cost, for a row or one broker's part of it. It is unknown without both.
+  - `holding_gain_percent`: gain ÷ the cost it was worked from, as a per cent to one place. It is unknown when the cost is zero or unknown. For the totals, the cost is that of the holdings with both a value and a cost.
+  - `holding_average_price`: one broker's cost ÷ its quantity, when it holds one share on NSE and BSE, merged into one part.
+  - `holdings_by_account`: each broker's value, invested and P&L, summed over its parts, with what they cover.
 - **The snapshot shape:** each `HoldingRow.parts[]` carries the broker, its quantity, average price, cost, value, gain and gain per cent, all as decimal strings. `packages/contracts/src/brokers.ts` changes to match.
 
 No calculation moves into the API or the web.
@@ -63,8 +64,9 @@ Gain `#006B55` and loss `#BA2C1A`, with `#3FC4A2` and `#FF7A4D` on ink, on a sig
 - an amendment to ADR 0002;
 - DESIGN.md §2, §5, §6 and §10;
 - `tokens.css`;
-- `design-guard.test.ts`;
-- UI_SPECIFICATION §3.
+- `design-guard.test.ts`.
+
+UI_SPECIFICATION §3 needs no change: it already allows colour paired with text, a sign or a symbol. Built 24 Oct 2026 as ADR 0008.
 
 The research page lists each change.
 

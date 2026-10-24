@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupIndian, percentText, rupees, shares } from './format';
+import { direction, groupIndian, percentText, rupees, shares, signedPercent } from './format';
 import type { BrokerAccount, BrokerSummary, HoldingsSnapshot } from './types';
 import {
 	accountAction,
@@ -7,6 +7,10 @@ import {
 	olderCloseDay,
 	dayWords,
 	heldAtWords,
+	needsSignIn,
+	nudgeLine,
+	readDayWords,
+	readShort,
 	readWords,
 	returnMessage,
 	staleNote,
@@ -110,6 +114,10 @@ describe('view', () => {
 		expect(accountAction(account())).toBe('read');
 		expect(accountAction(account({ state: 'signed_out' }))).toBe('sign_in');
 		expect(accountAction(account({ state: 'saved', signedInAt: null }))).toBe('sign_in');
+		// Groww signs in from Maester: no page to go to, only "Read Groww" once its key is approved.
+		const groww = { ...kite, id: 'groww', name: 'Groww', signIn: { kind: 'direct' as const } };
+		expect(accountAction(account({ broker: 'groww', state: 'signed_out' }), groww)).toBe('direct');
+		expect(accountAction(account({ broker: 'groww' }), groww)).toBe('read');
 		expect(accountAction(account({ state: 'failing', errorCode: 'BROKER_UNAVAILABLE' }))).toBe(
 			'read'
 		);
@@ -149,6 +157,8 @@ describe('view', () => {
 					close: null,
 					value: null,
 					weight: null,
+					gain: null,
+					gainPercent: null,
 					unknown: [],
 					parts: [
 						{
@@ -156,6 +166,10 @@ describe('view', () => {
 							accountId: 'AB1234',
 							quantity: '120',
 							averagePrice: '1512.4',
+							cost: null,
+							value: null,
+							gain: null,
+							gainPercent: null,
 							readAt: '2026-10-18T10:12:00Z',
 							stale: true
 						}
@@ -169,10 +183,12 @@ describe('view', () => {
 				cost: null,
 				costed: 0,
 				unrealizedGain: null,
-				gainCovers: 0
+				gainCovers: 0,
+				gainPercent: null
 			},
 			closeDay: null,
-			calculations: []
+			calculations: [],
+			accountTotals: []
 		} satisfies HoldingsSnapshot;
 		expect(heldAtWords(snap.rows[0]!, { kite: 'Zerodha' })).toBe('Zerodha 120*');
 		expect(staleNote(snap, NOW)).toBe(
@@ -190,6 +206,8 @@ describe('view', () => {
 			close: null,
 			value: null,
 			weight: null,
+			gain: null,
+			gainPercent: null,
 			unknown: [],
 			parts: [
 				{
@@ -197,6 +215,10 @@ describe('view', () => {
 					accountId: 'AB1234',
 					quantity: '120',
 					averagePrice: '1512.4',
+					cost: null,
+					value: null,
+					gain: null,
+					gainPercent: null,
 					readAt: '2026-10-19T03:44:00Z',
 					stale: false
 				},
@@ -205,6 +227,10 @@ describe('view', () => {
 					accountId: '1100012345',
 					quantity: '30',
 					averagePrice: '1498.25',
+					cost: null,
+					value: null,
+					gain: null,
+					gainPercent: null,
 					readAt: '2026-10-19T03:44:00Z',
 					stale: false
 				}
@@ -219,6 +245,10 @@ describe('view', () => {
 			accountId: '1100012345',
 			quantity: '30',
 			averagePrice: '1498.25',
+			cost: null,
+			value: null,
+			gain: null,
+			gainPercent: null,
 			readAt: '2026-10-18T10:12:00Z',
 			stale: true
 		};
@@ -234,6 +264,8 @@ describe('view', () => {
 					close: null,
 					value: null,
 					weight: null,
+					gain: null,
+					gainPercent: null,
 					unknown: [],
 					parts: [part]
 				}
@@ -245,10 +277,12 @@ describe('view', () => {
 				cost: null,
 				costed: 0,
 				unrealizedGain: null,
-				gainCovers: 0
+				gainCovers: 0,
+				gainPercent: null
 			},
 			closeDay: null,
-			calculations: []
+			calculations: [],
+			accountTotals: []
 		} satisfies HoldingsSnapshot;
 		expect(staleNote(snap, NOW, [kite, dhan])).toBe(
 			'* Read Sun 18 Oct, 15:42, before the Dhan token in Settings stopped working. Quantities change only when you trade; save a new token in Settings to check.'
@@ -278,6 +312,8 @@ describe('view', () => {
 			cost: null,
 			value: null,
 			weight: null,
+			gain: null,
+			gainPercent: null,
 			unknown: [],
 			close: { value: '10', day: '2026-04-03', source: 'Dhan · NSE close' }
 		};
@@ -290,5 +326,93 @@ describe('view', () => {
 	it('offers only enabled brokers not yet connected', () => {
 		expect(addable([kite, { ...kite, id: 'off', enabled: false }], [])).toEqual([kite]);
 		expect(addable([kite], [account()])).toEqual([]);
+	});
+});
+
+describe('P&L figures', () => {
+	it('signs a per cent the API worked out, with a real minus', () => {
+		expect(signedPercent('15.2')).toBe('+15.2%');
+		expect(signedPercent('-7.8')).toBe('−7.8%');
+		expect(signedPercent('0.0')).toBe('0.0%');
+	});
+
+	it('reads a figure’s direction from its sign alone', () => {
+		expect(direction('27624.00')).toBe('gain');
+		expect(direction('-2735.00')).toBe('loss');
+		expect(direction('0.00')).toBe('flat');
+		expect(direction('-0.00')).toBe('flat');
+	});
+
+	it('signs rupees for a gain', () => {
+		expect(rupees('27624.00', { sign: true })).toBe('+₹27,624.00');
+		expect(rupees('-2735.00', { sign: true })).toBe('−₹2,735.00');
+	});
+});
+
+describe('the nudge', () => {
+	const snap = (accounts: BrokerAccount[]): HoldingsSnapshot => ({
+		accounts,
+		rows: [],
+		totals: {
+			knownValue: null,
+			priced: 0,
+			count: 0,
+			cost: null,
+			costed: 0,
+			unrealizedGain: null,
+			gainCovers: 0,
+			gainPercent: null
+		},
+		accountTotals: [],
+		closeDay: null,
+		calculations: []
+	});
+	// NOW is Monday 19 Oct 09:15 in India; Friday 16 Oct 16:10 is three days before.
+	const friday = '2026-10-16T10:40:00Z';
+	const angel = account({
+		broker: 'angel',
+		name: 'Angel One',
+		state: 'signed_out',
+		lastReadAt: friday
+	});
+	const groww = account({
+		broker: 'groww',
+		name: 'Groww',
+		state: 'signed_out',
+		lastReadAt: '2026-10-17T10:00:00Z'
+	});
+
+	it('says the day of the oldest read in words', () => {
+		expect(readDayWords('2026-10-19T02:00:00Z', NOW)).toBe('today');
+		expect(readDayWords('2026-10-18T10:00:00Z', NOW)).toBe('yesterday');
+		expect(readDayWords(friday, NOW)).toBe('Friday');
+		expect(readDayWords('2026-10-01T10:00:00Z', NOW)).toBe('1 Oct');
+	});
+
+	it('names only brokers that are signed out and still have holdings on the page', () => {
+		const never = account({ broker: 'upstox', name: 'Upstox', state: 'saved', lastReadAt: null });
+		const failing = account({ broker: 'icici', name: 'ICICI Direct', state: 'failing' });
+		expect(
+			needsSignIn(snap([account(), angel, groww, never, failing])).map((a) => a.broker)
+		).toEqual(['angel', 'groww']);
+	});
+
+	it('is one line, and nothing when every broker is signed in', () => {
+		expect(nudgeLine(snap([account(), angel, groww]), NOW)).toEqual({
+			lead: 'Some holdings are from Friday.',
+			rest: '2 of 3 brokers signed Maester out; sign in to see today’s.',
+			button: 'Update 2 brokers'
+		});
+		expect(nudgeLine(snap([account(), angel]), NOW)).toEqual({
+			lead: 'Some holdings are from Friday.',
+			rest: 'Angel One signed Maester out; sign in to see today’s.',
+			button: 'Update Angel One'
+		});
+		expect(nudgeLine(snap([account()]), NOW)).toBeNull();
+	});
+
+	it('shows a part’s read time short enough for a table line', () => {
+		expect(readShort('2026-10-19T03:25:00Z', NOW)).toBe('today 08:55');
+		expect(readShort(friday, NOW)).toBe('Fri 16:10');
 	});
 });

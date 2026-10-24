@@ -1,7 +1,8 @@
 <!--
-	The accounts ledger (A1): each connected broker, where it stands in words, when its holdings
-	were last read, and its one action. An account with no good sign-in has "Sign in to <broker>"
-	as the screen's primary action; one that is signed in has an outline "Read again". An account on
+	The brokers ledger ("Your brokers", at the foot of Holdings in D · final): each connected broker,
+	where it stands in words, when its holdings were last read, and its one action, always outline:
+	the nudge at the top holds the page's filled sign-in. A broker with no good sign-in has "Sign in
+	to <broker>"; one that is signed in has "Read again". An account on
 	a Settings connection (Dhan) never signs in here: it says so, and when Settings' token has
 	expired its action is "Open Settings". Disconnect asks first. Below 768px each account stacks.
 -->
@@ -50,11 +51,12 @@
 		}
 	}
 
-	async function read(a: BrokerAccount) {
+	/** Read again, or for a direct sign-in (Groww) sign in with the approved key and read. */
+	async function read(a: BrokerAccount, direct = false) {
 		busy[a.broker] = 'read';
 		problem[a.broker] = undefined;
 		try {
-			const next = await api.read(a.broker);
+			const next = direct ? await api.session(a.broker) : await api.read(a.broker);
 			await onchanged(
 				next.errorCode
 					? (copy.errors[next.errorCode]?.(a.name) ?? '')
@@ -108,13 +110,23 @@
 			<div role="cell" class="cell num">{readWords(a)}</div>
 			<div role="cell" class="cell actions">
 				{#if action === 'settings'}
-					<a class="button" href={resolve('/terminal/settings')}>{copy.accounts.openSettings}</a>
+					<a class="button outline" href={resolve('/terminal/settings')}
+						>{copy.accounts.openSettings}</a
+					>
 				{:else if action === 'sign_in'}
 					<button
 						type="button"
-						class="button"
+						class="button outline"
 						disabled={busy[a.broker] !== undefined}
 						onclick={() => signIn(a)}>{copy.accounts.signIn(a.name)}</button
+					>
+				{:else if action === 'direct'}
+					<button
+						type="button"
+						class="button outline"
+						disabled={busy[a.broker] !== undefined}
+						aria-describedby={busy[a.broker] === 'read' ? `${id}-${a.broker}-reading` : undefined}
+						onclick={() => read(a, true)}>{copy.accounts.readDirect(a.name)}</button
 					>
 				{:else}
 					<button

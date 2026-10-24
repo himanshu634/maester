@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { Hono } from "hono";
 import {
-  SaveBrokerRequest, type BrokerAccount, type BrokerDefinition, type BrokerSummary, type HoldingRow, type HoldingsSnapshot,
+  SaveBrokerRequest, type BrokerAccount, type BrokerDefinition, type BrokerSummary, type HoldingsSnapshot,
 } from "@maester/contracts";
 import {
   clearBrokerError, createBrokerLoginState, finishHoldingRead, forgetBrokerCredentials, getBrokerConnection, getBrokerConnectionById, getConnection, latestCloses, latestHoldings,
@@ -9,7 +9,7 @@ import {
   type BrokerConnectionRow, type HoldingReadRow, type LatestHoldings, type MarketConnectionRow,
 } from "@maester/db";
 import { BrokerClient, BrokerError, builtInDefinitions, loadDefinitions, type ReadSession } from "@maester/brokers";
-import { HOLDINGS_CALCULATIONS, holdingQuantity, holdingsSnapshot } from "@maester/financial-engine";
+import { HOLDINGS_CALCULATIONS, holdingsSnapshot, type HoldingPartInput } from "@maester/financial-engine";
 import { decryptSecret, encryptSecret } from "@maester/market";
 import type { AppDeps, AppEnv } from "../app.js";
 import { HttpError } from "../errors.js";
@@ -37,7 +37,11 @@ function summary(deps: AppDeps, d: BrokerDefinition): BrokerSummary {
   return {
     id: d.id, name: d.name, enabled: d.enabled, notOfferedReason: d.notOfferedReason ?? null, copy: d.copy,
     credentials: d.credentials.map((c) => ({ key: c.key, label: c.label, ...(c.hint ? { hint: c.hint } : {}), secret: c.secret, minLength: c.minLength, maxLength: c.maxLength })),
-    signIn: d.signIn.kind === "redirect" ? { kind: "redirect" } : { kind: d.signIn.kind, provider: d.signIn.provider },
+    signIn: d.signIn.kind === "redirect"
+      ? { kind: "redirect" }
+      : d.signIn.kind === "direct"
+        ? { kind: "direct" }
+        : { kind: d.signIn.kind, provider: d.signIn.provider },
     returnUrl: d.signIn.kind === "redirect" ? returnUrl(deps, d.id) : null,
   };
 }
@@ -168,7 +172,7 @@ export function brokerCatalogRoutes(deps: AppDeps) {
     const creds = JSON.parse(decryptSecret(row.credentialsCiphertext, key)) as Record<string, string>;
     let session;
     try {
-      session = await client.signIn(creds, ret.code, new Date());
+      session = await client.signIn(creds, ret.code, new Date(), returnUrl(deps, def.id));
     } catch (err) {
       return back({ broker: def.id, error: logBrokerError(deps, def.id, err, "sign-in") });
     }
@@ -236,7 +240,30 @@ export function brokerAccountRoutes(deps: AppDeps) {
     const creds = JSON.parse(decryptSecret(row.credentialsCiphertext, needKey(deps))) as Record<string, string>;
     const nonce = randomBytes(24).toString("base64url");
     await createBrokerLoginState(deps.db, { nonce, connectionId: row.id, userId: c.get("user").id, expiresAt: new Date(Date.now() + LOGIN_STATE_MS) });
-    return c.json({ url: new BrokerClient(d).loginUrl(creds, nonce) });
+    return c.json({ url: new BrokerClient(d).loginUrl(creds, nonce, returnUrl(deps, d.id)) });
+  });
+
+  /**
+   * A direct sign-in (Groww): once the investor has approved the key on the broker's side, Maester
+   * calls the broker's session endpoint with the saved key, then reads at once. A refusal is kept
+   * as the account's error code; the broker's own text is never passed on.
+   */
+  r.post("/:broker/session", async (c) => {
+    const d = def(c.req.param("broker"));
+    if (!d.enabled) throw new HttpError("INVALID_STATE", "this broker is not offered");
+    if (d.signIn.kind !== "direct") throw new HttpError("INVALID_STATE", `${d.name} does not sign in here`);
+    const row = await getBrokerConnection(deps.db, c.get("workspace").id, d.id);
+    if (!row?.credentialsCiphertext) throw new HttpError("INVALID_STATE", "save the key first");
+    const key = needKey(deps);
+    const creds = JSON.parse(decryptSecret(row.credentialsCiphertext, key)) as Record<string, string>;
+    try {
+      const session = await new BrokerClient(d, { fetch: deps.brokerFetch }).startSession(creds, new Date());
+      await saveBrokerSession(deps.db, row.id, { accountId: session.accountId, tokenCiphertext: encryptSecret(session.accessToken, key), signedInAt: session.signedInAt, tokenExpiresAt: session.expiresAt });
+      await readHoldings(deps, d, (await getBrokerConnectionById(deps.db, row.id))!, deps.brokerFetch);
+    } catch (err) {
+      await markBrokerError(deps.db, row.id, logBrokerError(deps, d.id, err, "sign-in"));
+    }
+    return c.json(await account(deps, defs, c.get("workspace").id, d.id));
   });
 
   r.post("/:broker/read", async (c) => {
@@ -301,44 +328,55 @@ export function holdingsRoutes(deps: AppDeps) {
     const now = new Date();
     const accts = rows.map((row, i) => accountOf(defs.get(row.broker)!, row, latest[i]!, now, conns));
 
-    type Group = { isin: string; symbol: string; exchange: string; parts: HoldingRow["parts"] };
+    // One group per ISIN; each line is keyed by its account (the broker, one account per broker), so
+    // the engine merges a broker's NSE and BSE lines for the same ISIN into one part.
+    type Line = HoldingPartInput & { account: string };
+    type Group = { isin: string; symbol: string; exchange: string; lines: Line[] };
     const groups = new Map<string, Group>();
+    const readOf = new Map<string, { accountId: string | null; readAt: string; stale: boolean }>();
     rows.forEach((row, i) => {
       const read = latest[i]!;
       if (!read.lastOk) return;
-      const stale = accts[i]!.state !== "signed_in";
+      readOf.set(row.broker, { accountId: accts[i]!.accountId, readAt: read.lastOk.finishedAt!.toISOString(), stale: accts[i]!.state !== "signed_in" });
       for (const l of read.lines) {
-        const g = groups.get(l.isin) ?? { isin: l.isin, symbol: l.symbol, exchange: l.exchange, parts: [] };
+        const g = groups.get(l.isin) ?? { isin: l.isin, symbol: l.symbol, exchange: l.exchange, lines: [] };
         // An NSE listing names the symbol Maester has closes for; prefer it over a BSE one.
         if (l.exchange === "NSE") Object.assign(g, { symbol: l.symbol, exchange: l.exchange });
-        g.parts.push({
-          broker: row.broker, accountId: accts[i]!.accountId, quantity: holdingQuantity([l]).toString(), averagePrice: l.averagePrice,
-          readAt: read.lastOk.finishedAt!.toISOString(), stale,
-        });
+        g.lines.push({ account: row.broker, quantity: l.quantity, t1Quantity: l.t1Quantity, averagePrice: l.averagePrice });
         groups.set(l.isin, g);
       }
     });
 
     const list = [...groups.values()].sort((a, b) => a.symbol.localeCompare(b.symbol));
     const closes = await latestCloses(deps.db, list.filter((g) => g.exchange === "NSE").map((g) => g.symbol));
-    const inputs = list.map((g) => ({
-      isin: g.isin,
-      close: g.exchange === "NSE" ? closes[g.symbol]?.value ?? null : null,
-      parts: rows.flatMap((_row, i) => latest[i]!.lines.filter((l) => l.isin === g.isin).map((l) => ({ quantity: l.quantity, t1Quantity: l.t1Quantity, averagePrice: l.averagePrice }))),
-    }));
-    const computed = holdingsSnapshot(inputs);
+    const computed = holdingsSnapshot(list.map((g) => ({ isin: g.isin, close: g.exchange === "NSE" ? closes[g.symbol]?.value ?? null : null, parts: g.lines })));
     const out: HoldingsSnapshot = {
       accounts: accts,
       rows: list.map((g, i) => {
         const r0 = computed.rows[i]!;
         const close = g.exchange === "NSE" ? closes[g.symbol] : undefined;
         return {
-          isin: g.isin, symbol: g.symbol, exchange: g.exchange, parts: g.parts,
-          quantity: r0.quantity, cost: r0.cost, value: r0.value, weight: r0.weight, unknown: r0.unknown,
+          isin: g.isin, symbol: g.symbol, exchange: g.exchange,
+          parts: r0.parts.map((p) => {
+            const read = readOf.get(p.account!)!;
+            return {
+              broker: p.account!, accountId: read.accountId, quantity: p.quantity, averagePrice: p.averagePrice,
+              cost: p.cost, value: p.value, gain: p.gain, gainPercent: p.gainPercent, readAt: read.readAt, stale: read.stale,
+            };
+          }),
+          quantity: r0.quantity, cost: r0.cost, value: r0.value, weight: r0.weight, gain: r0.gain, gainPercent: r0.gainPercent, unknown: r0.unknown,
           close: close ? { value: close.value, day: close.day, source: close.source } : null,
         };
       }),
       totals: computed.totals,
+      accountTotals: accts.flatMap((a) => {
+        const t = computed.accounts.find((x) => x.account === a.broker);
+        if (!t) return [];
+        return [{
+          broker: a.broker, knownValue: t.knownValue, priced: t.priced, count: t.count, cost: t.cost, costed: t.costed,
+          gain: t.gain, gainCovers: t.gainCovers, gainPercent: t.gainPercent,
+        }];
+      }),
       closeDay: Object.values(closes).map((c0) => c0.day).sort().at(-1) ?? null,
       calculations: HOLDINGS_CALCULATIONS.map(({ id, version }) => ({ id, version })),
     };

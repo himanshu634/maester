@@ -31,12 +31,20 @@ export type BrokerCredentialField = z.infer<typeof BrokerCredentialField>;
 /** A value worked out from others before a call. `sha256hex` hashes the named values joined with nothing between them. */
 export const BrokerDerivedValue = z.object({ sha256hex: z.array(z.string().min(1)).min(1).max(8) });
 
+/**
+ * One call. Besides the values each place allows, every call may use `{timestamp}` (epoch seconds),
+ * `{isoTimestamp}` (UTC, "2026-10-24T10:23:56.000Z"), both taken once per call, and in `derive`
+ * and headers only `{body}`, the body exactly as sent (ICICI Direct signs every request with
+ * SHA-256 of the timestamp, the body and the secret). A GET may carry a JSON body (Breeze does).
+ */
 const Call = z.object({
   method: z.enum(["GET", "POST"]),
   url: Template,
   headers: z.record(z.string(), Template).default({}),
   /** Sent as application/x-www-form-urlencoded. */
   form: z.record(z.string(), Template).optional(),
+  /** Sent as application/json, every value a string (empty allowed: Breeze takes "" for "all"). A call has a form or a JSON body, not both. */
+  json: z.record(z.string(), z.string().max(2000)).optional(),
   derive: z.record(z.string(), BrokerDerivedValue).default({}),
 });
 
@@ -54,10 +62,12 @@ export type BrokerSessionExpiry = z.infer<typeof BrokerSessionExpiry>;
 export const BrokerHoldingFields = z.object({
   isin: JsonPath,
   symbol: JsonPath,
-  exchange: JsonPath,
+  /** Absent for a broker whose holdings name no exchange (Groww): then the read's `exchangeIs` says which. */
+  exchange: JsonPath.optional(),
   quantity: JsonPath,
   t1Quantity: JsonPath.optional(),
-  averagePrice: JsonPath,
+  /** Absent only when a `join` supplies it. */
+  averagePrice: JsonPath.optional(),
   lastPrice: JsonPath.optional(),
 });
 
@@ -88,6 +98,19 @@ export const BrokerSignIn = z.discriminatedUnion("kind", [
     }),
   }),
   z.object({ kind: z.literal("settings-connection"), provider: SettingsConnectionProvider }),
+  /**
+   * `direct`: Maester calls the broker's session endpoint itself with the saved key (Groww, once
+   * the investor has approved the key on Groww that day). The session call may also use
+   * `{timestamp}`, epoch seconds.
+   */
+  z.object({
+    kind: z.literal("direct"),
+    session: Call.extend({
+      accessToken: JsonPath,
+      accountId: JsonPath.optional(),
+      expiry: BrokerSessionExpiry,
+    }),
+  }),
 ]);
 export type BrokerSignIn = z.infer<typeof BrokerSignIn>;
 
@@ -120,7 +143,28 @@ export const BrokerDefinition = z.object({
      * `{accessToken}` and `{clientId}` from the Settings connection (settings-connection).
      * `list` is the JSON path of the array; absent, the answer itself is the array (Dhan).
      */
-    holdings: Call.extend({ list: JsonPath.optional(), fields: BrokerHoldingFields }),
+    holdings: Call.extend({
+      list: JsonPath.optional(),
+      fields: BrokerHoldingFields,
+      /**
+       * The exchange every line is on, for an answer that names none. NSE or BSE when the symbol is
+       * that exchange's; any other word (ICICI) when the symbol is the broker's own code, which
+       * Maester cannot price by symbol.
+       */
+      exchangeIs: z.string().regex(/^[A-Z]{2,8}$/).optional(),
+      /**
+       * A second call whose items add figures to the first's, matched on a key (ICICI Direct: demat
+       * holdings give the ISIN and quantity, portfolio holdings the average price, both keyed by the
+       * broker's stock code). A line with no match keeps an average price of 0, which the engine
+       * reads as a cost it does not know.
+       */
+      join: Call.extend({
+        list: JsonPath.optional(),
+        key: JsonPath,
+        joinKey: JsonPath,
+        fields: z.object({ averagePrice: JsonPath.optional(), lastPrice: JsonPath.optional() }),
+      }).optional(),
+    }),
   }),
   /** An answer with one of these statuses means the broker signed Maester out. */
   signedOutStatuses: z.array(z.number().int().min(400).max(599)).default([401, 403]),
@@ -139,6 +183,8 @@ export const BrokerSummary = z.object({
   signIn: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("redirect") }),
     z.object({ kind: z.literal("settings-connection"), provider: SettingsConnectionProvider }),
+    /** Signs in from Maester itself with the saved key, once the investor has approved it on the broker's side. */
+    z.object({ kind: z.literal("direct") }),
   ]),
   /** The address to paste into the broker's app as its redirect URL. Null for a broker with no redirect. */
   returnUrl: z.string().nullable(),
@@ -186,12 +232,21 @@ export type BrokerSignInStart = z.infer<typeof BrokerSignInStart>;
 export const HoldingUnknown = z.enum(["NO_CLOSE", "NO_COST"]);
 export type HoldingUnknown = z.infer<typeof HoldingUnknown>;
 
-/** One account's part of a row: the facts read from the broker, with when they were read. */
+/**
+ * One account's part of a row: the facts read from the broker, with when they were read, and its
+ * cost, value and gain from @maester/financial-engine (holding_cost, holding_value, holding_gain,
+ * holding_gain_percent). `averagePrice` is the broker's own, or holding_average_price when the
+ * account holds the ISIN on more than one exchange.
+ */
 export const HoldingPart = z.object({
   broker: BrokerId,
   accountId: z.string().nullable(),
   quantity: DecimalString,
   averagePrice: DecimalString,
+  cost: DecimalString.nullable(),
+  value: DecimalString.nullable(),
+  gain: DecimalString.nullable(),
+  gainPercent: DecimalString.nullable(),
   readAt: IsoTimestamp,
   /** Read before the broker signed Maester out, so it may be older than today. */
   stale: z.boolean(),
@@ -212,9 +267,25 @@ export const HoldingRow = z.object({
   close: z.object({ value: DecimalString, day: z.iso.date(), source: z.string() }).nullable(),
   value: DecimalString.nullable(),
   weight: DecimalString.nullable(),
+  gain: DecimalString.nullable(),
+  gainPercent: DecimalString.nullable(),
   unknown: z.array(HoldingUnknown),
 });
 export type HoldingRow = z.infer<typeof HoldingRow>;
+
+/** One account's totals over its parts (holdings_by_account), with how many parts each figure covers. */
+export const HoldingAccountTotals = z.object({
+  broker: BrokerId,
+  knownValue: DecimalString.nullable(),
+  priced: z.number().int(),
+  count: z.number().int(),
+  cost: DecimalString.nullable(),
+  costed: z.number().int(),
+  gain: DecimalString.nullable(),
+  gainCovers: z.number().int(),
+  gainPercent: DecimalString.nullable(),
+});
+export type HoldingAccountTotals = z.infer<typeof HoldingAccountTotals>;
 
 export const HoldingsSnapshot = z.object({
   accounts: z.array(BrokerAccount),
@@ -227,7 +298,11 @@ export const HoldingsSnapshot = z.object({
     costed: z.number().int(),
     unrealizedGain: DecimalString.nullable(),
     gainCovers: z.number().int(),
+    /** holding_gain_percent over the cost of the rows with both a value and a cost. */
+    gainPercent: DecimalString.nullable(),
   }),
+  /** One entry per connected account that holds anything, in the order of `accounts`. */
+  accountTotals: z.array(HoldingAccountTotals),
   /** The latest NSE close day used, when any row is priced. */
   closeDay: z.iso.date().nullable(),
   calculations: z.array(z.object({ id: z.string(), version: z.number().int() })),

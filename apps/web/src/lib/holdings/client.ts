@@ -32,6 +32,10 @@ export function holdingsApi(fetcher: Fetcher, workspaceId: string) {
 			return (await json<{ url: string }>(fetcher, `${broker(id)}/sign-in`, { method: 'POST' }))
 				.url;
 		},
+		/** A direct sign-in (Groww): Maester signs in with the saved key and reads at once. */
+		session(id: string): Promise<BrokerAccount> {
+			return json(fetcher, `${broker(id)}/session`, { method: 'POST' });
+		},
 		read(id: string): Promise<BrokerAccount> {
 			return json(fetcher, `${broker(id)}/read`, { method: 'POST' });
 		},
