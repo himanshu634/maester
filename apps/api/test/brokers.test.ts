@@ -200,9 +200,37 @@ describe("GET /holdings", () => {
       ["HDFCBANK", "120", "181488.00", "209112.00", "100.0", []],
       ["TITAN", "15", "50250.00", null, null, ["NO_CLOSE"]],
     ]);
-    expect(snap.totals).toEqual({ knownValue: "209112.00", priced: 1, count: 2, cost: "231738.00", costed: 2, unrealizedGain: "27624.00", gainCovers: 1 });
+    // Gain on HDFC Bank 209,112 − 181,488 = 27,624.00; 27,624 / 181,488 = 0.152208 → 15.2. Titan has no gain.
+    expect(snap.rows.map((r) => [r.symbol, r.gain, r.gainPercent])).toEqual([["HDFCBANK", "27624.00", "15.2"], ["TITAN", null, null]]);
+    expect(snap.totals).toEqual({ knownValue: "209112.00", priced: 1, count: 2, cost: "231738.00", costed: 2, unrealizedGain: "27624.00", gainCovers: 1, gainPercent: "15.2" });
     expect(snap.closeDay).toBe("2026-10-16");
-    expect(snap.rows[1]?.parts[0]).toMatchObject({ broker: "kite", accountId: "AB1234", quantity: "15", stale: false });
+    expect(snap.rows[0]?.parts).toEqual([
+      { broker: "kite", accountId: "AB1234", quantity: "120", averagePrice: "1512.4", cost: "181488.00", value: "209112.00", gain: "27624.00", gainPercent: "15.2", readAt: expect.any(String), stale: false },
+    ]);
+    expect(snap.rows[1]?.parts[0]).toMatchObject({ broker: "kite", accountId: "AB1234", quantity: "15", cost: "50250.00", value: null, gain: null, stale: false });
+    // Zerodha's totals: value 209,112.00 (1 of 2 priced); cost 181,488 + 50,250 = 231,738.00; gain 27,624.00 over 1.
+    expect(snap.accountTotals).toEqual([
+      { broker: "kite", knownValue: "209112.00", priced: 1, count: 2, cost: "231738.00", costed: 2, gain: "27624.00", gainCovers: 1, gainPercent: "15.2" },
+    ]);
+  });
+
+  it("makes one part of a broker's NSE and BSE lines for the same share", async () => {
+    holdings = {
+      status: 200,
+      body: { status: "success", data: [
+        { tradingsymbol: "HDFCBANK", exchange: "NSE", isin: "INE040A01034", quantity: 100, t1_quantity: 0, average_price: 1500, last_price: 1745 },
+        { tradingsymbol: "HDFCBANK", exchange: "BSE", isin: "INE040A01034", quantity: 20, t1_quantity: 0, average_price: 1600, last_price: 1745 },
+      ] },
+    };
+    await upsertMarketPoints(ctx.db, [{ series: "eq:HDFCBANK", day: "2026-10-16", value: 1742.6, source: "Dhan · NSE close" }]);
+    await signIn();
+    const snap = HoldingsSnapshot.parse(await clean(await ctx.app.request(`${base()}/holdings`, { headers: { cookie } })));
+    // 100 @ 1500 + 20 @ 1600 = 150,000 + 32,000 = 182,000.00 for 120; average 182,000 / 120 = 1,516.666… → 1516.67.
+    // Value 120 × 1742.60 = 209,112.00; gain 27,112.00; 27,112 / 182,000 = 0.148967 → 14.9.
+    expect(snap.rows).toHaveLength(1);
+    expect(snap.rows[0]?.parts).toEqual([
+      { broker: "kite", accountId: "AB1234", quantity: "120", averagePrice: "1516.67", cost: "182000.00", value: "209112.00", gain: "27112.00", gainPercent: "14.9", readAt: expect.any(String), stale: false },
+    ]);
   });
 });
 

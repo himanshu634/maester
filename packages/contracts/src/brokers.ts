@@ -186,12 +186,21 @@ export type BrokerSignInStart = z.infer<typeof BrokerSignInStart>;
 export const HoldingUnknown = z.enum(["NO_CLOSE", "NO_COST"]);
 export type HoldingUnknown = z.infer<typeof HoldingUnknown>;
 
-/** One account's part of a row: the facts read from the broker, with when they were read. */
+/**
+ * One account's part of a row: the facts read from the broker, with when they were read, and its
+ * cost, value and gain from @maester/financial-engine (holding_cost, holding_value, holding_gain,
+ * holding_gain_percent). `averagePrice` is the broker's own, or holding_average_price when the
+ * account holds the ISIN on more than one exchange.
+ */
 export const HoldingPart = z.object({
   broker: BrokerId,
   accountId: z.string().nullable(),
   quantity: DecimalString,
   averagePrice: DecimalString,
+  cost: DecimalString.nullable(),
+  value: DecimalString.nullable(),
+  gain: DecimalString.nullable(),
+  gainPercent: DecimalString.nullable(),
   readAt: IsoTimestamp,
   /** Read before the broker signed Maester out, so it may be older than today. */
   stale: z.boolean(),
@@ -212,9 +221,25 @@ export const HoldingRow = z.object({
   close: z.object({ value: DecimalString, day: z.iso.date(), source: z.string() }).nullable(),
   value: DecimalString.nullable(),
   weight: DecimalString.nullable(),
+  gain: DecimalString.nullable(),
+  gainPercent: DecimalString.nullable(),
   unknown: z.array(HoldingUnknown),
 });
 export type HoldingRow = z.infer<typeof HoldingRow>;
+
+/** One account's totals over its parts (holdings_by_account), with how many parts each figure covers. */
+export const HoldingAccountTotals = z.object({
+  broker: BrokerId,
+  knownValue: DecimalString.nullable(),
+  priced: z.number().int(),
+  count: z.number().int(),
+  cost: DecimalString.nullable(),
+  costed: z.number().int(),
+  gain: DecimalString.nullable(),
+  gainCovers: z.number().int(),
+  gainPercent: DecimalString.nullable(),
+});
+export type HoldingAccountTotals = z.infer<typeof HoldingAccountTotals>;
 
 export const HoldingsSnapshot = z.object({
   accounts: z.array(BrokerAccount),
@@ -227,7 +252,11 @@ export const HoldingsSnapshot = z.object({
     costed: z.number().int(),
     unrealizedGain: DecimalString.nullable(),
     gainCovers: z.number().int(),
+    /** holding_gain_percent over the cost of the rows with both a value and a cost. */
+    gainPercent: DecimalString.nullable(),
   }),
+  /** One entry per connected account that holds anything, in the order of `accounts`. */
+  accountTotals: z.array(HoldingAccountTotals),
   /** The latest NSE close day used, when any row is priced. */
   closeDay: z.iso.date().nullable(),
   calculations: z.array(z.object({ id: z.string(), version: z.number().int() })),

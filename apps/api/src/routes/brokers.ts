@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { Hono } from "hono";
 import {
-  SaveBrokerRequest, type BrokerAccount, type BrokerDefinition, type BrokerSummary, type HoldingRow, type HoldingsSnapshot,
+  SaveBrokerRequest, type BrokerAccount, type BrokerDefinition, type BrokerSummary, type HoldingsSnapshot,
 } from "@maester/contracts";
 import {
   clearBrokerError, createBrokerLoginState, finishHoldingRead, forgetBrokerCredentials, getBrokerConnection, getBrokerConnectionById, getConnection, latestCloses, latestHoldings,
@@ -9,7 +9,7 @@ import {
   type BrokerConnectionRow, type HoldingReadRow, type LatestHoldings, type MarketConnectionRow,
 } from "@maester/db";
 import { BrokerClient, BrokerError, builtInDefinitions, loadDefinitions, type ReadSession } from "@maester/brokers";
-import { HOLDINGS_CALCULATIONS, holdingQuantity, holdingsSnapshot } from "@maester/financial-engine";
+import { HOLDINGS_CALCULATIONS, holdingsSnapshot, type HoldingPartInput } from "@maester/financial-engine";
 import { decryptSecret, encryptSecret } from "@maester/market";
 import type { AppDeps, AppEnv } from "../app.js";
 import { HttpError } from "../errors.js";
@@ -301,44 +301,53 @@ export function holdingsRoutes(deps: AppDeps) {
     const now = new Date();
     const accts = rows.map((row, i) => accountOf(defs.get(row.broker)!, row, latest[i]!, now, conns));
 
-    type Group = { isin: string; symbol: string; exchange: string; parts: HoldingRow["parts"] };
+    // One group per ISIN; each line is keyed by its account (the broker, one account per broker), so
+    // the engine merges a broker's NSE and BSE lines for the same ISIN into one part.
+    type Line = HoldingPartInput & { account: string };
+    type Group = { isin: string; symbol: string; exchange: string; lines: Line[] };
     const groups = new Map<string, Group>();
+    const readOf = new Map<string, { accountId: string | null; readAt: string; stale: boolean }>();
     rows.forEach((row, i) => {
       const read = latest[i]!;
       if (!read.lastOk) return;
-      const stale = accts[i]!.state !== "signed_in";
+      readOf.set(row.broker, { accountId: accts[i]!.accountId, readAt: read.lastOk.finishedAt!.toISOString(), stale: accts[i]!.state !== "signed_in" });
       for (const l of read.lines) {
-        const g = groups.get(l.isin) ?? { isin: l.isin, symbol: l.symbol, exchange: l.exchange, parts: [] };
+        const g = groups.get(l.isin) ?? { isin: l.isin, symbol: l.symbol, exchange: l.exchange, lines: [] };
         // An NSE listing names the symbol Maester has closes for; prefer it over a BSE one.
         if (l.exchange === "NSE") Object.assign(g, { symbol: l.symbol, exchange: l.exchange });
-        g.parts.push({
-          broker: row.broker, accountId: accts[i]!.accountId, quantity: holdingQuantity([l]).toString(), averagePrice: l.averagePrice,
-          readAt: read.lastOk.finishedAt!.toISOString(), stale,
-        });
+        g.lines.push({ account: row.broker, quantity: l.quantity, t1Quantity: l.t1Quantity, averagePrice: l.averagePrice });
         groups.set(l.isin, g);
       }
     });
 
     const list = [...groups.values()].sort((a, b) => a.symbol.localeCompare(b.symbol));
     const closes = await latestCloses(deps.db, list.filter((g) => g.exchange === "NSE").map((g) => g.symbol));
-    const inputs = list.map((g) => ({
-      isin: g.isin,
-      close: g.exchange === "NSE" ? closes[g.symbol]?.value ?? null : null,
-      parts: rows.flatMap((_row, i) => latest[i]!.lines.filter((l) => l.isin === g.isin).map((l) => ({ quantity: l.quantity, t1Quantity: l.t1Quantity, averagePrice: l.averagePrice }))),
-    }));
-    const computed = holdingsSnapshot(inputs);
+    const computed = holdingsSnapshot(list.map((g) => ({ isin: g.isin, close: g.exchange === "NSE" ? closes[g.symbol]?.value ?? null : null, parts: g.lines })));
     const out: HoldingsSnapshot = {
       accounts: accts,
       rows: list.map((g, i) => {
         const r0 = computed.rows[i]!;
         const close = g.exchange === "NSE" ? closes[g.symbol] : undefined;
         return {
-          isin: g.isin, symbol: g.symbol, exchange: g.exchange, parts: g.parts,
-          quantity: r0.quantity, cost: r0.cost, value: r0.value, weight: r0.weight, unknown: r0.unknown,
+          isin: g.isin, symbol: g.symbol, exchange: g.exchange,
+          parts: r0.parts.map((p) => {
+            const read = readOf.get(p.account!)!;
+            return {
+              broker: p.account!, accountId: read.accountId, quantity: p.quantity, averagePrice: p.averagePrice,
+              cost: p.cost, value: p.value, gain: p.gain, gainPercent: p.gainPercent, readAt: read.readAt, stale: read.stale,
+            };
+          }),
+          quantity: r0.quantity, cost: r0.cost, value: r0.value, weight: r0.weight, gain: r0.gain, gainPercent: r0.gainPercent, unknown: r0.unknown,
           close: close ? { value: close.value, day: close.day, source: close.source } : null,
         };
       }),
       totals: computed.totals,
+      accountTotals: accts.flatMap((a) => {
+        const t = computed.accounts.find((x) => x.account === a.broker);
+        if (!t) return [];
+        const { account: _account, ...figures } = t;
+        return [{ broker: a.broker, ...figures }];
+      }),
       closeDay: Object.values(closes).map((c0) => c0.day).sort().at(-1) ?? null,
       calculations: HOLDINGS_CALCULATIONS.map(({ id, version }) => ({ id, version })),
     };
