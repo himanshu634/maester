@@ -14,8 +14,9 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
 const clone = (from: unknown = kite) => JSON.parse(JSON.stringify(from)) as Record<string, any>;
 
 describe("definitions", () => {
-  it("ships Kite and Dhan, enabled", () => {
-    expect([...builtInDefinitions().keys()]).toEqual(["kite", "dhan"]);
+  it("ships Kite, Dhan and Upstox, enabled", () => {
+    expect([...builtInDefinitions().keys()]).toEqual(["kite", "dhan", "upstox"]);
+    expect(builtInDefinitions().get("upstox")!.enabled).toBe(true);
     expect(kite.enabled).toBe(true);
     expect(dhan.enabled).toBe(true);
     expect(dhan.signIn).toEqual({ kind: "settings-connection", provider: "dhan" });
@@ -161,6 +162,56 @@ describe("BrokerClient for Kite", () => {
     const err = await new BrokerClient(kite, { fetch }).holdings(creds, { accessToken: "tok", accountId: null }).catch((e) => e);
     expect(err.code).toBe("BROKER_UNAVAILABLE");
     expect(err.message).not.toContain("kitekey123");
+  });
+});
+
+// Upstox's calls, from its own docs (24 Oct 2026): upstox.com/developer/api-documentation/authentication,
+// /get-token and /get-holdings. The answers below follow the documented shapes.
+describe("BrokerClient for Upstox", () => {
+  const upstox = builtInDefinitions().get("upstox")!;
+  const ucreds = { apiKey: "upkey123", apiSecret: "upsecret456" };
+  const back = "https://maester.example/v1/brokers/upstox/return";
+
+  it("builds the login URL with the key, Maester's redirect URL and the state", () => {
+    const url = new URL(new BrokerClient(upstox).loginUrl(ucreds, "nonce-1", back));
+    expect(url.origin + url.pathname).toBe("https://api.upstox.com/v2/login/authorization/dialog");
+    expect(Object.fromEntries(url.searchParams)).toEqual({ response_type: "code", client_id: "upkey123", redirect_uri: back, state: "nonce-1" });
+  });
+
+  it("reads the return: the code and the state, unchanged", () => {
+    expect(new BrokerClient(upstox).readReturn({ code: "c1", state: "nonce-1" })).toEqual({ code: "c1", state: "nonce-1" });
+    expect(new BrokerClient(upstox).readReturn({ state: "nonce-1" })).toEqual({ refused: true, state: "nonce-1" });
+  });
+
+  it("exchanges the code with the secret and the same redirect URL; the token lasts until 03:30", async () => {
+    const fetch = vi.fn(async () => json(200, { email: "x@example.com", user_id: "7ABC12", access_token: "tok", extended_token: "ext" }));
+    const s = await new BrokerClient(upstox, { fetch }).signIn(ucreds, "c1", new Date("2026-10-24T14:30:00Z"), back);
+    expect(s).toMatchObject({ accessToken: "tok", accountId: "7ABC12" });
+    // Signed in 20:00 IST on 24 Oct: it lasts until 03:30 IST on 25 Oct = 22:00 UTC on 24 Oct.
+    expect(s.expiresAt.toISOString()).toBe("2026-10-24T22:00:00.000Z");
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://api.upstox.com/v2/login/authorization/token");
+    expect(init.method).toBe("POST");
+    expect(Object.fromEntries(new URLSearchParams(init.body as string))).toEqual({
+      code: "c1", client_id: "upkey123", client_secret: "upsecret456", redirect_uri: back, grant_type: "authorization_code",
+    });
+  });
+
+  it("reads long-term holdings with the bearer token", async () => {
+    const fetch = vi.fn(async () =>
+      json(200, { status: "success", data: [{ isin: "INE528G01035", trading_symbol: "YESBANK", tradingsymbol: "YESBANK", exchange: "NSE", quantity: 36, t1_quantity: 0, average_price: 18.75, last_price: 17.05 }] }),
+    );
+    const lines = await new BrokerClient(upstox, { fetch }).holdings(ucreds, { accessToken: "tok", accountId: "7ABC12" });
+    expect(lines).toEqual([{ isin: "INE528G01035", symbol: "YESBANK", exchange: "NSE", quantity: "36", t1Quantity: "0", averagePrice: "18.75", lastPrice: "17.05" }]);
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://api.upstox.com/v2/portfolio/long-term-holdings");
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok");
+  });
+
+  it("says Upstox signed Maester out on a 401", async () => {
+    const fetch = vi.fn(async () => json(401, { status: "error", errors: [{ message: "Invalid token" }] }));
+    const err = await new BrokerClient(upstox, { fetch }).holdings(ucreds, { accessToken: "tok", accountId: null }).catch((e) => e);
+    expect(err.code).toBe("BROKER_SIGNED_OUT");
   });
 });
 

@@ -72,9 +72,9 @@ export class BrokerClient {
     return this.def.signIn;
   }
 
-  /** The broker's login page for this sign-in. */
-  loginUrl(creds: Credentials, state: string): string {
-    return fill(this.redirect().loginUrl, { ...creds, state, stateQuery: `state=${state}` }, { url: true });
+  /** The broker's login page for this sign-in. `returnUrl` is Maester's address the broker sends the investor back to. */
+  loginUrl(creds: Credentials, state: string, returnUrl = ""): string {
+    return fill(this.redirect().loginUrl, { ...creds, state, stateQuery: `state=${state}`, returnUrl }, { url: true });
   }
 
   /** Reads the broker's return: the code, or why there is none. */
@@ -88,9 +88,9 @@ export class BrokerClient {
   }
 
   /** Exchanges the code from the broker's return for a session. */
-  async signIn(creds: Credentials, code: string, now: Date): Promise<BrokerSession> {
+  async signIn(creds: Credentials, code: string, now: Date, returnUrl = ""): Promise<BrokerSession> {
     const s = this.redirect().session;
-    const body = await this.call(s, { ...creds, code }, "sign-in");
+    const body = await this.call(s, { ...creds, code, returnUrl }, "sign-in");
     const accessToken = at(body, s.accessToken);
     if (typeof accessToken !== "string" || accessToken === "") throw new BrokerError("BROKER_ANSWER_UNREADABLE", "the sign-in answer has no access token");
     const accountId = s.accountId ? at(body, s.accountId) : null;

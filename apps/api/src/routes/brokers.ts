@@ -168,7 +168,7 @@ export function brokerCatalogRoutes(deps: AppDeps) {
     const creds = JSON.parse(decryptSecret(row.credentialsCiphertext, key)) as Record<string, string>;
     let session;
     try {
-      session = await client.signIn(creds, ret.code, new Date());
+      session = await client.signIn(creds, ret.code, new Date(), returnUrl(deps, def.id));
     } catch (err) {
       return back({ broker: def.id, error: logBrokerError(deps, def.id, err, "sign-in") });
     }
@@ -236,7 +236,7 @@ export function brokerAccountRoutes(deps: AppDeps) {
     const creds = JSON.parse(decryptSecret(row.credentialsCiphertext, needKey(deps))) as Record<string, string>;
     const nonce = randomBytes(24).toString("base64url");
     await createBrokerLoginState(deps.db, { nonce, connectionId: row.id, userId: c.get("user").id, expiresAt: new Date(Date.now() + LOGIN_STATE_MS) });
-    return c.json({ url: new BrokerClient(d).loginUrl(creds, nonce) });
+    return c.json({ url: new BrokerClient(d).loginUrl(creds, nonce, returnUrl(deps, d.id)) });
   });
 
   r.post("/:broker/read", async (c) => {

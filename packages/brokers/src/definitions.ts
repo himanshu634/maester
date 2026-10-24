@@ -47,10 +47,10 @@ export function checkDefinition(def: BrokerDefinition): void {
 
   if (def.signIn.kind === "redirect") {
     const { loginUrl, session } = def.signIn;
-    for (const p of placeholders(loginUrl)) if (![...creds, "state", "stateQuery"].includes(p)) fail(`loginUrl: unknown placeholder {${p}}`);
+    for (const p of placeholders(loginUrl)) if (![...creds, "state", "stateQuery", "returnUrl"].includes(p)) fail(`loginUrl: unknown placeholder {${p}}`);
     checkUrl("loginUrl", loginUrl);
     if (!placeholders(loginUrl).some((p) => p === "state" || p === "stateQuery")) fail("loginUrl must carry {state} or {stateQuery}");
-    call("session", session, [...creds, "code"]);
+    call("session", session, [...creds, "code", "returnUrl"]);
     call("holdings", def.reads.holdings, [...creds, "accessToken", "accountId"]);
   } else {
     call("holdings", def.reads.holdings, ["accessToken", "clientId"]);

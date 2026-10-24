@@ -97,10 +97,12 @@ async function signIn(query: Record<string, string> = { request_token: "rt-1", s
 }
 
 describe("GET /v1/brokers", () => {
-  it("lists Kite and Dhan from their JSON definitions, with no calls in them", async () => {
+  it("lists the brokers from their JSON definitions, with no calls in them", async () => {
     const res = await ctx.app.request("/v1/brokers", { headers: { cookie } });
     const body = BrokerList.parse(await res.json());
-    expect(body.items.map((b) => b.id)).toEqual(["kite", "dhan"]);
+    expect(body.items.map((b) => b.id)).toEqual(["kite", "dhan", "upstox"]);
+    expect(body.items[2]).toMatchObject({ name: "Upstox", signIn: { kind: "redirect" }, returnUrl: "http://localhost/v1/brokers/upstox/return" });
+    expect(JSON.stringify(body)).not.toContain("api.upstox.com");
     expect(body.items[0]).toMatchObject({ name: "Zerodha", enabled: true, signIn: { kind: "redirect" }, returnUrl: "http://localhost/v1/brokers/kite/return" });
     expect(body.items[1]).toMatchObject({ name: "Dhan", enabled: true, credentials: [], signIn: { kind: "settings-connection", provider: "dhan" }, returnUrl: null });
     expect(JSON.stringify(body)).not.toContain("api.kite.trade");

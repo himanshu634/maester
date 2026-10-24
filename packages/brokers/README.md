@@ -16,14 +16,18 @@ Brokers are data. Each broker is one JSON file that describes it: what the Holdi
 | `copy` | What the page says: `pickerLine`, `lasts`, `cost`, `formLede`, numbered `steps`, `saveNote`, `signedOutNote` |
 | `credentials` | The fields the investor types in (`key`, `label`, `hint`, `secret`, `minLength`, `maxLength`). They are kept together, encrypted. `credentialShown` names the one whose last 4 characters are shown. A `settings-connection` broker has none, and no `credentialShown` |
 | `signIn.kind` | `redirect`: save a key, then sign in on the broker's page (the terms below). `settings-connection`: use the connection saved in Settings for `signIn.provider` (only `dhan` for now, a `market_connection` row), so there is nothing to save and no sign-in |
-| `signIn.loginUrl` | The broker's login page. `{state}` is a single-use nonce; `{stateQuery}` is `state=<nonce>`, for brokers such as Zerodha that send back a `redirect_params` string. Values in a URL are URL-encoded |
+| `signIn.loginUrl` | The broker's login page. `{state}` is a single-use nonce; `{stateQuery}` is `state=<nonce>`, for brokers such as Zerodha that send back a `redirect_params` string; `{returnUrl}` is Maester's return address for the broker, for brokers such as Upstox that ask for it on the login page and again in the session call. Values in a URL are URL-encoded |
 | `signIn.returnParams` | The query parameters the broker sends back: the code, the state, and optionally a status with its success value |
 | `signIn.session` | The call that exchanges the code for a session: `method`, `url`, `headers`, `form`, `derive`, the JSON paths of `accessToken` and `accountId`, and the `expiry` (`daily` at a local time in a zone, or `hours`) |
 | `reads.holdings` | The holdings call: `list` is the JSON path of the array, or absent when the answer is the array itself (Dhan); `fields` maps `isin`, `symbol`, `exchange`, `quantity`, `t1Quantity`, `averagePrice` and `lastPrice` to paths inside one item |
 | `derive` | A value worked out before a call. Only `sha256hex`, over named values joined with nothing between them (Zerodha's checksum) |
 | `signedOutStatuses` | Statuses that mean the broker signed Maester out |
 
-A template may use only the values that exist where it is used: credentials everywhere, `{code}` in the session call, and `{accessToken}` and `{accountId}` in reads. A `settings-connection` read may use `{accessToken}` and `{clientId}`, the token and client ID Settings holds at the moment of the read.
+A template may use only the values that exist where it is used: credentials everywhere, `{returnUrl}` on the login page and in the session call, `{code}` in the session call, and `{accessToken}` and `{accountId}` in reads.
+
+## Upstox
+
+`upstox.json` follows Upstox's own docs (24 Oct 2026): the login dialog and token exchange in [authentication](https://upstox.com/developer/api-documentation/authentication/) and [get-token](https://upstox.com/developer/api-documentation/get-token/), and long-term holdings in [get-holdings](https://upstox.com/developer/api-documentation/get-holdings/). `state` comes back unchanged, so the nonce check holds. The token exchange takes the same `redirect_uri` as the login page and answers with `access_token` and `user_id` at the top level; the token lasts until 03:30 the next day. Upstox allows one app per person, so the investor's app replaces any other tool's. Not yet confirmed on a live run: whether `quantity` already includes `t1_quantity` (Maester adds them, as for Zerodha). A `settings-connection` read may use `{accessToken}` and `{clientId}`, the token and client ID Settings holds at the moment of the read.
 
 ## Signing in through Settings (Dhan)
 
