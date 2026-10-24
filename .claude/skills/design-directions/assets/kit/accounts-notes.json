@@ -27,5 +27,27 @@
    "title": "Shared · The other forms",
    "note": "Angel One (question 1) and Groww (question 3) are drawn so you can decide on them. Upstox and ICICI Direct sit side by side here to compare; on the page one form shows at a time, with one filled button."
   }
- ]
+ ],
+ "round3": {
+  "constraint": "Your words (24 Oct 2026), after round 2: “I’m not getting clear information about which broker’s account holds which positions, and the columns lack profit-and-loss data. This needs to be fixed first before we can proceed.”\n\nSo D, E and F keep their ideas, and the holdings table changes in all three. Round 2 is on the next page, unchanged.",
+  "shared": "In every direction now:\n\n• Each holding opens into one line per account that holds it: “Zerodha · Asha” with its client ID and when it was read, then its quantity, the broker’s average cost, invested, value, P&L and P&L %.\n• The company line adds its accounts up; the total line adds up the page.\n• “Show by: Company | Account”. By account gives each account its own ledger and account total.\n• The strip shows Invested and Unrealized P&L with its %.\n• P&L is unrealized, at Maester’s NSE close, with a sign, never a colour. A part read before its account signed out is starred.\n\nCosts: per-account P&L and P&L % are two new named calculations in the engine, beside holding_cost and holdings_totals. The broker’s average cost is shown as the broker reports it.",
+  "rows": [
+   {
+    "title": "D · Household, by person, with each account’s P&L",
+    "note": "D as in round 2: Whose holdings, and accounts grouped by person. The holdings table now opens each company into its accounts.\n\nHDFC Bank, for example, shows four lines: Zerodha · Asha 120, Zerodha · Ravi 60*, ICICI Direct · Ravi 40, and the total 220, each with its own average cost and P&L.\n\nChoosing Ravi keeps only Ravi’s lines and totals."
+   },
+   {
+    "title": "E · The morning round, with each account’s P&L",
+    "note": "E as in round 2: the morning round on top, the accounts below. The holdings table is the same company-then-account table as D’s."
+   },
+   {
+    "title": "F · Accounts as columns, with P&L",
+    "note": "F keeps a column per account. Each cell gives the account’s quantity and, under it, that account’s P&L % for the share. The last row gives each account’s value and P&L. On the right: total quantity, value, P&L and P&L %.\n\nAverage costs and invested amounts don’t fit six columns; they are one click away (choose a column), or under Show by account."
+   },
+   {
+    "title": "Every direction · by account, and the phone",
+    "note": "Show by account: one ledger per account, Asha’s first, then Ravi’s, each with its account total and a note when its quantities are Friday’s.\n\nPhone: each company, its P&L, then a line per account with its quantity, average cost and P&L."
+   }
+  ]
+ }
 }

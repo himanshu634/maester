@@ -444,6 +444,164 @@ function S5() {
   })
 }
 
+// ---------- Round 3 · which account holds what, with P&L ----------
+// The user (24 Oct 2026): "I’m not getting clear information about which broker’s account holds which
+// positions, and the columns lack profit-and-loss data." Every holding now opens into a line per
+// account, each with its quantity, the broker's average cost, invested, value and P&L. The mock works
+// the figures in paise; the product takes each from a named calculation in the engine.
+const spct = (p, c) => (p < 0 ? "−" : "+") + pct1(Math.abs(p), c)
+const pnl = (v, c) => signed(v - c)
+const part = (k, name) => { const [q, avg] = byKey[k].lots[name]; return { k, q, avg, cost: q * avg, value: q * CLOSES[name] } }
+const acctLabel = (a) => `${NEED[a.bk].name} · ${a.label}`
+const readLine = (a) => `${a.id} · read ${a.readShort}`
+const rnum = (t, s = {}) => num(t, { textAlign: "right", ...s })
+const B = { fontWeight: 700 }
+const blank = () => div({})
+const stripPnl = (phone = false) => [
+  ["Known value", inr0(VALUE), "7 of 7 holdings priced, at Friday’s NSE close."],
+  ["Invested", inr0(COST), "Quantity × each broker’s average cost, account by account."],
+  ["Unrealized P&L", signed(VALUE - COST), `${spct(VALUE - COST, COST)} on what was invested, at Friday’s close.`],
+  ...(phone ? [] : [["Accounts read today", "3 of 6", "Starred lines are Friday’s quantities."]]),
+]
+const showBy = (pressed) => row({ gap: 12, alignItems: "center" }, [div({ fontWeight: 700, fontSize: 16 }, "Show by"), toggles(["Company", "Account"], pressed)])
+
+const GT = "minmax(0, 1fr) 76px 108px 124px 100px 124px 124px 76px 68px"
+const gRow = (cells, s = {}) => div({ display: "grid", gridTemplateColumns: GT, gap: "0 12px", padding: "6px 14px", alignItems: "baseline", ...s }, cells)
+// One group per company: the company's line, then one line per account that holds it.
+function groupedTable(keys = ALL) {
+  const rows = combineAccts(keys)
+  const V = sum(rows), C = sum(rows, "cost")
+  const head = gRow(["Company, then each account holding it", "Quantity", "Avg cost", "Invested", "Close", "Value", "P&L", "P&L %", "Weight"].map((h, i) => div({ textAlign: i ? "right" : "left" }, esc(h))), { borderBottom: `2px solid ${T.ink}`, fontSize: 14, color: T.inkMuted, padding: "12px 14px" })
+  const groups = rows.map((r, gi) => {
+    const top = gRow([
+      bold(r.name, { fontSize: 17 }), rnum(qty(r.q), B), blank(), rnum(inr0(r.cost), B), rnum(inr(CLOSES[r.name])), rnum(inr0(r.value), B), rnum(pnl(r.value, r.cost), B), rnum(spct(r.value - r.cost, r.cost), B), rnum(pct1(r.value, V)),
+    ], { paddingTop: 14, fontSize: 16 })
+    const subs = r.at.map(([k]) => {
+      const p = part(k, r.name), a = byKey[k]
+      return gRow([
+        col({ gap: 0, paddingLeft: 14, marginLeft: 2, borderLeft: `2px solid ${T.ink}` }, [div({ fontSize: 16 }, esc(acctLabel(a) + (STALE_KEYS.includes(k) ? "*" : ""))), mutedCell(readLine(a))]),
+        rnum(qty(p.q)), rnum(inr(p.avg)), rnum(inr0(p.cost)), blank(), rnum(inr0(p.value)), rnum(pnl(p.value, p.cost)), rnum(spct(p.value - p.cost, p.cost)), blank(),
+      ], { fontSize: 16 })
+    })
+    return div({ borderTop: gi ? `1px solid ${T.inkMuted}` : "0", paddingBottom: 10 }, [top, ...subs])
+  })
+  const tot = gRow([bold("Total"), blank(), blank(), rnum(inr0(C), B), blank(), rnum(inr0(V), B), rnum(pnl(V, C), B), rnum(spct(V - C, C), B), rnum("100%", B)], { borderTop: `2px solid ${T.ink}`, padding: "12px 14px", fontSize: 16 })
+  return div({ border: `2px solid ${T.ink}`, flexShrink: 0 }, [head, ...groups, tot], { role: "table", "aria-label": "Holdings, by company and account" })
+}
+function groupedPhone(keys = ALL) {
+  const rows = combineAccts(keys)
+  return col({ borderTop: `2px solid ${T.ink}`, borderBottom: `2px solid ${T.ink}` }, rows.map((r, i) =>
+    col({ gap: 8, padding: "14px 0", borderTop: i ? `1px solid ${T.inkMuted}` : "0" }, [
+      row({ justifyContent: "space-between", gap: 12, alignItems: "baseline" }, [bold(r.name, { fontSize: 17 }), num(inr0(r.value), B)]),
+      row({ justifyContent: "space-between", gap: 12, fontSize: 16 }, [div({}, esc(`${qty(r.q)} shares`)), num(`${pnl(r.value, r.cost)} · ${spct(r.value - r.cost, r.cost)}`, B)]),
+      ...r.at.map(([k]) => {
+        const p = part(k, r.name), a = byKey[k]
+        return col({ gap: 2, paddingLeft: 12, borderLeft: `2px solid ${T.ink}` }, [
+          row({ justifyContent: "space-between", gap: 12, fontSize: 16 }, [div({}, esc(acctLabel(a) + (STALE_KEYS.includes(k) ? "*" : ""))), num(qty(p.q))]),
+          mutedCell(`Avg ${inr(p.avg)} · ${pnl(p.value, p.cost)} · ${spct(p.value - p.cost, p.cost)}`),
+        ])
+      }),
+    ])))
+}
+function accountLedger(k) {
+  const a = byKey[k]
+  const rows = combineAccts([k])
+  const V = sum(rows), C = sum(rows, "cost")
+  return el("section", { display: "flex", flexDirection: "column", gap: 10 }, [
+    row({ justifyContent: "space-between", alignItems: "baseline", gap: 16, flexWrap: "wrap" }, [
+      h3(acctLabel(a)),
+      div({ fontSize: 16 }, `<span style="font-weight: ${needsYou(a) ? 700 : 400}">${esc(STATE[a.state](a)[0])}</span>${esc(` · ${a.id} · read ${a.readShort}`)}`),
+    ]),
+    ledger({
+      label: `${acctLabel(a)} holdings`,
+      cols: [{ label: "Company", w: "minmax(0, 1.4fr)" }, { label: "Quantity", w: "84px", ...R }, { label: "Avg cost", w: "112px", ...R }, { label: "Invested", w: "124px", ...R }, { label: "Close", w: "108px", ...R }, { label: "Value", w: "124px", ...R }, { label: "P&L", w: "124px", ...R }, { label: "P&L %", w: "80px", ...R }],
+      rows: rows.map((r) => { const p = part(k, r.name); return [bold(r.name), num(qty(p.q)), num(inr(p.avg)), num(inr0(p.cost)), num(inr(CLOSES[r.name])), num(inr0(p.value)), num(pnl(p.value, p.cost)), num(spct(p.value - p.cost, p.cost))] }),
+      total: [bold("Account total"), "", "", num(inr0(C)), "", num(inr0(V)), num(pnl(V, C)), num(spct(V - C, C))],
+    }),
+    needsYou(a) ? note(`* These are the quantities read ${a.read}, before ${NEED[a.bk].name} signed Maester out.`) : "",
+  ])
+}
+function matrixPnl() {
+  const tracks = `minmax(0, 1fr) repeat(${ACCTS.length}, 84px) 60px 116px 116px 68px`
+  const g = { display: "grid", gridTemplateColumns: tracks, gap: "0 10px", padding: "10px 14px", alignItems: "baseline" }
+  const head = div({ ...g, alignItems: "end", borderBottom: `2px solid ${T.ink}`, fontSize: 14, color: T.inkMuted }, [
+    div({}, "Company"),
+    ...ACCTS.map((a) => el("button", { textAlign: "right", fontFamily: "inherit", fontSize: 14, lineHeight: 1.3, border: 0, background: "transparent", padding: 0, color: T.ink }, `<span style="font-weight:700;display:block">${esc(NEED[a.bk].short)}</span><span style="display:block">${esc(a.label)}</span><span style="display:block;color:${T.inkMuted};${needsYou(a) ? "font-weight:700" : ""}">${esc(needsYou(a) ? "Fri*" : a.readShort.replace("today ", ""))}</span>`, { type: "button" })),
+    div({ textAlign: "right" }, "Quantity"), div({ textAlign: "right" }, "Value"), div({ textAlign: "right" }, "P&L"), div({ textAlign: "right" }, "P&L %"),
+  ])
+  const body = ROWS.map((r) => div({ ...g, borderBottom: `1px solid ${T.inkMuted}`, fontSize: 16 }, [
+    bold(r.name),
+    ...ACCTS.map((a) => {
+      if (!a.lots[r.name]) return div({ textAlign: "right", color: T.inkMuted }, "·")
+      const p = part(a.key, r.name)
+      return col({ alignItems: "flex-end", gap: 0 }, [num(qty(p.q)), mutedCell(spct(p.value - p.cost, p.cost), NUM)])
+    }),
+    rnum(qty(r.q), B), rnum(inr0(r.value)), rnum(pnl(r.value, r.cost), B), rnum(spct(r.value - r.cost, r.cost)),
+  ]))
+  const foot = div({ ...g, borderTop: `2px solid ${T.ink}`, fontSize: 16 }, [
+    col({ gap: 0 }, [bold("Each account"), mutedCell("Value, then P&L")]),
+    ...ACCTS.map((a) => { const v = acctValue(a.key), c = sum(combineAccts([a.key]), "cost"); return col({ alignItems: "flex-end", gap: 0 }, [num(inr0(v), { fontSize: 14, fontWeight: 700 }), mutedCell(signed(v - c), NUM)]) }),
+    blank(), rnum(inr0(VALUE), B), rnum(pnl(VALUE, COST), B), rnum(spct(VALUE - COST, COST), B),
+  ])
+  return div({ border: `2px solid ${T.ink}`, flexShrink: 0 }, [head, ...body, foot], { role: "table", "aria-label": "Holdings by account, with P&L" })
+}
+function R3D() {
+  return appPage({
+    content: [
+      pageHead({
+        asOf: "Six accounts for two people, valued at the NSE close of Friday 23 Oct. Three need a sign-in today.",
+        action: out("Add an account"),
+        extra: row({ gap: 16, alignItems: "center", marginTop: 4 }, [div({ fontWeight: 700, fontSize: 16 }, "Whose holdings"), toggles(["Everyone", "Asha", "Ravi"], "Everyone")]),
+      }),
+      strip(stripPnl()),
+      el("section", { display: "flex", flexDirection: "column", gap: 20 }, [h2("Accounts"), personBlock("asha", { firstFill: "g1" }), personBlock("ravi", { firstFill: null })]),
+      col({ gap: 12 }, [row({ justifyContent: "space-between", alignItems: "center", gap: 16 }, [h2("Holdings"), showBy("Company")]), groupedTable(), note(staleNote)]),
+    ],
+  })
+}
+function R3E() {
+  return appPage({
+    content: [
+      pageHead({ asOf: "Six accounts, valued at the NSE close of Friday 23 Oct." }),
+      roundPanel(),
+      strip(stripPnl()),
+      col({ gap: 12 }, [row({ justifyContent: "space-between", alignItems: "center" }, [h2("Accounts"), row({ gap: 12 }, [out("Add an account"), out("Manage accounts")])]), compactAccounts()]),
+      col({ gap: 12 }, [row({ justifyContent: "space-between", alignItems: "center", gap: 16 }, [h2("Holdings"), showBy("Company")]), groupedTable(), note(staleNote)]),
+    ],
+  })
+}
+function R3F() {
+  return appPage({
+    content: [
+      pageHead({ asOf: "Each column is one account. Starred columns are Friday’s quantities: those accounts signed Maester out.", action: out("Add an account") }),
+      strip(stripPnl()),
+      col({ gap: 12 }, [h2("Holdings by account"), matrixPnl(), note("Each cell is that account’s quantity, then its P&L % at Friday’s close. · means the account holds none. Choose a column for the account’s average costs and invested amounts."), note(staleNote)]),
+    ],
+  })
+}
+function R3S1() {
+  const person = (p) => col({ gap: 24 }, [h2(`${PEOPLE[p]}’s accounts`), ...ACCTS.filter((a) => a.person === p).map((a) => accountLedger(a.key))])
+  return appPage({
+    content: [
+      pageHead({ asOf: "Six accounts, valued at the NSE close of Friday 23 Oct." }),
+      strip(stripPnl()),
+      col({ gap: 12 }, [row({ justifyContent: "space-between", alignItems: "center", gap: 16 }, [h2("Holdings"), showBy("Account")]), note("Each account’s holdings, with the broker’s average cost and the P&L at Friday’s close. Asha’s first, then Ravi’s.")]),
+      person("asha"), person("ravi"),
+    ],
+  })
+}
+function R3S2() {
+  return appPhone({
+    content: [
+      pageHead({ phone: true, asOf: "Six accounts, valued at Friday’s NSE close." }),
+      strip(stripPnl(true), { phone: true }),
+      h2("Holdings"), showBy("Company"),
+      groupedPhone(),
+      note(staleNote),
+    ],
+  })
+}
+
 // ---------- the document ----------
 const BASE_CSS = `body{margin:0;background:${T.paper};font-family:'Archivo', 'Helvetica Neue', Arial, sans-serif}button{font-family:inherit;margin:0}a{color:inherit}h1,h2,h3,p,dl,dd,figure,ol{margin:0}a:hover{background:#000000;color:#EDEDE8;text-decoration:none}button:focus-visible,a:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:3px solid #000000;outline-offset:2px}`
 function dcHtml({ title, w, h, body }) {
@@ -495,7 +653,13 @@ const FRAMES = [
   { id: "S3.dc.html", title: "Shared 3 · Angel One: PIN and code each day, kept never", w: W, h: 900, render: S3, row: 5 },
   { id: "S4.dc.html", title: "Shared 4 · Groww: paid, approved daily", w: W, h: 900, render: S4, row: 5 },
   { id: "S5.dc.html", title: "Shared 5 · Upstox and ICICI Direct, side by side to compare (the page shows one)", w: W, h: 900, render: S5, row: 5 },
+  { id: "R3D.dc.html", title: "D · Household, by person — each holding opens into its accounts, with P&L", w: W, h: 900, render: R3D, row: 0, page: "round3" },
+  { id: "R3E.dc.html", title: "E · The morning round — each holding opens into its accounts, with P&L", w: W, h: 900, render: R3E, row: 1, page: "round3" },
+  { id: "R3F.dc.html", title: "F · Accounts as columns — each cell with its P&L %, each account with its P&L", w: W, h: 900, render: R3F, row: 2, page: "round3" },
+  { id: "R3S1.dc.html", title: "Every direction · Show by account: each account’s holdings and P&L", w: W, h: 900, render: R3S1, row: 3, page: "round3" },
+  { id: "R3S2.dc.html", title: "Every direction · phone 390, by company then account", w: P, h: 844, render: R3S2, row: 3, page: "round3", phone: true },
 ]
+for (const f of FRAMES) f.page ??= "round2"
 for (const f of FRAMES) {
   const m = HEIGHTS[f.id]
   if (m) f.h = Math.max(f.phone ? 844 : 900, m.content)
@@ -521,32 +685,39 @@ const NOTES = JSON.parse(fs.readFileSync(path.join(HERE, "accounts-notes.json"),
 const X0 = 720
 const boards = {}
 const notes = {}
-const rows = [...new Set(FRAMES.map((f) => f.row))].sort((a, b) => a - b)
-const rowH = Object.fromEntries(rows.map((r) => [r, Math.max(...FRAMES.filter((f) => f.row === r).map((f) => f.h))]))
-const rowY = {}
-let y = 0
-for (const r of rows) { rowY[r] = y; y += rowH[r] + 120 + 300 }
-const colX = {}
-for (const f of FRAMES) {
-  const x = colX[f.row] ?? X0
-  boards[f.id] = { x, y: rowY[f.row], w: f.w, h: f.h, title: f.title, page: "round2" }
-  colX[f.row] = x + f.w + 80
+// One layout per page: rows of boards, a title and a sticky left of each row, the page's notes to
+// the right. Round 3 opens first; round 2 stays behind it as the user saw it.
+function layout(page, pageNotes, prefix) {
+  const frames = FRAMES.filter((f) => f.page === page)
+  const rows = [...new Set(frames.map((f) => f.row))].sort((a, b) => a - b)
+  const rowH = Object.fromEntries(rows.map((r) => [r, Math.max(...frames.filter((f) => f.row === r).map((f) => f.h))]))
+  const rowY = {}
+  let y = 0
+  for (const r of rows) { rowY[r] = y; y += rowH[r] + 120 + 300 }
+  const colX = {}
+  for (const f of frames) {
+    const x = colX[f.row] ?? X0
+    boards[f.id] = { x, y: rowY[f.row], w: f.w, h: f.h, title: f.title, page }
+    colX[f.row] = x + f.w + 80
+  }
+  pageNotes.rows.forEach((n, i) => {
+    const r = rows[i]
+    notes[`${prefix}Title${i}`] = { kind: "title1", text: n.title, x: 0, y: rowY[r] - 260, maxW: colX[r], page }
+    notes[`${prefix}Note${i}`] = { text: n.note, x: 0, y: rowY[r], w: 600, maxH: Math.min(1800, rowH[r]), size: "l", color: n.color || (i === 0 && page === "round2" ? "red" : "orange"), page }
+  })
+  const right = Math.max(...Object.values(colX))
+  notes[`${prefix}Constraint`] = { text: pageNotes.constraint, x: right + 80, y: 0, w: 700, maxH: 500, size: "l", color: "red", page }
+  if (pageNotes.questions) notes[`${prefix}Questions`] = { text: pageNotes.questions, x: right + 80, y: 560, w: 700, maxH: 1000, size: "l", color: "blue", page }
+  notes[`${prefix}Shared`] = { text: pageNotes.shared, x: right + 80, y: rowY[rows[1]], w: 700, maxH: 1600, size: "m", color: "green", page }
 }
-NOTES.rows.forEach((n, i) => {
-  const r = rows[i]
-  notes[`r2Title${i}`] = { kind: "title1", text: n.title, x: 0, y: rowY[r] - 260, maxW: colX[r], page: "round2" }
-  notes[`r2Note${i}`] = { text: n.note, x: 0, y: rowY[r], w: 600, maxH: Math.min(1800, rowH[r]), size: "l", color: n.color || (i === 0 ? "red" : "orange"), page: "round2" }
-})
-const right = Math.max(...Object.values(colX))
-notes.r2Constraint = { text: NOTES.constraint, x: right + 80, y: 0, w: 700, maxH: 500, size: "l", color: "red", page: "round2" }
-notes.r2Questions = { text: NOTES.questions, x: right + 80, y: 560, w: 700, maxH: 1000, size: "l", color: "blue", page: "round2" }
-notes.r2Shared = { text: NOTES.shared, x: right + 80, y: rowY[1], w: 700, maxH: 1600, size: "m", color: "green", page: "round2" }
+layout("round2", NOTES, "r2")
+layout("round3", NOTES.round3, "r3")
 const canvas = {
   v: 3,
   createdOnFiles: { v: 1, at: "2026-10-24T10:00:00Z" },
   title: "Maester Broker Accounts",
-  launch: { view: "canvas", page: "round2" },
-  pages: [{ id: "round2", name: "Round 2 · Several accounts" }],
+  launch: { view: "canvas", page: "round3" },
+  pages: [{ id: "round3", name: "Round 3 · Which account, and P&L" }, { id: "round2", name: "Round 2 · Several accounts" }],
   boards,
   order: FRAMES.map((f) => f.id),
   notes,

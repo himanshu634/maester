@@ -50,7 +50,15 @@ Settle question 1 (Angel One in or out) before writing `typed`.
 
 ### 5. Figures (`@maester/financial-engine`)
 
-The calculations stay the ones built (`holding_quantity`, `holding_cost`, `holding_value`, `holdings_totals`, `holding_weight`, v1). A view of one holder is the same calculations over that holder's parts only, so a row held by two people splits by part before it is summed. Add a fixture for a two-holder household, worked by hand, with its working in a comment. No calculation moves into the API or the web.
+The calculations built so far stay as they are: `holding_quantity`, `holding_cost`, `holding_value`, `holdings_totals` and `holding_weight`, all v1. A view of one holder runs the same calculations over that holder's parts only, so a row held by two people is split by part before it is summed. Add a fixture for a two-holder household, worked by hand, with the working in a comment. No calculation moves into the API or the web.
+
+Round 3 of the canvas shows P&L per account and per holding: "I’m not getting clear information about which broker’s account holds which positions, and the columns lack profit-and-loss data." That needs:
+
+- **Two new calculations**, each with its own fixture:
+  - `holding_part_gain`: one account's quantity × the close, less its quantity × the broker's average price. It is unknown without a close.
+  - `holding_gain_percent`: gain ÷ cost, as a per cent to one place. It is unknown when the cost is zero or unknown.
+- **Per-account values** for the total of each account: value, invested and P&L, summed over that account's parts.
+- **The snapshot shape:** each `HoldingRow.parts[]` carries its quantity, average price, cost, value, gain and gain per cent, all as decimal strings.
 
 ### 6. Dhan for a second person (question 4)
 
@@ -58,7 +66,13 @@ Either a `redirect` definition on Dhan's API key and consent flow (a daily brows
 
 ### 7. Web (waits for the pick)
 
-- In every direction: "Whose account is it?" on add; the holder beside every part; several accounts per broker; one filled button per screen.
+- In every direction:
+  - "Whose account is it?" when an account is added.
+  - Several accounts per broker.
+  - One filled button per screen.
+  - From round 3, the holdings ledger becomes company, then account. Each company line is followed by one line per account that holds it, with "Zerodha · Asha", the client ID and when the account was read. Each line shows quantity, average cost, invested, value, P&L and P&L %.
+  - From round 3, a "Show by: Company | Account" switch. By account, each account gets its own ledger and total.
+  - From round 3, the strip shows Invested and Unrealized P&L with its per cent.
 - D adds the "Whose holdings" toggle and per-holder grouping; E adds the morning-round panel and a round state carried across broker redirects; F adds the account-column table and the opened-account band.
 - `docs/DESIGN.md` §5 and §10 rows for the new pieces.
 
