@@ -5,11 +5,28 @@
 :root {
 	color-scheme: light;
 
-	/* Colour: two inks and one derived grey. Nothing else, anywhere. */
+	/* Colour: two inks and one derived grey, plus the named exceptions below and nothing else. */
 	--paper: #edede8;
 	--ink: #000000;
 	--ink-muted: #5f5f5b; /* secondary text and hairlines on paper only */
 	--paper-muted: rgba(237, 237, 232, 0.72); /* secondary text on ink panels */
+
+	/*
+	 * Gain and loss: the text colour of a signed P&L figure and its per cent, and nothing else.
+	 * The + or − sign stays; the colour repeats it. Chosen for contrast (AA for text) and for
+	 * colour-blind separation: docs/research/2026-10-24-pnl-and-highlight-colours.md.
+	 * Holdings only, for now. See docs/DESIGN.md section 2.
+	 */
+	--gain: #006b55; /* 5.53:1 on paper */
+	--loss: #ba2c1a; /* 5.16:1 on paper */
+	--gain-on-ink: #3fc4a2; /* 9.63:1 on ink */
+	--loss-on-ink: #ff7a4d; /* 8.14:1 on ink */
+
+	/*
+	 * The highlight: a highlighter fill behind ink text (15.4:1) that marks words which already
+	 * say what needs the investor. Never the only signal. HoldingsNudge only, for now.
+	 */
+	--highlight: #f9dc5c;
 
 	/* Type: one family, width and weight axes do the work. */
 	--font-sans: 'Archivo Variable', 'Helvetica Neue', Arial, sans-serif;

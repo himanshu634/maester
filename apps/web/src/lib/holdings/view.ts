@@ -147,6 +147,64 @@ export function olderCloseDay(row: HoldingRow, closeDay: string | null): string 
 	return row.close && closeDay && row.close.day !== closeDay ? dayWords(row.close.day) : null;
 }
 
+const WEEKDAYS: Record<string, string> = {
+	Mon: 'Monday',
+	Tue: 'Tuesday',
+	Wed: 'Wednesday',
+	Thu: 'Thursday',
+	Fri: 'Friday',
+	Sat: 'Saturday',
+	Sun: 'Sunday'
+};
+
+/** A read's day in words for the nudge: "today", "yesterday", "Friday" within the week, else "23 Oct". */
+export function readDayWords(iso: string, now: Date = new Date()): string {
+	const [y, m, d, wd] = istDay(iso);
+	const [ny, nm, nd] = istDay(now);
+	const days = Math.round((Date.UTC(ny, nm - 1, nd) - Date.UTC(y, m - 1, d)) / 86_400_000);
+	if (days <= 0) return 'today';
+	if (days === 1) return 'yesterday';
+	if (days < 7) return WEEKDAYS[wd] ?? wd;
+	return `${d} ${MONTHS[m - 1]}`;
+}
+
+/** "today 08:55" or "Fri 16:10": when one broker's part was read, short enough for a table line. */
+export function readShort(iso: string, now: Date = new Date()): string {
+	const [y, m, d, wd] = istDay(iso);
+	const [ny, nm, nd] = istDay(now);
+	return y === ny && m === nm && d === nd ? `today ${clock(iso)}` : `${wd} ${clock(iso)}`;
+}
+
+/**
+ * The brokers the nudge names: signed out (or failing, or never signed in) while holdings they
+ * read earlier are still on the page. A broker with nothing read yet is not here: there is no
+ * data of it to call old.
+ */
+export function needsSignIn(s: HoldingsSnapshot): BrokerAccount[] {
+	return s.accounts.filter((a) => a.state !== 'signed_in' && a.lastReadAt !== null);
+}
+
+/** The nudge's line, or null when every broker with holdings is signed in. */
+export function nudgeLine(
+	s: HoldingsSnapshot,
+	now: Date = new Date()
+): { lead: string; rest: string; button: string } | null {
+	const out = needsSignIn(s);
+	if (!out.length) return null;
+	const oldest = out.reduce((a, b) => (a.lastReadAt! <= b.lastReadAt! ? a : b));
+	const name = out[0]!.name;
+	return {
+		lead: copy.nudge.lead(readDayWords(oldest.lastReadAt!, now)),
+		rest: copy.nudge.rest(out.length, s.accounts.length, name),
+		button: copy.nudge.button(out.length, name)
+	};
+}
+
+/** One broker's totals from the snapshot (holdings_by_account), or null when it holds nothing. */
+export function totalsOf(s: HoldingsSnapshot, broker: string) {
+	return s.accountTotals.find((t) => t.broker === broker) ?? null;
+}
+
 /** Brokers the investor can still add: enabled, not connected yet. */
 export function addable(brokers: BrokerSummary[], accounts: BrokerAccount[]): BrokerSummary[] {
 	return brokers.filter((b) => b.enabled && !accounts.some((a) => a.broker === b.id));

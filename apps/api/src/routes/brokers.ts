@@ -345,8 +345,10 @@ export function holdingsRoutes(deps: AppDeps) {
       accountTotals: accts.flatMap((a) => {
         const t = computed.accounts.find((x) => x.account === a.broker);
         if (!t) return [];
-        const { account: _account, ...figures } = t;
-        return [{ broker: a.broker, ...figures }];
+        return [{
+          broker: a.broker, knownValue: t.knownValue, priced: t.priced, count: t.count, cost: t.cost, costed: t.costed,
+          gain: t.gain, gainCovers: t.gainCovers, gainPercent: t.gainPercent,
+        }];
       }),
       closeDay: Object.values(closes).map((c0) => c0.day).sort().at(-1) ?? null,
       calculations: HOLDINGS_CALCULATIONS.map(({ id, version }) => ({ id, version })),

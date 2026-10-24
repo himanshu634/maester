@@ -5,7 +5,7 @@
 -->
 <script lang="ts">
 	import { holdingsContent as copy } from '$lib/content/holdings';
-	import { rupees } from '$lib/holdings/format';
+	import { direction, rupees, signedPercent } from '$lib/holdings/format';
 	import type { HoldingsSnapshot } from '$lib/holdings/types';
 
 	interface Props {
@@ -30,21 +30,22 @@
 		{
 			label: copy.strip.gain,
 			value: t.unrealizedGain ? rupees(t.unrealizedGain, { sign: true }) : null,
-			note: copy.strip.gainNote(t.gainCovers)
+			tone: t.unrealizedGain ? direction(t.unrealizedGain) : 'flat',
+			note: copy.strip.gainNote(t.gainPercent ? signedPercent(t.gainPercent) : null, t.gainCovers)
 		},
 		{
 			label: copy.strip.accounts,
-			value: `${snapshot.accounts.length}`,
+			value: `${signedIn} of ${snapshot.accounts.length}`,
 			note: copy.strip.accountsNote(signedIn, snapshot.accounts.length)
 		}
-	]);
+	] as { label: string; value: string | null; note: string; tone?: 'gain' | 'loss' | 'flat' }[]);
 </script>
 
 <dl class="strip" aria-label={copy.strip.label}>
 	{#each cells as c (c.label)}
 		<div class="cell">
 			<dt>{c.label}</dt>
-			<dd class="figure num">
+			<dd class={['figure', 'num', c.tone]}>
 				{#if c.value}{c.value}{:else}<span aria-hidden="true">—</span><span class="visually-hidden"
 						>{copy.strip.unknown}</span
 					>{/if}
@@ -91,6 +92,15 @@
 		line-height: 1.05;
 		letter-spacing: var(--tracking-heading);
 		overflow-wrap: anywhere;
+	}
+
+	/* The sign carries the direction; the colour repeats it (DESIGN.md §2). */
+	.gain {
+		color: var(--gain);
+	}
+
+	.loss {
+		color: var(--loss);
 	}
 
 	.note {

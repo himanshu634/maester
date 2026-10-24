@@ -263,6 +263,20 @@ describe('design guard (docs/DESIGN.md)', () => {
 		expect(users).toEqual([join('lib', 'components', 'auth', 'GoogleButton.svelte')]);
 	});
 
+	it('keeps gain and loss on the holdings figures, and the highlight in the nudge', () => {
+		const users = (token: RegExp) =>
+			files
+				.filter((f) => !isTokensFile(f))
+				.filter((f) => token.test(readFileSync(f, 'utf8')))
+				.map((f) => relative(SRC, f))
+				.sort();
+		const holdings = (name: string) => join('lib', 'components', 'holdings', name);
+		expect(users(/--(gain|loss)(-on-ink)?\b/)).toEqual(
+			['HoldingsByBroker.svelte', 'HoldingsLedger.svelte', 'HoldingsStrip.svelte'].map(holdings)
+		);
+		expect(users(/--highlight\b/)).toEqual([holdings('HoldingsNudge.svelte')]);
+	});
+
 	it('has the global reduced-motion kill switch', () => {
 		const app = readFileSync(APP_CSS, 'utf8');
 		const block = app.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*?\}\s*\}/);
