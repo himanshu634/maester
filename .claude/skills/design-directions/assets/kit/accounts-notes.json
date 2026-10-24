@@ -28,6 +28,25 @@
    "note": "Angel One (question 1) and Groww (question 3) are drawn so you can decide on them. Upstox and ICICI Direct sit side by side here to compare; on the page one form shows at a time, with one filled button."
   }
  ],
+ "solo": {
+  "constraint": "Your correction (24 Oct 2026), in your words: “There won’t be multiple people, only one account, one person. But the broker may differ; multiple brokers can be available to one person.”\n\nSo D · final is redrawn for one investor with an account at each of five brokers. “Whose holdings”, the holder on each account and the second Zerodha account are gone. The two-person version stays on the next page, marked superseded.",
+  "questions": "Before the build:\n\n1. The highlight is G · Highlighter. Keep it?\n2. Gain and loss colour Holdings only for now?\n3. The nudge button says “Update 2 brokers”. Fine, or another word?",
+  "shared": "What stays from D · final:\n\n• Holdings first. Signed-out brokers are one nudge line at the top, highlighted, that opens their sign-ins in place; nothing already read is hidden or asked for again.\n• Company, then a line per broker holding it, each with quantity, average cost, invested, value, P&L and P&L %, in gain or loss.\n• “Show by: Company | Broker”.\n• Your brokers at the foot, outline buttons only.\n\nWhat this simplifies in the build: one account per broker is what is already built (the database allows one per broker per workspace), so no holder, no re-keyed routes and no migration for it.",
+  "rows": [
+   {
+    "title": "D · final, one person",
+    "note": "Five brokers: Zerodha, Groww, Angel One, Upstox and ICICI Direct. Angel One signed out at midnight and Groww’s key isn’t approved today, so the nudge says “2 of 5 brokers signed Maester out”.\n\nOpened, it lists the two with their actions: Sign in to Angel One (filled; its MPIN and code are asked for next, in the same box) and Open Groww to approve."
+   },
+   {
+    "title": "Show by broker, and nothing due",
+    "note": "Show by broker gives each broker its own ledger and total. With every broker read today, the nudge is gone and nothing is starred."
+   },
+   {
+    "title": "First visit",
+    "note": "No broker yet: the page is the add form, as built, with what each of the five needs: once, each day, how long a sign-in lasts and the cost."
+   }
+  ]
+ },
  "final": {
   "constraint": "Your pick (24 Oct 2026): D. Your change, in your words: “If a user account is automatically locked out, we should display a brief nudge instead of taking up an entire section of the screen.” And: “if we already have the data, we should not ask the user to update it again.”\n\nThis page is D · final, with round 4’s colours (gain, loss and G · Highlighter). Earlier rounds sit on the pages behind it. Nothing is built until you say go.",
   "questions": "Before the build:\n\n1. The highlight is G · Highlighter here. Keep it?\n2. Gain and loss colour Holdings only for now (the rest of the terminal keeps signs only)?\n3. The nudge button says “Update 3 accounts”. Fine, or another word?",

@@ -14,8 +14,18 @@ export const ACCTS = [
   { key: "u1", broker: "Upstox", bk: "upstox", person: "asha", label: "Asha", id: "7ABC12", state: "in", read: "Today, 09:02", readShort: "today 09:02", lots: { Infosys: [20, 175500] } },
   { key: "i1", broker: "ICICI Direct", bk: "icici", person: "ravi", label: "Ravi", id: "8500123456", state: "in", read: "Today, 09:05", readShort: "today 09:05", lots: { "Larsen & Toubro": [10, 350000], "HDFC Bank": [40, 145000] } },
 ]
+// From 24 Oct 2026 (D · final, one person): the user, in their words, "There won’t be multiple
+// people, only one account, one person. But the broker may differ". One investor, one account at
+// each of the top five brokers; no label, because the broker names the account.
+export const SOLO = [
+  { key: "z1", broker: "Zerodha", bk: "kite", id: "AB1234", state: "in", read: "Today, 08:55", readShort: "today 08:55", lots: { "HDFC Bank": [120, 151240], Infosys: [80, 140215], ITC: [400, 41230], "Larsen & Toubro": [25, 321000] } },
+  { key: "g1", broker: "Groww", bk: "groww", id: "6F2K9Q", state: "approve", read: "Fri 23 Oct, 16:02", readShort: "Fri 16:02", lots: { ITC: [150, 43800], Titan: [15, 335000] } },
+  { key: "a1", broker: "Angel One", bk: "angel", id: "R123456", state: "out", read: "Fri 23 Oct, 15:58", readShort: "Fri 15:58", lots: { "Asian Paints": [30, 270000], ITC: [200, 42000] } },
+  { key: "u1", broker: "Upstox", bk: "upstox", id: "7ABC12", state: "in", read: "Today, 09:02", readShort: "today 09:02", lots: { Infosys: [20, 175500] } },
+  { key: "i1", broker: "ICICI Direct", bk: "icici", id: "8500123456", state: "in", read: "Today, 09:05", readShort: "today 09:05", lots: { "Larsen & Toubro": [10, 350000], "HDFC Bank": [40, 145000] } },
+]
 export const byKey = Object.fromEntries(ACCTS.map((a) => [a.key, a]))
-export const accName = (a) => `${a.broker} · ${a.label}`
+export const accName = (a) => (a.label ? `${a.broker} · ${a.label}` : a.broker)
 export const needsYou = (a) => a.state !== "in"
 
 /** Rows per company across the given account keys: quantity, cost, value, and where each part is held. */

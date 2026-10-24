@@ -16,7 +16,7 @@ The round-2 directions on the "Maester Broker Accounts" canvas (<https://claude.
 
 What this means for Maester:
 
-1. **An account, not a broker, is the unit.** Every broker ties a key to one person's account, so Maester keeps one key and one day's token per account, and asks whose account it is.
+1. **One account at each broker.** The user confirmed on 24 Oct 2026 that Maester serves one person with an account at each of several brokers. Every broker ties a key to one person's account, so Maester keeps one key and one day's token per broker. That is what is already built. The "Several accounts" column above matters only if that ever changes.
 2. **Every account signs out daily.** Six accounts can mean six sign-ins a morning. How the page carries that cost is the main design question.
 3. **Angel One needs a new sign-in kind:** the MPIN and an authenticator code, typed each day and never kept. Keeping them would let Maester sign in alone; this page does not recommend it.
 4. **ICICI Direct's app form asks for a static IP**, though the rule covers orders only. Hosting is undecided; the first live run will show whether the form accepts the API's address.

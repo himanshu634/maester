@@ -12,7 +12,7 @@ import {
   FONTS, appH1, h2, h3, body, note, strong, synth, appPage, appPhone, notice, field, steps,
   ACCOUNTS, CLOSES, combine, total, inr, inr0, qty, pct1,
 } from "./holdings-base.mjs"
-import { PEOPLE, ACCTS, byKey, accName, needsYou, combineAccts, keysOf, sum, acctValue } from "./accounts-base.mjs"
+import { PEOPLE, ACCTS, SOLO, byKey, accName, needsYou, combineAccts, keysOf, sum, acctValue } from "./accounts-base.mjs"
 import { NEED, TOP5 } from "./accounts-brokers.mjs"
 import { HUE, MARK, SIM } from "./accounts-colour.mjs"
 
@@ -52,8 +52,8 @@ const STATE = {
 const actionFor = (a) => (a.state === "out" ? `Sign in to ${NEED[a.bk].short}` : a.state === "approve" ? "Open Groww to approve" : "Read again")
 const ALL = ACCTS.map((a) => a.key)
 const ROWS = combineAccts(ALL)
-const VALUE = sum(ROWS)
-const COST = sum(ROWS, "cost")
+let VALUE = sum(ROWS)
+let COST = sum(ROWS, "cost")
 const signed = (p) => (p >= 0 ? "+" : "−") + inr0(Math.abs(p))
 const STALE_KEYS = ACCTS.filter(needsYou).map((a) => a.key)
 const staleNote = "* Read on Friday, before that account signed Maester out. Quantities change only when you trade; sign in to check."
@@ -470,18 +470,21 @@ function S5() {
 const spct = (p, c) => (p < 0 ? "−" : "+") + pct1(Math.abs(p), c)
 const pnl = (v, c) => signed(v - c)
 const part = (k, name) => { const [q, avg] = byKey[k].lots[name]; return { k, q, avg, cost: q * avg, value: q * CLOSES[name] } }
-const acctLabel = (a) => `${NEED[a.bk].name} · ${a.label}`
+const acctLabel = (a) => (a.label ? `${NEED[a.bk].name} · ${a.label}` : NEED[a.bk].name)
 const readLine = (a) => `${a.id} · read ${a.readShort}`
 const rnum = (t, s = {}) => num(t, { textAlign: "right", ...s })
 const B = { fontWeight: 700 }
 const blank = () => div({})
 const stripPnl = (phone = false) => [
-  ["Known value", inr0(VALUE), "7 of 7 holdings priced, at Friday’s NSE close."],
+  ["Known value", inr0(VALUE), `${ROWS.length} of ${ROWS.length} holdings priced, at Friday’s NSE close.`],
   ["Invested", inr0(COST), "Quantity × each broker’s average cost, account by account."],
   ["Unrealized P&L", signed(VALUE - COST), `${spct(VALUE - COST, COST)} on what was invested, at Friday’s close.`, tone(VALUE - COST)],
-  ...(phone ? [] : [["Accounts read today", "3 of 6", "Starred lines are Friday’s quantities."]]),
+  ...(phone ? [] : [["Accounts read today", `${ACCTS.length - STALE_KEYS.length} of ${ACCTS.length}`, STALE_KEYS.length ? "Starred lines are Friday’s quantities." : "Every account read today."]]),
 ]
-const showBy = (pressed) => row({ gap: 12, alignItems: "center" }, [div({ fontWeight: 700, fontSize: 16 }, "Show by"), toggles(["Company", "Account"], pressed)])
+const showBy = (pressed) => {
+  const second = ACCTS.some((a) => a.label) ? "Account" : "Broker"
+  return row({ gap: 12, alignItems: "center" }, [div({ fontWeight: 700, fontSize: 16 }, "Show by"), toggles(["Company", second], pressed === "Company" ? "Company" : second)])
+}
 
 const GT = "minmax(0, 1fr) 76px 108px 124px 100px 124px 124px 76px 68px"
 const gRow = (cells, s = {}) => div({ display: "grid", gridTemplateColumns: GT, gap: "0 12px", padding: "6px 14px", alignItems: "baseline", ...s }, cells)
@@ -489,7 +492,7 @@ const gRow = (cells, s = {}) => div({ display: "grid", gridTemplateColumns: GT, 
 function groupedTable(keys = ALL) {
   const rows = combineAccts(keys)
   const V = sum(rows), C = sum(rows, "cost")
-  const head = gRow(["Company, then each account holding it", "Quantity", "Avg cost", "Invested", "Close", "Value", "P&L", "P&L %", "Weight"].map((h, i) => div({ textAlign: i ? "right" : "left" }, esc(h))), { borderBottom: `2px solid ${T.ink}`, fontSize: 14, color: T.inkMuted, padding: "12px 14px" })
+  const head = gRow([ACCTS.some((a) => a.label) ? "Company, then each account holding it" : "Company, then each broker holding it", "Quantity", "Avg cost", "Invested", "Close", "Value", "P&L", "P&L %", "Weight"].map((h, i) => div({ textAlign: i ? "right" : "left" }, esc(h))), { borderBottom: `2px solid ${T.ink}`, fontSize: 14, color: T.inkMuted, padding: "12px 14px" })
   const groups = rows.map((r, gi) => {
     const top = gRow([
       bold(r.name, { fontSize: 17 }), rnum(qty(r.q), B), blank(), rnum(inr0(r.cost), B), rnum(inr(CLOSES[r.name])), rnum(inr0(r.value), B), rnum(pnl(r.value, r.cost), { ...B, ...tone(r.value - r.cost) }), rnum(spct(r.value - r.cost, r.cost), { ...B, ...tone(r.value - r.cost) }), rnum(pct1(r.value, V)),
@@ -724,8 +727,9 @@ const NUDGE = ACCTS.filter(needsYou).map((a) => a.key)
 const nudgeOrder = ["z2", "a1", "g1"].filter((k) => NUDGE.includes(k))
 function nudge({ open = false, phone = false } = {}) {
   const n = nudgeOrder.length
-  const words = `${mark("Some holdings are from Friday.")} ${esc(`${n} of ${ACCTS.length} accounts signed Maester out; sign in to see today’s.`)}`
-  const toggle = el("button", { display: "inline-flex", alignItems: "center", gap: 10, minHeight: 44, padding: "0 20px", fontFamily: "inherit", fontSize: 16, fontWeight: 700, border: `2px solid ${T.ink}`, background: open ? T.ink : "transparent", color: open ? T.paper : T.ink, borderRadius: 0, flexShrink: 0, alignSelf: phone ? "stretch" : "center", justifyContent: "center" }, `Update ${n} accounts <span aria-hidden="true">${open ? "−" : "+"}</span>`, { type: "button", "aria-expanded": open ? "true" : "false", "aria-controls": "nudge-list" })
+  const noun = ACCTS.some((a) => a.label) ? "accounts" : "brokers"
+  const words = `${mark("Some holdings are from Friday.")} ${esc(`${n} of ${ACCTS.length} ${noun} signed Maester out; sign in to see today’s.`)}`
+  const toggle = el("button", { display: "inline-flex", alignItems: "center", gap: 10, minHeight: 44, padding: "0 20px", fontFamily: "inherit", fontSize: 16, fontWeight: 700, border: `2px solid ${T.ink}`, background: open ? T.ink : "transparent", color: open ? T.paper : T.ink, borderRadius: 0, flexShrink: 0, alignSelf: phone ? "stretch" : "center", justifyContent: "center" }, `Update ${n} ${noun} <span aria-hidden="true">${open ? "−" : "+"}</span>`, { type: "button", "aria-expanded": open ? "true" : "false", "aria-controls": "nudge-list" })
   const bar = div({ display: "flex", flexDirection: phone ? "column" : "row", alignItems: phone ? "stretch" : "center", gap: phone ? 12 : 24, padding: "12px 0", borderTop: `2px solid ${T.ink}`, borderBottom: open && phone ? "0" : `2px solid ${T.ink}` }, [el("p", { margin: 0, fontSize: phone ? 16 : 17, lineHeight: 1.5, flex: 1, minWidth: 0 }, words), toggle], { "data-nag": "1", role: "status" })
   if (!open) return bar
   const item = (k, i) => {
@@ -788,6 +792,103 @@ function sweep() {
     col({ gap: 14, borderTop: `2px solid ${T.ink}`, borderBottom: `2px solid ${T.ink}`, padding: "16px 0" }, [step(0, "0 ms"), step(40, "100 ms"), step(75, "180 ms"), step(100, "240 ms, stays")]),
     note("Built as a block behind the words that grows from the left (transform: scaleX), not a gradient. It is the page’s one motion after it loads; the hatch belongs to the wait before."),
   ])
+}
+
+// ---------- D · final, one person ----------
+// The user (24 Oct 2026): "There won’t be multiple people, only one account, one person. But the
+// broker may differ; multiple brokers can be available to one person." So D · final without people:
+// one investor, one account at each broker, no "Whose holdings" and no holder on an account.
+function useSolo(render) {
+  return () => {
+    const keep = { accts: ACCTS.splice(0, ACCTS.length, ...SOLO), by: { ...byKey }, all: ALL.splice(0, ALL.length, ...SOLO.map((a) => a.key)), rows: ROWS.splice(0), stale: STALE_KEYS.splice(0), order: nudgeOrder.splice(0), value: VALUE, cost: COST }
+    for (const k of Object.keys(byKey)) delete byKey[k]
+    for (const a of SOLO) byKey[a.key] = a
+    ROWS.push(...combineAccts(ALL))
+    VALUE = sum(ROWS)
+    COST = sum(ROWS, "cost")
+    STALE_KEYS.push(...SOLO.filter(needsYou).map((a) => a.key))
+    nudgeOrder.push(...["a1", "g1"].filter((k) => STALE_KEYS.includes(k)))
+    try {
+      return render()
+    } finally {
+      ACCTS.splice(0, ACCTS.length, ...keep.accts)
+      for (const k of Object.keys(byKey)) delete byKey[k]
+      Object.assign(byKey, keep.by)
+      ALL.splice(0, ALL.length, ...keep.all)
+      ROWS.splice(0, ROWS.length, ...keep.rows)
+      STALE_KEYS.splice(0, STALE_KEYS.length, ...keep.stale)
+      nudgeOrder.splice(0, nudgeOrder.length, ...keep.order)
+      VALUE = keep.value
+      COST = keep.cost
+    }
+  }
+}
+function accountsFoot({ phone = false } = {}) {
+  if (phone) {
+    return col({ borderTop: `2px solid ${T.ink}`, borderBottom: `2px solid ${T.ink}` }, ACCTS.map((a, i) => col({ gap: 4, padding: "12px 0", borderTop: i ? `1px solid ${T.inkMuted}` : "0" }, [
+      row({ justifyContent: "space-between", gap: 12 }, [bold(NEED[a.bk].name), div({ fontSize: 16, fontWeight: needsYou(a) ? 700 : 400 }, esc(STATE[a.state](a)[0]))]),
+      mutedCell(`${a.id} · read ${a.readShort} · ${inr0(acctValue(a.key))}`),
+    ])))
+  }
+  return ledger({
+    label: "Your brokers",
+    cols: [{ label: "Broker", w: "minmax(0, 1fr)" }, { label: "Where it stands", w: "minmax(0, 1.4fr)" }, { label: "Holdings read", w: "160px" }, { label: "Value", w: "130px", ...R }, { label: "", w: "330px", ...R }],
+    rows: ACCTS.map((a) => {
+      const [s, d] = STATE[a.state](a)
+      return [col({ gap: 2 }, [bold(NEED[a.bk].name), mutedCell(a.id)]), col({ gap: 2 }, [div({ fontWeight: needsYou(a) ? 700 : 400 }, esc(s)), mutedCell(d)]), num(a.read), num(inr0(acctValue(a.key)) + (needsYou(a) ? "*" : "")), row({ gap: 8, justifyContent: "flex-end" }, [out(actionFor(a)), out("Disconnect")])]
+    }),
+  })
+}
+function soloDesk({ open = false, allIn = false, byBroker = false } = {}) {
+  return appPage({
+    content: [
+      pageHead({ asOf: allIn ? "Your holdings at five brokers, all read today, valued at the NSE close of Friday 23 Oct." : "Your holdings at five brokers, valued at the NSE close of Friday 23 Oct.", action: out("Add a broker") }),
+      allIn ? "" : nudge({ open }),
+      strip(stripPnl()),
+      col({ gap: 12 }, [
+        row({ justifyContent: "space-between", alignItems: "center", gap: 16 }, [h2("Holdings"), showBy(byBroker ? "Broker" : "Company")]),
+        byBroker ? note("Each broker’s holdings, with its average cost and the P&L at Friday’s close.") : groupedTable(),
+        allIn || byBroker ? "" : note(staleNote),
+      ]),
+      ...(byBroker ? ACCTS.map((a) => accountLedger(a.key)) : []),
+      el("section", { display: "flex", flexDirection: "column", gap: 12 }, [h2("Your brokers"), accountsFoot()]),
+    ],
+  })
+}
+function soloPhone({ open = false } = {}) {
+  return appPhone({
+    content: [
+      pageHead({ phone: true, asOf: "Your holdings at five brokers, valued at Friday’s NSE close." }),
+      nudge({ open, phone: true }),
+      strip(stripPnl(true), { phone: true }),
+      h2("Holdings"), showBy("Company"),
+      groupedPhone(),
+      note(staleNote),
+      h2("Your brokers"), accountsFoot({ phone: true }),
+      out("Add a broker"),
+    ],
+  })
+}
+// First visit: no broker yet, so the page is the add form (as built), with what each broker needs.
+function soloFirst() {
+  const sheet = ledger({
+    label: "What each broker needs",
+    rowPad: "12px 14px",
+    fontSize: 15,
+    cols: [{ label: "Broker", w: "120px" }, { label: "Once", w: "minmax(0, 1.5fr)" }, { label: "Each day", w: "minmax(0, 1.2fr)" }, { label: "A sign-in lasts", w: "160px" }, { label: "Cost", w: "minmax(0, 1fr)" }],
+    rows: TOP5.map((k) => { const b = NEED[k]; return [bold(b.name), div({}, esc(b.once)), div({}, esc(b.daily)), div({}, esc(b.lasts)), div({}, esc(b.cost))] }),
+  })
+  return appPage({
+    synthetic: false,
+    content: [
+      col({ gap: 12 }, [appH1("Holdings"), body("Connect your brokers and Maester reads what you hold at each. It only reads: it can’t place an order or move money.")]),
+      el("section", { display: "flex", flexDirection: "column", gap: 20, borderTop: `2px solid ${T.ink}`, paddingTop: 20 }, [
+        h2("Add a broker"),
+        col({ gap: 8 }, [div({ fontWeight: 700, fontSize: 16 }, "Which broker?"), toggles(["Groww", "Zerodha", "Angel One", "ICICI Direct", "Upstox", "Dhan"], "Zerodha")]),
+        col({ gap: 8 }, [h3("What each broker needs"), note("Every broker signs Maester out daily: SEBI’s 2025 rules allow no lasting read access. The first sign-in reads your holdings at once."), sheet]),
+      ]),
+    ],
+  })
 }
 
 // ---------- the document ----------
@@ -858,6 +959,13 @@ const FRAMES = [
   { id: "DF4.dc.html", title: "D · final — phone 390, opened", w: P, h: 844, render: withColour("G", () => finalPhone({ open: true })), row: 0, page: "final", phone: true },
   { id: "DF5.dc.html", title: "D · final — every account read today: no nudge, nothing starred", w: W, h: 900, render: withColour("G", withAllIn(() => finalDesk({ allIn: true }))), row: 1, page: "final" },
   { id: "DF6.dc.html", title: "D · final — the highlighter draws once, on load", w: 1100, h: 900, min: 400, render: withColour("G", sweep), row: 1, page: "final" },
+  { id: "SF1.dc.html", title: "D · final, one person — five brokers; two need a sign-in, one line at the top", w: W, h: 900, render: withColour("G", useSolo(() => soloDesk())), row: 0, page: "solo" },
+  { id: "SF2.dc.html", title: "D · final, one person — “Update 2 brokers” opened", w: W, h: 900, render: withColour("G", useSolo(() => soloDesk({ open: true }))), row: 0, page: "solo" },
+  { id: "SF3.dc.html", title: "D · final, one person — phone 390", w: P, h: 844, render: withColour("G", useSolo(() => soloPhone())), row: 0, page: "solo", phone: true },
+  { id: "SF4.dc.html", title: "D · final, one person — phone 390, opened", w: P, h: 844, render: withColour("G", useSolo(() => soloPhone({ open: true }))), row: 0, page: "solo", phone: true },
+  { id: "SF5.dc.html", title: "D · final, one person — show by broker", w: W, h: 900, render: withColour("G", useSolo(() => soloDesk({ byBroker: true }))), row: 1, page: "solo" },
+  { id: "SF6.dc.html", title: "D · final, one person — every broker read today: no nudge", w: W, h: 900, render: withColour("G", useSolo(withAllIn(() => soloDesk({ allIn: true })))), row: 1, page: "solo" },
+  { id: "SF7.dc.html", title: "D · final, one person — first visit: add a broker", w: W, h: 900, render: withColour("G", useSolo(() => soloFirst())), row: 2, page: "solo" },
 ]
 for (const f of FRAMES) f.page ??= "round2"
 for (const f of FRAMES) {
@@ -914,12 +1022,13 @@ layout("round2", NOTES, "r2")
 layout("round3", NOTES.round3, "r3")
 layout("round4", NOTES.round4, "r4")
 layout("final", NOTES.final, "df")
+layout("solo", NOTES.solo, "sf")
 const canvas = {
   v: 3,
   createdOnFiles: { v: 1, at: "2026-10-24T10:00:00Z" },
   title: "Maester Broker Accounts",
-  launch: { view: "canvas", page: "final" },
-  pages: [{ id: "final", name: "D · final" }, { id: "round4", name: "Round 4 · Colour for P&L, and a highlight" }, { id: "round3", name: "Round 3 · Which account, and P&L" }, { id: "round2", name: "Round 2 · Several accounts" }],
+  launch: { view: "canvas", page: "solo" },
+  pages: [{ id: "solo", name: "D · final, one person" }, { id: "final", name: "D · final (two people, superseded)" }, { id: "round4", name: "Round 4 · Colour for P&L, and a highlight" }, { id: "round3", name: "Round 3 · Which account, and P&L" }, { id: "round2", name: "Round 2 · Several accounts" }],
   boards,
   order: FRAMES.map((f) => f.id),
   notes,
