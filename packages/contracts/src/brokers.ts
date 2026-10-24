@@ -31,14 +31,20 @@ export type BrokerCredentialField = z.infer<typeof BrokerCredentialField>;
 /** A value worked out from others before a call. `sha256hex` hashes the named values joined with nothing between them. */
 export const BrokerDerivedValue = z.object({ sha256hex: z.array(z.string().min(1)).min(1).max(8) });
 
+/**
+ * One call. Besides the values each place allows, every call may use `{timestamp}` (epoch seconds),
+ * `{isoTimestamp}` (UTC, "2026-10-24T10:23:56.000Z"), both taken once per call, and in `derive`
+ * and headers only `{body}`, the body exactly as sent (ICICI Direct signs every request with
+ * SHA-256 of the timestamp, the body and the secret). A GET may carry a JSON body (Breeze does).
+ */
 const Call = z.object({
   method: z.enum(["GET", "POST"]),
   url: Template,
   headers: z.record(z.string(), Template).default({}),
   /** Sent as application/x-www-form-urlencoded. */
   form: z.record(z.string(), Template).optional(),
-  /** Sent as application/json, every value a string. A call has a form or a JSON body, not both. */
-  json: z.record(z.string(), Template).optional(),
+  /** Sent as application/json, every value a string (empty allowed: Breeze takes "" for "all"). A call has a form or a JSON body, not both. */
+  json: z.record(z.string(), z.string().max(2000)).optional(),
   derive: z.record(z.string(), BrokerDerivedValue).default({}),
 });
 
@@ -60,7 +66,8 @@ export const BrokerHoldingFields = z.object({
   exchange: JsonPath.optional(),
   quantity: JsonPath,
   t1Quantity: JsonPath.optional(),
-  averagePrice: JsonPath,
+  /** Absent only when a `join` supplies it. */
+  averagePrice: JsonPath.optional(),
   lastPrice: JsonPath.optional(),
 });
 
@@ -136,7 +143,28 @@ export const BrokerDefinition = z.object({
      * `{accessToken}` and `{clientId}` from the Settings connection (settings-connection).
      * `list` is the JSON path of the array; absent, the answer itself is the array (Dhan).
      */
-    holdings: Call.extend({ list: JsonPath.optional(), fields: BrokerHoldingFields, exchangeIs: z.enum(["NSE", "BSE"]).optional() }),
+    holdings: Call.extend({
+      list: JsonPath.optional(),
+      fields: BrokerHoldingFields,
+      /**
+       * The exchange every line is on, for an answer that names none. NSE or BSE when the symbol is
+       * that exchange's; any other word (ICICI) when the symbol is the broker's own code, which
+       * Maester cannot price by symbol.
+       */
+      exchangeIs: z.string().regex(/^[A-Z]{2,8}$/).optional(),
+      /**
+       * A second call whose items add figures to the first's, matched on a key (ICICI Direct: demat
+       * holdings give the ISIN and quantity, portfolio holdings the average price, both keyed by the
+       * broker's stock code). A line with no match keeps an average price of 0, which the engine
+       * reads as a cost it does not know.
+       */
+      join: Call.extend({
+        list: JsonPath.optional(),
+        key: JsonPath,
+        joinKey: JsonPath,
+        fields: z.object({ averagePrice: JsonPath.optional(), lastPrice: JsonPath.optional() }),
+      }).optional(),
+    }),
   }),
   /** An answer with one of these statuses means the broker signed Maester out. */
   signedOutStatuses: z.array(z.number().int().min(400).max(599)).default([401, 403]),

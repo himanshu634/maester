@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { request as httpsRequest } from "node:https";
 import type { BrokerDefinition } from "@maester/contracts";
 import { sessionExpiry } from "./expiry.js";
 import { at, fill } from "./template.js";
@@ -50,7 +51,27 @@ function text(v: unknown, field: string): string {
 
 type RedirectSignIn = Extract<BrokerDefinition["signIn"], { kind: "redirect" }>;
 type DirectSignIn = Extract<BrokerDefinition["signIn"], { kind: "direct" }>;
-type Call = BrokerDefinition["reads"]["holdings"] | RedirectSignIn["session"] | DirectSignIn["session"];
+type Holdings = BrokerDefinition["reads"]["holdings"];
+type Call = Holdings | NonNullable<Holdings["join"]> | RedirectSignIn["session"] | DirectSignIn["session"];
+
+/** A GET that carries a body, which fetch will not send. */
+export type GetWithBody = (url: string, init: { headers: Record<string, string>; body: string; signal: AbortSignal }) => Promise<Response>;
+
+/** The GET-with-body transport: node:https, no redirects followed (a 3xx is an answer, not 200). */
+export const httpsGetWithBody: GetWithBody = (url, init) =>
+  new Promise((resolve, reject) => {
+    const req = httpsRequest(url, { method: "GET", headers: { ...init.headers, "Content-Length": String(Buffer.byteLength(init.body)) }, signal: init.signal }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (c: Buffer) => chunks.push(c));
+      res.on("error", reject);
+      res.on("end", () => {
+        const status = res.statusCode && res.statusCode >= 200 && res.statusCode <= 599 ? res.statusCode : 502;
+        resolve(new Response(Buffer.concat(chunks), { status }));
+      });
+    });
+    req.on("error", reject);
+    req.end(init.body);
+  });
 
 /** The values a holdings read may use: a redirect sign-in's session, or the Settings connection's token and client ID. */
 export type ReadSession = { accessToken: string; accountId: string | null } | { accessToken: string; clientId: string };
@@ -61,8 +82,15 @@ export type ReadSession = { accessToken: string; accountId: string | null } | { 
  */
 export class BrokerClient {
   private readonly fetchFn: typeof globalThis.fetch;
-  constructor(readonly def: BrokerDefinition, opts: { fetch?: typeof globalThis.fetch; timeoutMs?: number } = {}) {
+  private readonly getWithBodyFn: GetWithBody;
+  private readonly now: () => Date;
+  constructor(
+    readonly def: BrokerDefinition,
+    opts: { fetch?: typeof globalThis.fetch; getWithBody?: GetWithBody; now?: () => Date; timeoutMs?: number } = {},
+  ) {
     this.fetchFn = opts.fetch ?? globalThis.fetch;
+    this.getWithBodyFn = opts.getWithBody ?? httpsGetWithBody;
+    this.now = opts.now ?? (() => new Date());
     this.timeoutMs = opts.timeoutMs ?? 20_000;
   }
   private readonly timeoutMs: number;
@@ -116,42 +144,70 @@ export class BrokerClient {
     const values = "clientId" in session
       ? { ...creds, accessToken: session.accessToken, clientId: session.clientId }
       : { ...creds, accessToken: session.accessToken, accountId: session.accountId ?? "" };
-    const body = await this.call(h, values, "holdings");
-    const list = h.list === undefined ? body : at(body, h.list);
-    if (!Array.isArray(list)) throw new BrokerError("BROKER_ANSWER_UNREADABLE", "the holdings answer has no list");
+    const listOf = (answer: unknown, path: string | undefined) => {
+      const list = path === undefined ? answer : at(answer, path);
+      if (!Array.isArray(list)) throw new BrokerError("BROKER_ANSWER_UNREADABLE", "the holdings answer has no list");
+      return list as unknown[];
+    };
+    const list = listOf(await this.call(h, values, "holdings"), h.list);
+    // The join's items by their key: ICICI Direct's portfolio holdings by stock code.
+    const j = h.join;
+    const joined = j
+      ? new Map(listOf(await this.call(j, values, "holdings"), j.list).map((it) => [String(at(it, j.joinKey) ?? ""), it]))
+      : null;
     const f = h.fields;
-    return list.map((item) => ({
-      isin: text(at(item, f.isin), "isin"),
-      symbol: text(at(item, f.symbol), "symbol"),
-      exchange: f.exchange ? text(at(item, f.exchange), "exchange") : h.exchangeIs!,
-      quantity: decimal(at(item, f.quantity), "quantity"),
-      t1Quantity: f.t1Quantity ? decimal(at(item, f.t1Quantity) ?? 0, "t1Quantity") : "0",
-      averagePrice: decimal(at(item, f.averagePrice), "averagePrice"),
-      lastPrice: f.lastPrice && at(item, f.lastPrice) != null ? decimal(at(item, f.lastPrice), "lastPrice") : null,
-    }));
+    return list.map((item) => {
+      const match = j && joined ? joined.get(String(at(item, j.key) ?? "")) : undefined;
+      // No average price anywhere is a cost the broker did not give: 0, which the engine reads as unknown.
+      const avg = f.averagePrice ? at(item, f.averagePrice) : match !== undefined && j?.fields.averagePrice ? at(match, j.fields.averagePrice) : 0;
+      const last = f.lastPrice ? at(item, f.lastPrice) : match !== undefined && j?.fields.lastPrice ? at(match, j.fields.lastPrice) : null;
+      return {
+        isin: text(at(item, f.isin), "isin"),
+        symbol: text(at(item, f.symbol), "symbol"),
+        exchange: f.exchange ? text(at(item, f.exchange), "exchange") : h.exchangeIs!,
+        quantity: decimal(at(item, f.quantity), "quantity"),
+        t1Quantity: f.t1Quantity ? decimal(at(item, f.t1Quantity) ?? 0, "t1Quantity") : "0",
+        averagePrice: decimal(avg ?? 0, "averagePrice"),
+        lastPrice: last != null ? decimal(last, "lastPrice") : null,
+      };
+    });
   }
 
   private async call(c: Call, values: Record<string, string>, what: string): Promise<unknown> {
-    const all = { ...values };
-    for (const [name, d] of Object.entries(c.derive)) {
-      all[name] = createHash("sha256").update(d.sha256hex.map((k) => all[k] ?? "").join("")).digest("hex");
-    }
+    const at0 = this.now();
+    const all: Record<string, string> = {
+      timestamp: String(Math.floor(at0.getTime() / 1000)),
+      isoTimestamp: `${at0.toISOString().slice(0, 19)}.000Z`,
+      ...values,
+    };
+    const sha = (inputs: string[]) => createHash("sha256").update(inputs.map((k) => all[k] ?? "").join("")).digest("hex");
+    // Values that sign the body are worked out once the body is written; the rest before it.
+    const derived = Object.entries(c.derive);
+    for (const [name, d] of derived.filter(([, d]) => !d.sha256hex.includes("body"))) all[name] = sha(d.sha256hex);
     const url = new URL(fill(c.url, all, { url: true }));
     if (url.protocol !== "https:" || !this.def.hosts.includes(url.hostname)) {
       throw new BrokerError("BROKER_UNAVAILABLE", `${what}: ${url.hostname} is not a host of ${this.def.id}`);
     }
-    const headers: Record<string, string> = Object.fromEntries(Object.entries(c.headers).map(([k, v]) => [k, fill(v, all)]));
     let body: string | undefined;
+    let contentType: string | undefined;
     if (c.form) {
-      headers["Content-Type"] = "application/x-www-form-urlencoded";
+      contentType = "application/x-www-form-urlencoded";
       body = new URLSearchParams(Object.fromEntries(Object.entries(c.form).map(([k, v]) => [k, fill(v, all)]))).toString();
     } else if (c.json) {
-      headers["Content-Type"] = "application/json";
+      contentType = "application/json";
       body = JSON.stringify(Object.fromEntries(Object.entries(c.json).map(([k, v]) => [k, fill(v, all)])));
     }
+    all.body = body ?? "";
+    for (const [name, d] of derived.filter(([, d]) => d.sha256hex.includes("body"))) all[name] = sha(d.sha256hex);
+    const headers: Record<string, string> = Object.fromEntries(Object.entries(c.headers).map(([k, v]) => [k, fill(v, all)]));
+    if (contentType) headers["Content-Type"] = contentType;
     let res: Response;
     try {
-      res = await this.fetchFn(url.toString(), { method: c.method, headers, body, redirect: "error", signal: AbortSignal.timeout(this.timeoutMs) });
+      const init = { method: c.method, headers, body, signal: AbortSignal.timeout(this.timeoutMs) };
+      // fetch refuses a GET with a body; Breeze needs one, so that call goes out through node:https.
+      res = c.method === "GET" && body !== undefined
+        ? await this.getWithBodyFn(url.toString(), { headers, body, signal: init.signal })
+        : await this.fetchFn(url.toString(), { ...init, redirect: "error" });
     } catch {
       // A fetch error can carry the URL, and a URL can carry a key: say only that it failed.
       throw new BrokerError("BROKER_UNAVAILABLE", `${what}: ${this.def.name} could not be reached`);

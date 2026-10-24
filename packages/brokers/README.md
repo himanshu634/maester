@@ -31,9 +31,28 @@ A template may use only the values that exist where it is used: credentials ever
 
 `groww.json` follows Groww's own docs (24 Oct 2026): the token call in [curl](https://groww.in/trade-api/docs/curl) (`POST /v1/token/api/access`, `Authorization: Bearer <api key>`, `key_type: approval`, `checksum` = SHA-256 of the secret and the timestamp, both strings) and holdings in [portfolio](https://groww.in/trade-api/docs/curl/portfolio) (`GET /v1/holdings/user`, `X-API-VERSION: 1.0`, the list at `payload.holdings`). The investor approves the key on Groww Cloud each day before "Read Groww". Groww's holdings name no exchange, so `exchangeIs: "NSE"` says which; a share Groww holds that has no NSE listing will show no close. Not yet confirmed on a live run: whether `quantity` includes `t1_quantity` (it is not added on top, as for Dhan), and the token's real lifetime (the docs give 06:00 for one route only).
 
+## Signed requests, GET bodies and joins (ICICI Direct)
+
+- **Time and body:** every call may use `{timestamp}` (epoch seconds) and `{isoTimestamp}` (UTC, `2026-10-24T10:23:56.000Z`), taken once per call. `derive` and headers may also use `{body}`, the body exactly as sent, so a header can carry SHA-256 of the timestamp, the body and the secret. The body itself can never hold `{body}` or a value worked out from it; that is refused at load.
+- **GET with a body:** a GET with a `json` body goes out through `node:https`, because `fetch` will not send one. The same host and https checks apply, and no redirect is followed.
+- **`reads.holdings.join`:** a second call whose items add `averagePrice` and `lastPrice` to the first's, matched on `key` (in the first call's items) and `joinKey` (in the second's). A line with no match keeps an average price of `0`, which the engine reads as a cost it does not know.
+- **`exchangeIs`:** NSE or BSE when the answer names no exchange but its symbols are that exchange's. Any other word, such as `ICICI`, means the symbols are the broker's own codes. Maester prices only NSE symbols, so such a share has a close only when another broker holds it too.
+
+`icici.json` follows Breeze's docs ([api.icicidirect.com/breezeapi/documents](https://api.icicidirect.com/breezeapi/documents/index.html), 24 Oct 2026) and its official Python SDK:
+- `customerdetails` is a GET with the session key and app key in a JSON body.
+- Every other call carries the `X-Checksum: token <SHA-256(timestamp + body + secret)>`, `X-Timestamp`, `X-AppKey` and `X-SessionToken` headers.
+- `dematholdings` (ISIN and quantity) is joined to `portfolioholdings` (average price, NSE, empty `stock_code` for all) on `stock_code`.
+
+**It ships with `enabled: false`.** Breeze's login page takes no `state` and its docs say nothing comes back but the session key, so the return cannot be matched to the sign-in the investor started. The user chose (24 Oct 2026) to keep ICICI Direct off until a live test shows Breeze carries a state value, rather than accept the return on time alone.
+
+To confirm before switching it on:
+- the return parameter's name (`apisession` is a guess);
+- whether `X-SessionToken` is `Success.session_token` as given (the SDK rebuilds it as base64 of the user ID and the session key);
+- what happens to the static IP the app form asks for.
+
 ## Not offered yet
 
-Angel One and ICICI Direct have no definition yet. ICICI Direct's Breeze needs a checksum on every request and a join across two calls, two terms this vocabulary does not have.
+Angel One has no definition.
 
 ## Upstox
 

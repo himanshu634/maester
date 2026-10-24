@@ -1,0 +1,67 @@
+{
+  "id": "icici",
+  "name": "ICICI Direct",
+  "enabled": false,
+  "notOfferedReason": "Not yet: ICICI Direct’s sign-in sends nothing back that Maester can check against the sign-in you started.",
+  "hosts": ["api.icicidirect.com"],
+  "copy": {
+    "pickerLine": "Sign in on ICICI Direct’s page each day (Breeze). Free.",
+    "lasts": "24 hours, or midnight if sooner",
+    "cost": "Free",
+    "formLede": "ICICI Direct reads holdings through Breeze, free. Its app form asks for a static IP, though that rule is for orders.",
+    "steps": [
+      "Sign in to the Breeze API portal and register an app (keys made before 1 Oct 2025 no longer work).",
+      "Paste the redirect URL below into the app.",
+      "Copy the app key and secret key into the fields below.",
+      "Save, then sign in on ICICI Direct’s page."
+    ],
+    "saveNote": "Maester asks ICICI Direct only for your holdings. It never places an order.",
+    "signedOutNote": "ICICI Direct signs Maester out at midnight, or 24 hours after signing in."
+  },
+  "credentials": [
+    { "key": "apiKey", "label": "App key", "hint": "From your app in the Breeze API portal.", "secret": false, "minLength": 6, "maxLength": 128 },
+    { "key": "apiSecret", "label": "Secret key", "secret": true, "minLength": 6, "maxLength": 128 }
+  ],
+  "credentialShown": "apiKey",
+  "signIn": {
+    "kind": "redirect",
+    "loginUrl": "https://api.icicidirect.com/apiuser/login?api_key={apiKey}&state={state}",
+    "returnParams": { "code": "apisession", "state": "state" },
+    "session": {
+      "method": "GET",
+      "url": "https://api.icicidirect.com/breezeapi/api/v1/customerdetails",
+      "json": { "SessionToken": "{code}", "AppKey": "{apiKey}" },
+      "accessToken": "Success.session_token",
+      "accountId": "Success.idirect_userid",
+      "expiry": { "kind": "daily", "at": "00:00", "timeZone": "Asia/Kolkata" }
+    }
+  },
+  "reads": {
+    "holdings": {
+      "method": "GET",
+      "url": "https://api.icicidirect.com/breezeapi/api/v1/dematholdings",
+      "json": {},
+      "derive": { "checksum": { "sha256hex": ["isoTimestamp", "body", "apiSecret"] } },
+      "headers": { "X-Checksum": "token {checksum}", "X-Timestamp": "{isoTimestamp}", "X-AppKey": "{apiKey}", "X-SessionToken": "{accessToken}" },
+      "list": "Success",
+      "fields": {
+        "isin": "stock_ISIN",
+        "symbol": "stock_code",
+        "quantity": "quantity"
+      },
+      "exchangeIs": "ICICI",
+      "join": {
+        "method": "GET",
+        "url": "https://api.icicidirect.com/breezeapi/api/v1/portfolioholdings",
+        "json": { "exchange_code": "NSE", "from_date": "", "to_date": "", "stock_code": "", "portfolio_type": "" },
+        "derive": { "checksum": { "sha256hex": ["isoTimestamp", "body", "apiSecret"] } },
+        "headers": { "X-Checksum": "token {checksum}", "X-Timestamp": "{isoTimestamp}", "X-AppKey": "{apiKey}", "X-SessionToken": "{accessToken}" },
+        "list": "Success",
+        "key": "stock_code",
+        "joinKey": "stock_code",
+        "fields": { "averagePrice": "average_price", "lastPrice": "current_market_price" }
+      }
+    }
+  },
+  "signedOutStatuses": [401, 403]
+}

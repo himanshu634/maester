@@ -103,8 +103,10 @@ describe("GET /v1/brokers", () => {
   it("lists the brokers from their JSON definitions, with no calls in them", async () => {
     const res = await ctx.app.request("/v1/brokers", { headers: { cookie } });
     const body = BrokerList.parse(await res.json());
-    expect(body.items.map((b) => b.id)).toEqual(["kite", "dhan", "upstox", "groww"]);
+    expect(body.items.map((b) => b.id)).toEqual(["kite", "dhan", "upstox", "groww", "icici"]);
     expect(body.items[3]).toMatchObject({ name: "Groww", signIn: { kind: "direct" }, returnUrl: null });
+    expect(body.items[4]).toMatchObject({ name: "ICICI Direct", enabled: false, notOfferedReason: expect.stringMatching(/^Not yet/) });
+    expect(JSON.stringify(body)).not.toContain("api.icicidirect.com");
     expect(body.items[2]).toMatchObject({ name: "Upstox", signIn: { kind: "redirect" }, returnUrl: "http://localhost/v1/brokers/upstox/return" });
     expect(JSON.stringify(body)).not.toContain("api.upstox.com");
     expect(body.items[0]).toMatchObject({ name: "Zerodha", enabled: true, signIn: { kind: "redirect" }, returnUrl: "http://localhost/v1/brokers/kite/return" });

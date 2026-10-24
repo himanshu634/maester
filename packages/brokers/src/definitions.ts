@@ -24,15 +24,24 @@ export function checkDefinition(def: BrokerDefinition): void {
     if (def.credentialShown !== undefined) fail("a settings-connection sign-in has no credentialShown");
   }
 
-  const call = (where: string, c: { url: string; headers: Record<string, string>; form?: Record<string, string>; json?: Record<string, string>; derive: Record<string, { sha256hex: string[] }> }, known: string[]) => {
+  // Every call may use the time, as epoch seconds or ISO; only derive and headers may use the body.
+  const CLOCK = ["timestamp", "isoTimestamp"];
+  const call = (where: string, c: { url: string; headers: Record<string, string>; form?: Record<string, string>; json?: Record<string, string>; derive: Record<string, { sha256hex: string[] }> }, given: string[]) => {
     if (c.form && c.json) fail(`${where}: a call sends a form or a JSON body, not both`);
+    const known = [...given, ...CLOCK];
+    for (const k of creds) if (CLOCK.includes(k) || k === "body") fail(`credential "${k}" hides another value`);
+    const signsBody = Object.entries(c.derive).filter(([, d]) => d.sha256hex.includes("body")).map(([name]) => name);
     for (const [name, d] of Object.entries(c.derive)) {
-      if (known.includes(name)) fail(`${where}: derived value "${name}" hides another value`);
-      for (const input of d.sha256hex) if (!known.includes(input)) fail(`${where}: derived value "${name}" uses unknown "${input}"`);
+      if (known.includes(name) || name === "body") fail(`${where}: derived value "${name}" hides another value`);
+      for (const input of d.sha256hex) if (!known.includes(input) && input !== "body") fail(`${where}: derived value "${name}" uses unknown "${input}"`);
     }
     const all = [...known, ...Object.keys(c.derive)];
-    const templates = [c.url, ...Object.values(c.headers), ...Object.values(c.form ?? {}), ...Object.values(c.json ?? {})];
-    for (const t of templates) for (const p of placeholders(t)) if (!all.includes(p)) fail(`${where}: unknown placeholder {${p}}`);
+    // The body cannot hold the body, or a value worked out from it.
+    const before = all.filter((p) => !signsBody.includes(p));
+    for (const t of [c.url, ...Object.values(c.form ?? {}), ...Object.values(c.json ?? {})]) {
+      for (const p of placeholders(t)) if (!before.includes(p)) fail(`${where}: unknown placeholder {${p}}`);
+    }
+    for (const t of Object.values(c.headers)) for (const p of placeholders(t)) if (!all.includes(p) && p !== "body") fail(`${where}: unknown placeholder {${p}}`);
     checkUrl(where, c.url);
   };
   const checkUrl = (where: string, template: string) => {
@@ -54,14 +63,15 @@ export function checkDefinition(def: BrokerDefinition): void {
     call("session", session, [...creds, "code", "returnUrl"]);
     call("holdings", def.reads.holdings, [...creds, "accessToken", "accountId"]);
   } else if (def.signIn.kind === "direct") {
-    if (creds.includes("timestamp")) fail(`credential "timestamp" hides another value`);
-    call("session", def.signIn.session, [...creds, "timestamp"]);
+    call("session", def.signIn.session, creds);
     call("holdings", def.reads.holdings, [...creds, "accessToken", "accountId"]);
   } else {
     call("holdings", def.reads.holdings, ["accessToken", "clientId"]);
   }
 
   const h = def.reads.holdings;
+  if (h.join) call("holdings join", h.join, def.signIn.kind === "settings-connection" ? ["accessToken", "clientId"] : [...creds, "accessToken", "accountId"]);
+  if (!h.fields.averagePrice && !h.join?.fields.averagePrice) fail("holdings: name the average price field, in the holdings or in their join");
   if (!h.fields.exchange && !h.exchangeIs) fail("holdings: name the exchange field, or say which exchange in exchangeIs");
   if (h.fields.exchange && h.exchangeIs) fail("holdings: name the exchange field or exchangeIs, not both");
 }
