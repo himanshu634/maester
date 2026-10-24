@@ -1,8 +1,9 @@
 """Who and what period an instance is for, read from its metadata facts.
 
 The identity elements are listed in ``formats.json``. Only a non-dimensional fact counts, in a context the
-file declares, with a value: a nil fact or one that is empty after trimming is not taken. Of the facts of one
-element, the first in document order gives the value. The basis is the exception: it is read from every
+file declares, with a value: a nil fact or one that is empty after trimming is not taken. A key may have more
+than one element (the name is ``NameOfBank`` in banking results); of the facts of a key's elements, the first
+in document order gives the value. The basis is the exception: it is read from every
 basis fact, because 613 of the 807 instances on hand state it twice (in ``OneD`` and in ``FourD``) and a
 file that states two bases must not read as one.
 
@@ -48,8 +49,9 @@ def identity_facts(instance: Instance, family: str | None) -> dict[str, tuple[Ra
     ``scrip_code``, ``symbol``, ``isin``, ``basis``, ``audited``, ``period_start``, ``period_end``) and
     ``rounding``, which is the family's rounding element (none without a family)."""
     elements = dict(IDENTITY_ELEMENTS)
-    elements["rounding"] = ROUNDING_ELEMENTS.get(family or "", "")
-    key_of = {element: key for key, element in elements.items() if element}
+    rounding = ROUNDING_ELEMENTS.get(family or "")
+    elements["rounding"] = (rounding,) if rounding else ()
+    key_of = {element: key for key, names in elements.items() for element in names}
     found: dict[str, list[RawFact]] = {key: [] for key in elements}
     for fact in instance.facts:
         key = key_of.get(fact.element)

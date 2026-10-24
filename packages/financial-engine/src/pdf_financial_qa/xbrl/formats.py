@@ -26,8 +26,11 @@ FAMILY_NAMESPACES: dict[str, re.Pattern[str]] = {
 }
 # family name -> the element that holds the declared rounding, such as "Crores"
 ROUNDING_ELEMENTS: dict[str, str] = {name: family["rounding_element"] for name, family in _DATA["families"].items()}
-# identity key (name, scrip_code, symbol, isin, basis, audited, period_start, period_end) -> element
-IDENTITY_ELEMENTS: dict[str, str] = dict(_DATA["identity"])
+# identity key (name, scrip_code, symbol, isin, basis, audited, period_start, period_end) -> the elements that
+# give it. A key may name several: banking results print the name as ``NameOfBank``, the rest as ``NameOfTheCompany``.
+IDENTITY_ELEMENTS: dict[str, tuple[str, ...]] = {
+    key: (value,) if isinstance(value, str) else tuple(value) for key, value in _DATA["identity"].items()
+}
 # a non-numeric fact whose element ends in one of these is a text block
 TEXT_SUFFIXES: tuple[str, ...] = tuple(_DATA["text_suffixes"])
 

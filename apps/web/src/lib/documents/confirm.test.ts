@@ -73,10 +73,38 @@ describe('companies to confirm', () => {
 			[],
 			false
 		).rows;
-		expect(row.codes).toBe('BSE 500999 · CIN L12345MH2000PLC123456');
+		// The title gives the codes, so the line under it gives only the CIN.
 		expect(row.title).toBe('BSE 500999');
+		expect(row.codes).toBe('CIN L12345MH2000PLC123456');
 		expect(row.addLabel).toBe('Add this company');
 		expect(row.counts).toBe('1 filing · 1 file');
+	});
+
+	it('with no name and no CIN the codes are said once, in the title', () => {
+		const [row] = confirmRows(
+			[
+				heldOf({
+					nameAsPrinted: null,
+					bseCode: '500180',
+					nseSymbol: 'HDFCBANK',
+					isin: 'INE040A01034'
+				})
+			],
+			[],
+			false
+		).rows;
+		expect(row.title).toBe('BSE 500180 · NSE HDFCBANK · ISIN INE040A01034');
+		expect(row.codes).toBe('');
+	});
+
+	it('with a name the line under it gives every code', () => {
+		const [row] = confirmRows(
+			[heldOf({ nameAsPrinted: 'HDFC Bank Limited', bseCode: '500180', nseSymbol: 'HDFCBANK' })],
+			[],
+			false
+		).rows;
+		expect(row.title).toBe('HDFC Bank Limited');
+		expect(row.codes).toBe('BSE 500180 · NSE HDFCBANK');
 	});
 
 	it('a row that matches a company already added asks which', () => {

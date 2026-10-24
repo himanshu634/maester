@@ -22,7 +22,7 @@
     }
   ],
   "identity": {
-    "name": "NameOfTheCompany",
+    "name": ["NameOfTheCompany", "NameOfBank"],
     "scrip_code": "ScripCode",
     "symbol": "Symbol",
     "isin": "ISIN",

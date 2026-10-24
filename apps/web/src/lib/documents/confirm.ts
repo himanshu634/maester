@@ -32,7 +32,10 @@ export interface ConfirmRow {
 	identity: HeldIdentity;
 	/** The printed name, or the codes when it prints none. */
 	title: string;
-	/** "BSE 532999 · NSE COASTBANK · ISIN INE999Z01011 · CIN …", each part only when set. */
+	/**
+	 * "BSE 532999 · NSE COASTBANK · ISIN INE999Z01011 · CIN …", each part only when set, less the
+	 * parts the title already gives when it prints no name.
+	 */
 	codes: string;
 	/** "9 filings · 26 files". */
 	counts: string;
@@ -50,10 +53,17 @@ function rowOf(identity: HeldIdentity, companies: Company[], primary: boolean): 
 	const printed = [codesOf(identity), identity.cin ? copy.company.printed('CIN', identity.cin) : '']
 		.filter((part) => part !== '')
 		.join(sep);
+	const held = identity.nameAsPrinted ? '' : heldCodes(identity);
 	return {
 		identity,
-		title: identity.nameAsPrinted ?? (heldCodes(identity) || copy.questions.someCompany),
-		codes: printed,
+		title: identity.nameAsPrinted ?? (held || copy.questions.someCompany),
+		// With no name the codes are the title; the line under it says only what the title does not.
+		codes: held
+			? printed
+					.split(sep)
+					.filter((part) => !held.split(sep).includes(part))
+					.join(sep)
+			: printed,
 		counts: [copy.titles.filings(identity.filings), copy.titles.files(identity.files)].join(sep),
 		addLabel: identity.nameAsPrinted ? c.add(shortName(identity.nameAsPrinted)) : c.addUnnamed,
 		mode: matches.length > 0 ? 'pick' : 'add',
