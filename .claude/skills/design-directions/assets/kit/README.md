@@ -79,3 +79,15 @@ the accounts ledger, the broker picker and sheet, the connect form with numbered
 ledgers and the statement-versus-broker table. Broker facts live only in `holdings-brokers.mjs`,
 from `docs/research/2026-10-19-broker-apis.md`.
 Run `node holdings.mjs --measure`, measure, then `node holdings.mjs holdings-heights.json`.
+
+## Broker accounts round (2026-10-24)
+
+`accounts.mjs`, `accounts-base.mjs`, `accounts-brokers.mjs`, `accounts-notes.json` and
+`accounts-heights.json` built round 2 of the broker work on a new canvas, "Maester Broker
+Accounts" (https://claude.ai/artifact/3kUub9WRnmnm2neMpGkmNy), because round 1's canvas sits in
+another organisation: Today (A as built on feat/holdings-dhan), D · Household, by person,
+E · The morning round, F · Accounts as columns, and the shared add-an-account forms for the top five
+brokers. They reuse `holdings-base.mjs` (shell, pieces, closes) and add a two-person household of six
+accounts worked in paise, toggle buttons, the morning-round ink panel and the account-column table.
+Broker facts live only in `accounts-brokers.mjs`, from `docs/research/2026-10-24-broker-accounts.md`.
+Run `node accounts.mjs --measure`, measure, then `node accounts.mjs accounts-heights.json`.

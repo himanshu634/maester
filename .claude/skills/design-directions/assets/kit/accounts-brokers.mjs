@@ -1,0 +1,97 @@
+// What each of the top five brokers needs from the investor, per account, as of 24 Oct 2026.
+// Source: docs/research/2026-10-24-broker-accounts.md. Change a fact there first, then here;
+// the round-2 frames read only this table.
+export const NEED = {
+  kite: {
+    name: "Zerodha",
+    short: "Zerodha",
+    signIn: "Sign in on Zerodha’s page",
+    once: "A free Personal app for that client ID: its API key and secret",
+    daily: "Sign in on Zerodha’s page",
+    until: "Until 6:00 tomorrow",
+    lasts: "Until 6:00 the next morning",
+    cost: "Free",
+    perAccount: "One developer login serves the family; one free app per client ID (Zerodha’s answers differ)",
+    steps: [
+      "Sign in to developers.kite.trade (one developer login can serve the family) and create a Personal app with this account’s client ID.",
+      "Paste the redirect URL below into the app.",
+      "Copy the app’s API key and secret here.",
+      "Save, then the account holder signs in on Zerodha’s page with their own login and code."
+    ],
+    fields: [["API key", ""], ["API secret", "••••••••••••••••", true]],
+  },
+  groww: {
+    name: "Groww",
+    short: "Groww",
+    signIn: "Approve on Groww each day",
+    once: "A Trade API subscription and an API key and secret",
+    daily: "Approve the key on Groww Cloud",
+    until: "Until 6:00 tomorrow",
+    lasts: "Until 6:00 the next morning",
+    cost: "₹499 a month + GST per account (an early-bird price; listed at ₹2,000)",
+    perAccount: "Its own subscription and key, bought in that person’s Groww login (not stated by Groww)",
+    steps: [
+      "On groww.in/trade-api, subscribe to the Trade API from the account holder’s Groww login.",
+      "On Groww Cloud, create an API key and secret.",
+      "Copy both here and save.",
+      "Each morning, approve the key on Groww Cloud, then come back and read.",
+    ],
+    fields: [["API key", ""], ["API secret", "••••••••••••••••", true]],
+  },
+  angel: {
+    name: "Angel One",
+    short: "Angel One",
+    signIn: "Client code, PIN and an authenticator code",
+    once: "A SmartAPI app (API key), the client code, and the authenticator turned on",
+    daily: "Type the MPIN and the 6-digit code; Maester keeps neither",
+    until: "Until midnight",
+    lasts: "Until midnight",
+    cost: "Free",
+    perAccount: "Probably its own key: Angel One allows one key per person for personal use",
+    steps: [
+      "Sign in to smartapi.angelone.in and create an app (Trading APIs). Copy its API key.",
+      "Turn on the authenticator for the account in Angel One’s app, if it isn’t already.",
+      "Enter the API key and client code here and save.",
+      "Each day, type the account’s MPIN and the code from the authenticator. Neither is kept.",
+    ],
+    fields: [["API key", ""], ["Client code", "R123456"]],
+  },
+  upstox: {
+    name: "Upstox",
+    short: "Upstox",
+    signIn: "Sign in on Upstox’s page",
+    once: "An Upstox API app, its key and secret",
+    daily: "Sign in on Upstox’s page",
+    until: "Until 3:30 tomorrow",
+    lasts: "Until 3:30 the next morning",
+    cost: "Free",
+    perAccount: "Its own app, made by that person; Upstox allows one app each, so it replaces any other tool’s",
+    steps: [
+      "Sign in to account.upstox.com/developer/apps as the account holder and create an app.",
+      "Paste the redirect URL below into the app.",
+      "Copy the API key and secret here.",
+      "Save, then sign in on Upstox’s page.",
+    ],
+    fields: [["API key", ""], ["API secret", "••••••••••••••••", true]],
+  },
+  icici: {
+    name: "ICICI Direct",
+    short: "ICICI",
+    signIn: "Sign in on ICICI Direct’s page",
+    once: "A new Breeze app (keys before 1 Oct 2025 were deleted): key, secret, and a static IP on the form",
+    daily: "Sign in on ICICI Direct’s page",
+    until: "Until midnight",
+    lasts: "24 hours, or midnight if sooner",
+    cost: "Free",
+    perAccount: "Its own app, made in that account’s Breeze login (assumed; not stated)",
+    steps: [
+      "Sign in to the Breeze API portal as the account holder and register an app. It asks for Maester’s static IP.",
+      "Paste the redirect URL below into the app.",
+      "Copy the API key and secret here.",
+      "Save, then sign in on ICICI Direct’s page.",
+    ],
+    fields: [["API key", ""], ["Secret key", "••••••••••••••••", true]],
+  },
+}
+// Top five by NSE active clients, Sep 2026 (Inc42, 14 Oct 2026, citing NSE).
+export const TOP5 = ["groww", "kite", "angel", "icici", "upstox"]
