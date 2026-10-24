@@ -1,0 +1,31 @@
+{
+ "constraint": "The brief, in your words (24 Oct 2026): “extract holdings from multiple broker accounts. Research the top five major brokers and identify the information we need from users to integrate each account. We’ll then display this data in the holdings section.”\n\nRound 1 (19 Oct) picked A · Accounts, then one table, and it is built for Zerodha and Dhan, one account each. This round keeps A’s page and asks how several accounts, two people and five brokers sit on it. Round 1’s canvas is in another organisation, so this round starts a new canvas; its letters carry on from C.",
+ "questions": "Open questions, each answerable in a word:\n\n1. Angel One: in, with the PIN and authenticator code typed each morning and kept never? Or out? (Round 1 asked; no answer yet.)\n2. Whose accounts: just “Asha / Ravi / Someone else” names you type, or real Maester users (each signs in themselves)?\n3. Groww costs ₹499 a month per account to read holdings. Offer it, or list it as not offered?\n4. Dhan for a second person: Dhan’s own sign-in (key, secret, a consent each day), or only the Settings connection, one Dhan account per install?",
+ "shared": "In every direction:\n\n• Several accounts at one broker. Today the database allows one account per broker per workspace, and “Add a broker” hides a broker once it is connected.\n• “Whose account is it?” on every add, shown beside every holding, so Zerodha · Asha and Zerodha · Ravi never look alike.\n• Each account keeps its own key: at Zerodha, Upstox and ICICI Direct an app signs in only the account that made it.\n• One filled button per screen. Today each signed-out account gets a filled “Sign in to …”.\n• A share held in several accounts is one row, its parts named, and a part read before its account signed out is starred with the day it was read.\n• Figures are synthetic, worked in paise; the product sums them in the engine, never in the page.",
+ "rows": [
+  {
+   "title": "Today · A as built: one account per broker",
+   "note": "Drawn from the code on feat/holdings-dhan (9d1994e, not merged, no PR). Not seen running: it needs a signed-in API with live broker keys.\n\nMeasured against a household of six accounts:\n• Accounts it can hold: 1 per broker. Zerodha · Ravi can’t be added: the table has a unique index on (workspace, broker), and the picker drops a connected broker.\n• Brokers built: 2 (Zerodha, Dhan). Of the top five, Groww, Angel One, Upstox and ICICI Direct have no definition.\n• Dhan reads only through the one Settings token, so a second person’s Dhan account can’t exist.\n• Held at says “Zerodha 120”: with two Zerodha accounts it can’t say whose.\n• Morning cost: every account signs out daily. Six accounts → up to six trips to broker pages, each its own filled button.\n\nYardstick: accounts 2 → 6; brokers 2 → 5; filled buttons on a bad morning 3 → 1."
+  },
+  {
+   "title": "D · Household, by person",
+   "note": "The bet: the household is the unit. People come first, then their accounts.\n\n• “Whose holdings”: Everyone, Asha, Ravi (toggle buttons, aria-pressed). The strip, the accounts and the table follow the choice; weights are of what is shown and the lede says so.\n• Accounts are grouped under each person with their value; the first account that needs you is the one filled button.\n• The table’s “Held by” sums each person’s parts (Asha 550, Ravi 200); choose a person to see their brokers.\n\nLength: 1.9 desktop screens (Everyone), 1.5 (Ravi); phone 2.3.\nCosts: a holder on each account (a name, or a Maester user: question 2); the engine sums per holder; one more control on the page."
+  },
+  {
+   "title": "E · The morning round",
+   "note": "The bet: the daily sign-ins are the real cost, so the page leads with them.\n\n• An ink panel at the top: “3 accounts need you this morning”, numbered, each saying what the broker asks for. One action: “Start with Zerodha · Ravi”.\n• The round goes broker by broker. A redirect broker sends you back to the panel at the next step; Angel One’s PIN and code are typed in the panel; Groww’s approval opens Groww Cloud and waits for “Read now”. “Skip this one” always works, and what was read stays read.\n• Below it, A’s page as built, with accounts named “Zerodha · Asha”.\n• With nothing due the panel is gone; it never shows an empty round.\n\nLength: 2.0 desktop screens before the round, 1.0 during it; phone 2.0.\nCosts: a round state (which accounts, which step) carried across the broker redirects; the one dark block on the page."
+  },
+  {
+   "title": "F · Accounts as columns",
+   "note": "The bet: “where is each share held” is the question, so the table answers it directly.\n\n• One table: a row per company, a column per account (broker, whose, when read), then total quantity, value and weight. The last row is each account’s value.\n• A starred column is Friday’s quantities; its header is a button that opens the account above the table: client ID, state, key, and its one action.\n• No separate accounts section: the table is the accounts.\n• Phone: by company, each with its accounts listed, or by account.\n\nLength: 1.0 desktop screen with six accounts. Past about eight accounts the table scrolls sideways inside its labelled region.\nCosts: a wide table component; account management lives in the opened column."
+  },
+  {
+   "title": "Shared · What each broker needs, per account",
+   "note": "These come with every direction. The table in Shared 1 is the research, said the way the page would say it; the full page with sources is docs/research/2026-10-24-broker-accounts.md.\n\n• Whose, then which broker, then that broker’s form: numbered steps, the fields, how long a sign-in lasts, what it costs and what you do each day.\n• Shared 2: a second Zerodha account needs its own app, made by that account holder.\n• Shared 4: Groww charges per account, said before you save."
+  },
+  {
+   "title": "Shared · The other forms",
+   "note": "Angel One (question 1) and Groww (question 3) are drawn so you can decide on them. Upstox and ICICI Direct sit side by side here to compare; on the page one form shows at a time, with one filled button."
+  }
+ ]
+}
