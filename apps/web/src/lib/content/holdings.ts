@@ -113,7 +113,7 @@ export const holdingsContent = {
 		gain: 'Unrealized P&L',
 		gainNote: (percent: string | null, n: number) =>
 			`${percent ? `${percent} on what was invested, ` : ''}for the ${n === 1 ? 'holding' : `${n} holdings`} with a value and a cost.`,
-		accounts: 'Brokers read today',
+		accounts: 'Brokers signed in',
 		accountsNote: (signedIn: number, count: number) =>
 			signedIn === count
 				? 'Every broker signed in.'

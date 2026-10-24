@@ -176,12 +176,12 @@ export function readShort(iso: string, now: Date = new Date()): string {
 }
 
 /**
- * The brokers the nudge names: signed out (or failing, or never signed in) while holdings they
- * read earlier are still on the page. A broker with nothing read yet is not here: there is no
- * data of it to call old.
+ * The brokers the nudge names: signed out while holdings they read earlier are still on the page.
+ * A broker with nothing read yet is not here (there is no data of it to call old), and neither is
+ * one whose last read failed for another reason: "Your brokers" says what went wrong with it.
  */
 export function needsSignIn(s: HoldingsSnapshot): BrokerAccount[] {
-	return s.accounts.filter((a) => a.state !== 'signed_in' && a.lastReadAt !== null);
+	return s.accounts.filter((a) => a.state === 'signed_out' && a.lastReadAt !== null);
 }
 
 /** The nudge's line, or null when every broker with holdings is signed in. */
