@@ -14,13 +14,13 @@ How a company filing moves through it:
 
 ![How Maester processes a company filing: intake, worker jobs, the extractor, Postgres and Research are built; automatic filing fetch, quarterly results, review, accuracy measurement, calculations, the Analyst, alerts and hosting are pending](diagrams/filing-pipeline.png)
 
-Both diagrams are Excalidraw files in [`diagrams/`](diagrams/); open one at [excalidraw.com](https://excalidraw.com) to edit it. They were drawn on 15 October 2026, before the XBRL reader, search, the agent tools and the evaluation app landed; the lists below are current.
+Both diagrams are Excalidraw files in [`diagrams/`](diagrams/); open one at [excalidraw.com](https://excalidraw.com) to edit it. They were drawn on 15 October 2026, before the XBRL reader, search, the agent tools and the evaluation app landed, and before Claude replaced Gemini as the PDF reader; the lists below are current.
 
 **Working now**
 
 - Sign in with Google or with email and password, behind an invite waitlist. Each account gets a private workspace, and no other workspace can see its companies, documents or jobs.
 - **Documents.** Drop annual reports and results as PDFs or XBRL files, one at a time or a whole folder. Maester works out what each file is and which company it belongs to, and groups a filing's PDF and XBRL together. A company it has not seen waits until you confirm it, once. Each filing shows its progress in words, and a step that stops can be tried again on its own.
-- **Numbers from the filing.** Figures come from XBRL when the filing has it and are read from the PDF otherwise (this needs a Google Cloud project). Each fact is versioned and keeps its source page or XBRL element, its period, unit and reporting basis, and the arithmetic checks it passed or failed. Unknown stays unknown, never zero.
+- **Numbers from the filing.** Figures come from XBRL when the filing has it and are read from the PDF by Claude otherwise (this needs an Anthropic API key). Each fact is versioned and keeps its source page or XBRL element, its period, unit and reporting basis, and the arithmetic checks it passed or failed. Unknown stays unknown, never zero.
 - **Research.** A company page with its NSE, BSE and CIN codes, a stock summary (last close, 52-week range, price to earnings, latest revenue and profit), and the profit and loss, balance sheet and cash flow year by year, consolidated and standalone kept apart. Any figure opens a panel saying where it came from, whether it adds up and whether it was restated, with a link to the PDF at that page.
 - **Search.** Every page of every filing is read, scanned pages by OCR, and indexed on your own machine. An agent can search it today; there is no search screen yet.
 - **Market mood.** How cautious or eager the market is, on a 0 to 100 scale built from 10 readings, with each reading's history. It uses your own Dhan and FRED keys, which you save in Settings and which are stored encrypted.

@@ -1,6 +1,6 @@
 # Company financials: design
 
-Status: approved for planning, 13 October 2026.
+Status: approved for planning, 13 October 2026. Built on staging, 14 October 2026: the Research page and the company page ([DESIGN.md](../../DESIGN.md) section 10).
 
 Design canvas: "Maester Financial Tables", https://claude.ai/artifact/YHy12h78LC5WUBwNynizXQ, page "B · final" (frames F1–F3). Round 1 (Today, A–D) is on the page "Round 1". The user picked "B, with A's figure panel", then asked for "a summary on top about the stock" and a one-year price chart, and declined market value.
 

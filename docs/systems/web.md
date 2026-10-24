@@ -234,7 +234,7 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
     - A PDF is in the list if a statement in `sources` takes its numbers from this PDF.
     - A PDF is in the list if no statement of the filing comes from XBRL.
     - A PDF is not in the list if its only claim is `xbrl_read_failed` and an XBRL file of that basis failed. The free XBRL read goes alone.
-    - A PDF that XBRL covers is never in the list, even if Gemini read it before its XBRL came.
+    - A PDF that XBRL covers is never in the list, even if the model read it before its XBRL came.
 12. If the filing has a company and the state of its Numbers track is `done`, `Filing` shows "See the figures". This link goes to the company page, with `companyHref`.
 13. `Filing` shows "Read it again" only if `readAgainIds` has a file and no track works. The link and the button are both secondary actions.
     - While `IN_PDF_RESULT_SHOWN` is `false`, `checkLine` and `sourceRows` say "Not checked" and not a count of figures found. The ledger shows no miss and no link from a miss.
