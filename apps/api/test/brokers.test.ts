@@ -20,6 +20,7 @@ type Answer = { status: number; body: unknown };
 let session: Answer;
 let holdings: Answer;
 let dhanHoldings: Answer;
+let growwSession: Answer = { status: 200, body: { token: "growwTOKENleak555", isActive: true } };
 const calls: { url: string; init: RequestInit }[] = [];
 const json = (a: Answer) => new Response(JSON.stringify(a.body), { status: a.status, headers: { "Content-Type": "application/json" } });
 const brokerFetch = (async (url: string | URL, init?: RequestInit) => {
@@ -27,6 +28,8 @@ const brokerFetch = (async (url: string | URL, init?: RequestInit) => {
   if (String(url) === "https://api.kite.trade/session/token") return json(session);
   if (String(url) === "https://api.kite.trade/portfolio/holdings") return json(holdings);
   if (String(url) === "https://api.dhan.co/v2/holdings") return json(dhanHoldings);
+  if (String(url) === "https://api.groww.in/v1/token/api/access") return json(growwSession);
+  if (String(url) === "https://api.groww.in/v1/holdings/user") return json({ status: 200, body: { status: "SUCCESS", payload: { holdings: [{ isin: "INE154A01025", trading_symbol: "ITC", quantity: 150, average_price: 438, t1_quantity: 0 }] } } });
   throw new Error(`unexpected ${String(url)}`);
 }) as typeof fetch;
 
@@ -100,7 +103,8 @@ describe("GET /v1/brokers", () => {
   it("lists the brokers from their JSON definitions, with no calls in them", async () => {
     const res = await ctx.app.request("/v1/brokers", { headers: { cookie } });
     const body = BrokerList.parse(await res.json());
-    expect(body.items.map((b) => b.id)).toEqual(["kite", "dhan", "upstox"]);
+    expect(body.items.map((b) => b.id)).toEqual(["kite", "dhan", "upstox", "groww"]);
+    expect(body.items[3]).toMatchObject({ name: "Groww", signIn: { kind: "direct" }, returnUrl: null });
     expect(body.items[2]).toMatchObject({ name: "Upstox", signIn: { kind: "redirect" }, returnUrl: "http://localhost/v1/brokers/upstox/return" });
     expect(JSON.stringify(body)).not.toContain("api.upstox.com");
     expect(body.items[0]).toMatchObject({ name: "Zerodha", enabled: true, signIn: { kind: "redirect" }, returnUrl: "http://localhost/v1/brokers/kite/return" });
@@ -233,6 +237,40 @@ describe("GET /holdings", () => {
     expect(snap.rows[0]?.parts).toEqual([
       { broker: "kite", accountId: "AB1234", quantity: "120", averagePrice: "1516.67", cost: "182000.00", value: "209112.00", gain: "27112.00", gainPercent: "14.9", readAt: expect.any(String), stale: false },
     ]);
+  });
+});
+
+describe("signing in to Groww from Maester", () => {
+  const GROWW_KEY = "growwKEYleak111";
+  const GROWW_SECRET = "growwSECRETleak222";
+  const saveGroww = () =>
+    ctx.app.request(`${base()}/brokers/groww`, { method: "PUT", headers: headers(), body: JSON.stringify({ credentials: { apiKey: GROWW_KEY, apiSecret: GROWW_SECRET } }) });
+  const start = () => ctx.app.request(`${base()}/brokers/groww/session`, { method: "POST", headers: headers() });
+
+  it("signs in with the saved key once it is approved, and reads at once", async () => {
+    growwSession = { status: 200, body: { token: "growwTOKENleak555", isActive: true } };
+    expect((await saveGroww()).status).toBe(200);
+    const res = await start();
+    expect(res.status).toBe(200);
+    expect(BrokerAccount.parse(await res.json())).toMatchObject({ broker: "groww", state: "signed_in", lastReadCount: 1, errorCode: null });
+    const call = calls.find((c) => c.url === "https://api.groww.in/v1/token/api/access")!;
+    expect(String(call.init.body)).not.toContain(GROWW_SECRET);
+    const row = await getBrokerConnection(ctx.db, ws, "groww");
+    expect(decryptSecret(row!.tokenCiphertext!, KEY)).toBe("growwTOKENleak555");
+    for (const line of logLines) for (const s of [GROWW_KEY, GROWW_SECRET, "growwTOKENleak555"]) expect(line).not.toContain(s);
+  });
+
+  it("keeps a refusal as the account's error, and says nothing of the broker's own text", async () => {
+    growwSession = { status: 200, body: { isActive: false, message: "secret detail" } };
+    expect((await saveGroww()).status).toBe(200);
+    const account = BrokerAccount.parse(await (await start()).json());
+    expect(account).toMatchObject({ broker: "groww", state: "failing", errorCode: "BROKER_REFUSED" });
+    expect(JSON.stringify(account)).not.toContain("secret detail");
+  });
+
+  it("is refused for a broker that signs in on its own page", async () => {
+    expect((await save()).status).toBe(200);
+    expect((await ctx.app.request(`${base()}/brokers/kite/session`, { method: "POST", headers: headers() })).status).toBe(409);
   });
 });
 

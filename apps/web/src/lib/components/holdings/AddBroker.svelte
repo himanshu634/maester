@@ -102,6 +102,16 @@
 				Object.fromEntries(b.credentials.map((f) => [f.key, values[f.key]!.trim()]))
 			);
 			values = {};
+			if (b.signIn.kind === 'direct') {
+				// The investor approved the key on the broker's side (its steps say so): sign in and read now.
+				const account = await api.session(b.id);
+				await onadded(
+					account.errorCode
+						? (copy.errors[account.errorCode]?.(b.name) ?? copy.settings.added(b.name, null))
+						: copy.settings.added(b.name, account.lastReadCount)
+				);
+				return;
+			}
 			window.location.assign(await api.signInUrl(b.id));
 		} catch (err) {
 			busy = false;
@@ -228,7 +238,11 @@
 						disabled={busy}
 						aria-describedby={busy ? `${id}-saving` : `${id}-note`}
 					>
-						{provider ? copy.settings.add(chosen.name) : copy.add.save(chosen.name)}
+						{provider
+							? copy.settings.add(chosen.name)
+							: chosen.signIn.kind === 'direct'
+								? copy.add.saveDirect(chosen.name)
+								: copy.add.save(chosen.name)}
 					</button>
 					{#if !first}
 						<button type="button" class="button outline" onclick={oncancel}

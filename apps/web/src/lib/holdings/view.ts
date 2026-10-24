@@ -84,8 +84,10 @@ export function readWords(a: BrokerAccount, now: Date = new Date()): string {
 export function accountAction(
 	a: BrokerAccount,
 	broker?: BrokerSummary
-): 'sign_in' | 'read' | 'settings' {
+): 'sign_in' | 'read' | 'settings' | 'direct' {
 	if (settingsProvider(broker)) return a.state === 'signed_out' ? 'settings' : 'read';
+	// Groww: no page to go to; once the key is approved on Groww, Maester signs in and reads.
+	if (broker?.signIn.kind === 'direct') return a.state === 'signed_in' ? 'read' : 'direct';
 	return a.state === 'signed_in' ||
 		(a.state === 'failing' && a.signedInAt !== null && a.signedOutAt === null)
 		? 'read'

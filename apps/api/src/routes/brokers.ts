@@ -37,7 +37,11 @@ function summary(deps: AppDeps, d: BrokerDefinition): BrokerSummary {
   return {
     id: d.id, name: d.name, enabled: d.enabled, notOfferedReason: d.notOfferedReason ?? null, copy: d.copy,
     credentials: d.credentials.map((c) => ({ key: c.key, label: c.label, ...(c.hint ? { hint: c.hint } : {}), secret: c.secret, minLength: c.minLength, maxLength: c.maxLength })),
-    signIn: d.signIn.kind === "redirect" ? { kind: "redirect" } : { kind: d.signIn.kind, provider: d.signIn.provider },
+    signIn: d.signIn.kind === "redirect"
+      ? { kind: "redirect" }
+      : d.signIn.kind === "direct"
+        ? { kind: "direct" }
+        : { kind: d.signIn.kind, provider: d.signIn.provider },
     returnUrl: d.signIn.kind === "redirect" ? returnUrl(deps, d.id) : null,
   };
 }
@@ -237,6 +241,29 @@ export function brokerAccountRoutes(deps: AppDeps) {
     const nonce = randomBytes(24).toString("base64url");
     await createBrokerLoginState(deps.db, { nonce, connectionId: row.id, userId: c.get("user").id, expiresAt: new Date(Date.now() + LOGIN_STATE_MS) });
     return c.json({ url: new BrokerClient(d).loginUrl(creds, nonce, returnUrl(deps, d.id)) });
+  });
+
+  /**
+   * A direct sign-in (Groww): once the investor has approved the key on the broker's side, Maester
+   * calls the broker's session endpoint with the saved key, then reads at once. A refusal is kept
+   * as the account's error code; the broker's own text is never passed on.
+   */
+  r.post("/:broker/session", async (c) => {
+    const d = def(c.req.param("broker"));
+    if (!d.enabled) throw new HttpError("INVALID_STATE", "this broker is not offered");
+    if (d.signIn.kind !== "direct") throw new HttpError("INVALID_STATE", `${d.name} does not sign in here`);
+    const row = await getBrokerConnection(deps.db, c.get("workspace").id, d.id);
+    if (!row?.credentialsCiphertext) throw new HttpError("INVALID_STATE", "save the key first");
+    const key = needKey(deps);
+    const creds = JSON.parse(decryptSecret(row.credentialsCiphertext, key)) as Record<string, string>;
+    try {
+      const session = await new BrokerClient(d, { fetch: deps.brokerFetch }).startSession(creds, new Date());
+      await saveBrokerSession(deps.db, row.id, { accountId: session.accountId, tokenCiphertext: encryptSecret(session.accessToken, key), signedInAt: session.signedInAt, tokenExpiresAt: session.expiresAt });
+      await readHoldings(deps, d, (await getBrokerConnectionById(deps.db, row.id))!, deps.brokerFetch);
+    } catch (err) {
+      await markBrokerError(deps.db, row.id, logBrokerError(deps, d.id, err, "sign-in"));
+    }
+    return c.json(await account(deps, defs, c.get("workspace").id, d.id));
   });
 
   r.post("/:broker/read", async (c) => {

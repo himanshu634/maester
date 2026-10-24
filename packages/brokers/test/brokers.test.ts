@@ -14,8 +14,8 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
 const clone = (from: unknown = kite) => JSON.parse(JSON.stringify(from)) as Record<string, any>;
 
 describe("definitions", () => {
-  it("ships Kite, Dhan and Upstox, enabled", () => {
-    expect([...builtInDefinitions().keys()]).toEqual(["kite", "dhan", "upstox"]);
+  it("ships Kite, Dhan, Upstox and Groww, enabled", () => {
+    expect([...builtInDefinitions().keys()]).toEqual(["kite", "dhan", "upstox", "groww"]);
     expect(builtInDefinitions().get("upstox")!.enabled).toBe(true);
     expect(kite.enabled).toBe(true);
     expect(dhan.enabled).toBe(true);
@@ -165,6 +165,50 @@ describe("BrokerClient for Kite", () => {
   });
 });
 
+// Groww's calls, from its own docs (24 Oct 2026): groww.in/trade-api/docs/curl (the token call)
+// and /curl/portfolio (holdings). The answers below follow the documented shapes.
+describe("BrokerClient for Groww", () => {
+  const groww = builtInDefinitions().get("groww")!;
+  const gcreds = { apiKey: "growwkey123", apiSecret: "growwsecret456" };
+
+  it("signs in from Maester with the key and SHA-256(secret + timestamp), as strings in JSON", async () => {
+    const fetch = vi.fn(async () => json(200, { token: "tok", tokenRefId: "ref-1", sessionName: "s", expiry: "2026-10-25T06:00:00", isActive: true }));
+    const now = new Date("2026-10-24T03:30:00Z");
+    const s = await new BrokerClient(groww, { fetch }).startSession(gcreds, now);
+    expect(s).toMatchObject({ accessToken: "tok", accountId: null });
+    // Signed in 09:00 IST: it lasts until 06:00 IST the next morning.
+    expect(s.expiresAt.toISOString()).toBe("2026-10-25T00:30:00.000Z");
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://api.groww.in/v1/token/api/access");
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>)).toMatchObject({ Authorization: "Bearer growwkey123", "Content-Type": "application/json" });
+    const ts = String(Math.floor(now.getTime() / 1000));
+    expect(JSON.parse(init.body as string)).toEqual({
+      key_type: "approval",
+      checksum: createHash("sha256").update(`growwsecret456${ts}`).digest("hex"),
+      timestamp: ts,
+    });
+    expect(init.body as string).not.toContain("growwsecret456");
+  });
+
+  it("calls a 200 with no token a refusal: the key was not approved today", async () => {
+    const fetch = vi.fn(async () => json(200, { isActive: false }));
+    const err = await new BrokerClient(groww, { fetch }).startSession(gcreds, new Date()).catch((e) => e);
+    expect(err.code).toBe("BROKER_REFUSED");
+  });
+
+  it("reads holdings from payload.holdings, on NSE since Groww names no exchange", async () => {
+    const fetch = vi.fn(async () =>
+      json(200, { status: "SUCCESS", payload: { holdings: [{ isin: "INE154A01025", trading_symbol: "ITC", quantity: 150, average_price: 438, t1_quantity: 0, pledge_quantity: 0 }] } }),
+    );
+    const lines = await new BrokerClient(groww, { fetch }).holdings(gcreds, { accessToken: "tok", accountId: null });
+    expect(lines).toEqual([{ isin: "INE154A01025", symbol: "ITC", exchange: "NSE", quantity: "150", t1Quantity: "0", averagePrice: "438", lastPrice: null }]);
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://api.groww.in/v1/holdings/user");
+    expect((init.headers as Record<string, string>)).toMatchObject({ Authorization: "Bearer tok", "X-API-VERSION": "1.0" });
+  });
+});
+
 // Upstox's calls, from its own docs (24 Oct 2026): upstox.com/developer/api-documentation/authentication,
 // /get-token and /get-holdings. The answers below follow the documented shapes.
 describe("BrokerClient for Upstox", () => {
@@ -206,6 +250,12 @@ describe("BrokerClient for Upstox", () => {
     const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://api.upstox.com/v2/portfolio/long-term-holdings");
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok");
+  });
+
+  it("refuses a definition that names no exchange for holdings", () => {
+    const d = clone(upstox);
+    delete d.reads.holdings.fields.exchange;
+    expect(() => parseDefinition(d, "x.json")).toThrow(/exchangeIs/);
   });
 
   it("says Upstox signed Maester out on a 401", async () => {

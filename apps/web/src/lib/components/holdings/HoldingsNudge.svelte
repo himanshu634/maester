@@ -40,6 +40,7 @@
 	function what(a: BrokerAccount): string {
 		const action = accountAction(a, brokerOf(a));
 		if (action === 'settings') return copy.nudge.whatSettings;
+		if (action === 'direct') return copy.nudge.whatDirect(a.name);
 		if (action === 'read') return copy.nudge.whatRead;
 		return copy.nudge.whatRedirect(a.name);
 	}
@@ -55,11 +56,11 @@
 		}
 	}
 
-	async function read(a: BrokerAccount) {
+	async function read(a: BrokerAccount, direct = false) {
 		busy = a.broker;
 		problem = null;
 		try {
-			const next = await api.read(a.broker);
+			const next = direct ? await api.session(a.broker) : await api.read(a.broker);
 			await onchanged(
 				next.errorCode
 					? (copy.errors[next.errorCode]?.(a.name) ?? '')
@@ -124,6 +125,13 @@
 								class={['button', { outline: i > 0 }]}
 								disabled={busy !== null}
 								onclick={() => signIn(a)}>{copy.accounts.signIn(a.name)}</button
+							>
+						{:else if action === 'direct'}
+							<button
+								type="button"
+								class={['button', { outline: i > 0 }]}
+								disabled={busy !== null}
+								onclick={() => read(a, true)}>{copy.accounts.readDirect(a.name)}</button
 							>
 						{:else}
 							<button

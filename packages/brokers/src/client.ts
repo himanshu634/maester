@@ -49,7 +49,8 @@ function text(v: unknown, field: string): string {
 }
 
 type RedirectSignIn = Extract<BrokerDefinition["signIn"], { kind: "redirect" }>;
-type Call = BrokerDefinition["reads"]["holdings"] | RedirectSignIn["session"];
+type DirectSignIn = Extract<BrokerDefinition["signIn"], { kind: "direct" }>;
+type Call = BrokerDefinition["reads"]["holdings"] | RedirectSignIn["session"] | DirectSignIn["session"];
 
 /** The values a holdings read may use: a redirect sign-in's session, or the Settings connection's token and client ID. */
 export type ReadSession = { accessToken: string; accountId: string | null } | { accessToken: string; clientId: string };
@@ -90,9 +91,21 @@ export class BrokerClient {
   /** Exchanges the code from the broker's return for a session. */
   async signIn(creds: Credentials, code: string, now: Date, returnUrl = ""): Promise<BrokerSession> {
     const s = this.redirect().session;
-    const body = await this.call(s, { ...creds, code, returnUrl }, "sign-in");
+    return this.session(s, await this.call(s, { ...creds, code, returnUrl }, "sign-in"), now);
+  }
+
+  /** A direct sign-in: the session call made from Maester with the saved key, plus `{timestamp}` in epoch seconds. */
+  async startSession(creds: Credentials, now: Date): Promise<BrokerSession> {
+    if (this.def.signIn.kind !== "direct") throw new Error(`${this.def.id} does not sign in directly`);
+    const s = this.def.signIn.session;
+    const timestamp = String(Math.floor(now.getTime() / 1000));
+    // A key that was not approved today can come back as a 200 with no token: that is a refusal.
+    return this.session(s, await this.call(s, { ...creds, timestamp }, "sign-in"), now, "BROKER_REFUSED");
+  }
+
+  private session(s: RedirectSignIn["session"] | DirectSignIn["session"], body: unknown, now: Date, noToken: BrokerErrorCode = "BROKER_ANSWER_UNREADABLE"): BrokerSession {
     const accessToken = at(body, s.accessToken);
-    if (typeof accessToken !== "string" || accessToken === "") throw new BrokerError("BROKER_ANSWER_UNREADABLE", "the sign-in answer has no access token");
+    if (typeof accessToken !== "string" || accessToken === "") throw new BrokerError(noToken, "the sign-in answer has no access token");
     const accountId = s.accountId ? at(body, s.accountId) : null;
     return { accessToken, accountId: typeof accountId === "string" ? accountId : null, signedInAt: now, expiresAt: sessionExpiry(s.expiry, now) };
   }
@@ -110,7 +123,7 @@ export class BrokerClient {
     return list.map((item) => ({
       isin: text(at(item, f.isin), "isin"),
       symbol: text(at(item, f.symbol), "symbol"),
-      exchange: text(at(item, f.exchange), "exchange"),
+      exchange: f.exchange ? text(at(item, f.exchange), "exchange") : h.exchangeIs!,
       quantity: decimal(at(item, f.quantity), "quantity"),
       t1Quantity: f.t1Quantity ? decimal(at(item, f.t1Quantity) ?? 0, "t1Quantity") : "0",
       averagePrice: decimal(at(item, f.averagePrice), "averagePrice"),
@@ -132,6 +145,9 @@ export class BrokerClient {
     if (c.form) {
       headers["Content-Type"] = "application/x-www-form-urlencoded";
       body = new URLSearchParams(Object.fromEntries(Object.entries(c.form).map(([k, v]) => [k, fill(v, all)]))).toString();
+    } else if (c.json) {
+      headers["Content-Type"] = "application/json";
+      body = JSON.stringify(Object.fromEntries(Object.entries(c.json).map(([k, v]) => [k, fill(v, all)])));
     }
     let res: Response;
     try {

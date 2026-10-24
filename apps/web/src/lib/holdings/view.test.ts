@@ -114,6 +114,10 @@ describe('view', () => {
 		expect(accountAction(account())).toBe('read');
 		expect(accountAction(account({ state: 'signed_out' }))).toBe('sign_in');
 		expect(accountAction(account({ state: 'saved', signedInAt: null }))).toBe('sign_in');
+		// Groww signs in from Maester: no page to go to, only "Read Groww" once its key is approved.
+		const groww = { ...kite, id: 'groww', name: 'Groww', signIn: { kind: 'direct' as const } };
+		expect(accountAction(account({ broker: 'groww', state: 'signed_out' }), groww)).toBe('direct');
+		expect(accountAction(account({ broker: 'groww' }), groww)).toBe('read');
 		expect(accountAction(account({ state: 'failing', errorCode: 'BROKER_UNAVAILABLE' }))).toBe(
 			'read'
 		);

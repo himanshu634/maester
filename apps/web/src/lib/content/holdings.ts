@@ -36,6 +36,7 @@ export const holdingsContent = {
 		key: (last4: string) => `Key ending ${last4}`,
 		signIn: (name: string) => `Sign in to ${name}`,
 		readAgain: 'Read again',
+		readDirect: (name: string) => `Read ${name}`,
 		reading: (name: string) => `Reading your ${name} holdings…`,
 		disconnect: 'Disconnect',
 		notRead: 'Not read yet',
@@ -51,7 +52,9 @@ export const holdingsContent = {
 		BROKER_ANSWER_UNREADABLE: (name: string) =>
 			`${name}’s answer wasn’t one Maester could read. Nothing read before was lost.`,
 		BROKER_SIGNED_OUT: (name: string) =>
-			`${name} signed Maester out. Sign in again to read today’s holdings.`
+			`${name} signed Maester out. Sign in again to read today’s holdings.`,
+		BROKER_REFUSED: (name: string) =>
+			`${name} didn’t accept the key. Approve it on ${name} today, then read again.`
 	} as Record<string, (name: string) => string>,
 
 	signedIn: (name: string, count: number | null) =>
@@ -95,6 +98,7 @@ export const holdingsContent = {
 		copy: 'Copy',
 		copied: 'Copied.',
 		save: (name: string) => `Save and sign in with ${name}`,
+		saveDirect: (name: string) => `Save and read ${name}`,
 		saving: 'Saving the key…',
 		cancel: 'Cancel',
 		lasts: 'A sign-in lasts',
@@ -133,6 +137,7 @@ export const holdingsContent = {
 		why: (state: string, what: string) => `${state} · ${what}`,
 		whatRedirect: (name: string) => `Sign in on ${name}’s page`,
 		whatSettings: 'Save a new token in Settings',
+		whatDirect: (name: string) => `Approve the key on ${name}, then read`,
 		whatRead: 'Read again',
 		back: 'Each broker sends you back here. What was read last stays on the page until then.'
 	},

@@ -37,6 +37,8 @@ const Call = z.object({
   headers: z.record(z.string(), Template).default({}),
   /** Sent as application/x-www-form-urlencoded. */
   form: z.record(z.string(), Template).optional(),
+  /** Sent as application/json, every value a string. A call has a form or a JSON body, not both. */
+  json: z.record(z.string(), Template).optional(),
   derive: z.record(z.string(), BrokerDerivedValue).default({}),
 });
 
@@ -54,7 +56,8 @@ export type BrokerSessionExpiry = z.infer<typeof BrokerSessionExpiry>;
 export const BrokerHoldingFields = z.object({
   isin: JsonPath,
   symbol: JsonPath,
-  exchange: JsonPath,
+  /** Absent for a broker whose holdings name no exchange (Groww): then the read's `exchangeIs` says which. */
+  exchange: JsonPath.optional(),
   quantity: JsonPath,
   t1Quantity: JsonPath.optional(),
   averagePrice: JsonPath,
@@ -88,6 +91,19 @@ export const BrokerSignIn = z.discriminatedUnion("kind", [
     }),
   }),
   z.object({ kind: z.literal("settings-connection"), provider: SettingsConnectionProvider }),
+  /**
+   * `direct`: Maester calls the broker's session endpoint itself with the saved key (Groww, once
+   * the investor has approved the key on Groww that day). The session call may also use
+   * `{timestamp}`, epoch seconds.
+   */
+  z.object({
+    kind: z.literal("direct"),
+    session: Call.extend({
+      accessToken: JsonPath,
+      accountId: JsonPath.optional(),
+      expiry: BrokerSessionExpiry,
+    }),
+  }),
 ]);
 export type BrokerSignIn = z.infer<typeof BrokerSignIn>;
 
@@ -120,7 +136,7 @@ export const BrokerDefinition = z.object({
      * `{accessToken}` and `{clientId}` from the Settings connection (settings-connection).
      * `list` is the JSON path of the array; absent, the answer itself is the array (Dhan).
      */
-    holdings: Call.extend({ list: JsonPath.optional(), fields: BrokerHoldingFields }),
+    holdings: Call.extend({ list: JsonPath.optional(), fields: BrokerHoldingFields, exchangeIs: z.enum(["NSE", "BSE"]).optional() }),
   }),
   /** An answer with one of these statuses means the broker signed Maester out. */
   signedOutStatuses: z.array(z.number().int().min(400).max(599)).default([401, 403]),
@@ -139,6 +155,8 @@ export const BrokerSummary = z.object({
   signIn: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("redirect") }),
     z.object({ kind: z.literal("settings-connection"), provider: SettingsConnectionProvider }),
+    /** Signs in from Maester itself with the saved key, once the investor has approved it on the broker's side. */
+    z.object({ kind: z.literal("direct") }),
   ]),
   /** The address to paste into the broker's app as its redirect URL. Null for a broker with no redirect. */
   returnUrl: z.string().nullable(),

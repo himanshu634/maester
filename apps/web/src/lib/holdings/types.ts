@@ -34,7 +34,11 @@ export interface BrokerSummary {
 	 * How the account signs in: on the broker's own page (`redirect`), or with the connection the
 	 * investor saved in Settings (`settings-connection`), which asks for nothing here.
 	 */
-	signIn: { kind: 'redirect' } | { kind: 'settings-connection'; provider: string };
+	signIn:
+		| { kind: 'redirect' }
+		| { kind: 'settings-connection'; provider: string }
+		/** Maester signs in itself with the saved key, once the investor approved it on the broker's side (Groww). */
+		| { kind: 'direct' };
 	/** What to paste into the broker's app as its redirect URL. Null when there is no redirect. */
 	returnUrl: string | null;
 }

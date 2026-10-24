@@ -51,11 +51,12 @@
 		}
 	}
 
-	async function read(a: BrokerAccount) {
+	/** Read again, or for a direct sign-in (Groww) sign in with the approved key and read. */
+	async function read(a: BrokerAccount, direct = false) {
 		busy[a.broker] = 'read';
 		problem[a.broker] = undefined;
 		try {
-			const next = await api.read(a.broker);
+			const next = direct ? await api.session(a.broker) : await api.read(a.broker);
 			await onchanged(
 				next.errorCode
 					? (copy.errors[next.errorCode]?.(a.name) ?? '')
@@ -118,6 +119,14 @@
 						class="button outline"
 						disabled={busy[a.broker] !== undefined}
 						onclick={() => signIn(a)}>{copy.accounts.signIn(a.name)}</button
+					>
+				{:else if action === 'direct'}
+					<button
+						type="button"
+						class="button outline"
+						disabled={busy[a.broker] !== undefined}
+						aria-describedby={busy[a.broker] === 'read' ? `${id}-${a.broker}-reading` : undefined}
+						onclick={() => read(a, true)}>{copy.accounts.readDirect(a.name)}</button
 					>
 				{:else}
 					<button
