@@ -111,6 +111,15 @@ def identity_facts(*, symbol: str = "SYNCEM", basis: str | None = "Consolidated"
     return facts
 
 
+# Banking results print the name as ``NameOfBank``, never ``NameOfTheCompany`` (65 of the 807 instances on hand).
+BANK_NAME = "SYNTHETIC COASTLINE BANK LIMITED"
+
+
+def bank_identity_facts() -> list[FactTuple]:
+    """``identity_facts()`` as a bank's results print them: the name in ``NameOfBank``."""
+    return [("NameOfBank", *fact[1:4], BANK_NAME) if fact[0] == "NameOfTheCompany" else fact for fact in identity_facts()]
+
+
 def instance(
     *,
     namespace: str = CAPMKT_2025,

@@ -6,9 +6,11 @@ from datetime import date
 from decimal import Decimal
 
 from xbrl_fixtures import (
+    BANK_NAME,
     BSE_FIN,
     IND_AS_MARKERS,
     ContextSpec,
+    bank_identity_facts,
     f,
     identity_facts,
     instance,
@@ -196,6 +198,14 @@ class IdentityTests(unittest.TestCase):
         self.assertEqual((identity.basis, identity.mixed_basis, identity.audited), ("consolidated", False, None))
         self.assertEqual((identity.period_start, identity.period_end, identity.rounding_word), (date(2025, 7, 1), date(2025, 9, 30), "Lakhs"))
 
+    def test_a_bank_prints_its_name_as_name_of_bank(self):
+        for namespace in (None, BSE_FIN):
+            identity = self.read(bank_identity_facts(), **({"namespace": namespace} if namespace else {}))
+            self.assertEqual((identity.name, identity.scrip_code), (BANK_NAME, "500999"))
+        # of the name's two elements, the first fact in document order is taken
+        both = [("NameOfBank", "OneD", None, None, "FIRST"), ("NameOfTheCompany", "OneD", None, None, "SECOND")]
+        self.assertEqual(self.read(both).name, "FIRST")
+
     def test_the_rounding_element_follows_the_family(self):
         self.assertEqual(self.read(identity_facts(), namespace=BSE_FIN).rounding_word, "Lakhs")
         self.assertIsNone(self.read(identity_facts(), rounding=None).rounding_word)
@@ -373,6 +383,11 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual((c.kind, c.format.id, c.basis), ("financial_results", "in-capmkt/nbfc", "consolidated"))
         self.assertEqual([(w.code, w.message) for w in c.warnings], [("XBRL_FORMAT_UNMAPPED", "in-capmkt/nbfc")])
 
+    def test_a_banks_name_is_answered_with_its_element_as_evidence(self):
+        c = self.classify(bank_identity_facts() + [f("CET1Ratio", unit="pure")])
+        self.assertEqual((c.format.kind, c.company_name_as_printed), ("banking", BANK_NAME))
+        self.assertIn(XbrlEvidenceData("company", "xbrl.identity.name", "NameOfBank", "OneD", BANK_NAME), c.evidence)
+
     def test_an_unknown_family_is_not_sure_with_a_warning_and_no_family_evidence(self):
         c = self.classify(identity_facts() + IND_AS_MARKERS, namespace="http://example.com/x")
         self.assertEqual((c.kind, c.format), ("not_sure", XbrlFormat(None, "unknown", None, False)))
@@ -446,13 +461,14 @@ class RealInstanceTests(unittest.TestCase):
         self.assertGreater(count, 0)
 
     def test_real_instances_answer_what_a_results_instance_must(self):
-        # Every real file is a results instance with a basis, a period, a scrip code and a declared rounding.
+        # Every real file is a results instance with a name, a basis, a period, a scrip code and a declared rounding.
         count = 0
         for path, _ in real_instances_with_token():
             inst = parse(path.read_bytes())
             c = classify_instance(inst)
             identity = read_identity(inst, c.format.family)
             self.assertEqual(c.kind, "financial_results", path.name)
+            self.assertIsNotNone(c.company_name_as_printed, path.name)
             self.assertIn(c.basis, ("consolidated", "standalone"), path.name)
             self.assertIsNotNone(c.period_end, path.name)
             self.assertIsNotNone(c.bse_code, path.name)
