@@ -178,7 +178,7 @@ function D2() {
       }),
       strip([
         ["Ravi’s value", inr0(v), "3 accounts, 5 companies, at Friday’s NSE close."],
-        ["Cost", inr0(c), "What Ravi’s brokers report he paid."],
+        ["Cost", inr0(c), "What Ravi’s brokers report was paid."],
         ["Unrealized gain", signed(v - c), "Value less cost, for the 5 holdings with both."],
         ["Read today", "1 of 3", "Zerodha and Angel One are Friday’s, starred."],
       ]),
@@ -404,7 +404,7 @@ function S2() {
     content: [
       pageHead({}),
       row({ gap: 48, alignItems: "flex-start", borderTop: `2px solid ${T.ink}`, paddingTop: 20 }, [
-        col({ gap: 16, width: 360, flexShrink: 0 }, [h2("Add an account"), whose("Ravi"), notice({ title: "Asha’s Zerodha is already here.", lines: ["Ravi’s needs a free Personal app with his client ID. Asha’s developer login can make it. Ravi still signs in on Zerodha himself each day, with his own login and code."] })]),
+        col({ gap: 16, width: 360, flexShrink: 0 }, [h2("Add an account"), whose("Ravi"), notice({ title: "Asha’s Zerodha is already here.", lines: ["Ravi’s needs a free Personal app with that client ID. Asha’s developer login can make it. Ravi still signs in on Zerodha each day, with their own login and code."] })]),
         brokerForm("kite", { lede: "Zerodha lets an app read one account’s holdings once that account holder makes a free Personal app and signs in to it each day.", action: "Save and sign in with Zerodha", phoneNote: "Maester asks Zerodha only for holdings. It never places an order." }),
       ]),
     ],
