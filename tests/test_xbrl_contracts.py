@@ -163,7 +163,7 @@ class ConversionTests(unittest.TestCase):
         data = read_instance(parse(instance(rounding="Lakhs", facts=ind_as(revenue=("1234500000", "-3")))))
         wire = to_xbrl_read_result(data)
         self.assertIsInstance(wire, XbrlReadResult)
-        self.assertEqual((wire.pipeline_version, wire.model, wire.prompt_version), ("xbrl-1", "xbrl-parser-1", "in-capmkt/ind_as@1"))
+        self.assertEqual((wire.pipeline_version, wire.model, wire.prompt_version), ("xbrl-1", "xbrl-parser-1", "in-capmkt/ind_as@2"))
         self.assertEqual((wire.rounding.word, wire.rounding.unit_label, wire.rounding.scale, wire.rounding.exponent), ("Lakhs", "₹ lakh", "100000", -5))
         self.assertEqual((wire.coarsest_decimals, wire.finest_decimals, wire.state), (-5, -3, "complete"))
         revenue = next(f for f in wire.facts if f.element == "RevenueFromOperations" and f.context_id == "OneD")
@@ -171,9 +171,9 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(XBRL_EVENT.validate_python({"type": "read", "result": wire.to_wire()}).result, wire)
 
     def test_an_unmapped_format_has_no_map_version_in_its_prompt_version(self):
-        data = read_instance(parse(instance(facts=ind_as()[:0] + [("CET1Ratio", "OneD", "pure", "4", "0.12"), ("AdditionalTier1Ratio", "OneD", "pure", "4", "0.01")])))
+        data = read_instance(parse(instance(facts=[("InterestEarned", "OneD", "INR", "-5", "100000"), ("FeesAndCommissionIncome", "OneD", "INR", "-5", "100000")])))
         wire = to_xbrl_read_result(data)
-        self.assertEqual((wire.format.id, wire.format.mapped, wire.prompt_version), ("in-capmkt/banking", False, "in-capmkt/banking@-"))
+        self.assertEqual((wire.format.id, wire.format.mapped, wire.prompt_version), ("in-capmkt/nbfc", False, "in-capmkt/nbfc@-"))
         self.assertEqual(wire.facts, [])
 
     def test_the_wire_format_is_a_new_object_not_the_dataclass(self):

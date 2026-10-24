@@ -38,6 +38,7 @@ COMPANY = "SYNTHETIC CEMENTS"
 CAPMKT = "2025-11-12_SQ2025-2026_consolidated_Integrated_Finance_Ind_As_500001_1112025101010.xml"
 BSE = "2025-11-12_SQ2025-2026_standalone_Main_Ind_As_500002_1112025101011.xml"
 BANKING = "2025-11-12_SQ2025-2026_consolidated_IFBanking_500003_1112025101012.xml"
+NBFC = "2025-11-12_SQ2025-2026_consolidated_Integrated_Finance_NBFC_500003_1112025101012.xml"
 HOSTILE = "2025-11-12_SQ2025-2026_consolidated_Integrated_Finance_Ind_As_500004_1112025101013.xml"
 LONE = "2025-11-13_SQ2025-2026_consolidated_Integrated_Finance_Ind_As_500005_1112025101014.xml"
 
@@ -45,8 +46,8 @@ CAPMKT_DATA = instance(facts=ind_as(), rounding="Lakhs")
 BSE_DATA = instance(namespace=BSE_FIN, schema_ref="Ind-AS_entry_point_2020-03-31.xsd", facts=ind_as(), rounding="Lakhs")
 # A loss on other income: negative in the instance, printed in brackets on the PDF.
 NEGATIVE_DATA = instance(facts=ind_as(other_income=("-5500000", "-5")), rounding="Lakhs")
-BANKING_DATA = instance(facts=[*identity_facts(), f("CET1Ratio", "OneD", unit="pure", text="0.1234"),
-                               f("AdditionalTier1Ratio", "OneD", unit="pure", text="0.01")])
+# A format with no map: read, and no fact written.
+NBFC_DATA = instance(facts=[*identity_facts(), f("InterestEarned", "OneD"), f("FeesAndCommissionIncome", "OneD")])
 HOSTILE_DATA = instance(facts=[*identity_facts(), *IND_AS_MARKERS], doctype='<!DOCTYPE xbrli:xbrl [<!ENTITY lol "lol">]>')
 
 TITLE = "Statement of Unaudited Consolidated Financial Results for the quarter ended 30 September 2025"
@@ -102,7 +103,7 @@ class MapReportTests(Case):
         super().setUp()
         self.put(CAPMKT, CAPMKT_DATA)
         self.put(BSE, BSE_DATA)
-        self.put(BANKING, BANKING_DATA)
+        self.put(NBFC, NBFC_DATA)
         self.put(HOSTILE, HOSTILE_DATA)
 
     def test_a_fact_in_a_context_the_instance_does_not_define_is_refused_by_the_read_and_counted(self):
@@ -141,11 +142,11 @@ class MapReportTests(Case):
         self.assertEqual((report["files"]["found"], report["files"]["read"]), (4, 3))
         self.assertEqual(report["files"]["unreadable"], {"DOCTYPE": 1})
         self.assertEqual({k: v["files"] for k, v in report["formats"].items()},
-                         {"in-bse-fin/ind_as": 1, "in-capmkt/banking": 1, "in-capmkt/ind_as": 1})
+                         {"in-bse-fin/ind_as": 1, "in-capmkt/nbfc": 1, "in-capmkt/ind_as": 1})
         self.assertEqual(report["warnings_files"]["XBRL_FORMAT_UNMAPPED"], 1)  # one unmapped format, two mapped
         self.assertEqual(report["format_tokens"]["as_the_token_says"], 3)
         self.assertEqual(report["format_tokens"]["matrix"]["Main_Ind_As"], {"in-bse-fin/ind_as": 1})
-        self.assertEqual(report["format_tokens"]["matrix"]["IFBanking"], {"in-capmkt/banking": 1})
+        self.assertEqual(report["format_tokens"]["matrix"]["Integrated_Finance_NBFC"], {"in-capmkt/nbfc": 1})
         # Two mapped files, each with two periods (OneD, FourD): the values add up, so every sum passes.
         self.assertEqual(report["sums"]["income"], {"passed": 4, "failed": 0, "not_checked": 0})
         self.assertEqual(report["sums"]["expenses"], {"passed": 4, "failed": 0, "not_checked": 0})
@@ -153,7 +154,7 @@ class MapReportTests(Case):
         capmkt = report["formats"]["in-capmkt/ind_as"]
         self.assertGreater(capmkt["mapped"], 0)
         self.assertEqual(capmkt["unmapped"], 0)
-        self.assertEqual(report["formats"]["in-capmkt/banking"]["facts_written"], 0)
+        self.assertEqual(report["formats"]["in-capmkt/nbfc"]["facts_written"], 0)
         self.assertEqual(report["concepts"]["facts_written"], report["concepts"]["with_concept"])
         self.assertEqual(report["entry_points"]["files"], {"Ind-AS_entry_point_2020-03-31.xsd": 1,
                                                            "in-capmkt-ent-2025-01-31.xsd": 2})
@@ -241,7 +242,7 @@ class PdfRunTests(Case):
     def setUp(self):
         super().setUp()
         self.pdf_root = self.root / "filings"
-        for name, data in ((CAPMKT, NEGATIVE_DATA), (BSE, BSE_DATA), (BANKING, BANKING_DATA), (LONE, CAPMKT_DATA)):
+        for name, data in ((CAPMKT, NEGATIVE_DATA), (BSE, BSE_DATA), (NBFC, NBFC_DATA), (LONE, CAPMKT_DATA)):
             self.put(name, data)
         pdf_dir = self.pdf_root / "filings" / "results"
         pdf_dir.mkdir(parents=True)
@@ -259,7 +260,7 @@ class PdfRunTests(Case):
         write_csv(self.pdf_root / "xbrl-manifest.csv", ["bse_code", "basis", "filed", "file"], [
             ["500001", "consolidated", "2025-11-12", f"xbrl/x/{CAPMKT}"],
             ["500002", "standalone", "2025-11-12", f"xbrl/x/{BSE}"],
-            ["500003", "consolidated", "2025-11-12", f"xbrl/x/{BANKING}"],
+            ["500003", "consolidated", "2025-11-12", f"xbrl/x/{NBFC}"],
             ["500005", "consolidated", "2025-11-13", f"xbrl/x/{LONE}"],
         ])
         head = ["bse_code", "date", "category", "subcategory", "status", "file"]

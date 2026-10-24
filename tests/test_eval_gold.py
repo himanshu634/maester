@@ -48,7 +48,7 @@ class FreezeTests(unittest.TestCase):
         rows = [row(concept="total_assets", verified="yes"), row(row="2", label="Inventories", printed="800", value="800")]
         gold = freeze_sheet(rows, FILING, TAXONOMY, WHEN)
         self.assertEqual(gold.filing_id, FILING.id)
-        self.assertEqual(gold.taxonomy_version, 1)
+        self.assertEqual(gold.taxonomy_version, TAXONOMY.taxonomy_version)
         self.assertEqual(len(gold.facts), 1)
         fact = gold.facts[0]
         self.assertEqual((fact.concept, fact.value_status, fact.value, fact.scale, fact.normalized_value, fact.page_index),

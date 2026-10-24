@@ -439,7 +439,7 @@ CAUTION: Set `EXTRACTOR_SECRET` on a host that other computers can connect to. W
 - The classification model sees a maximum of 10 pages.
 - The deadline and the cancel signal stop the workflow only before a model call. A model call that started can continue for 300 seconds. Thus a request can take more time than `EXTRACT_DEADLINE_SECONDS`.
 - The extractor does not examine the `content-type` header of `/v1/classify` and `/v1/extract`. A body that is not a PDF gets the error `UNREADABLE_PDF`.
-- Only two formats have an element map: `in-capmkt/ind_as` and `in-bse-fin/ind_as`. A banking, NBFC or "other than Ind AS" instance is classified and read, and the read has no fact.
+- Only four formats have an element map: `in-capmkt/ind_as`, `in-bse-fin/ind_as`, `in-capmkt/banking` and `in-bse-fin/banking`. An NBFC or "other than Ind AS" instance is classified and read, and the read has no fact.
 - The PDF check compares absolute values. A negative XBRL value, or a cash-flow outflow that the PDF prints in brackets, matches the number without its sign.
 - A match anywhere on a statement page counts. A number can match by chance. The [first report](../eval/2026-10-21-xbrl-map-v1.md) measures how often.
 - The PDF check assumes that the PDF prints in the unit that the instance declares. When the PDF prints another unit, the check fails every fact of the pair.

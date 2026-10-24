@@ -137,11 +137,15 @@ class FormatTests(unittest.TestCase):
         self.assertEqual(detect_format(parse(instance(facts=[f("InterestEarned"), f("FeesAndCommissionIncome")]))).kind, "nbfc")
         self.assertEqual(detect_format(parse(instance(namespace="http://example.com/x", facts=IND_AS_MARKERS))), XbrlFormat(None, "unknown", None, False))
 
-    def test_only_the_two_ind_as_formats_are_mapped(self):
+    def test_the_ind_as_and_banking_formats_are_mapped(self):
         self.assertEqual(detect_format(parse(instance(facts=IND_AS_MARKERS))), XbrlFormat("in-capmkt", "ind_as", "in-capmkt/ind_as", True))
         self.assertEqual(detect_format(parse(instance(namespace=BSE_FIN, facts=IND_AS_MARKERS))), XbrlFormat("in-bse-fin", "ind_as", "in-bse-fin/ind_as", True))
         banking = detect_format(parse(instance(facts=[f("AdditionalTier1Ratio", unit="pure")])))
-        self.assertEqual(banking, XbrlFormat("in-capmkt", "banking", "in-capmkt/banking", False))
+        self.assertEqual(banking, XbrlFormat("in-capmkt", "banking", "in-capmkt/banking", True))
+        banking = detect_format(parse(instance(namespace=BSE_FIN, facts=[f("CapitalAndLiabilities", "OneI")])))
+        self.assertEqual(banking, XbrlFormat("in-bse-fin", "banking", "in-bse-fin/banking", True))
+        nbfc = detect_format(parse(instance(facts=[f("InterestEarned"), f("FeesAndCommissionIncome")])))
+        self.assertEqual(nbfc, XbrlFormat("in-capmkt", "nbfc", "in-capmkt/nbfc", False))
 
     def test_the_rules_are_ordered_and_the_first_match_wins(self):
         both = [f("CET1Ratio", unit="pure"), f("InterestEarned"), f("FeesAndCommissionIncome")] + IND_AS_MARKERS
@@ -365,9 +369,9 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual((c.bse_code, c.isin, c.period_end), ("500999", "INE999Z01011", date(2025, 9, 30)))
 
     def test_an_unmapped_format_is_still_financial_results_with_a_warning(self):
-        c = self.classify(identity_facts() + [f("CET1Ratio", unit="pure")])
-        self.assertEqual((c.kind, c.format.id, c.basis), ("financial_results", "in-capmkt/banking", "consolidated"))
-        self.assertEqual([(w.code, w.message) for w in c.warnings], [("XBRL_FORMAT_UNMAPPED", "in-capmkt/banking")])
+        c = self.classify(identity_facts() + [f("InterestEarned"), f("FeesAndCommissionIncome")])
+        self.assertEqual((c.kind, c.format.id, c.basis), ("financial_results", "in-capmkt/nbfc", "consolidated"))
+        self.assertEqual([(w.code, w.message) for w in c.warnings], [("XBRL_FORMAT_UNMAPPED", "in-capmkt/nbfc")])
 
     def test_an_unknown_family_is_not_sure_with_a_warning_and_no_family_evidence(self):
         c = self.classify(identity_facts() + IND_AS_MARKERS, namespace="http://example.com/x")

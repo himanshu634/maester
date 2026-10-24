@@ -463,6 +463,47 @@ describe('readAgainIds', () => {
 		expect(readAgainIds([kept], [])).toEqual([]);
 	});
 
+	it('an XBRL file read before its kind had a map is read again; one whose kind still has none is not', () => {
+		const unmapped = (id: string, format: 'banking' | 'nbfc') =>
+			fileOf({
+				documentId: id,
+				format: 'xbrl',
+				pipeline: {
+					numbers: { source: 'xbrl', state: 'not_read', reason: 'format_unmapped', format }
+				}
+			});
+		const kept = fileOf({
+			documentId: 'k1',
+			format: 'xbrl',
+			pipeline: { numbers: { source: 'xbrl', state: 'not_read', reason: 'not_a_read_kind' } }
+		});
+		expect(readAgainIds([unmapped('x1', 'banking'), unmapped('x2', 'nbfc'), kept], [])).toEqual([
+			'x1'
+		]);
+	});
+
+	it('a PDF whose only claim is an XBRL file with a map now waits for it; beside NBFC it is read', () => {
+		const unmapped = (format: 'banking' | 'nbfc') =>
+			fileOf({
+				documentId: 'x1',
+				format: 'xbrl',
+				pipeline: {
+					numbers: { source: 'xbrl', state: 'not_read', reason: 'format_unmapped', format }
+				}
+			});
+		const sources = one([
+			stmt({
+				source: 'pdf',
+				xbrlDocumentId: null,
+				pdfDocumentId: 'p1',
+				reason: 'xbrl_format_unmapped'
+			})
+		]);
+		expect(readAgainIds([unmapped('banking'), pdfDone('p1')], sources)).toEqual(['x1']);
+		// NBFC has no map yet: the XBRL is not sent, and the PDF stays the way to the numbers.
+		expect(readAgainIds([unmapped('nbfc'), pdfDone('p1')], sources)).toEqual(['p1']);
+	});
+
 	it('a failed XBRL file is read again too, in file order', () => {
 		const sources = one([stmt({ xbrlDocumentId: 'x1', pdfDocumentId: 'p1' })]);
 		expect(readAgainIds([pdfDone('p1'), xbrlFailed('x2'), xbrlDone('x1')], sources)).toEqual([

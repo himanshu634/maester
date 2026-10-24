@@ -42,7 +42,7 @@ C = results("co1", "c", "JQ2024-2025", "2024-06-30")
 D = Filing(file="co3/d.pdf", company="Company co3", kind="annual_report", period_end="2026-03-31", set="dev",
            printed_pages_per_page=2)
 E = results("co4", "e", out_of_scope="bank")
-F = results("co5", "f", fmt="in-capmkt/banking")
+F = results("co5", "f", fmt="in-capmkt/nbfc")
 REQ = (("kind", "financial_results", 2), ("quarter", "Q1", 1), ("quarter", "Q2", 1), ("spread", "yes", 1))
 
 
@@ -124,7 +124,7 @@ class PickTests(unittest.TestCase):
 
     def test_eligibility(self):
         self.assertEqual([eligible(f) for f in (A, D, E, F)], [True, True, False, False])
-        mixed = results("co6", "m", xbrl=[pair("co6", "m1", fmt="in-capmkt/banking"), pair("co6", "m2", basis="standalone")])
+        mixed = results("co6", "m", xbrl=[pair("co6", "m1", fmt="in-capmkt/nbfc"), pair("co6", "m2", basis="standalone")])
         self.assertTrue(eligible(mixed))
         self.assertFalse(eligible(results("co7", "n", xbrl=[])))
 

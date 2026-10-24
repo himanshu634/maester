@@ -1,6 +1,6 @@
 {
   "format": "in-bse-fin/ind_as",
-  "map_version": "1",
+  "map_version": "2",
   "entry_points": ["Ind-AS_entry_point_2020-03-31.xsd"],
   "entry_point_differences": [],
   "elements": [

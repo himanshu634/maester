@@ -20,7 +20,8 @@ from maester_eval.xbrl_read import read_filing_xbrl, run_xbrl
 from pdf_financial_qa.xbrl import XBRL_MAP_VERSION, XBRL_PARSER_VERSION
 
 SYNTHETIC = "Synthetic Cements Limited"
-BANKING = [("CET1Ratio", "OneI", "pure", "INF", "0.15")]
+# The pair of an NBFC instance, a format with no map: it outranks Ind AS when the rules are tried in order.
+NBFC = [("InterestEarned", "OneD", "INR", "-5", "100000"), ("FeesAndCommissionIncome", "OneD", "INR", "-5", "100000")]
 IDENTITY_KEYS = {"NatureOfReportStandaloneConsolidated", "DateOfStartOfReportingPeriod", "DateOfEndOfReportingPeriod"}
 
 
@@ -54,7 +55,7 @@ def ended_in_june(facts):
 BODIES = {
     ("synthetic-cements", "a.xml"): instance(facts=ind_as(revenue=("1234500000", "-3"))),
     ("synthetic-cements", "b.xml"): instance(facts=standalone(ind_as())),
-    ("synthetic-cements", "c.xml"): instance(facts=ind_as() + BANKING),
+    ("synthetic-cements", "c.xml"): instance(facts=ind_as() + NBFC),
     ("synthetic-cements", "d.xml"): instance(facts=ind_as(), doctype="<!DOCTYPE note>"),
     ("other-metals", "e.xml"): instance(facts=ended_in_june(ind_as())),
 }
@@ -80,7 +81,7 @@ class ReadTests(Corpus):
                          [("a.xml", True, None), ("b.xml", True, None), ("c.xml", False, "XBRL_FORMAT_UNMAPPED"),
                           ("d.xml", False, "XBRL_UNREADABLE:DOCTYPE")])
         self.assertEqual((a.source, a.pipeline_version, a.model, a.prompt_version),
-                         ("xbrl", "xbrl-1", "xbrl-parser-1", "in-capmkt/ind_as@1"))
+                         ("xbrl", "xbrl-1", "xbrl-parser-1", f"in-capmkt/ind_as@{XBRL_MAP_VERSION}"))
         rev = next(f for f in a.result["facts"] if f["element"] == "RevenueFromOperations" and f["contextId"] == "OneD"
                    and f["basis"] == "consolidated")
         self.assertEqual((rev["normalizedValue"], rev["span"], rev["concept"], rev["instance"]),
@@ -111,7 +112,7 @@ class ReadTests(Corpus):
                          ("in-capmkt/ind_as", True, "complete"))
         # An instance that is not used has no state and no facts; one that cannot be read has no format.
         self.assertEqual([(i.format, i.mapped, i.state, i.facts) for i in a.instances[2:]],
-                         [("in-capmkt/banking", False, None, 0), (None, False, None, 0)])
+                         [("in-capmkt/nbfc", False, None, 0), (None, False, None, 0)])
         # The warnings of an instance are codes, never a message.
         self.assertTrue(all(re.fullmatch("[A-Z_]+", code) for i in a.instances for code in i.warnings))
 

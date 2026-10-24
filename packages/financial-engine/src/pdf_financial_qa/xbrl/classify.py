@@ -10,7 +10,7 @@ digits. The kind's evidence is the family; an instance in no known family has no
 name to quote. ``cin`` is always None: no format on hand carries one. ``statements_found`` is filled from
 the format's element map: a statement is found when the instance has a figure for one of its lines, in a
 context without a dimension, and it has the instance's basis and no pages (an instance has none). A format
-with no map (banking, NBFC, an unknown family) finds none.
+with no map (NBFC, "other than Ind AS", an unknown family) finds none.
 """
 
 import re

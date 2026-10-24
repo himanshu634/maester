@@ -8,12 +8,14 @@ under `docs/eval/`.
 | --- | --- | --- | --- | --- |
 | `in-capmkt.ind_as.json` | `in-capmkt/ind_as` | `in-capmkt-ent-2025-01-31.xsd`, `in-capmkt-ent-2026-01-31.xsd` | 192 | 25 |
 | `in-bse-fin.ind_as.json` | `in-bse-fin/ind_as` | `Ind-AS_entry_point_2020-03-31.xsd` | 188 | 17 |
+| `in-capmkt.banking.json` | `in-capmkt/banking` | `in-capmkt-ent-2025-01-31.xsd`, `in-capmkt-ent-2026-01-31.xsd` | 114 | 24 |
+| `in-bse-fin.banking.json` | `in-bse-fin/banking` | `banking_entry_point_2019-09-30.xsd` | 113 | 22 |
 
-Banking, NBFC and "other than Ind AS" have no map: they are read, write no facts and carry `XBRL_FORMAT_UNMAPPED`.
+NBFC and "other than Ind AS" have no map: they are read, write no facts and carry `XBRL_FORMAT_UNMAPPED`.
 
 ## File schema
 
-- `format`, `map_version` (`"1"`), `entry_points` (the `schemaRef` file names the map was checked on) and
+- `format`, `map_version` (`"2"`, the same in every map), `entry_points` (the `schemaRef` file names the map was checked on) and
   `entry_point_differences` (`element`, `only_in`, `note`).
 - `elements`: `element`, `statement` (`income_statement`, `balance_sheet` or `cash_flow`), `section`, `order`
   (unique in its statement), `label`, `concept` (an id of `packages/contracts/concepts.json`, or null for an
@@ -21,7 +23,8 @@ Banking, NBFC and "other than Ind AS" have no map: they are read, write no facts
   own `order` is unused, and its `opening_order` and `closing_order` place the opening line before the
   cash-flow lines and the closing line after them.
 - `sums`: `id` (snake_case), `total` and `parts` (`element`, `sign` 1 or -1). A total has one sum.
-- `identities`: two totals that must be equal (`balance`: `Assets` = `EquityAndLiabilities`).
+- `identities`: two totals that must be equal (`balance`: `Assets` = `EquityAndLiabilities`, or
+  `Assets` = `CapitalAndLiabilities` in the banking maps).
 - `ignored`: numeric elements the results print that are not statement lines (ratios, face value, debt and
   segment disclosures). They raise no `XBRL_ELEMENT_UNMAPPED`.
 
@@ -61,6 +64,55 @@ statement prints, with paid amounts (interest, tax) taken off; the net change be
 operating + investing + financing. A quick check on the 724 files (each sum over the lines present in a context,
 with a tolerance of n × ½ × 10^−finest decimals, n being the total and the parts present) passes for every sum in
 nearly every context; the exceptions are in the table below for Task 5's check to confirm.
+
+## The banking maps
+
+Version 2 of the maps (24 October 2026) adds the two banking maps. The Ind AS maps are unchanged but for their
+`map_version`. The evaluation is [`docs/eval/2026-10-24-xbrl-map-v2.md`](../../../../../../docs/eval/2026-10-24-xbrl-map-v2.md).
+
+The survey of 24 October 2026 (the same command, the same 807 files) found 65 banking files from four banks: 49
+`in-capmkt/banking` (`IFBanking`) and 16 `in-bse-fin/banking` (`Banking`). The two hold the same numeric
+elements, but for three that only `in-capmkt` has: `ReserveExcludingRevaluationReserves` (a line) and
+`AmountOfRelatedPartyTransaction…` and `NumberOfStatementsOfDeviation…` (ignored).
+
+1. Every numeric element of the two banking CSVs is a line or ignored; the test over the real instances keeps it so.
+2. Lines follow the banking results format: the statement of profit and loss (interest earned and its four parts,
+   other income, total income, interest expended, operating expenses, provisions and contingencies, exceptional
+   items, tax, extraordinary items, net profit, then the associates' share and minority interest of a consolidated
+   result), the balance sheet in the order of the Third Schedule (capital and liabilities first, then assets), and
+   the cash flow, which is the AS 3 one: each activity has a total before extraordinary items and a total after.
+3. An element the Ind AS maps also have keeps their label and concept, so one element reads the same in every map.
+4. Taxonomy version 2 adds the bank lines it lacked (`interest_earned`, `interest_expended`, `operating_expenses`,
+   `total_expenditure_excluding_provisions`, `operating_profit_before_provisions`, `provisions_and_contingencies`,
+   `reserves_and_surplus`, `deposits`, `borrowings`, `cash_and_balances_with_rbi`,
+   `balances_with_banks_and_money_at_call`, `investments`, `advances`, `fixed_assets`). An existing concept is used
+   only where the meaning and the sign are the same. So `InterestExpended` is not `finance_costs`, and
+   `ReservesAndSurplus` is not `other_equity`. `ProfitLossForThePeriod` has no concept: a bank's net profit is
+   printed before the associates' share, which an Ind AS profit for the period includes. The line after the
+   associates and minority interest is `profit_attributable_to_owners`. Earnings per share after extraordinary
+   items is `eps_basic` and `eps_diluted`; the pair before them has no concept.
+5. Ignored: the analytical ratios (CET1, additional tier 1, return on assets, the NPA percentages, the government's
+   shareholding), the gross and net NPA amounts, the face value and the segment elements.
+
+### Sources of the banking sums
+
+Interest earned = its four parts; total income = interest earned + other income; operating expenses = employees
+cost + other operating expenses; total expenditure = interest expended + operating expenses; operating profit =
+total income − total expenditure; profit before tax = operating profit − provisions + exceptional items; after
+tax = before tax − tax; net profit = after tax + extraordinary items; the owners' profit = net profit + the
+associates' share − minority interest. The balance sheet's two totals add their lines, and `Assets` =
+`CapitalAndLiabilities`. In the cash flow, the adjustments to profit and the working-capital changes add to the
+adjustments to reconcile profit, which with profit before extraordinary items and tax gives the cash from
+operations; each activity's total is its total before extraordinary items + proceeds − payments of extraordinary
+items; the investing and financing lines are the Ind AS ones with the AS 3 elements (`…TangibleAssets…`,
+`ProceedsFromIssuingShares`).
+
+Exceptional items are added with the sign the filer gives them, as in the Ind AS maps: the files show both
+directions, a charge filed negative (HDFC Bank, 8 facts) and a gain filed positive (State Bank of India, 8
+facts), and the sum passes on each. Extraordinary items are added the same way; no file on hand has a non-zero
+one, so that sign is not yet confirmed by a figure. The drafts were checked on the HDFC Bank and ICICI Bank files
+(the manifest's dev set) and then once on State Bank of India and Federal Bank (held out): every sum and the
+balance identity pass in every period of the 65 files.
 
 ## Signs
 

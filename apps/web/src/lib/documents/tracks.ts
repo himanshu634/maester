@@ -95,11 +95,33 @@ export function pdfNeeded(file: FilingFile, files: FilingFile[], sources: BasisS
 }
 
 /**
+ * The XBRL kinds Maester has an element map for: the kinds of `MAPPED_FORMATS` in the engine's
+ * `xbrl/maps.py`, which a test there keeps the same as this list.
+ */
+export const XBRL_KINDS_WITH_A_MAP: readonly XbrlFormatKind[] = ['ind_as', 'banking'];
+
+/**
+ * An XBRL file read when its kind had no map, whose kind has one now: reading it again gives
+ * figures. One whose kind still has none (NBFC) would only say the same again.
+ */
+export function unmappedNowMapped(file: FilingFile): boolean {
+	const { state, reason, format } = file.pipeline.numbers;
+	return (
+		file.format === 'xbrl' &&
+		state === 'not_read' &&
+		reason === 'format_unmapped' &&
+		format != null &&
+		XBRL_KINDS_WITH_A_MAP.includes(format)
+	);
+}
+
+/**
  * Whether "Read it again" and "Try again" may send a PDF to `extract` (a paid model read): its
  * numbers are needed (`pdfNeeded`), and it is not held back for a free read. A PDF is held back
- * when its only claim on its statements is `xbrl_read_failed` (the API fell back to it because the
- * XBRL could not be read) and a failed XBRL file of each of those bases is in the same send set:
- * the free XBRL read goes alone, and the PDF waits for its outcome.
+ * when each of its claims on its statements waits on an XBRL file of the same basis in the same
+ * send set: `xbrl_read_failed` (the API fell back to it because the XBRL could not be read) beside
+ * a failed XBRL file, or `xbrl_format_unmapped` beside an XBRL file whose kind has a map now
+ * (`unmappedNowMapped`). The free XBRL read goes alone, and the PDF waits for its outcome.
  */
 export function pdfWorthReading(
 	file: FilingFile,
@@ -116,11 +138,15 @@ export function pdfWorthReading(
 		claims.length > 0 &&
 		claims.every(
 			(claim) =>
-				claim.reason === 'xbrl_read_failed' &&
-				files.some(
-					(f) =>
-						f.format === 'xbrl' && f.basis === claim.basis && f.pipeline.numbers.state === 'failed'
-				)
+				(claim.reason === 'xbrl_read_failed' &&
+					files.some(
+						(f) =>
+							f.format === 'xbrl' &&
+							f.basis === claim.basis &&
+							f.pipeline.numbers.state === 'failed'
+					)) ||
+				(claim.reason === 'xbrl_format_unmapped' &&
+					files.some((f) => f.basis === claim.basis && unmappedNowMapped(f)))
 		);
 	return !heldBack;
 }

@@ -12,7 +12,7 @@ drafted and checked). A map is a mapping rule, so a change to one bumps ``XBRL_M
 * ``ignored``: numeric elements that are in the results but are no statement line (ratios, face value, segment
   and debt disclosures). They raise no ``XBRL_ELEMENT_UNMAPPED``.
 
-A format with no map (banking, NBFC, "other than Ind AS", an unknown family) has ``load_map(...) is None``.
+A format with no map (NBFC, "other than Ind AS", an unknown family) has ``load_map(...) is None``.
 """
 
 import json
@@ -21,7 +21,7 @@ from functools import lru_cache
 from importlib.resources import files
 from typing import Literal
 
-MAPPED_FORMATS = ("in-capmkt/ind_as", "in-bse-fin/ind_as")
+MAPPED_FORMATS = ("in-capmkt/ind_as", "in-bse-fin/ind_as", "in-capmkt/banking", "in-bse-fin/banking")
 
 Statement = Literal["income_statement", "balance_sheet", "cash_flow"]
 STATEMENTS: tuple[Statement, ...] = ("income_statement", "balance_sheet", "cash_flow")
