@@ -190,7 +190,7 @@ revision + results PDF ─► document.xbrl_check ─► POST /v1/xbrl/pdf-check
 ```
 
 - The extractor parses the instance with its own parser. The parser refuses a DOCTYPE and a file over `XBRL_MAX_BYTES` (20 MiB). It also refuses a file with more than `XBRL_MAX_FACTS` (100000) facts. It stops a parse that takes more than `XBRL_DEADLINE_SECONDS` (30).
-- An element map is a reviewed file for each format. It says which element is which line of which statement. Two formats have a map: Ind AS in the `in-capmkt` family and Ind AS in the `in-bse-fin` family. Banking, NBFC and "other than Ind AS" are read and write no fact.
+- An element map is a reviewed file for each format. It says which element is which line of which statement. Four formats have a map: Ind AS and banking, each in the `in-capmkt` family and in the `in-bse-fin` family. NBFC and "other than Ind AS" are read and write no fact.
 - A fact has its span (`quarter`, `half_year`, `nine_months`, `year` or `other`) from the dates of its context, its period start and its period end. The word that an instance writes for its period is never read.
 - The unit comes from the rounding that the instance declares. The read writes the value in full rupees (`normalized_value`) and in the declared unit (`reported_value`). It pads the value to the finest `decimals` of the instance and never rounds it.
 - A nil fact has the status `unparsed`. It is unknown, never zero.

@@ -463,6 +463,22 @@ describe('readAgainIds', () => {
 		expect(readAgainIds([kept], [])).toEqual([]);
 	});
 
+	it('an XBRL file read before its format had a map is read again, never a file kept unread', () => {
+		const unmapped = fileOf({
+			documentId: 'x1',
+			format: 'xbrl',
+			pipeline: {
+				numbers: { source: 'xbrl', state: 'not_read', reason: 'format_unmapped', format: 'banking' }
+			}
+		});
+		const kept = fileOf({
+			documentId: 'k1',
+			format: 'xbrl',
+			pipeline: { numbers: { source: 'xbrl', state: 'not_read', reason: 'not_a_read_kind' } }
+		});
+		expect(readAgainIds([unmapped, kept], [])).toEqual(['x1']);
+	});
+
 	it('a failed XBRL file is read again too, in file order', () => {
 		const sources = one([stmt({ xbrlDocumentId: 'x1', pdfDocumentId: 'p1' })]);
 		expect(readAgainIds([pdfDone('p1'), xbrlFailed('x2'), xbrlDone('x1')], sources)).toEqual([

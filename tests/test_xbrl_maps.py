@@ -1,4 +1,4 @@
-"""The Ind AS element maps: their shape, their concepts and the statements an instance shows. Offline, except
+"""The element maps: their shape, their concepts and the statements an instance shows. Offline, except
 the class gated on ``MAESTER_XBRL_DIR``, which reads the real instances and writes nothing."""
 
 import os
@@ -33,8 +33,11 @@ from pdf_financial_qa.xbrl.units import rounding_of, unit_of
 # Stitch's rule for a per-share line (apps/api/src/financials/stitch.ts), and the text it is matched on.
 PER_SHARE = re.compile(r"earnings? per (equity )?share|\beps\b")
 SNAKE = re.compile(r"^[a-z][a-z0-9_]*$")
+# The one proper noun a label holds: the banking results print "Cash and balances with the Reserve Bank of India".
+PROPER_NOUN = "Reserve Bank of India"
 
 CAPMKT, BSE = "in-capmkt/ind_as", "in-bse-fin/ind_as"
+CAPMKT_BANKING, BSE_BANKING = "in-capmkt/banking", "in-bse-fin/banking"
 
 
 def normalise(text: str) -> str:
@@ -43,10 +46,17 @@ def normalise(text: str) -> str:
     return " ".join("".join(ch if ch.isalnum() or ch.isspace() else " " for ch in text).split())
 
 
-def maps() -> dict[str, ElementMap]:
+def all_maps() -> dict[str, ElementMap]:
+    """Every map: the rules of shape hold for each."""
     loaded = {format_id: load_map(format_id) for format_id in MAPPED_FORMATS}
     assert all(m is not None for m in loaded.values())
     return loaded  # type: ignore[return-value]
+
+
+def maps() -> dict[str, ElementMap]:
+    """The two Ind AS maps, which the Ind AS tests below are about. The banking maps have their own tests
+    (``test_xbrl_banking.py``)."""
+    return {format_id: element_map for format_id, element_map in all_maps().items() if format_id in (CAPMKT, BSE)}
 
 
 def every_concept(element_map: ElementMap) -> list[str]:
@@ -61,36 +71,40 @@ def every_concept(element_map: ElementMap) -> list[str]:
 
 
 class LoadTests(unittest.TestCase):
-    def test_both_maps_load(self):
-        self.assertEqual(MAPPED_FORMATS, (CAPMKT, BSE))
-        for format_id, element_map in maps().items():
+    def test_every_map_loads(self):
+        self.assertEqual(MAPPED_FORMATS, (CAPMKT, BSE, CAPMKT_BANKING, BSE_BANKING))
+        least = {CAPMKT: 150, BSE: 150, CAPMKT_BANKING: 100, BSE_BANKING: 100}
+        for format_id, element_map in all_maps().items():
             self.assertEqual(element_map.format, format_id)
-            self.assertGreater(len(element_map.elements), 150, format_id)
+            self.assertGreater(len(element_map.elements), least[format_id], format_id)
 
     def test_a_map_is_read_from_a_file_named_for_its_format(self):
         self.assertEqual(map_file_name(CAPMKT), "in-capmkt.ind_as.json")
         self.assertEqual(map_file_name(BSE), "in-bse-fin.ind_as.json")
+        self.assertEqual(map_file_name(CAPMKT_BANKING), "in-capmkt.banking.json")
 
     def test_a_map_is_read_once(self):
         self.assertIs(load_map(CAPMKT), load_map(CAPMKT))
 
     def test_a_format_with_no_map_has_none(self):
-        for format_id in ("in-capmkt/banking", "in-bse-fin/nbfc", "in-capmkt/other_than_ind_as", "in-capmkt/unknown", "x/y"):
+        for format_id in ("in-capmkt/nbfc", "in-bse-fin/nbfc", "in-capmkt/other_than_ind_as", "in-capmkt/unknown", "x/y"):
             self.assertIsNone(load_map(format_id), format_id)
 
     def test_the_formats_that_have_a_map_are_the_formats_detection_calls_mapped(self):
         self.assertEqual(set(MAPPED_FORMATS), set(DETECTED_AS_MAPPED))
 
     def test_the_maps_are_at_the_parsers_map_version(self):
-        for format_id, element_map in maps().items():
+        for format_id, element_map in all_maps().items():
             self.assertEqual(element_map.map_version, XBRL_MAP_VERSION, format_id)
 
     def test_the_entry_points_are_the_ones_the_maps_were_checked_on(self):
         self.assertEqual(maps()[CAPMKT].entry_points, ("in-capmkt-ent-2025-01-31.xsd", "in-capmkt-ent-2026-01-31.xsd"))
         self.assertEqual(maps()[BSE].entry_points, ("Ind-AS_entry_point_2020-03-31.xsd",))
+        self.assertEqual(all_maps()[CAPMKT_BANKING].entry_points, ("in-capmkt-ent-2025-01-31.xsd", "in-capmkt-ent-2026-01-31.xsd"))
+        self.assertEqual(all_maps()[BSE_BANKING].entry_points, ("banking_entry_point_2019-09-30.xsd",))
 
     def test_every_difference_between_entry_points_names_a_line_and_an_entry_point(self):
-        for format_id, element_map in maps().items():
+        for format_id, element_map in all_maps().items():
             for difference in element_map.entry_point_differences:
                 self.assertIsNotNone(element_map.entry(difference.element), difference.element)
                 self.assertIn(difference.only_in, element_map.entry_points)
@@ -101,7 +115,7 @@ class LoadTests(unittest.TestCase):
 class ShapeTests(unittest.TestCase):
     def test_every_concept_is_in_the_taxonomy_and_of_the_lines_statement(self):
         taxonomy = load_taxonomy()
-        for format_id, element_map in maps().items():
+        for format_id, element_map in all_maps().items():
             for entry in element_map.elements:
                 concepts = [entry.concept] if entry.concept is not None else []
                 if entry.cash_balance is not None:
@@ -112,13 +126,13 @@ class ShapeTests(unittest.TestCase):
                     self.assertEqual(concept.family, entry.statement, f"{format_id} {entry.element}")
 
     def test_a_concept_is_given_to_one_element_only(self):
-        for format_id, element_map in maps().items():
+        for format_id, element_map in all_maps().items():
             concepts = every_concept(element_map)
             self.assertEqual(len(concepts), len(set(concepts)), format_id)
 
     def test_a_per_share_concept_is_on_a_per_share_element_and_the_other_way_round(self):
         taxonomy = load_taxonomy()
-        for format_id, element_map in maps().items():
+        for format_id, element_map in all_maps().items():
             for entry in element_map.elements:
                 per_share_element = "PerShare" in entry.element
                 per_share_concept = entry.concept is not None and taxonomy.get(entry.concept).kind == "per_share"
@@ -128,7 +142,7 @@ class ShapeTests(unittest.TestCase):
                     self.assertNotEqual(taxonomy.get(entry.concept).kind, "per_share", entry.element)
 
     def test_the_cash_balance_is_the_one_instant_the_cash_flow_prints_twice(self):
-        for format_id, element_map in maps().items():
+        for format_id, element_map in all_maps().items():
             balances = [entry for entry in element_map.elements if entry.cash_balance is not None]
             self.assertEqual([entry.element for entry in balances], ["CashAndCashEquivalentsCashFlowStatement"], format_id)
             (balance,) = balances
@@ -141,7 +155,7 @@ class ShapeTests(unittest.TestCase):
             self.assertGreater(balance.cash_balance.closing_order, max(lines), format_id)
 
     def test_a_statement_has_each_place_once(self):
-        for format_id, element_map in maps().items():
+        for format_id, element_map in all_maps().items():
             places = defaultdict(list)
             for entry in element_map.elements:
                 if entry.cash_balance is None:
@@ -154,32 +168,34 @@ class ShapeTests(unittest.TestCase):
             self.assertEqual(set(places), set(STATEMENTS), format_id)
 
     def test_the_lines_are_listed_in_the_order_of_their_places(self):
-        for format_id, element_map in maps().items():
+        for format_id, element_map in all_maps().items():
             for statement in STATEMENTS:
                 orders = [entry.order for entry in element_map.elements if entry.statement == statement and entry.cash_balance is None]
                 self.assertEqual(orders, sorted(orders), f"{format_id} {statement}")
 
     def test_an_element_is_a_line_or_ignored_and_never_both(self):
-        for format_id, element_map in maps().items():
+        for format_id, element_map in all_maps().items():
             elements = {entry.element for entry in element_map.elements}
             self.assertEqual(len(elements), len(element_map.elements), format_id)
             self.assertEqual(elements & element_map.ignored, set(), format_id)
 
     def test_a_line_has_one_label_in_its_statement(self):
-        for format_id, element_map in maps().items():
+        for format_id, element_map in all_maps().items():
             labels = [(entry.statement, entry.label) for entry in element_map.elements]
             self.assertEqual(len(labels), len(set(labels)), format_id)
 
     def test_labels_are_in_sentence_case(self):
-        for format_id, element_map in maps().items():
+        for format_id, element_map in all_maps().items():
             for entry in element_map.elements:
                 labels = [entry.label]
                 if entry.cash_balance is not None:
                     labels += [entry.cash_balance.opening_label, entry.cash_balance.closing_label]
                 for label in labels:
                     self.assertTrue(label[0].isupper(), f"{format_id} {entry.element}")
-                    # Only the first word of a label is capitalised: no title case, no all-caps words.
-                    self.assertFalse(any(word[0].isupper() for word in label.split()[1:]), f"{format_id} {label}")
+                    # Only the first word of a label is capitalised: no title case, no all-caps words. A proper
+                    # noun keeps its capitals.
+                    words = label.replace(PROPER_NOUN, "").split()[1:]
+                    self.assertFalse(any(word[0].isupper() for word in words), f"{format_id} {label}")
 
     def test_every_per_share_label_is_found_by_stitchs_per_share_rule(self):
         count = 0
@@ -191,7 +207,7 @@ class ShapeTests(unittest.TestCase):
                     count += 1
                 else:
                     self.assertIsNone(PER_SHARE.search(normalise(entry.label)), f"{format_id} {entry.label}")
-        self.assertEqual(count, 12)  # six per-share lines in each map
+        self.assertEqual(count, 12)  # six per-share lines in each Ind AS map
 
     def test_the_headline_lines_have_their_concepts(self):
         for format_id, element_map in maps().items():
@@ -292,7 +308,7 @@ class SumTests(unittest.TestCase):
                 self.assertIsNotNone(element_map.entry(identity.right))
 
     def test_every_element_of_a_sum_is_a_line_of_the_map(self):
-        for format_id, element_map in maps().items():
+        for format_id, element_map in all_maps().items():
             for total in element_map.sums:
                 self.assertIsNotNone(element_map.entry(total.total), f"{format_id} {total.id}")
                 self.assertTrue(total.parts, f"{format_id} {total.id}")
@@ -302,7 +318,7 @@ class SumTests(unittest.TestCase):
                     self.assertNotIn(part.element, element_map.ignored)
 
     def test_a_sum_has_a_snake_case_id_a_total_of_its_own_and_parts_listed_once(self):
-        for format_id, element_map in maps().items():
+        for format_id, element_map in all_maps().items():
             ids = [total.id for total in element_map.sums]
             totals = [total.total for total in element_map.sums]
             self.assertEqual(len(ids), len(set(ids)), format_id)
@@ -314,7 +330,7 @@ class SumTests(unittest.TestCase):
                 self.assertNotIn(total.total, parts)
 
     def test_a_sum_adds_lines_of_one_statement(self):
-        for format_id, element_map in maps().items():
+        for format_id, element_map in all_maps().items():
             for total in element_map.sums:
                 statements = {element_map.entry(total.total).statement} | {element_map.entry(p.element).statement for p in total.parts}
                 self.assertEqual(len(statements), 1, f"{format_id} {total.id}")
@@ -428,8 +444,8 @@ class StatementsFoundTests(unittest.TestCase):
         self.assertEqual([s.statement for s in c.statements_found], ["income_statement", "balance_sheet"])
 
     def test_a_format_with_no_map_finds_none(self):
-        banking = self.classify(identity_facts() + [f("CET1Ratio", unit="pure"), f("Assets", "OneI"), f("RevenueFromOperations")])
-        self.assertEqual((banking.format.id, banking.statements_found), ("in-capmkt/banking", []))
+        nbfc = self.classify(identity_facts() + [f("InterestEarned"), f("FeesAndCommissionIncome"), f("Assets", "OneI")])
+        self.assertEqual((nbfc.format.id, nbfc.statements_found), ("in-capmkt/nbfc", []))
         unknown = self.classify(identity_facts() + [f("Assets", "OneI")])
         self.assertEqual((unknown.format.id, unknown.statements_found), ("in-capmkt/unknown", []))
         no_family = self.classify(identity_facts() + IND_AS_MARKERS + [f("Assets", "OneI")], namespace="http://example.org/x")
@@ -484,7 +500,7 @@ def real_facts() -> tuple[dict[str, set[str]], dict[str, list[str]], dict[str, i
 class RealInstanceTests(unittest.TestCase):
     def test_every_element_of_a_map_occurs_in_a_real_instance_of_its_format(self):
         elements, _, _ = real_facts()
-        for format_id, element_map in maps().items():
+        for format_id, element_map in all_maps().items():
             self.assertGreater(len(elements[format_id]), 0, format_id)  # a gated test that read nothing proves nothing
             mentioned = {entry.element for entry in element_map.elements} | set(element_map.ignored)
             mentioned |= {t.total for t in element_map.sums} | {p.element for t in element_map.sums for p in t.parts}
@@ -494,7 +510,7 @@ class RealInstanceTests(unittest.TestCase):
     def test_every_numeric_element_of_a_real_instance_is_a_line_or_ignored(self):
         # So XBRL_ELEMENT_UNMAPPED fires on none of the files on hand.
         elements, _, _ = real_facts()
-        for format_id, element_map in maps().items():
+        for format_id, element_map in all_maps().items():
             known = {entry.element for entry in element_map.elements} | set(element_map.ignored)
             self.assertEqual(sorted(elements[format_id] - known), [], format_id)
 
@@ -515,7 +531,7 @@ class RealInstanceTests(unittest.TestCase):
                 count += 1
             else:
                 self.assertEqual(c.statements_found, [], path.name)
-        self.assertEqual(count, 724)  # 550 in-capmkt and 174 in-bse-fin Ind AS instances
+        self.assertEqual(count, 789)  # 550 in-capmkt and 174 in-bse-fin Ind AS instances, 49 and 16 banking
 
     def test_the_named_instances_show_the_statements_their_period_has(self):
         named = named_real_instances()

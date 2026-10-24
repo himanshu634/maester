@@ -50,7 +50,7 @@ class ParserTests(unittest.TestCase):
 
     def test_the_versions(self):
         self.assertEqual(
-            (XBRL_PARSER_VERSION, XBRL_MAP_VERSION, XBRL_TEXT_VERSION, XBRL_PDF_CHECK_VERSION), ("1", "1", "1", 1)
+            (XBRL_PARSER_VERSION, XBRL_MAP_VERSION, XBRL_TEXT_VERSION, XBRL_PDF_CHECK_VERSION), ("1", "2", "1", 1)
         )
         self.assertEqual(INSTANCE_NS, "http://www.xbrl.org/2003/instance")
 

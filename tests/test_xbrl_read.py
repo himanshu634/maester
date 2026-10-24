@@ -14,7 +14,9 @@ from xbrl_fixtures import (
     cash_balances,
     check,
     codes,
+    f,
     fact,
+    identity_facts,
     ind_as,
     instance,
     known_filer_inconsistencies,
@@ -266,10 +268,10 @@ class WhichFactsTests(unittest.TestCase):
         self.assertEqual(warning(r, "XBRL_ELEMENT_UNMAPPED").message, "Alpha, Zeta")
 
     def test_unmapped_format_writes_nothing(self):
-        r = read(instance(facts=ind_as() + [("CET1Ratio", "OneI", "pure", "INF", "0.15")]))
+        r = read(instance(facts=identity_facts() + [f("InterestEarned"), f("FeesAndCommissionIncome"), f("OtherIncome")]))
         self.assertEqual((r.facts, r.checks, codes(r)), ([], [], ["XBRL_FORMAT_UNMAPPED"]))
         self.assertEqual((r.mapped, r.format.id, warning(r, "XBRL_FORMAT_UNMAPPED").message, r.finest_decimals, r.coarsest_decimals),
-                         (False, "in-capmkt/banking", "in-capmkt/banking", None, -5))
+                         (False, "in-capmkt/nbfc", "in-capmkt/nbfc", None, -5))
 
     def test_a_reference_to_a_context_or_unit_the_file_does_not_declare_is_malformed(self):
         for extra in (("OtherIncome", "NoSuchContext", "INR", "-5", "1"), ("OtherIncome", "OneI", "NoSuchUnit", "-5", "1")):

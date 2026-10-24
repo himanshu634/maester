@@ -243,14 +243,16 @@ export function sourceRows(
 
 /**
  * The files "Read it again" sends to `extract`, in file order: XBRL files whose numbers are done or
- * failed (a free read), and PDFs whose numbers are done or failed AND that the filing's sources
- * still need (`pdfWorthReading`). Never a PDF the XBRL covers, whatever its own `numbers.source` says: that would be
- * a paid model call for numbers XBRL already owns. An unsorted file passes `sources` `[]`.
+ * failed (a free read), or not read for want of a map (a newer map may have one now), and PDFs whose
+ * numbers are done or failed AND that the filing's sources still need (`pdfWorthReading`). Never a PDF
+ * the XBRL covers, whatever its own `numbers.source` says: that would be a paid model call for numbers
+ * XBRL already owns. An unsorted file passes `sources` `[]`.
  */
 export function readAgainIds(files: FilingFile[], sources: BasisSources[]): string[] {
 	return files
 		.filter((f) => {
-			const state = f.pipeline.numbers.state;
+			const { state, reason } = f.pipeline.numbers;
+			if (f.format === 'xbrl' && state === 'not_read' && reason === 'format_unmapped') return true;
 			if (state !== 'done' && state !== 'failed') return false;
 			return f.format === 'xbrl' || pdfWorthReading(f, files, sources);
 		})

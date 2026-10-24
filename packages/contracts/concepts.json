@@ -1,5 +1,5 @@
 {
-  "taxonomy_version": 1,
+  "taxonomy_version": 2,
   "concepts": [
     { "id": "revenue_from_operations", "label": "Revenue from operations", "family": "income_statement", "kind": "monetary", "period_type": "duration" },
     { "id": "other_income", "label": "Other income", "family": "income_statement", "kind": "monetary", "period_type": "duration" },
@@ -25,6 +25,12 @@
     { "id": "profit_attributable_to_non_controlling_interests", "label": "Profit attributable to non-controlling interests", "family": "income_statement", "kind": "monetary", "period_type": "duration" },
     { "id": "eps_basic", "label": "Earnings per equity share, basic", "family": "income_statement", "kind": "per_share", "period_type": "duration" },
     { "id": "eps_diluted", "label": "Earnings per equity share, diluted", "family": "income_statement", "kind": "per_share", "period_type": "duration" },
+    { "id": "interest_earned", "label": "Interest earned", "family": "income_statement", "kind": "monetary", "period_type": "duration", "notes": "Banks: interest or discount on advances or bills, income on investments, interest on balances with the RBI and other inter-bank funds, and other interest." },
+    { "id": "interest_expended", "label": "Interest expended", "family": "income_statement", "kind": "monetary", "period_type": "duration", "notes": "Banks: interest paid on deposits and borrowings. Not finance_costs, which is a company's cost of its own borrowing." },
+    { "id": "operating_expenses", "label": "Operating expenses", "family": "income_statement", "kind": "monetary", "period_type": "duration", "notes": "Banks: employees cost and other operating expenses. Excludes interest expended, provisions and tax." },
+    { "id": "total_expenditure_excluding_provisions", "label": "Total expenditure excluding provisions and contingencies", "family": "income_statement", "kind": "monetary", "period_type": "duration", "notes": "Banks: interest expended plus operating expenses." },
+    { "id": "operating_profit_before_provisions", "label": "Operating profit before provisions and contingencies", "family": "income_statement", "kind": "monetary", "period_type": "duration", "notes": "Banks: total income less total expenditure excluding provisions and contingencies." },
+    { "id": "provisions_and_contingencies", "label": "Provisions (other than tax) and contingencies", "family": "income_statement", "kind": "monetary", "period_type": "duration", "notes": "Banks: an expense, taken off operating profit; positive for a charge." },
 
     { "id": "property_plant_and_equipment", "label": "Property, plant and equipment", "family": "balance_sheet", "kind": "monetary", "period_type": "instant" },
     { "id": "capital_work_in_progress", "label": "Capital work-in-progress", "family": "balance_sheet", "kind": "monetary", "period_type": "instant" },
@@ -56,6 +62,14 @@
     { "id": "total_current_liabilities", "label": "Total current liabilities", "family": "balance_sheet", "kind": "monetary", "period_type": "instant" },
     { "id": "total_liabilities", "label": "Total liabilities", "family": "balance_sheet", "kind": "monetary", "period_type": "instant" },
     { "id": "total_equity_and_liabilities", "label": "Total equity and liabilities", "family": "balance_sheet", "kind": "monetary", "period_type": "instant" },
+    { "id": "reserves_and_surplus", "label": "Reserves and surplus", "family": "balance_sheet", "kind": "monetary", "period_type": "instant", "notes": "Banks: equity other than share capital, as the Third Schedule prints it. Not other_equity, the Ind AS line." },
+    { "id": "deposits", "label": "Deposits", "family": "balance_sheet", "kind": "monetary", "period_type": "instant", "notes": "Banks: demand, savings and term deposits taken." },
+    { "id": "borrowings", "label": "Borrowings", "family": "balance_sheet", "kind": "monetary", "period_type": "instant", "notes": "Banks: all borrowings, in India and outside, with no current and non-current split." },
+    { "id": "cash_and_balances_with_rbi", "label": "Cash and balances with the Reserve Bank of India", "family": "balance_sheet", "kind": "monetary", "period_type": "instant", "notes": "Banks." },
+    { "id": "balances_with_banks_and_money_at_call", "label": "Balances with banks and money at call and short notice", "family": "balance_sheet", "kind": "monetary", "period_type": "instant", "notes": "Banks." },
+    { "id": "investments", "label": "Investments", "family": "balance_sheet", "kind": "monetary", "period_type": "instant", "notes": "Banks: all investments, with no current and non-current split." },
+    { "id": "advances", "label": "Advances", "family": "balance_sheet", "kind": "monetary", "period_type": "instant", "notes": "Banks: loans and advances to customers, net of provisions." },
+    { "id": "fixed_assets", "label": "Fixed assets", "family": "balance_sheet", "kind": "monetary", "period_type": "instant", "notes": "Banks: premises, other fixed assets and assets under construction, as the Third Schedule prints them." },
 
     { "id": "cash_flow_opening_profit_before_tax", "label": "Profit before tax, as the cash flow statement opens", "family": "cash_flow", "kind": "monetary", "period_type": "duration" },
     { "id": "cash_flow_opening_profit_after_tax", "label": "Profit for the period, as the cash flow statement opens", "family": "cash_flow", "kind": "monetary", "period_type": "duration" },

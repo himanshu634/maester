@@ -124,7 +124,7 @@ An XBRL instance follows the steps of the document intake up to `document.verify
 2. An instance with both bases or no basis gets the kind `not_sure` and the warning `XBRL_MIXED_BASIS`. It waits for the investor.
 3. If the classification has a company, `decideIntake` sets `reading` and creates a `document.xbrl` job. If the company is not known, the investor confirms the printed identity once for all the files that print it, with `POST .../companies/confirm`.
 4. `document.xbrl` sends the instance to `POST /v1/xbrl` with the mode `read`. The worker writes a revision with the source `xbrl`. Each fact has its span, its period, its unit and its element. The read also does the sum checks of the element map.
-5. A format with no element map (banking, NBFC, other than Ind AS) writes no fact. The classification and the text are still stored. The warning is `XBRL_FORMAT_UNMAPPED`.
+5. A format with no element map (NBFC, other than Ind AS) writes no fact. The classification and the text are still stored. The warning is `XBRL_FORMAT_UNMAPPED`.
 6. After the read, the worker pairs the instance with the results PDF of the same company and period end. A `document.xbrl_check` job looks for each XBRL value on the statement pages of the PDF.
 7. The worker also decides again each results PDF that waited for XBRL. `document.index` cuts the text blocks of the instance into chunks with `text_source` `xbrl`.
 

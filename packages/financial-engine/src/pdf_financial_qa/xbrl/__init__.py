@@ -7,7 +7,7 @@ block reader bumps ``XBRL_TEXT_VERSION`` and a change to the ``xbrl_in_pdf`` che
 """
 
 XBRL_PARSER_VERSION = "1"
-XBRL_MAP_VERSION = "1"
+XBRL_MAP_VERSION = "2"
 XBRL_TEXT_VERSION = "1"
 XBRL_PDF_CHECK_VERSION = 1
 
