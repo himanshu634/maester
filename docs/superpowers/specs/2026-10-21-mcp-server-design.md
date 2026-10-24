@@ -1,6 +1,6 @@
 # MCP server: design
 
-Status: draft for review, 21 October 2026. It details §8.2 of the [financial data layer](2026-10-15-financial-data-layer-design.md) and the decision in [ADR 0006](../../decisions/0006-concepts-calculations-agent-access.md): "Agents read through `apps/mcp`, a read-only stdio MCP server over the same functions the API mounts, scoped to one workspace on the investor's machine." It builds on the code in [#19](https://github.com/himanshu634/maester/pull/19) (`feat/ingestion-phases-2-6`). §11 names what it changes in the two earlier specs.
+Status: M1 built, merged into staging 22 October 2026 in [#21](https://github.com/himanshu634/maester/pull/21); M2 (metrics) is not built. The text below is the design as approved: draft for review, 21 October 2026. It details §8.2 of the [financial data layer](2026-10-15-financial-data-layer-design.md) and the decision in [ADR 0006](../../decisions/0006-concepts-calculations-agent-access.md): "Agents read through `apps/mcp`, a read-only stdio MCP server over the same functions the API mounts, scoped to one workspace on the investor's machine." It builds on the code in [#19](https://github.com/himanshu634/maester/pull/19) (`feat/ingestion-phases-2-6`). §11 names what it changes in the two earlier specs.
 
 ## 1. Goal
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 19 October 2026. Amends [ADR 0006](0006-concepts-calculations-agent-access.md): for a filing with an XBRL version, the reader is XBRL alone, and the two PDF readers apply only to filings without one. Moves XBRL ingestion and OCR (for search only) into scope from the [financial data layer](../superpowers/specs/2026-10-15-financial-data-layer-design.md)'s §14. Keeps [ADR 0004](0004-python-extraction-sidecar.md)'s stateless Python services. The design is [ingestion pipeline](../superpowers/specs/2026-10-19-ingestion-pipeline-design.md); the evidence is the [research](../research/2026-10-19-ingestion-research.md).
+Accepted on 22 October 2026, when [#19](https://github.com/himanshu634/maester/pull/19) built it into staging; proposed on 19 October 2026. Amends [ADR 0006](0006-concepts-calculations-agent-access.md): for a filing with an XBRL version, the reader is XBRL alone, and the two PDF readers apply only to filings without one. Moves XBRL ingestion and OCR (for search only) into scope from the [financial data layer](../superpowers/specs/2026-10-15-financial-data-layer-design.md)'s §14. Keeps [ADR 0004](0004-python-extraction-sidecar.md)'s stateless Python services. The design is [ingestion pipeline](../superpowers/specs/2026-10-19-ingestion-pipeline-design.md); the evidence is the [research](../research/2026-10-19-ingestion-research.md).
 
 ## Context
 

@@ -1,6 +1,6 @@
 # Ingestion pipeline: design
 
-Status: draft for review, 19 October 2026, revised the same day after the [research](../../research/2026-10-19-ingestion-research.md). The decisions it rests on are recorded in [ADR 0007](../../decisions/0007-ingestion-pipeline.md). It amends the [financial data layer](2026-10-15-financial-data-layer-design.md) in two places, named in §14: XBRL ingestion and OCR leave its out-of-scope list, and for a filing with XBRL the reader is XBRL, not the two PDF readers of [ADR 0006](../../decisions/0006-concepts-calculations-agent-access.md).
+Status: built, merged into staging 20–22 October 2026 (phase 1 in [#12](https://github.com/himanshu634/maester/pull/12), phases 2–6 in [#19](https://github.com/himanshu634/maester/pull/19)); the PDF reader is Claude since [#24](https://github.com/himanshu634/maester/pull/24). The text below is the design as approved: draft for review, 19 October 2026, revised the same day after the [research](../../research/2026-10-19-ingestion-research.md). The decisions it rests on are recorded in [ADR 0007](../../decisions/0007-ingestion-pipeline.md). It amends the [financial data layer](2026-10-15-financial-data-layer-design.md) in two places, named in §14: XBRL ingestion and OCR leave its out-of-scope list, and for a filing with XBRL the reader is XBRL, not the two PDF readers of [ADR 0006](../../decisions/0006-concepts-calculations-agent-access.md).
 
 ## 1. Goal
 
