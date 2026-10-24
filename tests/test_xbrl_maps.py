@@ -6,6 +6,7 @@ import re
 import unittest
 from collections import defaultdict
 from functools import lru_cache
+from pathlib import Path
 from unittest import mock
 
 from xbrl_fixtures import (
@@ -92,6 +93,13 @@ class LoadTests(unittest.TestCase):
 
     def test_the_formats_that_have_a_map_are_the_formats_detection_calls_mapped(self):
         self.assertEqual(set(MAPPED_FORMATS), set(DETECTED_AS_MAPPED))
+
+    def test_the_web_knows_the_kinds_that_have_a_map(self):
+        # "Read it again" offers an XBRL file read before its kind had a map only when the kind has one now.
+        tracks = Path(__file__).resolve().parents[1] / "apps/web/src/lib/documents/tracks.ts"
+        found = re.search(r"XBRL_KINDS_WITH_A_MAP: readonly XbrlFormatKind\[\] = \[([^\]]*)\]", tracks.read_text(encoding="utf-8"))
+        self.assertIsNotNone(found)
+        self.assertEqual(set(re.findall(r"'([a-z_]+)'", found.group(1))), {format_id.split("/")[1] for format_id in MAPPED_FORMATS})
 
     def test_the_maps_are_at_the_parsers_map_version(self):
         for format_id, element_map in all_maps().items():

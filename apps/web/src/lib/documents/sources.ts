@@ -8,14 +8,15 @@
  * filing's statement `sources` say its numbers are needed (`pdfNeeded`), never because the PDF's
  * own `numbers` say `done` or `failed`. A PDF the model read before its XBRL arrived still says
  * `source: pdf`, `done`, after XBRL owns every one of its slots. One more case holds a needed PDF
- * back (`pdfWorthReading`): a PDF whose only claim is `xbrl_read_failed`, beside a failed XBRL
- * file of that basis in the same send set. The free XBRL read goes alone. And no PDF is sent while
+ * back (`pdfWorthReading`): a PDF whose only claim is `xbrl_read_failed` or `xbrl_format_unmapped`,
+ * beside a failed XBRL file, or one whose kind has a map now, of that basis in the same send set.
+ * The free XBRL read goes alone. And no PDF is sent while
  * the files say the sources are stale (`sourcesStale`): the open filing's poll patches the files,
  * never the sources, so an XBRL file read since the last filings read leaves its coverage unknown.
  */
 import { documentsContent } from '$lib/content/documents';
 import { IN_PDF_RESULT_SHOWN } from './in-pdf';
-import { fileCaveat, formatWords, pdfWorthReading } from './tracks';
+import { fileCaveat, formatWords, pdfWorthReading, unmappedNowMapped } from './tracks';
 import type {
 	BasisSources,
 	FactSpan,
@@ -243,7 +244,7 @@ export function sourceRows(
 
 /**
  * The files "Read it again" sends to `extract`, in file order: XBRL files whose numbers are done or
- * failed (a free read), or not read for want of a map (a newer map may have one now), and PDFs whose
+ * failed (a free read), or not read for want of a map that exists now (`unmappedNowMapped`), and PDFs whose
  * numbers are done or failed AND that the filing's sources still need (`pdfWorthReading`). Never a PDF
  * the XBRL covers, whatever its own `numbers.source` says: that would be a paid model call for numbers
  * XBRL already owns. An unsorted file passes `sources` `[]`.
@@ -251,8 +252,8 @@ export function sourceRows(
 export function readAgainIds(files: FilingFile[], sources: BasisSources[]): string[] {
 	return files
 		.filter((f) => {
-			const { state, reason } = f.pipeline.numbers;
-			if (f.format === 'xbrl' && state === 'not_read' && reason === 'format_unmapped') return true;
+			if (unmappedNowMapped(f)) return true;
+			const state = f.pipeline.numbers.state;
 			if (state !== 'done' && state !== 'failed') return false;
 			return f.format === 'xbrl' || pdfWorthReading(f, files, sources);
 		})
