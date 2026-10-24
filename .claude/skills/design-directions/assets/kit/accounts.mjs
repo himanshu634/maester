@@ -149,7 +149,7 @@ function T1() {
 }
 
 // ---------- D · Household, by person ----------
-function personBlock(p, { firstFill }) {
+function personBlock(p, { firstFill, marks = true }) {
   const accts = ACCTS.filter((a) => a.person === p)
   const v = sum(combineAccts(keysOf(p)))
   return col({ gap: 8 }, [
@@ -160,7 +160,7 @@ function personBlock(p, { firstFill }) {
       rows: accts.map((a) => {
         const [s, d] = STATE[a.state](a)
         const act = actionFor(a)
-        return [col({ gap: 2 }, [bold(NEED[a.bk].name), mutedCell(a.id)]), col({ gap: 2 }, [div({ fontWeight: needsYou(a) ? 700 : 400 }, needsYou(a) ? mark(s) : esc(s)), mutedCell(d)]), num(a.read), num(inr0(acctValue(a.key)) + (needsYou(a) ? "*" : "")), a.key === firstFill ? fill(act) : out(act)]
+        return [col({ gap: 2 }, [bold(NEED[a.bk].name), mutedCell(a.id)]), col({ gap: 2 }, [div({ fontWeight: needsYou(a) ? 700 : 400 }, needsYou(a) && marks ? mark(s) : esc(s)), mutedCell(d)]), num(a.read), num(inr0(acctValue(a.key)) + (needsYou(a) ? "*" : "")), a.key === firstFill ? fill(act) : out(act)]
       }),
     }),
   ])
@@ -714,6 +714,82 @@ const excerpt = (k) => () => bare(1100, [
   pl2(HUE.gain, HUE.loss),
 ])
 
+// ---------- D · final ----------
+// The user picked D (24 Oct 2026), with this change, in their words: "If a user account is
+// automatically locked out, we should display a brief nudge instead of taking up an entire section of
+// the screen." and "if we already have the data, we should not ask the user to update it again."
+// So the holdings come first; signed-out accounts are one line at the top, which opens into the
+// sign-ins; the accounts move to the foot of the page with no filled buttons.
+const NUDGE = ACCTS.filter(needsYou).map((a) => a.key)
+const nudgeOrder = ["z2", "a1", "g1"].filter((k) => NUDGE.includes(k))
+function nudge({ open = false, phone = false } = {}) {
+  const n = nudgeOrder.length
+  const words = `${mark("Some holdings are from Friday.")} ${esc(`${n} of ${ACCTS.length} accounts signed Maester out; sign in to see today’s.`)}`
+  const toggle = el("button", { display: "inline-flex", alignItems: "center", gap: 10, minHeight: 44, padding: "0 20px", fontFamily: "inherit", fontSize: 16, fontWeight: 700, border: `2px solid ${T.ink}`, background: open ? T.ink : "transparent", color: open ? T.paper : T.ink, borderRadius: 0, flexShrink: 0, alignSelf: phone ? "stretch" : "center", justifyContent: "center" }, `Update ${n} accounts <span aria-hidden="true">${open ? "−" : "+"}</span>`, { type: "button", "aria-expanded": open ? "true" : "false", "aria-controls": "nudge-list" })
+  const bar = div({ display: "flex", flexDirection: phone ? "column" : "row", alignItems: phone ? "stretch" : "center", gap: phone ? 12 : 24, padding: "12px 0", borderTop: `2px solid ${T.ink}`, borderBottom: open && phone ? "0" : `2px solid ${T.ink}` }, [el("p", { margin: 0, fontSize: phone ? 16 : 17, lineHeight: 1.5, flex: 1, minWidth: 0 }, words), toggle], { "data-nag": "1", role: "status" })
+  if (!open) return bar
+  const item = (k, i) => {
+    const a = byKey[k]
+    return div({ display: "flex", flexDirection: phone ? "column" : "row", alignItems: phone ? "stretch" : "center", gap: phone ? 8 : 16, padding: "12px 0", borderTop: i ? `1px solid ${T.inkMuted}` : "0" }, [
+      col({ gap: 2, flex: 1, minWidth: 0 }, [bold(`${accName(a)}`, { fontSize: 17 }), mutedCell(`${STATE[a.state](a)[0]} · ${roundWhat[k]}`)]),
+      i === 0 ? button(actionFor(a), { style: { ...sm, ...(phone ? { alignSelf: "stretch" } : {}) } }) : button(actionFor(a), { variant: "outline", style: { ...sm, ...(phone ? { alignSelf: "stretch" } : {}) } }),
+    ])
+  }
+  const list = col({ gap: 0, border: `2px solid ${T.ink}`, background: T.paper, padding: "8px 20px 14px", width: phone ? "auto" : 640 }, [
+    ...nudgeOrder.map(item),
+    note("Each broker sends you back here. What was read last stays on the page until then.", { paddingTop: 8 }),
+  ], { id: "nudge-list", "data-nag": "1" })
+  return phone
+    ? col({ gap: 0 }, [bar, list])
+    : div({ position: "relative", zIndex: 2 }, [bar, div({ position: "absolute", right: 0, top: "calc(100% - 2px)" }, list)])
+}
+const whoseRow = () => row({ gap: 16, alignItems: "center", marginTop: 4 }, [div({ fontWeight: 700, fontSize: 16 }, "Whose holdings"), toggles(["Everyone", "Asha", "Ravi"], "Everyone")])
+function finalDesk({ open = false, allIn = false } = {}) {
+  return appPage({
+    content: [
+      pageHead({ asOf: allIn ? "Six accounts for two people, all read today, valued at the NSE close of Friday 23 Oct." : "Six accounts for two people, valued at the NSE close of Friday 23 Oct.", action: out("Add an account"), extra: whoseRow() }),
+      allIn ? "" : nudge({ open }),
+      strip(stripPnl()),
+      col({ gap: 12 }, [row({ justifyContent: "space-between", alignItems: "center", gap: 16 }, [h2("Holdings"), showBy("Company")]), groupedTable(), allIn ? "" : note(staleNote)]),
+      el("section", { display: "flex", flexDirection: "column", gap: 20 }, [h2("Accounts"), personBlock("asha", { firstFill: null, marks: false }), personBlock("ravi", { firstFill: null, marks: false })]),
+    ],
+  })
+}
+function finalPhone({ open = false } = {}) {
+  return appPhone({
+    content: [
+      pageHead({ phone: true, asOf: "Six accounts, valued at Friday’s NSE close.", extra: toggles(["Everyone", "Asha", "Ravi"], "Everyone") }),
+      nudge({ open, phone: true }),
+      strip(stripPnl(true), { phone: true }),
+      h2("Holdings"), showBy("Company"),
+      groupedPhone(),
+      note(staleNote),
+    ],
+  })
+}
+// Everyone read today: the nudge is gone and nothing is starred.
+function withAllIn(render) {
+  return () => {
+    const saved = ACCTS.map((a) => [a.state, a.read, a.readShort])
+    const stale = STALE_KEYS.splice(0)
+    ACCTS.forEach((a) => { if (a.state !== "in") { a.state = "in"; a.read = "Today, 09:18"; a.readShort = "today 09:18" } })
+    try { return render() } finally { ACCTS.forEach((a, i) => { [a.state, a.read, a.readShort] = saved[i] }); STALE_KEYS.push(...stale) }
+  }
+}
+// The one motion: the highlighter draws across its words once, on load.
+function sweep() {
+  const step = (pct, label) => row({ gap: 24, alignItems: "baseline" }, [
+    div({ width: 90, flexShrink: 0, fontSize: 14, color: T.inkMuted, ...NUM }, esc(label)),
+    el("p", { margin: 0, fontSize: 17 }, `<span style="position: relative; display: inline-block; padding: 0 4px"><span aria-hidden="true" style="position: absolute; left: 0; top: 0; bottom: 0; width: ${pct}%; background: ${MARK.G.hex}"></span><span style="position: relative">Some holdings are from Friday.</span></span> 3 of 6 accounts signed Maester out.`),
+  ])
+  return bare(1100, [
+    h2("The one motion: the highlighter draws once"),
+    body("When the page has loaded and a nudge is due, the highlight draws across its words from left to right in 240ms, then stays. Nothing else moves, it doesn’t repeat, and with reduced motion the highlight is simply there.", { maxWidth: 820 }),
+    col({ gap: 14, borderTop: `2px solid ${T.ink}`, borderBottom: `2px solid ${T.ink}`, padding: "16px 0" }, [step(0, "0 ms"), step(40, "100 ms"), step(75, "180 ms"), step(100, "240 ms, stays")]),
+    note("Built as a block behind the words that grows from the left (transform: scaleX), not a gradient. It is the page’s one motion after it loads; the hatch belongs to the wait before."),
+  ])
+}
+
 // ---------- the document ----------
 const BASE_CSS = `body{margin:0;background:${T.paper};font-family:'Archivo', 'Helvetica Neue', Arial, sans-serif}button{font-family:inherit;margin:0}a{color:inherit}h1,h2,h3,p,dl,dd,figure,ol{margin:0}a:hover{background:#000000;color:#EDEDE8;text-decoration:none}button:focus-visible,a:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:3px solid #000000;outline-offset:2px}`
 function dcHtml({ title, w, h, body }) {
@@ -776,6 +852,12 @@ const FRAMES = [
   { id: "R4G.dc.html", title: "G · Highlighter, on Ravi’s accounts", w: 1100, h: 900, min: 400, render: withColour("G", excerpt("G")), row: 2, page: "round4" },
   { id: "R4H.dc.html", title: "H · Signal orange, on Ravi’s accounts", w: 1100, h: 900, min: 400, render: withColour("H", excerpt("H")), row: 2, page: "round4" },
   { id: "R4J.dc.html", title: "J · Blue pencil, on Ravi’s accounts", w: 1100, h: 900, min: 400, render: withColour("J", excerpt("J")), row: 2, page: "round4" },
+  { id: "DF1.dc.html", title: "D · final — holdings first; three signed-out accounts are one line at the top", w: W, h: 900, render: withColour("G", () => finalDesk()), row: 0, page: "final" },
+  { id: "DF2.dc.html", title: "D · final — “Update 3 accounts” opened: the sign-ins, one filled", w: W, h: 900, render: withColour("G", () => finalDesk({ open: true })), row: 0, page: "final" },
+  { id: "DF3.dc.html", title: "D · final — phone 390", w: P, h: 844, render: withColour("G", () => finalPhone()), row: 0, page: "final", phone: true },
+  { id: "DF4.dc.html", title: "D · final — phone 390, opened", w: P, h: 844, render: withColour("G", () => finalPhone({ open: true })), row: 0, page: "final", phone: true },
+  { id: "DF5.dc.html", title: "D · final — every account read today: no nudge, nothing starred", w: W, h: 900, render: withColour("G", withAllIn(() => finalDesk({ allIn: true }))), row: 1, page: "final" },
+  { id: "DF6.dc.html", title: "D · final — the highlighter draws once, on load", w: 1100, h: 900, min: 400, render: withColour("G", sweep), row: 1, page: "final" },
 ]
 for (const f of FRAMES) f.page ??= "round2"
 for (const f of FRAMES) {
@@ -831,12 +913,13 @@ function layout(page, pageNotes, prefix) {
 layout("round2", NOTES, "r2")
 layout("round3", NOTES.round3, "r3")
 layout("round4", NOTES.round4, "r4")
+layout("final", NOTES.final, "df")
 const canvas = {
   v: 3,
   createdOnFiles: { v: 1, at: "2026-10-24T10:00:00Z" },
   title: "Maester Broker Accounts",
-  launch: { view: "canvas", page: "round4" },
-  pages: [{ id: "round4", name: "Round 4 · Colour for P&L, and a highlight" }, { id: "round3", name: "Round 3 · Which account, and P&L" }, { id: "round2", name: "Round 2 · Several accounts" }],
+  launch: { view: "canvas", page: "final" },
+  pages: [{ id: "final", name: "D · final" }, { id: "round4", name: "Round 4 · Colour for P&L, and a highlight" }, { id: "round3", name: "Round 3 · Which account, and P&L" }, { id: "round2", name: "Round 2 · Several accounts" }],
   boards,
   order: FRAMES.map((f) => f.id),
   notes,

@@ -64,7 +64,21 @@ Round 3 of the canvas shows P&L per account and per holding: "I’m not getting 
 
 Either a `redirect` definition on Dhan's API key and consent flow (a daily browser consent, 25 a day), or keep `settings-connection` and allow one Dhan account per install.
 
-### 7. Web (waits for the pick)
+### 7. Web: D · final (picked 24 Oct 2026; build waits for the go-ahead)
+
+The user picked D, with this change: "If a user account is automatically locked out, we should display a brief nudge instead of taking up an entire section of the screen." and "if we already have the data, we should not ask the user to update it again." The page is drawn as "D · final" on the canvas. In order, it has:
+
+1. The `h1`, the tags, the lede and the "Whose holdings" toggle.
+2. **The nudge**, only while some account is signed out and still has holdings. It is one line between 2px rules: "Some holdings are from Friday." in the highlight, then "3 of 6 accounts signed Maester out; sign in to see today’s.", then an outline "Update 3 accounts" button with `aria-expanded`. The button opens a 2px box of the sign-ins, each account with why it is signed out and its one action, the first one filled. Escape closes it and focus returns to the button. On a phone the box opens in place. The highlight draws across its words once on load, over 240ms with `transform: scaleX`. That is the page's one motion after load, and there is none under reduced motion.
+3. The strip: known value, invested, unrealized P&L with its %, and accounts read today.
+4. Holdings, company then account, with "Show by: Company | Account".
+5. Accounts at the foot, grouped by person, with outline buttons only.
+
+With every account read today there is no nudge and nothing is starred. With no account yet, the page is the add form, as built. Measured: sign-in prompts take 8% of the first desktop screen, down from 48%, and 16% of a phone's.
+
+The colours from round 4 are gain `#006B55` and loss `#BA2C1A` (`#3FC4A2` and `#FF7A4D` on ink), on the signed P&L figure only, and the G · Highlighter `#F9DC5C` for the nudge. They need the design-system changes listed in [`docs/research/2026-10-24-pnl-and-highlight-colours.md`](../../research/2026-10-24-pnl-and-highlight-colours.md), made in the same change.
+
+The notes from before the pick:
 
 - In every direction:
   - "Whose account is it?" when an account is added.

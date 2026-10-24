@@ -28,6 +28,21 @@
    "note": "Angel One (question 1) and Groww (question 3) are drawn so you can decide on them. Upstox and ICICI Direct sit side by side here to compare; on the page one form shows at a time, with one filled button."
   }
  ],
+ "final": {
+  "constraint": "Your pick (24 Oct 2026): D. Your change, in your words: “If a user account is automatically locked out, we should display a brief nudge instead of taking up an entire section of the screen.” And: “if we already have the data, we should not ask the user to update it again.”\n\nThis page is D · final, with round 4’s colours (gain, loss and G · Highlighter). Earlier rounds sit on the pages behind it. Nothing is built until you say go.",
+  "questions": "Before the build:\n\n1. The highlight is G · Highlighter here. Keep it?\n2. Gain and loss colour Holdings only for now (the rest of the terminal keeps signs only)?\n3. The nudge button says “Update 3 accounts”. Fine, or another word?",
+  "shared": "What changed from D in round 4:\n\n• Signed-out accounts are one line under the title, not a section. Its first words are highlighted; “Update 3 accounts” opens the sign-ins in place (click or tap, Escape closes, focus returns to the button).\n• The holdings come straight after the strip, so the first screen is figures. Friday’s parts stay starred: nothing is hidden or asked again.\n• Accounts move to the foot of the page with outline buttons only; the nudge holds the one filled button, and only once it is open.\n• No nudge when every account was read today.\n• First screen given to sign-in prompts, measured: desktop (900px) round 4’s D 48%, this one 8%; phone (844px) 16%, against 41% for round 2’s morning-round panel.",
+  "rows": [
+   {
+    "title": "D · final",
+    "note": "Desktop closed and opened, phone closed and opened.\n\nOpened on desktop, the sign-ins sit in a 2px box under the button, over the page: each account, why it is signed out, and its one action (Sign in to Zerodha, Sign in to Angel One, Open Groww to approve). The first is filled. On a phone they open in place under the line.\n\nAngel One’s MPIN and code are asked for after its button, in the same box, as in round 2."
+   },
+   {
+    "title": "When nothing is due, and the one motion",
+    "note": "With every account read today the nudge is gone and nothing is starred.\n\nThe nudge’s “simple animation”: the highlighter draws across its first words once on load (240ms) and stays. It never repeats, and under reduced motion it is simply there. DESIGN.md §6 gains a line for it."
+   }
+  ]
+ },
  "round4": {
   "constraint": "Your words (24 Oct 2026): “I think the PNL should use distinct colors, such as red and green, that align with the theme. We also need a tertiary color to highlight text or specific areas when required.”\n\nThis changes the design system. docs/DESIGN.md §2 today says “No accent colour, no semantic green or red” and that direction is shown by a sign, never a colour. On your go, ADR 0002, DESIGN.md §2 and §5, tokens.css and the design guard change together. Until then nothing in the app changes.",
   "questions": "Questions, each answerable in a word:\n\n1. The highlight: G (recommended), H or J?\n2. Gain and loss colour: Holdings only, or every signed change in the terminal (a share’s day change in Research, a reading’s change in Market mood)?\n3. The day’s change on Holdings (today versus yesterday’s close): add it as a column now, or later?",
