@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DocumentExtraction, DocumentFacts, ExtractResponse, JobTypes } from "@maester/contracts";
+import { DocumentExtraction, DocumentFacts, ExtractResponse, JobTypes, XBRL_PDF_CHECK_VERSION } from "@maester/contracts";
 import { schema } from "@maester/db";
 import { createTestContext, type TestContext } from "./context.js";
 
@@ -45,6 +45,73 @@ async function seedRevision(workspaceId: string, documentId: string, companyId: 
   return revisionId;
 }
 
+/** An XBRL document read into a revision with one fact, its xbrl_source row and one of its own sums. */
+async function seedXbrl(workspaceId: string, userId: string, companyId: string) {
+  const documentId = crypto.randomUUID();
+  await ctx.db.insert(schema.document).values({
+    id: documentId, workspaceId, companyId, originalName: "results.xml", declaredSize: 10, declaredMime: "application/xml", format: "xbrl",
+    storageKey: `workspaces/${workspaceId}/documents/${documentId}/original.xml`, state: "stored", createdByUserId: userId,
+  });
+  const jobId = crypto.randomUUID();
+  await ctx.db.insert(schema.job).values({
+    id: jobId, workspaceId, type: JobTypes.DOCUMENT_XBRL, subjectType: "document", subjectId: documentId, idempotencyKey: `seed-${jobId}`, state: "succeeded",
+  });
+  const revisionId = crypto.randomUUID();
+  await ctx.db.insert(schema.extractionRevision).values({
+    id: revisionId, workspaceId, documentId, jobId, source: "xbrl", state: "complete", pipelineVersion: "xbrl-1", model: "xbrl-parser-1",
+    promptVersion: "in-capmkt/ind_as@1", pageCount: 1, companyNameAsPrinted: "Synthetic", coverage: { statements: [] },
+  });
+  const factId = crypto.randomUUID();
+  await ctx.db.insert(schema.financialFact).values({
+    id: factId, workspaceId, revisionId, companyId, statement: "income_statement", basis: "consolidated", section: "Income", lineOrder: 0,
+    reportedLabel: "Revenue from operations", isSubtotal: false, periodLabel: "Year ended 31 Mar 2026", periodEnd: "2026-03-31", periodStart: "2025-04-01",
+    span: "year", reportedText: "12105.40", reportedValue: "12105.40", valueStatus: "value", unitLabel: "₹ crore", scaleFactor: "10000000", currency: "INR",
+    normalizedValue: "121054000000",
+  });
+  await ctx.db.insert(schema.xbrlSource).values({
+    id: crypto.randomUUID(), workspaceId, factId, documentId, element: "RevenueFromOperations", contextId: "FourD", decimals: "-5", concept: "revenue_from_operations",
+  });
+  await ctx.db.insert(schema.extractionCheck).values({
+    id: crypto.randomUUID(), workspaceId, revisionId, checkType: "subtotal", statement: "income_statement", basis: "consolidated", section: "Income",
+    periodLabel: "Year ended 31 Mar 2026", subjectLabel: "Total income", status: "passed", expected: "1", actual: "1", detail: "",
+  });
+  return { documentId, revisionId, factId };
+}
+
+describe("extraction endpoints of an XBRL document", () => {
+  it("gives each fact its XBRL source, with its span and period start", async () => {
+    const a = await ctx.signUp("xx1@example.com");
+    const companyId = await ctx.createCompany(a.workspaceId, a.cookie);
+    const x = await seedXbrl(a.workspaceId, a.userId, companyId);
+    const facts = DocumentFacts.parse(await (await ctx.app.request(`/v1/workspaces/${a.workspaceId}/documents/${x.documentId}/facts`, { headers: { cookie: a.cookie } })).json());
+    expect(facts.revision.source).toBe("xbrl");
+    expect(facts.facts[0]).toMatchObject({ span: "year", periodStart: "2025-04-01", periodEnd: "2026-03-31" });
+    expect(facts.facts[0]!.source).toEqual({ kind: "xbrl", documentId: x.documentId, element: "RevenueFromOperations", contextId: "FourD", decimals: "-5", nil: false });
+  });
+
+  it("answers the same extraction before and after a document.xbrl_check job writes its xbrl_in_pdf rows", async () => {
+    const a = await ctx.signUp("xx2@example.com");
+    const companyId = await ctx.createCompany(a.workspaceId, a.cookie);
+    const x = await seedXbrl(a.workspaceId, a.userId, companyId);
+    const url = `/v1/workspaces/${a.workspaceId}/documents/${x.documentId}/extraction`;
+    const before = DocumentExtraction.parse(await (await ctx.app.request(url, { headers: { cookie: a.cookie } })).json());
+    expect(before.revision.source).toBe("xbrl");
+    expect(before.checks.map((c) => c.checkType)).toEqual(["subtotal"]);
+
+    // The rows as document.xbrl_check writes them: on the XBRL revision, one per fact and PDF classification.
+    const pdf = await seedDocument(a.workspaceId, a.userId, companyId);
+    const pdfClassificationId = crypto.randomUUID();
+    await ctx.db.insert(schema.documentClassification).values({ id: pdfClassificationId, workspaceId: a.workspaceId, documentId: pdf, kind: "financial_results", periodEnd: "2026-03-31", companyId, setBy: "maester" });
+    await ctx.db.insert(schema.extractionCheck).values({
+      id: crypto.randomUUID(), workspaceId: a.workspaceId, revisionId: x.revisionId, checkType: "xbrl_in_pdf", statement: "income_statement", basis: "consolidated",
+      section: "Income", periodLabel: "Year ended 31 Mar 2026", subjectLabel: "Revenue from operations", status: "failed", expected: "12105.40", detail: "",
+      factId: x.factId, pdfDocumentId: pdf, pdfClassificationId, pageIndex: null, checkVersion: XBRL_PDF_CHECK_VERSION,
+    });
+    const after = DocumentExtraction.parse(await (await ctx.app.request(url, { headers: { cookie: a.cookie } })).json());
+    expect(after).toEqual(before);
+  });
+});
+
 describe("extraction endpoints", () => {
   it("returns the latest revision, its checks and facts with page sources; an older revision on request", async () => {
     const a = await ctx.signUp("x1@example.com");
@@ -63,7 +130,9 @@ describe("extraction endpoints", () => {
     expect(facts.revision.id).toBe(newer);
     expect(facts.facts[0]!.reportedValue).toBe("200");
     expect(facts.facts[0]!.asOfDate).toBe("2026-03-31");
-    expect(facts.facts[0]!.source).toEqual({ documentId: docId, pageIndex: 1, textLayerMatch: true });
+    expect(facts.revision.source).toBe("pdf");
+    expect(facts.facts[0]).toMatchObject({ span: null, periodStart: null });
+    expect(facts.facts[0]!.source).toEqual({ kind: "page", documentId: docId, pageIndex: 1, textLayerMatch: true });
 
     const old = DocumentFacts.parse(await (await ctx.app.request(`${base}/facts?revisionId=${older}`, { headers: { cookie: a.cookie } })).json());
     expect(old.facts[0]!.reportedValue).toBe("100");

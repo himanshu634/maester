@@ -19,7 +19,7 @@
 		CompanyStock,
 		StatementTable as Table
 	} from '$lib/research/types';
-	import { defaultBasis, filingLong, unitWords, yearsRead } from '$lib/research/view';
+	import { defaultBasis, filingLong, unitWords, yearSources, yearsRead } from '$lib/research/view';
 	import SectionIssue from '$lib/components/errors/SectionIssue.svelte';
 	import Hatch from '$lib/components/loading/Hatch.svelte';
 	import StockSummary from './StockSummary.svelte';
@@ -190,6 +190,7 @@
 			selected.c === summary.epsCell.col
 		)
 	);
+	let mixedYears = $derived(yearSources(financials?.tables ?? [], basis));
 	let kindLabel = $derived(copy.statements.kinds[statement]);
 	let basisLabel = $derived(copy.statements.bases[basis]);
 	let leftOut = $derived(
@@ -344,12 +345,23 @@
 								{#if table.unplaced > 0}<p>{copy.statements.unplaced(table.unplaced)}</p>{/if}
 								{#each leftOut as note, index (index)}<p>{note}</p>{/each}
 							</div>
+							{#if mixedYears.length > 0}
+								<dl class="sources muted" aria-label={copy.statements.yearSources.label}>
+									{#each mixedYears as item (item.year)}
+										<div>
+											<dt>{item.year}</dt>
+											<dd>{item.words}</dd>
+										</div>
+									{/each}
+								</dl>
+							{/if}
 						</div>
 						<div class="panel-col">
 							<FigurePanel
 								{table}
 								pos={selected}
 								pageHref={api.pageHref}
+								fileHref={api.fileHref}
 								{usedInPe}
 								headingId="{id}-panel"
 								onback={back}
@@ -493,6 +505,31 @@
 		font-size: var(--text-sm);
 		line-height: var(--leading-small);
 		max-width: var(--measure);
+	}
+
+	/* Under the table's note: the years whose statements come from more than one source. */
+	.sources {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+		margin: var(--space-3) 0 0;
+		max-width: var(--measure);
+		font-size: var(--text-sm);
+		line-height: var(--leading-small);
+	}
+
+	.sources div {
+		display: grid;
+		grid-template-columns: 5.5rem minmax(0, 1fr);
+		gap: var(--space-3);
+	}
+
+	.sources dt {
+		font-weight: 700;
+	}
+
+	.sources dd {
+		margin: 0;
 	}
 
 	.panel-col {

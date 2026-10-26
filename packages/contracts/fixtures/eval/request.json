@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "documents": [
+    {
+      "filing": "aether-industries/ar-2024-25",
+      "sha256": "0b9f7c1d5e2a4863b1c0d9e8f7a6b5c4d3e2f1a0918273645546372819a0b1c2"
+    },
+    {
+      "filing": "aether-industries/ar-2023-24",
+      "sha256": "f1e2d3c4b5a69788796a5b4c3d2e1f00112233445566778899aabbccddeeff00"
+    }
+  ],
+  "questions": [
+    {
+      "id": "q001",
+      "query": "What did the auditors say about internal financial controls?",
+      "scope": [
+        "aether-industries/ar-2024-25",
+        "aether-industries/ar-2023-24"
+      ]
+    }
+  ]
+}

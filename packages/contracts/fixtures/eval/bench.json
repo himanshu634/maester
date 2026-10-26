@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "model": "Snowflake/snowflake-arctic-embed-l-v2.0",
+  "batch": 16,
+  "chunks": 464,
+  "warmupChunks": 16,
+  "seconds": 187.25,
+  "queries": 40,
+  "queryMillisMedian": 142.5
+}

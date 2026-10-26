@@ -9,7 +9,7 @@
 	import { researchContent } from '$lib/content/research';
 	import { move, type Pos } from '$lib/research/grid';
 	import type { FinancialRow, StatementTable } from '$lib/research/types';
-	import { cellReason, cellText, filingShort, fyLabel } from '$lib/research/view';
+	import { cellReason, cellText, columnFrom, filingShort, fyLabel } from '$lib/research/view';
 
 	interface Props {
 		table: StatementTable;
@@ -71,10 +71,14 @@
 		<thead>
 			<tr>
 				<th scope="col" class="line muted" bind:clientWidth={lineWidth}>{copy.line}</th>
-				{#each table.columns as col (col.periodEnd)}
+				{#each table.columns as col, c (col.periodEnd)}
 					<th scope="col" class="figure">
 						<span class="year">{fyLabel(col.periodEnd)}</span>
-						<span class="muted from">{filingShort(col.filingPeriodEnd)}</span>
+						<span class="muted from"
+							>{columnFrom(table, c) === 'xbrl'
+								? copy.xbrlColumn
+								: filingShort(col.filingPeriodEnd)}</span
+						>
 					</th>
 				{/each}
 			</tr>
@@ -105,7 +109,12 @@
 							{@const cell = row.cells[c]}
 							<td class="figure num">
 								{#if cell}
-									{@const reason = cellReason(cell, filingShort(col.filingPeriodEnd))}
+									{@const reason = cellReason(
+										cell,
+										columnFrom(table, c) === 'xbrl'
+											? copy.xbrlColumn
+											: filingShort(col.filingPeriodEnd)
+									)}
 									<button
 										type="button"
 										id="{idPrefix}-{r}-{c}"

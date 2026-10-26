@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { getJob, schema, type Db, type JobRow } from "@maester/db";
-import { createJob as createSharedJob, DEFAULT_MAX_ATTEMPTS, JobScopeConflictError, type CreateJobInput } from "@maester/jobs";
+import { createJob as createSharedJob, DEFAULT_MAX_ATTEMPTS, JobScopeConflictError, maxAttemptsFor, type CreateJobInput } from "@maester/jobs";
 import type { Dispatcher } from "../dispatch/index.js";
 import { HttpError } from "../errors.js";
 
@@ -26,9 +26,11 @@ export async function retryJob(db: Db, dispatcher: Dispatcher, workspaceId: stri
       state: "queued",
       leaseToken: null,
       leaseExpiresAt: null,
-      maxAttempts: sql`${schema.job.attempt} + ${DEFAULT_MAX_ATTEMPTS}`,
+      // A retry gives the job its type's attempts again: 2 more for a paid model call, 5 for the rest.
+      maxAttempts: sql`${schema.job.attempt} + ${maxAttemptsFor(current.type)}`,
       finishedAt: null,
       progress: {},
+      runAfter: sql`now()`,
       updatedAt: sql`now()`,
     })
     .where(

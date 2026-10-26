@@ -10,6 +10,7 @@ export const STATUS: Record<ErrorCode, number> = {
   UNSUPPORTED_MEDIA_TYPE: 415,
   INVALID_STATE: 409,
   RATE_LIMITED: 429,
+  SEARCH_UNAVAILABLE: 503,
   INTERNAL: 500,
 };
 

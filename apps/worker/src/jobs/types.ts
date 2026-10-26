@@ -2,7 +2,9 @@ import type { Db, JobProgressJson, JobRow } from "@maester/db";
 import type { Dispatcher } from "@maester/jobs";
 import type { ObjectStore } from "@maester/storage";
 import type { WorkerEnv } from "../env.js";
+import type { Embedder } from "@maester/document-index";
 import type { ExtractorClient } from "../extractor.js";
+import type { IndexerClient } from "../indexer.js";
 import type { Logger } from "../logger.js";
 
 export interface JobContext {
@@ -13,14 +15,24 @@ export interface JobContext {
   dispatcher: Dispatcher;
   /** Null when EXTRACTOR_URL is unset. */
   extractor: ExtractorClient | null;
+  /** Null when INDEXER_URL is unset. */
+  indexer: IndexerClient | null;
+  /** Null when EMBEDDER_URL is unset. */
+  embedder: Embedder | null;
   progress(p: JobProgressJson): Promise<void>;
   /** Renew the job lease; cheap to call often (calls are throttled). */
   heartbeat(): Promise<void>;
 }
 
+/** What a final-failure hook gets: the dispatcher, so a job it creates is dispatched too. */
+export interface FinalFailureDeps {
+  db: Db;
+  dispatcher: Dispatcher;
+}
+
 export type JobHandler = ((job: JobRow, ctx: JobContext) => Promise<unknown>) & {
   /** Runs once when the job fails for good, to leave its subject in a stated failure. */
-  onFinalFailure?: (job: JobRow, db: Db) => Promise<void>;
+  onFinalFailure?: (job: JobRow, deps: FinalFailureDeps) => Promise<void>;
 };
 
 /**

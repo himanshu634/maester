@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": { ".": "./src/index.ts", "./intake": "./src/intake.ts" },
   "scripts": { "lint": "eslint .", "typecheck": "tsc -p tsconfig.json", "test": "vitest run" },
   "dependencies": {
     "@google-cloud/tasks": "^7.1.0",
     "@maester/contracts": "workspace:*",
     "@maester/db": "workspace:*",
+    "@maester/financial-engine": "workspace:*",
     "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {

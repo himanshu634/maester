@@ -34,6 +34,41 @@ async function seedClassification(workspaceId: string, documentId: string, value
 }
 const url = (ws: string, id: string, tail = "classification") => `/v1/workspaces/${ws}/documents/${id}/${tail}`;
 
+/** An XBRL instance of the company for 30 Sep 2025, in `intakeState`; a read one carries a revision with one fact in `basis`. */
+async function seedXbrl(w: { workspaceId: string; userId: string }, companyId: string, basis: "consolidated" | "standalone", intakeState: "read" | "reading") {
+  const id = await seedDocument(w.workspaceId, w.userId);
+  await ctx.db.update(schema.document).set({ format: "xbrl", companyId, intakeState }).where(eq(schema.document.id, id));
+  const cid = crypto.randomUUID();
+  await ctx.db.insert(schema.documentClassification).values({
+    id: cid, workspaceId: w.workspaceId, documentId: id, kind: "financial_results", companyId, periodEnd: "2025-09-30", setBy: "maester", readsUnderId: cid, basis,
+  });
+  if (intakeState !== "read") return id;
+  const jobId = crypto.randomUUID();
+  await ctx.db.insert(schema.job).values({ id: jobId, workspaceId: w.workspaceId, type: JobTypes.DOCUMENT_XBRL, subjectType: "document", subjectId: id, idempotencyKey: `x-${jobId}`, state: "succeeded" });
+  const revisionId = crypto.randomUUID();
+  await ctx.db.insert(schema.extractionRevision).values({
+    id: revisionId, workspaceId: w.workspaceId, documentId: id, jobId, classificationId: cid, source: "xbrl", state: "complete",
+    pipelineVersion: "xbrl-1", model: "xbrl-parser-1", promptVersion: "in-capmkt/ind_as@1", pageCount: 0, coverage: { statements: [] },
+  });
+  await ctx.db.insert(schema.financialFact).values({
+    id: crypto.randomUUID(), workspaceId: w.workspaceId, revisionId, companyId, statement: "income_statement", basis, section: "s", lineOrder: 0,
+    reportedLabel: "line", isSubtotal: false, periodLabel: "Quarter ended 30 Sep 2025", periodEnd: "2025-09-30", span: "quarter", reportedText: "", valueStatus: "unparsed",
+  });
+  return id;
+}
+
+/** A results PDF of the company for 30 Sep 2025, printing both bases' income statements, in `intakeState`. */
+async function seedResultsPdf(w: { workspaceId: string; userId: string }, companyId: string, intakeState: "read" | "waiting_for_xbrl") {
+  const id = await seedDocument(w.workspaceId, w.userId);
+  await ctx.db.update(schema.document).set({ companyId, intakeState }).where(eq(schema.document.id, id));
+  const cid = crypto.randomUUID();
+  await ctx.db.insert(schema.documentClassification).values({
+    id: cid, workspaceId: w.workspaceId, documentId: id, kind: "financial_results", companyId, periodEnd: "2025-09-30", setBy: "maester", readsUnderId: cid,
+    statementsFound: [{ statement: "income_statement", basis: "consolidated", pages: [2] }, { statement: "income_statement", basis: "standalone", pages: [3] }],
+  });
+  return { id, cid };
+}
+
 describe("upload without a company", () => {
   it("creates a pending document with no company", async () => {
     const { cookie, workspaceId } = await ctx.signUp("nocompany@example.com");
@@ -91,6 +126,82 @@ describe("classification", () => {
     expect(read!.idempotencyKey).toBe(`${JobTypes.DOCUMENT_EXTRACT}:${doc}:classification-${body.classification.id}`);
   });
 
+  it("the investor's change to an XBRL document's company keeps isin, xbrlFormat and basis, and the evidence's element and context", async () => {
+    const a = await ctx.signUp("xbrl-change@example.com");
+    const doc = await seedDocument(a.workspaceId, a.userId);
+    const cid = await seedClassification(a.workspaceId, doc, {
+      kind: "financial_results", resultsSpan: "quarter", cin: null, bseCode: "500998", nseSymbol: "SYNBANK", isin: "INE998Z01012",
+      xbrlFormat: "in-capmkt/banking", basis: "standalone", statementsFound: [], rulesVersion: "xbrl-1", model: null, promptVersion: "in-capmkt/banking@1",
+    });
+    await ctx.db.insert(schema.classificationEvidence).values({
+      id: crypto.randomUUID(), workspaceId: a.workspaceId, classificationId: cid, field: "period", source: "rule", ruleId: "xbrl.identity.period_end",
+      pageIndex: null, quote: "2025-09-30", textLayerMatch: null, element: "DateOfEndOfReportingPeriod", context: "OneD",
+    });
+    const res = await ctx.app.request(url(a.workspaceId, doc), send("POST", a.cookie, {
+      basedOn: cid, company: { new: { displayName: "Synthetic Bank Limited", country: "IN", bseCode: "500998" } },
+    }));
+    expect(res.status).toBe(200);
+    const body = ClassificationChanged.parse(await res.json());
+    expect(body.classification).toMatchObject({ setBy: "investor", isin: "INE998Z01012", xbrlFormat: "in-capmkt/banking", basis: "standalone" });
+    const [row] = await ctx.db.select().from(schema.documentClassification).where(eq(schema.documentClassification.id, body.classification.id));
+    expect(row).toMatchObject({ isin: "INE998Z01012", xbrlFormat: "in-capmkt/banking", basis: "standalone" });
+    expect(body.evidence.find((e) => e.field === "period")).toMatchObject({ element: "DateOfEndOfReportingPeriod", context: "OneD" });
+    const read = await ctx.app.request(url(a.workspaceId, doc), { headers: { cookie: a.cookie } });
+    expect(DocumentClassification.parse(await read.json()).classification).toMatchObject({ isin: "INE998Z01012", xbrlFormat: "in-capmkt/banking", basis: "standalone" });
+  });
+
+  it("confirming a held XBRL document for another company reads it with document.xbrl and releases the PDF that waited on it", async () => {
+    const a = await ctx.signUp("xbrl-release@example.com");
+    const companyId = crypto.randomUUID();
+    await ctx.db.insert(schema.company).values({ id: companyId, workspaceId: a.workspaceId, displayName: "Synthetic Cements Limited", country: "IN", bseCode: "500999", createdByUserId: a.userId });
+    const xbrl = await seedDocument(a.workspaceId, a.userId);
+    await ctx.db.update(schema.document).set({ format: "xbrl" }).where(eq(schema.document.id, xbrl));
+    const xc = await seedClassification(a.workspaceId, xbrl, { kind: "financial_results", cin: null, bseCode: "500999", periodEnd: "2025-09-30", statementsFound: [] });
+    const pdf = await seedDocument(a.workspaceId, a.userId);
+    await ctx.db.update(schema.document).set({ intakeState: "waiting_for_xbrl", companyId }).where(eq(schema.document.id, pdf));
+    const pc = crypto.randomUUID();
+    await ctx.db.insert(schema.documentClassification).values({
+      id: pc, workspaceId: a.workspaceId, documentId: pdf, kind: "financial_results", companyId, periodEnd: "2025-09-30", setBy: "maester", readsUnderId: pc,
+      statementsFound: [{ statement: "income_statement", basis: "consolidated", pages: [2] }],
+    });
+
+    const res = await ctx.app.request(url(a.workspaceId, xbrl), send("POST", a.cookie, {
+      basedOn: xc, company: { new: { displayName: "Synthetic Steel Limited", country: "IN" } },
+    }));
+    expect(res.status).toBe(200);
+    const jobs = await ctx.db.select().from(schema.job).where(eq(schema.job.workspaceId, a.workspaceId));
+    expect(jobs.filter((j) => j.subjectId === xbrl).map((j) => j.type)).toEqual([JobTypes.DOCUMENT_XBRL]);
+    expect(jobs.filter((j) => j.subjectId === pdf).map((j) => j.type)).toEqual([JobTypes.DOCUMENT_EXTRACT]);
+    const [released] = await ctx.db.select().from(schema.document).where(eq(schema.document.id, pdf));
+    expect(released!.intakeState).toBe("reading");
+  });
+
+  it("refuses annual_report for an XBRL instance with 400 and writes nothing", async () => {
+    const a = await ctx.signUp("xbrl-annual@example.com");
+    const companyId = await ctx.createCompany(a.workspaceId, a.cookie, "Xbrl Annual Limited");
+    const xbrl = await seedDocument(a.workspaceId, a.userId, "read");
+    await ctx.db.update(schema.document).set({ format: "xbrl", companyId }).where(eq(schema.document.id, xbrl));
+    const xc = await seedClassification(a.workspaceId, xbrl, { kind: "financial_results", companyId, periodEnd: "2025-09-30", statementsFound: [] });
+    const res = await ctx.app.request(url(a.workspaceId, xbrl), send("POST", a.cookie, { basedOn: xc, kind: "annual_report" }));
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("VALIDATION_FAILED");
+    expect(await ctx.db.select().from(schema.documentClassification).where(eq(schema.documentClassification.documentId, xbrl))).toHaveLength(1);
+    expect((await ctx.db.select().from(schema.job).where(eq(schema.job.subjectId, xbrl)))).toHaveLength(0);
+    // Financial results and other stay open to an instance.
+    expect((await ctx.app.request(url(a.workspaceId, xbrl), send("POST", a.cookie, { basedOn: xc, kind: "other", otherType: "investor_presentation" }))).status).toBe(200);
+  });
+
+  it("a PDF's classification has no isin, format or basis", async () => {
+    const a = await ctx.signUp("pdf-null@example.com");
+    const doc = await seedDocument(a.workspaceId, a.userId);
+    await seedClassification(a.workspaceId, doc);
+    const res = await ctx.app.request(url(a.workspaceId, doc), { headers: { cookie: a.cookie } });
+    const body = DocumentClassification.parse(await res.json());
+    expect(body.classification).toMatchObject({ isin: null, xbrlFormat: null, basis: null });
+    expect(body.evidence.every((e) => e.element === null && e.context === null)).toBe(true);
+  });
+
   it("a company name that already exists is a 409", async () => {
     const a = await ctx.signUp("clash@example.com");
     await ctx.createCompany(a.workspaceId, a.cookie, "Synthetic Cements Limited");
@@ -115,6 +226,31 @@ describe("classification", () => {
     expect(body.classification.readsUnderId).toBe(cid);
     expect(body.document.intakeState).toBe("read");
     expect(ctx.dispatcher.enqueued.length).toBe(before);
+  });
+
+  it("a period-only change to a results PDF that XBRL covered plans it again: no XBRL for the new period, so it is read", async () => {
+    const a = await ctx.signUp("period-skip@example.com");
+    const companyId = await ctx.createCompany(a.workspaceId, a.cookie, "Period Skip Limited");
+    await seedXbrl(a, companyId, "consolidated", "read");
+    await seedXbrl(a, companyId, "standalone", "read");
+    const pdf = await seedResultsPdf(a, companyId, "read");
+    const res = await ctx.app.request(url(a.workspaceId, pdf.id), send("POST", a.cookie, { basedOn: pdf.cid, periodLabel: "Quarter ended 30 June 2025", periodEnd: "2025-06-30" }));
+    expect(res.status).toBe(200);
+    expect(ClassificationChanged.parse(await res.json()).document.intakeState).toBe("reading");
+    const jobs = await ctx.db.select().from(schema.job).where(eq(schema.job.subjectId, pdf.id));
+    expect(jobs.map((j) => j.type)).toEqual([JobTypes.DOCUMENT_EXTRACT]);
+  });
+
+  it("a period-only change to a results PDF that waits on XBRL of the old period releases it to be read", async () => {
+    const a = await ctx.signUp("period-wait@example.com");
+    const companyId = await ctx.createCompany(a.workspaceId, a.cookie, "Period Wait Limited");
+    await seedXbrl(a, companyId, "consolidated", "reading");
+    const pdf = await seedResultsPdf(a, companyId, "waiting_for_xbrl");
+    const res = await ctx.app.request(url(a.workspaceId, pdf.id), send("POST", a.cookie, { basedOn: pdf.cid, periodLabel: "Quarter ended 30 June 2025", periodEnd: "2025-06-30" }));
+    expect(res.status).toBe(200);
+    expect(ClassificationChanged.parse(await res.json()).document.intakeState).toBe("reading");
+    const jobs = await ctx.db.select().from(schema.job).where(eq(schema.job.subjectId, pdf.id));
+    expect(jobs.map((j) => j.type)).toEqual([JobTypes.DOCUMENT_EXTRACT]);
   });
 
   it("changing the kind to other keeps the document and its figures stop being current", async () => {

@@ -12,9 +12,9 @@ FAMILIES = {"income_statement", "balance_sheet", "cash_flow", "segment_note", "b
 
 
 class TaxonomyTests(unittest.TestCase):
-    def test_file_parses_with_version_one(self):
+    def test_file_parses_with_version_two(self):
         taxonomy = load_taxonomy()
-        self.assertEqual(taxonomy.taxonomy_version, 1)
+        self.assertEqual(taxonomy.taxonomy_version, 2)  # 2 adds the banking lines
         self.assertGreaterEqual(len(taxonomy.concepts), 60)
 
     def test_ids_are_unique_snake_case(self):

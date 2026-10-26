@@ -5,6 +5,8 @@ import { user } from "./auth.js";
 export const membershipRole = pgEnum("membership_role", ["owner"]);
 export const membershipState = pgEnum("membership_state", ["active", "revoked"]);
 export const documentState = pgEnum("document_state", ["pending_upload", "uploaded", "verifying", "stored", "rejected"]);
+/** What a stored file is: a PDF, or an XBRL instance (XML). */
+export const documentFormat = pgEnum("document_format", ["pdf", "xbrl"]);
 export const jobState = pgEnum("job_state", ["queued", "running", "succeeded", "failed", "cancelled"]);
 
 export const ts = (name: string) => timestamp(name, { withTimezone: true, precision: 3 });
@@ -33,6 +35,7 @@ export const membership = pgTable(
 
 export const intakeState = pgEnum("intake_state", [
   "identifying", "duplicate", "needs_company", "needs_kind", "kept", "reading", "read", "identify_failed", "read_failed",
+  "waiting_for_xbrl",
 ]);
 
 export const company = pgTable(
@@ -45,6 +48,7 @@ export const company = pgTable(
     cin: text("cin"),
     bseCode: text("bse_code"),
     nseSymbol: text("nse_symbol"),
+    isin: text("isin"),
     createdByUserId: text("created_by_user_id").notNull().references(() => user.id),
     createdAt: ts("created_at").notNull().defaultNow(),
     updatedAt: ts("updated_at").notNull().defaultNow(),
@@ -55,6 +59,7 @@ export const company = pgTable(
     uniqueIndex("company_workspace_cin").on(t.workspaceId, t.cin).where(sql`${t.cin} is not null`),
     uniqueIndex("company_workspace_bse").on(t.workspaceId, t.bseCode).where(sql`${t.bseCode} is not null`),
     uniqueIndex("company_workspace_nse").on(t.workspaceId, t.nseSymbol).where(sql`${t.nseSymbol} is not null`),
+    uniqueIndex("company_workspace_isin").on(t.workspaceId, t.isin).where(sql`${t.isin} is not null`),
   ],
 );
 
@@ -67,6 +72,7 @@ export const document = pgTable(
     originalName: text("original_name").notNull(),
     declaredSize: bigint("declared_size", { mode: "number" }).notNull(),
     declaredMime: text("declared_mime").notNull(),
+    format: documentFormat("format").notNull().default("pdf"),
     storageKey: text("storage_key").notNull().unique(),
     contentSha256: text("content_sha256"),
     sizeBytes: bigint("size_bytes", { mode: "number" }),
@@ -80,7 +86,10 @@ export const document = pgTable(
     updatedAt: ts("updated_at").notNull().defaultNow(),
     storedAt: ts("stored_at"),
   },
-  (t) => [index("document_workspace_created").on(t.workspaceId, t.createdAt)],
+  (t) => [
+    index("document_workspace_created").on(t.workspaceId, t.createdAt),
+    index("document_workspace_intake").on(t.workspaceId, t.intakeState),
+  ],
 );
 
 export type JobProgressJson = { stage?: string; percent?: number; message?: string };
@@ -106,11 +115,13 @@ export const job = pgTable(
     createdAt: ts("created_at").notNull().defaultNow(),
     startedAt: ts("started_at"),
     finishedAt: ts("finished_at"),
+    runAfter: ts("run_after").notNull().defaultNow(),
     updatedAt: ts("updated_at").notNull().defaultNow(),
   },
   (t) => [
     index("job_workspace_subject").on(t.workspaceId, t.subjectType, t.subjectId),
-    index("job_state_lease").on(t.state, t.leaseExpiresAt),
+    index("job_claimable").on(t.type, t.runAfter).where(sql`${t.state} = 'queued'`),
+    index("job_running_lease").on(t.leaseExpiresAt).where(sql`${t.state} = 'running'`),
   ],
 );
 

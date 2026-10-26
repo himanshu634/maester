@@ -1,7 +1,9 @@
+import { DrizzleQueryError } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { BrokerDefinition } from "@maester/contracts";
 import type { Db, MembershipRow, WorkspaceRow } from "@maester/db";
+import type { Embedder } from "@maester/document-index";
 import type { DhanSource, FredSource } from "@maester/market";
 import type { ObjectStore } from "@maester/storage";
 import type { Auth } from "./auth.js";
@@ -18,11 +20,13 @@ import { connectionRoutes } from "./routes/connections.js";
 import { companyRoutes } from "./routes/companies.js";
 import { devRoutes } from "./routes/dev.js";
 import { documentRoutes } from "./routes/documents.js";
+import { filingRoutes } from "./routes/filings.js";
 import { DEFAULT_SSE, jobEventsRoute, type SseOptions } from "./routes/job-events.js";
 import { jobRoutes } from "./routes/jobs.js";
 import { marketMoodRoutes } from "./routes/market-mood.js";
 import { meRoutes } from "./routes/me.js";
 import { companyResearchRoutes, researchRoutes } from "./routes/research.js";
+import { searchRoutes } from "./routes/search.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
 
 export type AppEnv = {
@@ -42,6 +46,8 @@ export interface AppDeps {
   auth: Auth;
   store: ObjectStore;
   dispatcher: Dispatcher;
+  /** Embeds a search query; null when EMBEDDER_URL is not set, and search answers SEARCH_UNAVAILABLE. */
+  embedder: Embedder | null;
   /** Builds the market data clients that check a key before Settings keeps it. Defaults to the HTTP ones. */
   marketSources?: MarketSources;
   /** The broker definitions. Defaults to the built-in ones plus BROKER_DEFINITIONS_DIR. */
@@ -95,10 +101,12 @@ export function createApp(deps: AppDeps, options: AppOptions = {}) {
   ws.route("/companies", companyRoutes(deps));
   ws.route("/companies", companyResearchRoutes(deps));
   ws.route("/research", researchRoutes(deps));
+  ws.route("/search", searchRoutes(deps));
   ws.route("/documents", documentRoutes(deps));
   ws.route("/documents", classificationRoutes(deps));
   ws.route("/brokers", brokerAccountRoutes(deps));
   ws.route("/holdings", holdingsRoutes(deps));
+  ws.route("/filings", filingRoutes(deps));
   v1.route("/workspaces/:ws", ws);
 
   app.route("/v1", v1);
@@ -109,6 +117,12 @@ export function createApp(deps: AppDeps, options: AppOptions = {}) {
     const traceId = c.get("traceId") ?? "unknown";
     if (err instanceof HttpError) {
       return c.json(errorBody(err.code, err.message, traceId, err.fields), err.status as 400);
+    }
+    // A failed query's message and stack carry its bound parameters (a search query, a key): log the name and code only.
+    if (err instanceof DrizzleQueryError) {
+      const code = (err.cause as { code?: string } | undefined)?.code;
+      deps.logger.error({ traceId, err: { name: err.name, code } }, "database query failed");
+      return c.json(errorBody("INTERNAL", "internal error", traceId), 500);
     }
     deps.logger.error({ traceId, err: { name: err.name, message: err.message, stack: err.stack } }, "unhandled error");
     return c.json(errorBody("INTERNAL", "internal error", traceId), 500);

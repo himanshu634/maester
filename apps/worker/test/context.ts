@@ -12,8 +12,7 @@ export function workerTestEnv(overrides: Partial<NodeJS.ProcessEnv> = {}) {
     NODE_ENV: "test",
     DATABASE_URL: process.env.DATABASE_URL_TEST_WORKER ?? "postgres://maester:maester@localhost:5433/maester_test_worker",
     GCS_BUCKET: "test-bucket",
-    DISPATCH_MODE: "local",
-    DISPATCH_SECRET: "local-dispatch-secret",
+    DISPATCH_MODE: "queue",
     WORKER_URL: "http://localhost:8788",
     LEASE_SECONDS: "600",
     ...overrides,
@@ -27,7 +26,7 @@ export async function createWorkerContext(handlers: Record<string, JobHandler> =
   await db.execute(sql`TRUNCATE TABLE "job", "document", "membership", "workspace", "session", "account", "verification", "user", "market_point", "market_fetch", "market_connection", "broker_connection", "broker_login_state", "holding_read", "holding_line" CASCADE`);
   const store = new MemoryObjectStore();
   const dispatcher = new RecordingDispatcher();
-  const deps: WorkerDeps = { db, store, logger: silentLogger, env, handlers, dispatcher, extractor: null, ...overrides };
+  const deps: WorkerDeps = { db, store, logger: silentLogger, env, handlers, dispatcher, extractor: null, indexer: null, embedder: null, ...overrides };
   return { ...deps, dispatcher, close: () => closeDb(db) };
 }
 
@@ -46,4 +45,19 @@ export async function seedJob(db: Db, workspaceId: string, overrides: Partial<ty
     idempotencyKey: `k-${id}`, state: "queued", ...overrides,
   });
   return id;
+}
+
+/** Poll `predicate` until it holds, or throw once `timeoutMs` has passed. */
+export async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs: number, intervalMs = 20): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (await predicate()) return;
+    if (Date.now() > deadline) throw new Error(`waitFor: condition not met within ${timeoutMs} ms`);
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+}
+
+export async function countState(db: Db, state: string, type: string): Promise<number> {
+  const { rows } = await db.execute<{ n: number }>(sql`select count(*)::int as n from job where state = ${state} and type = ${type}`);
+  return rows[0]!.n;
 }

@@ -1,48 +1,21 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
 	addedAt,
 	changeFailure,
-	checkFile,
 	companyAnswer,
 	companyCandidates,
 	identifiers,
-	isLive,
+	kindChoices,
 	kindSaveLabel,
-	anyLive,
-	mergeList,
 	normalizeCompanyName,
-	ladder,
-	MAX_UPLOAD_BYTES,
-	pickSlip,
 	sourceOf,
-	stateLabel,
 	statementsWords,
-	uploadFailure,
 	whatItIs
 } from './intake';
 import { ApiError } from './client';
-import type { Classification, Company, DocumentRecord, Evidence, Job } from './types';
-
-function job(type: string, state: Job['state']): Job {
-	return { id: `job-${type}-${state}`, type, state, lastErrorCode: null };
-}
-
-function doc(over: Partial<DocumentRecord> = {}): DocumentRecord {
-	return {
-		id: 'd-1',
-		companyId: null,
-		originalName: 'synthetic-cements-ar-2025-26.pdf',
-		declaredSize: 1077,
-		state: 'stored',
-		rejectionCode: null,
-		intakeState: 'identifying',
-		duplicateOfDocumentId: null,
-		classification: null,
-		createdAt: '2026-10-05T08:32:00Z',
-		latestJob: null,
-		...over
-	};
-}
+import type { Classification, Company, Evidence } from './types';
 
 /** The answers the local stack gave for a synthetic annual report (rules only, no model). */
 const annualReport: Classification = {
@@ -58,6 +31,7 @@ const annualReport: Classification = {
 	cin: 'L26940MH2001PLC123456',
 	bseCode: null,
 	nseSymbol: null,
+	isin: null,
 	statementsFound: [{ basis: 'standalone', pages: [1], statement: 'balance_sheet' }],
 	setBy: 'maester'
 };
@@ -67,192 +41,38 @@ const annualEvidence: Evidence[] = [
 		source: 'rule',
 		pageIndex: 0,
 		quote: 'Integrated Annual Report 2025-26',
-		textLayerMatch: true
+		textLayerMatch: true,
+		element: null,
+		context: null
 	},
 	{
 		field: 'company',
 		source: 'rule',
 		pageIndex: 0,
 		quote: 'Synthetic Cements Limited',
-		textLayerMatch: true
+		textLayerMatch: true,
+		element: null,
+		context: null
 	},
 	{
 		field: 'identifier',
 		source: 'rule',
 		pageIndex: 0,
 		quote: 'CIN: L26940MH2001PLC123456',
-		textLayerMatch: true
+		textLayerMatch: true,
+		element: null,
+		context: null
 	},
 	{
 		field: 'period',
 		source: 'rule',
 		pageIndex: 1,
 		quote: 'Standalone Balance Sheet as at 31 March 2026',
-		textLayerMatch: true
+		textLayerMatch: true,
+		element: null,
+		context: null
 	}
 ];
-
-const words = (d: DocumentRecord, opts?: { uploading?: boolean }) =>
-	ladder(d, opts).map((step) => step.status);
-
-describe('ladder', () => {
-	it('names the four steps in order', () => {
-		expect(ladder(doc()).map((step) => step.label)).toEqual([
-			'Uploaded',
-			'Worked out what it is',
-			'Reading the statements',
-			'Ready'
-		]);
-	});
-
-	it('follows a file from upload to ready', () => {
-		expect(words(doc({ state: 'pending_upload', intakeState: null }), { uploading: true })).toEqual(
-			['now', 'next', 'next', 'next']
-		);
-		expect(words(doc({ state: 'verifying', intakeState: null }))).toEqual([
-			'now',
-			'next',
-			'next',
-			'next'
-		]);
-		expect(words(doc({ intakeState: null }))).toEqual(['done', 'now', 'next', 'next']);
-		expect(words(doc({ intakeState: 'identifying' }))).toEqual(['done', 'now', 'next', 'next']);
-		expect(words(doc({ intakeState: 'reading' }))).toEqual(['done', 'done', 'now', 'next']);
-		expect(words(doc({ intakeState: 'read' }))).toEqual(['done', 'done', 'done', 'done']);
-	});
-
-	it('stops at the step that needs the investor', () => {
-		for (const intakeState of ['needs_company', 'needs_kind', 'duplicate'] as const) {
-			expect(words(doc({ intakeState }))).toEqual(['done', 'needs-you', 'next', 'next']);
-		}
-	});
-
-	it('says which step stopped', () => {
-		expect(words(doc({ intakeState: 'identify_failed' }))).toEqual([
-			'done',
-			'stopped',
-			'next',
-			'next'
-		]);
-		expect(words(doc({ intakeState: 'read_failed' }))).toEqual(['done', 'done', 'stopped', 'next']);
-		expect(
-			words(doc({ state: 'rejected', rejectionCode: 'NOT_A_PDF', intakeState: null }))
-		).toEqual(['stopped', 'next', 'next', 'next']);
-		expect(words(doc({ state: 'pending_upload', intakeState: null }))).toEqual([
-			'stopped',
-			'next',
-			'next',
-			'next'
-		]);
-	});
-
-	it('marks a kept document as not read', () => {
-		expect(words(doc({ intakeState: 'kept' }))).toEqual(['done', 'done', 'not-read', 'not-read']);
-	});
-
-	it('shows a read started again as reading, though the document still says it failed', () => {
-		const again = doc({
-			intakeState: 'read_failed',
-			latestJob: job('document.extract', 'running')
-		});
-		expect(words(again)).toEqual(['done', 'done', 'now', 'next']);
-		expect(stateLabel(again)).toBe('Reading the statements');
-		expect(isLive(again)).toBe(true);
-	});
-});
-
-describe('stateLabel', () => {
-	it('puts every intake state in plain words', () => {
-		const cases: [DocumentRecord['intakeState'], string][] = [
-			['identifying', 'Working out what it is'],
-			['reading', 'Reading the statements'],
-			['read', 'Ready'],
-			['kept', 'Kept, not read'],
-			['needs_company', 'Needs you: confirm the company'],
-			['needs_kind', 'Needs you: what is it?'],
-			['duplicate', 'Added before'],
-			['identify_failed', 'Couldn’t work out what it is'],
-			['read_failed', 'Couldn’t read the statements']
-		];
-		for (const [intakeState, label] of cases) {
-			expect(stateLabel(doc({ intakeState }))).toBe(label);
-		}
-	});
-
-	it('names the upload steps and what went wrong with the file', () => {
-		const pending = doc({ state: 'pending_upload', intakeState: null });
-		expect(stateLabel(pending, { uploading: true })).toBe('Uploading');
-		expect(stateLabel(pending)).toBe('Upload didn’t finish');
-		expect(stateLabel(doc({ state: 'uploaded', intakeState: null }))).toBe('Checking the file');
-		expect(
-			stateLabel(
-				doc({
-					state: 'verifying',
-					intakeState: null,
-					latestJob: job('document.verify', 'failed')
-				})
-			)
-		).toBe('Couldn’t check the file');
-		expect(
-			stateLabel(doc({ state: 'rejected', rejectionCode: 'TOO_LARGE', intakeState: null }))
-		).toBe('Too large');
-	});
-});
-
-describe('isLive', () => {
-	it('polls only while work is running', () => {
-		expect(isLive(doc({ state: 'uploaded', intakeState: null }))).toBe(true);
-		expect(isLive(doc({ intakeState: 'identifying' }))).toBe(true);
-		expect(isLive(doc({ intakeState: 'reading' }))).toBe(true);
-		for (const intakeState of [
-			'needs_company',
-			'needs_kind',
-			'duplicate',
-			'kept',
-			'read',
-			'identify_failed',
-			'read_failed'
-		] as const) {
-			expect(isLive(doc({ intakeState }))).toBe(false);
-		}
-		expect(isLive(doc({ state: 'pending_upload', intakeState: null }))).toBe(false);
-		expect(isLive(doc({ state: 'rejected', intakeState: null }))).toBe(false);
-	});
-});
-
-describe('pickSlip', () => {
-	const read = doc({ id: 'read', intakeState: 'read', createdAt: '2026-10-05T10:00:00Z' });
-	const needs = doc({
-		id: 'needs',
-		intakeState: 'needs_company',
-		createdAt: '2026-10-05T09:00:00Z'
-	});
-	const failed = doc({
-		id: 'failed',
-		intakeState: 'read_failed',
-		createdAt: '2026-10-05T08:00:00Z'
-	});
-	const abandoned = doc({
-		id: 'abandoned',
-		state: 'pending_upload',
-		intakeState: null,
-		createdAt: '2026-10-05T11:00:00Z'
-	});
-
-	it('opens the newest document that is not settled', () => {
-		expect(pickSlip([failed, read, needs, abandoned])?.id).toBe('needs');
-	});
-
-	it('opens the one the investor asked for', () => {
-		expect(pickSlip([read, needs], 'read')?.id).toBe('read');
-	});
-
-	it('falls back to the newest document when everything is settled', () => {
-		const kept = doc({ id: 'kept', intakeState: 'kept', createdAt: '2026-10-05T09:30:00Z' });
-		expect(pickSlip([kept, read])?.id).toBe('read');
-		expect(pickSlip([])).toBeNull();
-	});
-});
 
 describe('whatItIs', () => {
 	it('names the kind, the type and the span in plain words', () => {
@@ -289,7 +109,15 @@ describe('sourceOf', () => {
 
 	it('says so when the answer is the investor’s', () => {
 		const changed: Evidence[] = [
-			{ field: 'company', source: 'investor', pageIndex: null, quote: null, textLayerMatch: null },
+			{
+				field: 'company',
+				source: 'investor',
+				pageIndex: null,
+				quote: null,
+				textLayerMatch: null,
+				element: null,
+				context: null
+			},
 			...annualEvidence
 		];
 		expect(sourceOf(changed, 'company')).toBe('You said so');
@@ -298,13 +126,33 @@ describe('sourceOf', () => {
 	it('gives the page alone without a quote, and nothing without either', () => {
 		expect(
 			sourceOf(
-				[{ field: 'kind', source: 'model', pageIndex: 4, quote: null, textLayerMatch: true }],
+				[
+					{
+						field: 'kind',
+						source: 'model',
+						pageIndex: 4,
+						quote: null,
+						textLayerMatch: true,
+						element: null,
+						context: null
+					}
+				],
 				'kind'
 			)
 		).toBe('Page 5');
 		expect(
 			sourceOf(
-				[{ field: 'kind', source: 'model', pageIndex: null, quote: 'x', textLayerMatch: true }],
+				[
+					{
+						field: 'kind',
+						source: 'model',
+						pageIndex: null,
+						quote: 'x',
+						textLayerMatch: true,
+						element: null,
+						context: null
+					}
+				],
 				'kind'
 			)
 		).toBe(null);
@@ -320,7 +168,9 @@ describe('sourceOf', () => {
 						source: 'model',
 						pageIndex: 2,
 						quote: 'Year ended',
-						textLayerMatch: null
+						textLayerMatch: null,
+						element: null,
+						context: null
 					}
 				],
 				'period'
@@ -334,12 +184,51 @@ describe('sourceOf', () => {
 						source: 'model',
 						pageIndex: 2,
 						quote: 'Year ended',
-						textLayerMatch: false
+						textLayerMatch: false,
+						element: null,
+						context: null
 					}
 				],
 				'period'
 			)
 		).toBe('Page 3: “Year ended”');
+	});
+});
+
+describe('sourceOf for XBRL evidence', () => {
+	it('names the element and its value in place of a page', () => {
+		const evidence: Evidence[] = [
+			{
+				field: 'identifier',
+				source: 'rule',
+				pageIndex: null,
+				quote: '500999',
+				textLayerMatch: null,
+				element: 'ScripCode',
+				context: 'OneD'
+			}
+		];
+		expect(sourceOf(evidence, 'identifier')).toBe('ScripCode 500999');
+	});
+
+	it('names the element alone without a quote, and keeps the page form for a PDF', () => {
+		expect(
+			sourceOf(
+				[
+					{
+						field: 'period',
+						source: 'rule',
+						pageIndex: null,
+						quote: null,
+						textLayerMatch: null,
+						element: 'DateOfEndOfReportingPeriod',
+						context: null
+					}
+				],
+				'period'
+			)
+		).toBe('DateOfEndOfReportingPeriod');
+		expect(sourceOf(annualEvidence, 'kind')).toBe('Page 1: “Integrated Annual Report 2025-26”');
 	});
 });
 
@@ -359,6 +248,7 @@ describe('companyCandidates', () => {
 		cin: null,
 		bseCode: null,
 		nseSymbol: null,
+		isin: null,
 		...over
 	});
 	const cement = company({
@@ -369,6 +259,29 @@ describe('companyCandidates', () => {
 	const cementCopy = company({ id: 'co-2', displayName: 'The Synthetic Cements Ltd' });
 	const listed = company({ id: 'co-3', displayName: 'Coastal Power', bseCode: '500123' });
 	const other = company({ id: 'co-4', displayName: 'Meridian Bank', nseSymbol: 'MERIDIAN' });
+
+	it('matches the ISIN with the exchange codes, after the CIN and before the name', () => {
+		const isinCo = company({ id: 'co-5', displayName: 'Unrelated Name', isin: 'INE123A01012' });
+		const byIsin = { ...annualReport, cin: null, isin: 'INE123A01012' };
+		expect(companyCandidates(byIsin, [cement, isinCo]).map((c) => c.id)).toEqual(['co-5']);
+		// A CIN match wins over an ISIN match.
+		expect(
+			companyCandidates({ ...byIsin, cin: 'L26940MH2001PLC123456' }, [isinCo, cement]).map(
+				(c) => c.id
+			)
+		).toEqual(['co-1']);
+		// An ISIN joins the BSE and NSE codes in one step: any of them matches.
+		expect(
+			companyCandidates({ ...byIsin, bseCode: '500123' }, [listed, isinCo]).map((c) => c.id)
+		).toEqual(['co-3', 'co-5']);
+		// An ISIN match wins over a name match.
+		expect(
+			companyCandidates({ ...byIsin, companyNameAsPrinted: 'The Synthetic Cements Ltd' }, [
+				cementCopy,
+				isinCo
+			]).map((c) => c.id)
+		).toEqual(['co-5']);
+	});
 
 	it('matches the printed CIN first', () => {
 		expect(companyCandidates(annualReport, [other, cementCopy, cement]).map((c) => c.id)).toEqual([
@@ -422,6 +335,15 @@ describe('statementsWords', () => {
 });
 
 describe('identifiers', () => {
+	it('lists the ISIN after NSE', () => {
+		expect(
+			identifiers(
+				{ cin: null, bseCode: '500999', nseSymbol: 'SYNCEM', isin: 'INE999Z01011' },
+				[]
+			).map((i) => i.label)
+		).toEqual(['BSE', 'NSE', 'ISIN']);
+	});
+
 	it('lists the identifiers printed on the filing with their pages', () => {
 		expect(identifiers(annualReport, annualEvidence)).toEqual([
 			{ label: 'CIN', value: 'L26940MH2001PLC123456', page: 1 }
@@ -447,46 +369,6 @@ describe('companyAnswer', () => {
 				'  Other Name '
 			)
 		).toEqual({ new: { displayName: 'Other Name', country: 'IN', bseCode: '500123' } });
-	});
-});
-
-describe('checkFile', () => {
-	const pdf = (size: number, name = 'ar.pdf', type = 'application/pdf') => ({ name, size, type });
-
-	it('takes a PDF up to 50 MB', () => {
-		expect(MAX_UPLOAD_BYTES).toBe(52_428_800);
-		expect(checkFile(pdf(MAX_UPLOAD_BYTES))).toBeNull();
-		expect(checkFile(pdf(1000, 'AR.PDF', ''))).toBeNull();
-	});
-
-	it('refuses a larger file, saying how large it is', () => {
-		expect(checkFile(pdf(62 * 1024 * 1024))).toBe(
-			'This file is 62 MB. Maester takes PDFs up to 50 MB.'
-		);
-		expect(checkFile(pdf(MAX_UPLOAD_BYTES + 1))).toBe(
-			'This file is 50.1 MB. Maester takes PDFs up to 50 MB.'
-		);
-	});
-
-	it('refuses anything that is not a PDF, naming what it is when it can', () => {
-		expect(
-			checkFile(
-				pdf(
-					1000,
-					'notes.docx',
-					'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-				)
-			)
-		).toBe('This is a Word document. Save it as a PDF and add it again.');
-		expect(checkFile(pdf(1000, 'scan.jpg', 'image/jpeg'))).toBe(
-			'This is a picture. Save it as a PDF and add it again.'
-		);
-		expect(checkFile(pdf(1000, 'report.pdf.zip', 'application/zip'))).toBe(
-			'This isn’t a PDF. Save it as a PDF and add it again.'
-		);
-		expect(checkFile(pdf(1000, 'ar.pdf', 'text/plain'))).toBe(
-			'This isn’t a PDF. Save it as a PDF and add it again.'
-		);
 	});
 });
 
@@ -535,55 +417,22 @@ describe('changeFailure', () => {
 	});
 });
 
-describe('uploadFailure', () => {
-	it('repeats the size limit when the API refuses the size', () => {
-		expect(
-			uploadFailure(new ApiError(413, 'UPLOAD_TOO_LARGE', 'too large'), { size: 60 * 1024 * 1024 })
-		).toEqual({ message: 'This file is 60 MB. Maester takes PDFs up to 50 MB.', signIn: false });
+describe('kindChoices', () => {
+	it('offers every kind for a PDF', () => {
+		expect(kindChoices('pdf')).toEqual(['annual_report', 'financial_results', 'other']);
 	});
 
-	it('asks a signed-out investor to sign in and add it again', () => {
-		expect(uploadFailure(new ApiError(401, 'UNAUTHENTICATED', 'no'), { size: 10 })).toEqual({
-			message: 'The upload didn’t finish. Sign in and add it again.',
-			signIn: true
-		});
-		expect(uploadFailure(new ApiError(0, 'NETWORK', 'down'), { size: 10 }).message).toBe(
-			'The upload didn’t finish. Check your connection and add it again.'
+	it('never offers an annual report for an XBRL instance', () => {
+		expect(kindChoices('xbrl')).toEqual(['financial_results', 'other']);
+	});
+
+	it('is what every "What is it?" form on a filing offers, by the file’s own format', () => {
+		const filing = readFileSync(
+			fileURLToPath(new URL('../components/documents/Filing.svelte', import.meta.url)),
+			'utf8'
 		);
-	});
-});
-
-describe('anyLive', () => {
-	it('is true while a document other than the ones left out is being worked on', () => {
-		const reading = doc({ id: 'reading', intakeState: 'reading' });
-		const kept = doc({ id: 'kept', intakeState: 'kept' });
-		expect(anyLive([kept, reading], [])).toBe(true);
-		expect(anyLive([kept, reading], ['reading'])).toBe(false);
-		expect(anyLive([kept], [null])).toBe(false);
-		expect(anyLive([], [])).toBe(false);
-	});
-});
-
-describe('mergeList', () => {
-	const older = doc({ id: 'slip', intakeState: 'needs_company' });
-	const newer = doc({ id: 'slip', intakeState: 'reading' });
-	const other = doc({ id: 'other', intakeState: 'identifying' });
-	const otherNow = doc({ id: 'other', intakeState: 'needs_kind' });
-	const sending = doc({ id: 'sending', state: 'pending_upload', intakeState: null });
-
-	it('takes the list’s copies, in the list’s order', () => {
-		expect(mergeList([other], [otherNow], [])).toEqual([otherNow]);
-	});
-
-	it('keeps the copies it is told to keep, which are fresher than the list', () => {
-		const merged = mergeList([newer, other], [older, otherNow], ['slip']);
-		expect(merged.map((d) => d.intakeState)).toEqual(['reading', 'needs_kind']);
-	});
-
-	it('keeps documents the list does not have, after it', () => {
-		expect(mergeList([sending, other], [otherNow], []).map((d) => d.id)).toEqual([
-			'other',
-			'sending'
-		]);
+		const forms = filing.match(/<KindForm\b[\s\S]*?\/>/g) ?? [];
+		expect(forms.length).toBeGreaterThan(0);
+		for (const form of forms) expect(form).toContain('kinds={kindChoices(file.format)}');
 	});
 });

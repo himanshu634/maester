@@ -13,8 +13,10 @@
     "waitlist:approve": "tsx --env-file-if-exists=../../.env src/waitlist-cli.ts"
   },
   "dependencies": {
+    "@maester/financial-engine": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "pg": "^8.16.0"
+    "pg": "^8.16.0",
+    "pg-connection-string": "^2.14.0"
   },
   "devDependencies": {
     "@maester/config": "workspace:*",

@@ -8,11 +8,11 @@ import tomllib
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
-IGNORED_PARTS = {"node_modules", ".svelte-kit", "build", "dist"}
+IGNORED_PARTS = {"node_modules", ".svelte-kit", "build", "dist", ".venv"}
 
 
 def _tracked(path: Path) -> bool:
-    """Skip generated and vendored trees (Node dependencies, build output)."""
+    """Skip generated and vendored trees (Node and Python dependencies, build output)."""
     return not IGNORED_PARTS.intersection(path.relative_to(ROOT).parts)
 
 

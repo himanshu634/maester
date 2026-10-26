@@ -34,7 +34,7 @@ from pdf_financial_qa.workflow.drafts import (
     StatementDraft,
     check_statement,
 )
-from pdf_financial_qa.workflow.errors import ExtractionError, ModelOutputError, is_transient
+from pdf_financial_qa.workflow.errors import ExtractionError, ModelOutputError, PermanentModelError, is_transient
 from pdf_financial_qa.workflow.model import (
     ExtractedLine,
     ExtractedSection,
@@ -296,7 +296,7 @@ def _build_graph(model: _BudgetedModel, settings: WorkflowSettings):
     branch = _branch_graph(model, settings, retry)
 
     def prepare(state: RunState) -> dict:
-        return {"doc": PdfDocument.load(state["pdf"])}
+        return {"doc": state.get("doc") or PdfDocument.load(state["pdf"])}
 
     def locate(state: RunState) -> dict:
         doc = state["doc"]
@@ -425,7 +425,7 @@ def _fact(doc: PdfDocument, draft: StatementDraft, section: DraftSection, line: 
 
 
 def run_extraction(
-    pdf: bytes,
+    pdf: bytes | PdfDocument,
     *,
     model: ExtractionModel,
     company_name: str | None = None,
@@ -433,14 +433,22 @@ def run_extraction(
     settings: WorkflowSettings = WorkflowSettings(),
     cancel: threading.Event | None = None,
 ) -> ExtractionResult:
-    """Run the workflow over one PDF. Raises ``ExtractionError`` with a stable code on failure."""
+    """Run the workflow over one PDF. Raises ``ExtractionError`` with a stable code on failure.
+
+    ``pdf`` is the file's bytes, or a ``PdfDocument`` the caller has already loaded so the
+    text layer is not read twice; the result is the same either way.
+    """
     progress = on_progress or (lambda stage, percent: None)
+    start: RunState = {"company_name": company_name, "warnings": [], "results": []}
+    if isinstance(pdf, PdfDocument):
+        start.update(pdf=pdf.data, doc=pdf)
+    else:
+        start["pdf"] = pdf
     graph = _build_graph(_BudgetedModel(model, _Budget(settings, cancel)), settings)
     result: ExtractionResult | None = None
     branches, finished = 0, 0
     try:
-        for chunk in graph.stream({"pdf": pdf, "company_name": company_name, "warnings": [], "results": []},
-                                  stream_mode="updates"):
+        for chunk in graph.stream(start, stream_mode="updates"):
             for node, update in chunk.items():
                 if node == "prepare":
                     progress("prepare", 5)
@@ -463,21 +471,15 @@ def run_extraction(
 
 
 def _classify(exc: Exception) -> ExtractionError:
-    try:
-        from google.auth.exceptions import DefaultCredentialsError
+    import anthropic
 
-        if isinstance(exc, DefaultCredentialsError):
-            return ExtractionError("EXTRACTOR_NOT_CONFIGURED", "no Google Cloud credentials are available", retryable=False)
-    except ImportError:  # pragma: no cover
-        pass
+    if isinstance(exc, PermanentModelError):  # a call outside a statement branch, such as locate
+        return ExtractionError(exc.code, exc.message, retryable=False)
+    if isinstance(exc, (anthropic.AuthenticationError, anthropic.PermissionDeniedError, anthropic.CredentialsError)):
+        return ExtractionError("EXTRACTOR_NOT_CONFIGURED", "no usable Anthropic API key is available", retryable=False)
     if is_transient(exc):
         return ExtractionError("MODEL_UNAVAILABLE", f"the model call failed: {type(exc).__name__}", retryable=True)
-    try:
-        from google.genai import errors as genai_errors
-
-        if isinstance(exc, genai_errors.ClientError):
-            # Wrong project, missing permission or an unknown model: retrying cannot help.
-            return ExtractionError("MODEL_REQUEST_REJECTED", f"the model rejected the request ({exc.code})", retryable=False)
-    except ImportError:  # pragma: no cover
-        pass
+    if isinstance(exc, anthropic.APIStatusError):
+        # An unknown model, a file too large or a malformed request: retrying cannot help.
+        return ExtractionError("MODEL_REQUEST_REJECTED", f"the model rejected the request ({exc.status_code})", retryable=False)
     return ExtractionError("EXTRACTION_FAILED", f"unexpected {type(exc).__name__}", retryable=True)

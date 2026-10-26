@@ -1,0 +1,226 @@
+import {
+  ChunkTextResponse, IndexerEvent, IndexerVersions, type ChunkRequest, type ChunkTextRequest, type RangeRead,
+} from "@maester/contracts";
+import { JobFailure } from "./jobs/types.js";
+
+type Started = Extract<IndexerEvent, { type: "started" }>;
+type PageEvent = Extract<IndexerEvent, { type: "page" }>;
+type ChunkEvent = Extract<IndexerEvent, { type: "chunk" }>;
+
+export interface IndexResult {
+  started: Started;
+  pages: PageEvent[];
+  chunks: ChunkEvent[];
+  /** Null from `chunk`, which reads nothing. */
+  read: RangeRead | null;
+  ocrPages: number;
+}
+
+export interface IndexInput {
+  pdf: Uint8Array;
+  documentId: string;
+  firstPage: number;
+  lastPage: number;
+  sectionPathBefore: string[];
+  ocrPagesLeft: number;
+  signal: AbortSignal;
+}
+
+export interface IndexerClient {
+  /** The versions the indexer runs with. Rejects with a JobFailure. */
+  versions(): Promise<IndexerVersions>;
+  /** Read and chunk a page range. `onEvent` sees every line, including heartbeats. Rejects with a JobFailure. */
+  index(input: IndexInput, onEvent: (event: IndexerEvent) => Promise<void>): Promise<IndexResult>;
+  /** Chunk a cached range read again. */
+  chunk(request: ChunkRequest, signal: AbortSignal, onEvent: (event: IndexerEvent) => Promise<void>): Promise<IndexResult>;
+  /**
+   * Chunk XBRL text blocks with the embedding model's tokenizer. A model the indexer's tokenizer is not for rejects
+   * with `INDEXER_MODEL_MISMATCH`, not retried. Rejects with a JobFailure.
+   */
+  chunkText(request: ChunkTextRequest, signal: AbortSignal): Promise<ChunkTextResponse>;
+}
+
+const VERSIONS_TIMEOUT_MS = 30_000;
+
+/** Calls apps/indexer over HTTP and reads its NDJSON stream. */
+export class HttpIndexerClient implements IndexerClient {
+  constructor(
+    private readonly baseUrl: string,
+    private readonly secret: string,
+    private readonly embeddingModel: string,
+  ) {}
+
+  private url(path: string): string {
+    return `${this.baseUrl.replace(/\/$/, "")}${path}`;
+  }
+
+  /** The response, whatever its status; an unreachable indexer, a timeout and a refusal (401, 403) are failures. */
+  private async send(path: string, init: RequestInit, signal: AbortSignal): Promise<Response> {
+    let res: Response;
+    try {
+      res = await fetch(this.url(path), { ...init, headers: { ...(init.headers as Record<string, string>), "x-indexer-secret": this.secret }, signal });
+    } catch (err) {
+      if (signal.aborted) throw new JobFailure("INDEX_TIMEOUT", "the indexer call timed out or was cancelled", true);
+      throw new JobFailure("INDEXER_UNAVAILABLE", `indexer request failed: ${(err as Error).message}`, true);
+    }
+    if (res.status === 401 || res.status === 403) {
+      await res.body?.cancel().catch(() => undefined);
+      throw new JobFailure("INDEXER_UNAUTHORIZED", `indexer refused the request (${res.status})`, false);
+    }
+    return res;
+  }
+
+  private async request(path: string, init: RequestInit, signal: AbortSignal): Promise<Response> {
+    const res = await this.send(path, init, signal);
+    if (!res.ok || !res.body) {
+      await res.body?.cancel().catch(() => undefined);
+      throw new JobFailure(`INDEXER_HTTP_${res.status}`, `indexer answered ${res.status}`, res.status >= 500);
+    }
+    return res;
+  }
+
+  async versions(): Promise<IndexerVersions> {
+    const res = await this.request("/v1/versions", { method: "GET" }, AbortSignal.timeout(VERSIONS_TIMEOUT_MS));
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch (err) {
+      throw new JobFailure("INDEXER_UNAVAILABLE", `indexer versions could not be read: ${(err as Error).message.slice(0, 200)}`, true);
+    }
+    try {
+      return IndexerVersions.parse(body);
+    } catch (err) {
+      throw new JobFailure("INVALID_INDEXER_RESULT", `unreadable indexer versions: ${(err as Error).message.slice(0, 500)}`, false);
+    }
+  }
+
+  async index(input: IndexInput, onEvent: (event: IndexerEvent) => Promise<void>): Promise<IndexResult> {
+    const res = await this.request(
+      "/v1/index",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/pdf",
+          "x-document-id": input.documentId,
+          "x-page-range": `${input.firstPage}-${input.lastPage}`,
+          "x-section-path": Buffer.from(JSON.stringify(input.sectionPathBefore)).toString("base64url"),
+          "x-ocr-pages-left": String(input.ocrPagesLeft),
+          "x-embedding-model": this.embeddingModel,
+        },
+        body: input.pdf,
+      },
+      input.signal,
+    );
+    return this.readStream(res, input.signal, onEvent);
+  }
+
+  async chunk(request: ChunkRequest, signal: AbortSignal, onEvent: (event: IndexerEvent) => Promise<void>): Promise<IndexResult> {
+    const res = await this.request(
+      "/v1/chunk",
+      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request) },
+      signal,
+    );
+    return this.readStream(res, signal, onEvent);
+  }
+
+  async chunkText(request: ChunkTextRequest, signal: AbortSignal): Promise<ChunkTextResponse> {
+    const res = await this.send(
+      "/v1/chunk-text",
+      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request) },
+      signal,
+    );
+    if (res.status === 409) {
+      // The indexer's answer to a model it has no tokenizer for. Its message is not kept.
+      let code: unknown;
+      try {
+        code = ((await res.json()) as { code?: unknown }).code;
+      } catch {
+        code = undefined;
+      }
+      if (code === "INDEXER_MODEL_MISMATCH") {
+        throw new JobFailure("INDEXER_MODEL_MISMATCH", "the indexer's tokenizer is not for the embedding model asked for", false);
+      }
+      throw new JobFailure("INDEXER_HTTP_409", "indexer answered 409", false);
+    }
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => undefined);
+      throw new JobFailure(`INDEXER_HTTP_${res.status}`, `indexer answered ${res.status}`, res.status >= 500);
+    }
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      // Not the parse error's message: it quotes the start of the body, which is document text.
+      if (signal.aborted) throw new JobFailure("INDEX_TIMEOUT", "the indexer call timed out or was cancelled", true);
+      throw new JobFailure("INDEXER_UNAVAILABLE", "the indexer's text chunks could not be read", true);
+    }
+    const parsed = ChunkTextResponse.safeParse(body);
+    if (!parsed.success) throw new JobFailure("INVALID_INDEXER_RESULT", `unreadable indexer text chunks: ${issuePaths(parsed.error)}`, false);
+    return parsed.data;
+  }
+
+  private async readStream(res: Response, signal: AbortSignal, onEvent: (event: IndexerEvent) => Promise<void>): Promise<IndexResult> {
+    let started: Started | null = null;
+    const pages: PageEvent[] = [];
+    const chunks: ChunkEvent[] = [];
+    const handle = async (line: string, unterminated = false): Promise<IndexResult | null> => {
+      if (!line.trim()) return null;
+      let parsed: IndexerEvent;
+      try {
+        parsed = IndexerEvent.parse(JSON.parse(line));
+      } catch (err) {
+        // A last segment with no newline that is not JSON is a cut stream, not a bad line: it is retried.
+        if (unterminated && err instanceof SyntaxError) throw new JobFailure("INDEX_STREAM_INTERRUPTED", "indexer stream ended in the middle of a line", true);
+        // The message names the failing field, never the line: a line can carry document text.
+        throw new JobFailure("INVALID_INDEXER_RESULT", `unreadable indexer event: ${err instanceof SyntaxError ? "not JSON" : issuePaths(err)}`, false);
+      }
+      await onEvent(parsed);
+      switch (parsed.type) {
+        case "started":
+          started = parsed;
+          return null;
+        case "page":
+          pages.push(parsed);
+          return null;
+        case "chunk":
+          chunks.push(parsed);
+          return null;
+        case "error":
+          throw new JobFailure(parsed.code, parsed.message, parsed.retryable);
+        case "result":
+          if (!started) throw new JobFailure("INVALID_INDEXER_RESULT", "the indexer answered with a result before it started", false);
+          return { started, pages, chunks, read: parsed.read, ocrPages: parsed.ocrPages };
+        default:
+          return null;
+      }
+    };
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      for await (const part of res.body as unknown as AsyncIterable<Uint8Array>) {
+        buffer += decoder.decode(part, { stream: true });
+        let newline: number;
+        while ((newline = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, newline);
+          buffer = buffer.slice(newline + 1);
+          const result = await handle(line);
+          if (result) return result;
+        }
+      }
+      const result = await handle(buffer + decoder.decode(), true);
+      if (result) return result;
+    } catch (err) {
+      if (err instanceof JobFailure) throw err;
+      if (signal.aborted) throw new JobFailure("INDEX_TIMEOUT", "the indexer call timed out or was cancelled", true);
+      throw new JobFailure("INDEX_STREAM_INTERRUPTED", `indexer stream failed: ${(err as Error).message}`, true);
+    }
+    if (signal.aborted) throw new JobFailure("INDEX_TIMEOUT", "the indexer call timed out or was cancelled", true);
+    throw new JobFailure("INDEX_STREAM_INTERRUPTED", "indexer stream ended without a result", true);
+  }
+}
+
+function issuePaths(err: unknown): string {
+  const issues = (err as { issues?: { path: PropertyKey[]; code: string }[] }).issues;
+  return issues ? issues.slice(0, 5).map((i) => `${i.path.map(String).join(".") || "(root)"}: ${i.code}`).join("; ") : "invalid shape";
+}

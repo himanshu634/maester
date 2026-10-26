@@ -1,4 +1,4 @@
-import { and, eq, lt, or, sql } from "drizzle-orm";
+import { and, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { schema, type Db, type JobProgressJson, type JobRow } from "@maester/db";
 
 export async function acquireLease(db: Db, jobId: string, leaseSeconds: number): Promise<JobRow | null> {
@@ -23,12 +23,66 @@ export async function acquireLease(db: Db, jobId: string, leaseSeconds: number):
   return row ?? null;
 }
 
+/** Seconds to wait before a failed attempt runs again: 30 s doubling to 900 s, plus up to 20% jitter. */
+export function backoffSeconds(attempt: number, random: () => number = Math.random): number {
+  return Math.min(900, 30 * 2 ** (attempt - 1)) * (1 + 0.2 * random());
+}
+
+/**
+ * Take the oldest ready job of one type, in one statement. SKIP LOCKED lets concurrent
+ * claimers pass over a row another claimer holds instead of waiting on it.
+ */
+export async function claimNext(db: Db, type: string, leaseSeconds: number): Promise<JobRow | null> {
+  const [row] = await db
+    .update(schema.job)
+    .set({
+      state: "running",
+      leaseToken: crypto.randomUUID(),
+      leaseExpiresAt: sql`now() + make_interval(secs => ${leaseSeconds}::int)`,
+      attempt: sql`${schema.job.attempt} + 1`,
+      startedAt: sql`coalesce(${schema.job.startedAt}, now())`,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      sql`${schema.job.id} = (
+        select ${schema.job.id} from ${schema.job}
+        where ${schema.job.type} = ${type} and ${schema.job.state} = 'queued' and ${schema.job.runAfter} <= now()
+        order by ${schema.job.runAfter}, ${schema.job.createdAt}
+        for update skip locked
+        limit 1
+      )`,
+    )
+    .returning();
+  return row ?? null;
+}
+
 /** Push the lease expiry forward while a long handler is still working. */
 export async function renewLease(db: Db, jobId: string, leaseToken: string, leaseSeconds: number): Promise<boolean> {
   const rows = await db
     .update(schema.job)
     .set({ leaseExpiresAt: sql`now() + make_interval(secs => ${leaseSeconds}::int)`, updatedAt: sql`now()` })
     .where(and(eq(schema.job.id, jobId), eq(schema.job.leaseToken, leaseToken)))
+    .returning({ id: schema.job.id });
+  return rows.length === 1;
+}
+
+/**
+ * Give a held job back at once, as if this attempt never started: `queued`, ready now, with its attempt
+ * taken back. A worker that stops calls this for the jobs it cannot finish, so a restart costs no attempt
+ * and no wait for the lease to end. Fenced by the token: a job finished or taken by another worker is left alone.
+ */
+export async function releaseLease(db: Db, jobId: string, leaseToken: string): Promise<boolean> {
+  const rows = await db
+    .update(schema.job)
+    .set({
+      state: "queued",
+      attempt: sql`${schema.job.attempt} - 1`,
+      runAfter: sql`now()`,
+      leaseToken: null,
+      leaseExpiresAt: null,
+      updatedAt: sql`now()`,
+    })
+    .where(and(eq(schema.job.id, jobId), eq(schema.job.leaseToken, leaseToken), eq(schema.job.state, "running")))
     .returning({ id: schema.job.id });
   return rows.length === 1;
 }
@@ -65,7 +119,37 @@ export async function failAttempt(
       leaseToken: null,
       leaseExpiresAt: null,
       finishedAt: final ? sql`now()` : null,
+      ...(final ? {} : { runAfter: sql`now() + make_interval(secs => ${backoffSeconds(job.attempt)}::double precision)` }),
       updatedAt: sql`now()`,
     })
     .where(and(eq(schema.job.id, job.id), eq(schema.job.leaseToken, leaseToken)));
+}
+
+/**
+ * Give back every job whose lease ran out (a worker died or stalled). One statement per
+ * outcome, each guarded by `lease_expires_at < now()`, so a job renewed meanwhile is untouched.
+ * The backoff is worked out in SQL from each row's own attempt, with the same formula and
+ * jitter as `backoffSeconds`: least(900, 30 * 2^(attempt-1)) * (1 + 0.2 * random()).
+ * Only jobs of the given types are swept: a runner fails a job without its final-failure hook
+ * unless it has that type's handler, so it must leave every other type to the worker that has one.
+ */
+export async function sweepExpired(db: Db, types: string[]): Promise<{ requeued: JobRow[]; failed: JobRow[] }> {
+  if (types.length === 0) return { requeued: [], failed: [] };
+  const expired = and(eq(schema.job.state, "running"), inArray(schema.job.type, types), lt(schema.job.leaseExpiresAt, sql`now()`));
+  const cleared = { leaseToken: null, leaseExpiresAt: null, lastErrorCode: "LEASE_EXPIRED", updatedAt: sql`now()` };
+  const requeued = await db
+    .update(schema.job)
+    .set({
+      ...cleared,
+      state: "queued",
+      runAfter: sql`now() + make_interval(secs => least(900, 30 * power(2, greatest(${schema.job.attempt} - 1, 0))) * (1 + 0.2 * random()))`,
+    })
+    .where(and(expired, sql`${schema.job.attempt} < ${schema.job.maxAttempts}`))
+    .returning();
+  const failed = await db
+    .update(schema.job)
+    .set({ ...cleared, state: "failed", finishedAt: sql`now()` })
+    .where(and(expired, sql`${schema.job.attempt} >= ${schema.job.maxAttempts}`))
+    .returning();
+  return { requeued, failed };
 }

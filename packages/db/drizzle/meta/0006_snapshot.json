@@ -1,5 +1,5 @@
 {
-  "id": "86f15387-d3ff-4652-a635-457c951ffa4f",
+  "id": "dfab8dc9-f809-4527-b57c-a64aeaa0b306",
   "prevId": "8fd71cb4-fa56-47ea-867d-fa8a88350d43",
   "version": "7",
   "dialect": "postgresql",
@@ -843,6 +843,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "run_after": {
+          "name": "run_after",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp (3) with time zone",
@@ -879,15 +886,31 @@
           "method": "btree",
           "with": {}
         },
-        "job_state_lease": {
-          "name": "job_state_lease",
+        "job_claimable": {
+          "name": "job_claimable",
           "columns": [
             {
-              "expression": "state",
+              "expression": "type",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             },
+            {
+              "expression": "run_after",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"job\".\"state\" = 'queued'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "job_running_lease": {
+          "name": "job_running_lease",
+          "columns": [
             {
               "expression": "lease_expires_at",
               "isExpression": false,
@@ -896,6 +919,7 @@
             }
           ],
           "isUnique": false,
+          "where": "\"job\".\"state\" = 'running'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -2468,386 +2492,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.broker_connection": {
-      "name": "broker_connection",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "broker": {
-          "name": "broker",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "credentials_ciphertext": {
-          "name": "credentials_ciphertext",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "key_last4": {
-          "name": "key_last4",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "token_ciphertext": {
-          "name": "token_ciphertext",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "signed_in_at": {
-          "name": "signed_in_at",
-          "type": "timestamp (3) with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "token_expires_at": {
-          "name": "token_expires_at",
-          "type": "timestamp (3) with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_error_code": {
-          "name": "last_error_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "saved_at": {
-          "name": "saved_at",
-          "type": "timestamp (3) with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "saved_by_user_id": {
-          "name": "saved_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "broker_connection_workspace_broker": {
-          "name": "broker_connection_workspace_broker",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "broker",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "broker_connection_workspace_id_workspace_id_fk": {
-          "name": "broker_connection_workspace_id_workspace_id_fk",
-          "tableFrom": "broker_connection",
-          "tableTo": "workspace",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "broker_connection_saved_by_user_id_user_id_fk": {
-          "name": "broker_connection_saved_by_user_id_user_id_fk",
-          "tableFrom": "broker_connection",
-          "tableTo": "user",
-          "columnsFrom": [
-            "saved_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.broker_login_state": {
-      "name": "broker_login_state",
-      "schema": "",
-      "columns": {
-        "nonce": {
-          "name": "nonce",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "connection_id": {
-          "name": "connection_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp (3) with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "broker_login_state_connection_id_broker_connection_id_fk": {
-          "name": "broker_login_state_connection_id_broker_connection_id_fk",
-          "tableFrom": "broker_login_state",
-          "tableTo": "broker_connection",
-          "columnsFrom": [
-            "connection_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "broker_login_state_user_id_user_id_fk": {
-          "name": "broker_login_state_user_id_user_id_fk",
-          "tableFrom": "broker_login_state",
-          "tableTo": "user",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.holding_line": {
-      "name": "holding_line",
-      "schema": "",
-      "columns": {
-        "read_id": {
-          "name": "read_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "isin": {
-          "name": "isin",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "exchange": {
-          "name": "exchange",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "symbol": {
-          "name": "symbol",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "quantity": {
-          "name": "quantity",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "t1_quantity": {
-          "name": "t1_quantity",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "average_price": {
-          "name": "average_price",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "last_price": {
-          "name": "last_price",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "holding_line_read_id_holding_read_id_fk": {
-          "name": "holding_line_read_id_holding_read_id_fk",
-          "tableFrom": "holding_line",
-          "tableTo": "holding_read",
-          "columnsFrom": [
-            "read_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "holding_line_pk": {
-          "name": "holding_line_pk",
-          "columns": [
-            "read_id",
-            "isin",
-            "exchange"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.holding_read": {
-      "name": "holding_read",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "connection_id": {
-          "name": "connection_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp (3) with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "finished_at": {
-          "name": "finished_at",
-          "type": "timestamp (3) with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "error_code": {
-          "name": "error_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "line_count": {
-          "name": "line_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "holding_read_connection_started": {
-          "name": "holding_read_connection_started",
-          "columns": [
-            {
-              "expression": "connection_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "started_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "holding_read_connection_id_broker_connection_id_fk": {
-          "name": "holding_read_connection_id_broker_connection_id_fk",
-          "tableFrom": "holding_read",
-          "tableTo": "broker_connection",
-          "columnsFrom": [
-            "connection_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "holding_read_state": {
-          "name": "holding_read_state",
-          "value": "\"holding_read\".\"state\" in ('running', 'ok', 'failed')"
-        }
-      },
       "isRLSEnabled": false
     }
   },

@@ -82,7 +82,7 @@ Additive. Migration `0006`. Every table carries `workspace_id`.
 
 ### 5.1 Taxonomy
 
-`packages/contracts/concepts.json`, `TAXONOMY_VERSION` inside it. TypeScript imports it; Python loads a generated copy (`pdf_financial_qa/concepts/taxonomy.py`) and a test fails when the copy drifts from the JSON. Each concept:
+`packages/contracts/concepts.json`, `taxonomy_version` inside it. TypeScript imports it; Python loads a generated copy (`pdf_financial_qa/concepts/taxonomy.py`) and a test fails when the copy drifts from the JSON. Each concept:
 
 | Field | Meaning |
 | --- | --- |
@@ -100,7 +100,7 @@ Version 1 covers the three statements, about 60 concepts, Ind AS Schedule III na
 
 - Income statement (duration): `revenue_from_operations`, `other_income`, `total_income` (= revenue + other income), `cost_of_materials_consumed`, `purchases_of_stock_in_trade`, `changes_in_inventories`, `employee_benefits_expense`, `finance_costs`, `depreciation_and_amortisation`, `other_expenses`, `total_expenses`, `profit_before_exceptional_items_and_tax`, `exceptional_items`, `profit_before_tax`, `current_tax`, `deferred_tax`, `total_tax_expense`, `profit_after_tax` (= PBT − total tax), `other_comprehensive_income`, `total_comprehensive_income`, `profit_attributable_to_owners`, `profit_attributable_to_non_controlling_interests`, `eps_basic`, `eps_diluted`.
 - Balance sheet (instant): `property_plant_and_equipment`, `capital_work_in_progress`, `right_of_use_assets`, `goodwill`, `other_intangible_assets`, `non_current_investments`, `deferred_tax_assets`, `total_non_current_assets`, `inventories`, `current_investments`, `trade_receivables`, `cash_and_cash_equivalents`, `other_bank_balances`, `total_current_assets`, `total_assets` (= non-current + current), `equity_share_capital`, `other_equity`, `equity_attributable_to_owners`, `non_controlling_interests`, `total_equity`, `non_current_borrowings`, `non_current_lease_liabilities`, `deferred_tax_liabilities`, `total_non_current_liabilities`, `current_borrowings`, `current_lease_liabilities`, `trade_payables`, `total_current_liabilities`, `total_liabilities`, `total_equity_and_liabilities` (= equity + liabilities).
-- Cash flow (duration): `cash_flow_opening_profit_before_tax` or `cash_flow_opening_profit_after_tax` (Indian cash flows open with one or the other; the mapping rule reads which from the label, and each cross-checks its own P&L line), `net_cash_from_operating_activities`, `net_cash_from_investing_activities`, `net_cash_from_financing_activities`, `effect_of_exchange_rate_changes_on_cash`, `net_change_in_cash` (= operating + investing + financing + exchange effect), `cash_at_beginning_of_period`, `cash_at_end_of_period` (= beginning + change), `income_taxes_paid`, `interest_paid`, `purchase_of_property_plant_and_equipment`, `dividends_paid`.
+- Cash flow (duration; the two cash balances are instants): `cash_flow_opening_profit_before_tax` or `cash_flow_opening_profit_after_tax` (Indian cash flows open with one or the other; the mapping rule reads which from the label, and each cross-checks its own P&L line), `net_cash_from_operating_activities`, `net_cash_from_investing_activities`, `net_cash_from_financing_activities`, `effect_of_exchange_rate_changes_on_cash`, `net_change_in_cash` (= operating + investing + financing + exchange effect), `cash_at_beginning_of_period`, `cash_at_end_of_period` (= beginning + change), `income_taxes_paid`, `interest_paid`, `purchase_of_property_plant_and_equipment`, `dividends_paid`.
 
 Phase 5 adds the note families: `segment_revenue`, `segment_result`, `segment_assets`, `segment_liabilities` (dimension `segment`); `borrowings_amount` (dimensions `tenure`, `security`); `number_of_equity_shares_outstanding` (instant, count), `weighted_average_shares_basic`, `weighted_average_shares_diluted` (duration, count), `face_value_per_share`; `dividend_per_share_declared`, `dividend_declared_total`; `related_party_transaction_amount` (dimensions `party`, `relationship`, `nature`), `related_party_balance` (instant). The exact list is settled in that phase's plan against the gold set.
 
@@ -378,6 +378,8 @@ Under `/v1/workspaces/:ws`:
 
 ### 8.2 MCP server
 
+The [MCP server design](2026-10-21-mcp-server-design.md) refines this section; its §11 names what changes in the tool list below.
+
 `apps/mcp`: TypeScript, `@modelcontextprotocol/sdk`, stdio transport. Reads Postgres through `@maester/db` with `DATABASE_URL`; the workspace is `MAESTER_WORKSPACE_ID` (or the first workspace of `MAESTER_USER_EMAIL`). It imports the same functions the API routes call; it has no HTTP server and no auth of its own because it runs on the investor's own machine for their own workspace. **Read-only.** Tools:
 
 | Tool | Returns |
@@ -459,7 +461,9 @@ Each phase is its own implementation plan from this document, lands on `staging`
 
 ## 14. Out of scope
 
-OCR for scanned pages (reader B is absent and the fact says `unverified`); the Analyst page and any chat UI; MCP over HTTP or any remote access; automated acceptance of a model's mapping as reviewed; sector-specific taxonomies (banks and insurers print different statements and are unmapped beyond the common lines until a later taxonomy version); XBRL ingestion; a materialised series; editing a fact's value other than through a review; shared reference companies.
+OCR for scanned pages (reader B is absent and the fact says `unverified`); the Analyst page and any chat UI; MCP over HTTP or any remote access; automated acceptance of a model's mapping as reviewed; sector-specific taxonomies (banks and insurers print different statements and are unmapped beyond the common lines until a later taxonomy version); a materialised series; editing a fact's value other than through a review; shared reference companies.
+
+XBRL ingestion, and OCR for search only, are in scope since 20 October 2026: see the [ingestion pipeline](2026-10-19-ingestion-pipeline-design.md) and [ADR 0007](../../decisions/0007-ingestion-pipeline.md).
 
 ## 15. Consequences
 

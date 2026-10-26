@@ -5,7 +5,7 @@ import { runMarketRefreshOnce } from "../src/market/run-once.js";
 import { createWorkerContext, workerTestEnv } from "./context.js";
 
 const KEY = Buffer.alloc(32, 7).toString("base64");
-const BASE = { DATABASE_URL: workerTestEnv().DATABASE_URL, WORKER_URL: "http://localhost:8788", NODE_ENV: "test", STORAGE_DRIVER: "disk", DISPATCH_SECRET: "x" } as NodeJS.ProcessEnv;
+const BASE = { DATABASE_URL: workerTestEnv().DATABASE_URL, WORKER_URL: "http://localhost:8788", NODE_ENV: "test", STORAGE_DRIVER: "disk" } as NodeJS.ProcessEnv;
 
 function capture() {
   const lines: { log: string[]; error: string[] } = { log: [], error: [] };

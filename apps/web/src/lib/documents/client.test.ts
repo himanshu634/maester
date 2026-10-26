@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ApiError, documentsApi, readMe, type Fetcher } from './client';
+import { ApiError, documentsApi, isSignedOut, readMe, type Fetcher } from './client';
 
 const WS = 'c729f393-599e-4f14-9c6f-5aefc028967f';
 const DOC = 'b6870653-73b4-44a4-a5b4-e5e410f4944e';
@@ -40,18 +40,56 @@ describe('readMe', () => {
 });
 
 describe('documentsApi', () => {
-	it('lists documents and companies under the workspace', async () => {
+	it('reads the filings and the companies under the workspace', async () => {
 		const { fetcher, calls } = scripted(
-			json(200, { items: [], nextCursor: null }),
+			json(200, { companies: [], held: [], unsorted: [] }),
 			json(200, { items: [], nextCursor: null })
 		);
 		const api = documentsApi(fetcher, WS);
-		await api.listDocuments();
+		await api.listFilings();
 		await api.listCompanies();
 		expect(calls.map((c) => c.url)).toEqual([
-			`/v1/workspaces/${WS}/documents?limit=25`,
+			`/v1/workspaces/${WS}/filings`,
 			`/v1/workspaces/${WS}/companies?limit=100`
 		]);
+	});
+
+	it('listFilings reads the workspace’s filings', async () => {
+		const { fetcher, calls } = scripted(json(200, { companies: [], held: [], unsorted: [] }));
+		await documentsApi(fetcher, WS).listFilings();
+		expect(calls[0].url).toBe(`/v1/workspaces/${WS}/filings`);
+	});
+
+	it('confirmCompany posts the identity and the company', async () => {
+		const { fetcher, calls } = scripted(json(200, { companyId: 'co-1', confirmed: 3 }));
+		const answer = await documentsApi(fetcher, WS).confirmCompany({
+			identity: { bseCode: '532999' },
+			company: { id: 'co-1' }
+		});
+		expect(answer).toEqual({ companyId: 'co-1', confirmed: 3 });
+		expect(calls[0].url).toBe(`/v1/workspaces/${WS}/companies/confirm`);
+		expect(calls[0].init?.method).toBe('POST');
+		expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+			identity: { bseCode: '532999' },
+			company: { id: 'co-1' }
+		});
+	});
+
+	it('index posts to the document’s index route', async () => {
+		const { fetcher, calls } = scripted(
+			json(202, { job: { id: 'j', type: 'document.index', state: 'queued', lastErrorCode: null } })
+		);
+		await documentsApi(fetcher, WS).index(DOC);
+		expect([calls[0].url, calls[0].init?.method]).toEqual([
+			`/v1/workspaces/${WS}/documents/${DOC}/index`,
+			'POST'
+		]);
+	});
+
+	it('fileHref links the stored file', () => {
+		expect(documentsApi(vi.fn() as unknown as Fetcher, WS).fileHref('d/1')).toBe(
+			`/v1/workspaces/${WS}/documents/d%2F1/file`
+		);
 	});
 
 	it('reads one company', async () => {
@@ -133,8 +171,17 @@ describe('documentsApi', () => {
 			new TypeError('Failed to fetch')
 		);
 		const api = documentsApi(fetcher, WS);
-		await expect(api.listDocuments()).rejects.toMatchObject({ status: 502, code: 'INTERNAL' });
-		await expect(api.listDocuments()).rejects.toMatchObject({ status: 0, code: 'NETWORK' });
+		await expect(api.listFilings()).rejects.toMatchObject({ status: 502, code: 'INTERNAL' });
+		await expect(api.listFilings()).rejects.toMatchObject({ status: 0, code: 'NETWORK' });
+	});
+});
+
+describe('isSignedOut', () => {
+	it('is true for UNAUTHENTICATED only', () => {
+		expect(isSignedOut(new ApiError(401, 'UNAUTHENTICATED', 'signed out'))).toBe(true);
+		expect(isSignedOut(new ApiError(403, 'FORBIDDEN', 'no'))).toBe(false);
+		expect(isSignedOut(new ApiError(0, 'NETWORK', 'offline'))).toBe(false);
+		expect(isSignedOut(new Error('x'))).toBe(false);
 	});
 });
 
@@ -196,5 +243,20 @@ describe('upload', () => {
 		);
 		await expect(documentsApi(fetcher, WS).upload(file)).rejects.toMatchObject({ status: 403 });
 		expect(calls).toHaveLength(2);
+	});
+
+	it('declares an .xml file as application/xml', async () => {
+		const xml = new File(['<xbrl/>'], 'a.xml', { type: 'text/xml' });
+		const { fetcher, calls } = scripted(
+			json(201, { document: { id: DOC }, upload: target }),
+			new Response(null, { status: 200 }),
+			json(200, { document: { id: DOC, state: 'uploaded' }, job: { id: 'j' } })
+		);
+		await documentsApi(fetcher, WS).upload(xml);
+		expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+			originalName: 'a.xml',
+			size: 7,
+			mimeType: 'application/xml'
+		});
 	});
 });

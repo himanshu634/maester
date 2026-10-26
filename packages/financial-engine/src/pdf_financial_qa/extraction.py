@@ -1,14 +1,12 @@
-"""Gemini-backed extraction shared by Maester application entry points."""
+"""Claude-backed extraction shared by Maester application entry points."""
 
 from pathlib import Path
 
-from google import genai
-from google.genai import types
-
 from pdf_financial_qa.config import MAX_INLINE_PDF_BYTES, Settings
-from pdf_financial_qa.schema import ExtractionResult, GeminiExtractionOutput
+from pdf_financial_qa.schema import ExtractionResult, ModelExtractionOutput
 from pdf_financial_qa.storage import hash_pdf
 from pdf_financial_qa.validation import validate_statement
+from pdf_financial_qa.workflow.model import claude_client, structured_call
 
 SYSTEM_INSTRUCTION = """\
 You are extracting structured data from a company's financial statement PDF \
@@ -37,37 +35,26 @@ be complete, not a summary.
 """
 
 
-def _build_pdf_part(pdf_bytes: bytes) -> types.Part:
+def _check_size(pdf_bytes: bytes) -> None:
     if len(pdf_bytes) > MAX_INLINE_PDF_BYTES:
         raise ValueError(
             f"PDF is {len(pdf_bytes) / 1024 / 1024:.1f} MB, over the "
             f"{MAX_INLINE_PDF_BYTES / 1024 / 1024:.0f} MB inline limit this tool "
-            "enforces. Larger files need a GCS-backed upload (Part.from_uri), "
-            "which isn't wired up yet."
+            "enforces. Larger files need the Files API, which isn't wired up yet."
         )
-    return types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")
 
 
 def extract(pdf_path: Path, settings: Settings) -> ExtractionResult:
     pdf_bytes = pdf_path.read_bytes()
     pdf_hash = hash_pdf(pdf_bytes)
 
-    client = genai.Client(vertexai=True, project=settings.project, location=settings.location)
-
-    response = client.models.generate_content(
-        model=settings.model,
-        contents=[
-            _build_pdf_part(pdf_bytes),
-            "Extract this financial statement per the system instructions.",
-        ],
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_INSTRUCTION,
-            response_mime_type="application/json",
-            response_schema=GeminiExtractionOutput,
-        ),
+    _check_size(pdf_bytes)
+    # The full-text rendition of a long report is large, so the answer gets the model's whole output budget.
+    parsed = structured_call(
+        claude_client(timeout_seconds=1800), model=settings.model, effort=settings.effort, max_tokens=128000,
+        schema=ModelExtractionOutput, system=SYSTEM_INSTRUCTION,
+        text="Extract this financial statement per the system instructions.", pdf=pdf_bytes,
     )
-
-    parsed: GeminiExtractionOutput = response.parsed
     warnings = validate_statement(parsed.statement)
 
     result = ExtractionResult(

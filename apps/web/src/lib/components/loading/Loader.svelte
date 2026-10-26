@@ -3,6 +3,8 @@
 	Nothing shows for the first 300 ms, so a quick load never flashes. After 10 s it says
 	the wait is longer than usual and, when the caller can retry, offers a Try again button.
 	The status region is always there, so the words are announced once when they appear.
+	A wait whose words move on as it goes ("Sending 3 of 12 files…") is not live: the page says
+	its start and end once itself, and it never says it is slow while it is moving.
 -->
 <script lang="ts">
 	import { browserEnv, watchPhase, type WaitPhase } from '$lib/loading/loading';
@@ -14,20 +16,22 @@
 		label: string;
 		/** Starts the work again. Without it a slow wait only says so. */
 		onretry?: () => void;
+		/** False when the page announces the wait itself: no status region, no slow line. */
+		live?: boolean;
 	}
 
-	let { label, onretry }: Props = $props();
+	let { label, onretry, live = true }: Props = $props();
 
 	let phase = $state<WaitPhase>('quiet');
 
 	$effect(() => watchPhase((next) => (phase = next), browserEnv));
 </script>
 
-<div class="loader" role="status">
+<div class="loader" role={live ? 'status' : undefined}>
 	{#if phase !== 'quiet'}
 		<p>{label}</p>
 		<Ruler />
-		{#if phase === 'slow'}
+		{#if phase === 'slow' && live}
 			<p class="muted">{loadingContent.slow}</p>
 			{#if onretry}
 				<button type="button" class="button outline" onclick={onretry}>

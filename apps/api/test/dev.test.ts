@@ -8,7 +8,7 @@ import { silentLogger } from "../src/logger.js";
 import { testEnv } from "./env.js";
 
 const deps = (env: ReturnType<typeof testEnv>, store: unknown = null) =>
-  ({ env, logger: silentLogger, db: null as never, auth: null as never, store: store as never, dispatcher: null as never });
+  ({ env, logger: silentLogger, db: null as never, auth: null as never, store: store as never, dispatcher: null as never, embedder: null });
 
 describe("dev upload page", () => {
   it("is served outside production", async () => {
@@ -38,7 +38,7 @@ describe("dev blob routes", () => {
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "maester-dev-blobs-"));
     const env = testEnv({ STORAGE_DRIVER: "disk", STORAGE_DIR: root, BETTER_AUTH_URL: "http://localhost:8787" });
-    store = new DiskObjectStore(root, { baseUrl: env.BETTER_AUTH_URL, secret: env.DISPATCH_SECRET!, pathPrefix: "/dev/blobs" });
+    store = new DiskObjectStore(root, { baseUrl: env.BETTER_AUTH_URL, secret: env.BETTER_AUTH_SECRET, pathPrefix: "/dev/blobs" });
     app = createApp(deps(env, store));
   });
 

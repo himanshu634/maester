@@ -16,6 +16,8 @@ package = false
 
 [tool.uv.workspace]
 members = ["apps/cli", "apps/extractor", "apps/eval", "packages/financial-engine"]
+# The indexer is its own uv project (Docling needs torch); see apps/indexer.
+exclude = ["apps/indexer"]
 
 [tool.uv.sources]
 maester-cli = { workspace = true }

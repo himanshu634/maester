@@ -16,19 +16,20 @@ Before starting significant work, open an issue referencing the feature ID from 
 
 ## What exists today
 
-Maester is a two-language monorepo: a Python document engine, extraction service and CLI, and a TypeScript platform of an HTTP API, a job worker and a SvelteKit web client. The investor journeys, the ledger and portfolio accounting are specified in the docs and not implemented.
+Maester is a two-language monorepo: a Python document engine, extraction service, CLI and evaluation harness, and a TypeScript platform of an HTTP API, a job worker and a SvelteKit web client. The investor journeys, the ledger and portfolio accounting are specified in the docs and not implemented.
 
 Working now:
 
-- Extract a financial-statement PDF into structured statements with Gemini on Vertex AI, from the command line.
+- Extract a financial-statement PDF into structured statements with Claude, from the command line.
 - Store structured data and a text rendition in a local JSON cache, run heuristic arithmetic checks on subtotals and the balance-sheet identity, and ask questions about a cached document.
 - Sign up, get a personal workspace, create a company, upload a document for it to object storage, and watch a durable verification job run to completion over Server-Sent Events.
 - Upload a PDF on the Documents page without choosing a company; Maester works out whether it is an annual report, financial results or another company document, for which company and period, with the page each answer came from, then reads it, holds it for you or keeps it.
-- Extract the uploaded statements into versioned facts with page references and arithmetic checks, through a LangGraph workflow with self-correction ([document extraction](docs/EXTRACTION.md)). This needs a Google Cloud project with Vertex AI.
+- Extract the uploaded statements into versioned facts with page references and arithmetic checks, through a LangGraph workflow with self-correction ([document extraction](docs/EXTRACTION.md)). This needs an Anthropic API key.
 - Sign in with Google or email and password behind an invite waitlist, through the web client, which proxies the API.
 - Serve the public pages, the sign-in pages and the error pages, which carry the design system in [DESIGN.md](docs/DESIGN.md), and the portfolio overview as a read-only demo on a synthetic portfolio at `/terminal/demo`.
 - See how cautious or eager the market is, from your own Dhan and FRED data (Market mood), and save, replace or remove those two keys in Settings.
 - See a company's statements year by year from its read annual reports, each figure with the page it came from and a link that opens the PDF there, with a summary of the stock from the investor's Dhan data.
+- An evaluation harness, `maester-eval` (`apps/eval`), that runs the extraction workflow over public filings in `data/eval/corpus` and scores it against a hand-checked gold set.
 
 The whole hosted stack runs locally in Docker with no Google Cloud account, apart from fact extraction itself; see [setup](#setup).
 
@@ -39,7 +40,7 @@ Not yet implemented: fact review and correction, verified citations, a determini
 - Docker with Compose v2, to run the API, worker, database and web client.
 - Node 22 and pnpm 11, for the TypeScript services, shared packages and the web client.
 - Python 3.11 or newer and [uv](https://docs.astral.sh/uv/getting-started/installation/), for the CLI and the document engine.
-- A Google Cloud project with Vertex AI enabled and billing, only for CLI ingestion and Q&A. Nothing else needs credentials.
+- An Anthropic API key, only for CLI ingestion and Q&A, extraction in the stack and the evaluation harness's `live` command. Nothing else needs credentials.
 
 Take only what your change touches. A Python-only contribution needs no Node; a web-only contribution needs no Python.
 
@@ -63,17 +64,16 @@ uv run --locked maester --help
 uv run --locked maester list-docs
 ```
 
-For cloud features, copy `.env.example` to `.env` and set `GOOGLE_CLOUD_PROJECT`. Keep an existing `.env` when upgrading. The example file lists region and model overrides.
+For cloud features, copy `.env.example` to `.env` and set `ANTHROPIC_API_KEY`. Keep an existing `.env` when upgrading. The example file lists the model and effort overrides.
 
 ```bash
-gcloud auth application-default login
 uv run --locked maester ingest path/to/statement.pdf
 uv run --locked maester list-docs
 uv run --locked maester ask "How did operating cash flow change year over year?"
 uv run --locked maester ask "What were total assets?" --doc DOCUMENT_HASH
 ```
 
-`ingest --force` re-extracts a document and overwrites its cached JSON. Model calls run against your configured project and can incur charges. The inherited default model is `gemini-2.5-pro`; verify availability in your project and override `GEMINI_MODEL` as needed. The original `pdf-financial-qa` command remains available as an alias of `maester`.
+`ingest --force` re-extracts a document and overwrites its cached JSON. Model calls use your Anthropic account and can incur charges. The default model is `claude-opus-5-5`; override `EXTRACTOR_MODEL` and `EXTRACTOR_EFFORT` as needed. The original `pdf-financial-qa` command remains available as an alias of `maester`.
 
 ### pip-only installation
 
@@ -94,6 +94,7 @@ apps/
   api/                      Working Hono HTTP service: auth, workspaces, documents, jobs
   worker/                   Working Hono job runner: leasing, document.verify, document.classify, document.extract
   extractor/                Working FastAPI extraction sidecar over the engine's LangGraph workflow
+  eval/                     Working evaluation harness: live runs, labelling sheets, gold set, report
   web/                      SvelteKit static pages; investor journeys planned
 packages/
   financial-engine/         Working LangGraph extraction workflow, plus the CLI's extraction, checks, cache and Q&A
@@ -107,14 +108,14 @@ infra/                      Cloud Run bootstrap and deploy scripts
 scripts/                    Workspace checks, database init, smoke test
 tests/                      Offline Python regression tests
 .github/workflows/          CI definitions
-data/                       Local extraction cache and uploads, ignored by version control
+data/                       Local extraction cache and uploads, ignored by version control; data/eval holds the evaluation manifest and gold set, which are committed
 docker-compose.yml          The local stack
 pyproject.toml, uv.lock     uv workspace and Python dependency resolution
 package.json, pnpm-*.yaml   pnpm workspace and TypeScript dependency resolution
 Makefile                    Python development commands
 ```
 
-Only `apps/cli`, `apps/extractor` and `packages/financial-engine` are uv workspace members. `apps/api`, `apps/worker` and `packages/*` are the pnpm workspace. `apps/web` is a standalone pnpm project with its own lockfile, so a root `pnpm install` does not install it. The engine keeps the `pdf_financial_qa` import namespace for compatibility.
+Only `apps/cli`, `apps/eval`, `apps/extractor` and `packages/financial-engine` are uv workspace members. `apps/api`, `apps/worker` and `packages/*` are the pnpm workspace. `apps/web` is a standalone pnpm project with its own lockfile, so a root `pnpm install` does not install it. The engine keeps the `pdf_financial_qa` import namespace for compatibility.
 
 ## Development commands
 
@@ -143,6 +144,7 @@ make sync
 make check
 make test
 make cli
+uv run --locked maester-eval --help   # the evaluation harness
 ```
 
 For the web client, use pnpm directly (from the repository root, or drop `--dir apps/web` inside that directory):

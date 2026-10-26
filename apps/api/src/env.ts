@@ -16,9 +16,9 @@ const EnvSchema = z.object({
   GCS_BUCKET: z.string().min(1).optional(),
   GOOGLE_CLOUD_PROJECT: z.string().min(1).optional(),
   GOOGLE_CLOUD_LOCATION: z.string().default("asia-south1"),
-  DISPATCH_MODE: z.enum(["local", "cloud-tasks"]).default("local"),
+  // "local" is the old name of queue: an existing .env may still say it. It is read as queue, so no code sees "local".
+  DISPATCH_MODE: z.preprocess((v) => (v === "local" ? "queue" : v), z.enum(["queue", "cloud-tasks"]).default("queue")),
   WORKER_URL: z.url(),
-  DISPATCH_SECRET: z.string().optional(),
   CLOUD_TASKS_QUEUE: z.string().default("maester-jobs"),
   WORKER_INVOKER_SA: z.string().optional(),
   MAX_UPLOAD_BYTES: z.coerce.number().int().default(52428800),
@@ -38,6 +38,12 @@ const EnvSchema = z.object({
   MAIL_DRIVER: z.enum(["console", "resend"]).default("console"),
   RESEND_API_KEY: z.string().optional().transform((v) => v || undefined),
   MAIL_FROM: z.string().optional().transform((v) => v || undefined),
+  // The text embedder (TEI) that turns a search query into a vector. Unset: search answers SEARCH_UNAVAILABLE.
+  EMBEDDER_URL: z.string().optional().transform((v) => v || undefined).pipe(z.url().optional()),
+  EMBEDDING_MODEL: z.string().default("Snowflake/snowflake-arctic-embed-l-v2.0"),
+  // Whether Research shows each XBRL figure's check against its results PDF (`xbrl_in_pdf`). "false": every XBRL figure
+  // says the check is turned off (`disabled`), as the worker's own XBRL_PDF_CHECK=false makes the check job write no row.
+  XBRL_PDF_CHECK: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
   // 32 bytes, base64. Encrypts saved market data keys. Unset: the Settings routes answer INVALID_STATE and the refresher is off.
   CONNECTIONS_KEY: z
     .string()
@@ -50,6 +56,11 @@ const EnvSchema = z.object({
 
 export type Env = z.infer<typeof EnvSchema>;
 
+/** The warning to log at start when the environment still says DISPATCH_MODE=local, the old name of queue; otherwise null. */
+export function dispatchModeWarning(source: NodeJS.ProcessEnv = process.env): string | null {
+  return source.DISPATCH_MODE === "local" ? "DISPATCH_MODE=local is now queue; update .env" : null;
+}
+
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const parsed = EnvSchema.safeParse(source);
   if (!parsed.success) {
@@ -61,9 +72,6 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   }
   if (parsed.data.STORAGE_DRIVER === "disk" && parsed.data.NODE_ENV === "production") {
     throw new Error("invalid environment: STORAGE_DRIVER=disk is a local development driver and is refused in production");
-  }
-  if (parsed.data.DISPATCH_MODE === "local" && !parsed.data.DISPATCH_SECRET) {
-    throw new Error("invalid environment: DISPATCH_SECRET is required when DISPATCH_MODE=local");
   }
   if (parsed.data.DISPATCH_MODE === "cloud-tasks" && !parsed.data.WORKER_INVOKER_SA) {
     throw new Error("invalid environment: WORKER_INVOKER_SA is required when DISPATCH_MODE=cloud-tasks");

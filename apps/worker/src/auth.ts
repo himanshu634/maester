@@ -11,11 +11,8 @@ export class DispatchAuthError extends Error {
 const oauth = new OAuth2Client();
 
 export async function verifyDispatchRequest(env: WorkerEnv, headers: Headers): Promise<void> {
-  if (env.DISPATCH_MODE === "local") {
-    const secret = headers.get("x-dispatch-secret");
-    if (!secret || secret !== env.DISPATCH_SECRET) throw new DispatchAuthError("missing or invalid dispatch secret");
-    return;
-  }
+  // In queue mode the runner pulls jobs; nothing may push one over HTTP.
+  if (env.DISPATCH_MODE !== "cloud-tasks") throw new DispatchAuthError("push dispatch is off in queue mode");
   const authz = headers.get("authorization") ?? "";
   const token = authz.startsWith("Bearer ") ? authz.slice(7) : null;
   if (!token) throw new DispatchAuthError("missing bearer token");

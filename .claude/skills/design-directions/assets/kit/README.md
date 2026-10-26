@@ -68,6 +68,18 @@ misread total), the statement ledger with a selected figure, the figure panel, t
 axes, the toggles, a rendered PDF page and the openable sums.
 Run `node financials.mjs --measure`, measure, then `node financials.mjs financials-heights.json`.
 
+## Ingestion screens round (2026-10-19)
+
+`ingestion.mjs`, `ingestion-notes.json` and `ingestion-heights.json` built round 1 of the
+"Maester Ingestion Screens" canvas (https://claude.ai/artifact/AhK6e5k9RMQvTBogXeibng): the
+Documents screen and the figure panel under the ingestion pipeline (spec
+`docs/superpowers/specs/2026-10-19-ingestion-pipeline-design.md` §6, §11, §12). Today, a shared
+words board, A · Two tracks on the slip, B · The work list, C · Filings, not files
+(recommended), D · Two lines of work. They add the multi-file drop strip with its sending and
+sent states, the batch refusal summary, two-track ladders, company-once confirmation and the
+XBRL figure panel variants. Output goes to `../canvas/ingestion/` (ignored). Run
+`node ingestion.mjs --measure`, measure, then `node ingestion.mjs ingestion-heights.json`.
+
 ## Broker connections round (2026-10-19)
 
 `holdings.mjs`, `holdings-base.mjs`, `holdings-brokers.mjs`, `holdings-notes.json` and

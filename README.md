@@ -16,7 +16,7 @@ Connect your holdings. Let Maester watch the filings, the prices, the dividends,
 [![Contributing guide](https://img.shields.io/badge/contributing-guide-blue.svg)](CONTRIBUTING.md)
 [![X](https://img.shields.io/badge/X-@himanshu__btw-black.svg)](https://x.com/himanshu_btw)
 
-[The opportunity](#the-opportunity) · [Autonomous mode](#autonomous-mode) · [How Maester is different](#how-maester-is-different) · [Roadmap](#roadmap) · [Join the build](#join-the-build) · [Talk to me](#talk-to-me)
+[The opportunity](#the-opportunity) · [What Maester does for you](#what-maester-does-for-you) · [How Maester is different](#how-maester-is-different) · [Roadmap](#roadmap) · [Join the build](#join-the-build) · [Talk to me](#talk-to-me)
 
 </div>
 
@@ -42,15 +42,28 @@ Start India-first with long-term equity investors. Import holdings once, let Mae
 
 > **Honest framing.** The commercial hypothesis is that investors will pay for a system that does the monitoring and reconciliation they currently skip, and that surfaces decisions early enough to matter. It is unvalidated. The [research report](docs/RESEARCH.md) lays out the evidence, the comparable products, and the interviews still needed. We would rather publish the reasoning than the hype.
 
-## Autonomous mode
+## What Maester does for you
 
-Autonomous mode is the product. You set the scope; Maester runs the loop.
+### Today
+
+These work now, run on your own machine.
+
+- **An annual report lands for a company you own.** Drop the PDF, or the XBRL file filed with it, into Documents; a whole folder works too. Maester works out which company and period it covers, keeps a filing's PDF and XBRL together and reads its statements. A company it has not seen waits until you confirm it, once.
+- **You want to know where a number came from.** Open the company in Research and choose any figure. It says which filing and page it came from, whether the lines add up and whether a later report restated it, with a link to the PDF at that page.
+- **You want to see how the business has moved.** Profit and loss, balance sheet and cash flow, year by year, with consolidated and standalone kept apart, beside the share's last year of closes, its 52-week range and its price to earnings.
+- **The market feels frothy, or frightened.** Market mood puts how cautious or eager the market is on a 0 to 100 scale built from 10 readings, each with its own history, from your own market data connections. It is context for keeping to your own allocation, never advice.
+- **You would rather ask than click.** Point an AI assistant at your filings. It reads them, and every figure it quotes carries the fact and the source behind it.
+- **A figure is missing.** It shows as unknown, with the reason, never as zero.
+
+### Autonomous mode (planned)
+
+Autonomous mode is the product, and it is not built yet ([roadmap](#roadmap), R3). You set the scope; Maester runs the loop.
 
 ```text
 Watch ──► Detect ──► Verify against evidence ──► Suggest an action ──► You decide ──► Record the outcome ──► Watch
 ```
 
-**What Maester watches on its own**
+**What Maester will watch on its own**
 
 - Your ledger: imports, duplicates, unexplained cash differences, positions that no longer reconcile to a statement.
 - The companies you own: new filings, restated numbers, changes in revenue, margins, cash flow and debt against your saved thesis.
@@ -61,7 +74,7 @@ Watch ──► Detect ──► Verify against evidence ──► Suggest an ac
 
 **What a suggestion looks like**
 
-Every suggestion names the action, the trigger, and the evidence. A few examples of the kind of thing Maester is built to say:
+Every suggestion names the action, the trigger, and the evidence. A few examples of the kind of thing Maester is being built to say:
 
 - *Review your thesis on this holding.* The latest annual report shows operating cash flow down year over year, against a thesis that depended on cash generation. Here is the page.
 - *Trim this position or confirm you accept the concentration.* It has grown from 12% to 31% of the portfolio since your last review.
@@ -100,53 +113,33 @@ These are design principles, not marketing lines. The [product requirements](doc
 
 Maester ships one complete investor journey at a time, ordered by investor value and dependency, not by calendar. Each step has an explicit exit gate in the [delivery plan](docs/DELIVERY_PLAN.md).
 
-| Step | Investor outcome | Scope | Status |
-| --- | --- | --- | --- |
-| **R0** | A codebase anyone can run and build on | Workspace, checks, local stack, deploy scripts, design system | Done |
-| **R1 · A** (P0) | Upload a filing and see the page behind any number | Sign-in and private workspaces, company records, durable uploads, versioned facts with page provenance, financial tables, source reader | **In progress** |
-| **R1 · B** (P0) | Save a research conclusion you can trust | Deterministic calculations, evidence-backed Analyst, thesis notes | Not started |
-| **R1 · C** (P0) | See what you own, linked to the evidence | Watchlists, portfolios and accounts, holdings snapshot, portfolio overview, activity and data controls | Overview designed on a synthetic portfolio; the rest not started |
-| **R1 gate** (P0) | Know the evidence is right before anyone relies on it | Extraction evaluation, release checklist, five moderated usability sessions, an invited cohort | Not started |
-| **R2** (P1) | Know what the portfolio actually earned, kept current without manual entry | Decimal ledger, tradebook import, reconciliation, dividends and corporate actions, TWR and XIRR, benchmarks | Planned |
-| **R3** (P1) | Autonomous monitoring and suggested actions | Filing and fact-change detection, thesis review triggers, alerts and digests, portfolio-scoped Analyst, income calendar, concentration and drawdown, exports | Planned |
-| **R4** (P2) | Broader decision support | Rebalancing simulation, valuation scenarios, peer comparison, screener, broker connections, multi-currency, funds and ETFs, US filings, sharing, reports, paid plans | Planned |
-| **P3** | Specialist operating models | Adviser workflows, tax reporting, factor attribution, backtesting, and execution only as a separately scoped initiative | Not scheduled |
+| Step | Investor outcome | Status |
+| --- | --- | --- |
+| **R0** | A codebase anyone can run and build on | Done |
+| **R1 · A** (P0) | Upload a filing and see the page behind any number | **In progress** |
+| **R1 · B** (P0) | Save a research conclusion you can trust | Not started |
+| **R1 · C** (P0) | See what you own, linked to the evidence | Overview designed on a synthetic portfolio; the rest not started |
+| **R1 gate** (P0) | Know the evidence is right before anyone relies on it | Not started |
+| **R2** (P1) | Know what the portfolio actually earned, kept current without manual entry | Planned |
+| **R3** (P1) | Autonomous monitoring and suggested actions | Planned |
+| **R4** (P2) | Broader decision support: rebalancing, valuation scenarios, peer comparison, broker connections, more markets | Planned |
+| **P3** | Specialist operating models | Not scheduled |
 
-The [feature roadmap](docs/FEATURE_ROADMAP.md) lists every feature with acceptance criteria and dependencies.
+What each step contains is in [Building Maester](docs/ENGINEERING.md#what-each-roadmap-step-contains), and the [feature roadmap](docs/FEATURE_ROADMAP.md) lists every feature with acceptance criteria and dependencies.
 
 ## Where we are today
 
-Maester is pre-alpha, part-way through **R1 · A**. Nothing is hosted for investors yet; everything below runs on your own machine, as the [contributing guide](CONTRIBUTING.md) explains.
+Maester is pre-alpha, part-way through **R1 · A**. Nothing is hosted for investors yet. What runs today is listed under [Today](#today); what it does not do yet:
 
-How the codebase fits together, with what is built and what is still pending:
+- You cannot review or correct a figure.
+- Quarterly and half-year results are read but not shown in the statement tables yet.
+- The accuracy of figures read from PDFs is not measured yet, and the check of XBRL figures against their PDF is too weak to trust, so the screens say "Not checked" for now.
+- Filings are added by hand; nothing fetches them automatically.
+- No calculations, Analyst, notes, holdings, ledger or autonomous monitoring.
 
-![How the Maester codebase fits together: the web app, API, worker and Python extractor are built over Postgres, a job queue and an object store, calling Google sign-in, Resend, Dhan, FRED and Gemini; the agent tools, the evaluation app, the calculation package, several terminal pages and hosting are pending](docs/diagrams/codebase.png)
+**Next:** close R1 · A with figure review and correction, then start R1 · B with named, versioned calculations, so that a growth rate or a margin is a calculation you can inspect, never a model's arithmetic.
 
-How a company filing moves through it:
-
-![How Maester processes a company filing: intake, worker jobs, the extractor, Postgres and Research are built; automatic filing fetch, quarterly results, review, accuracy measurement, calculations, the Analyst, alerts and hosting are pending](docs/diagrams/filing-pipeline.png)
-
-Both diagrams are Excalidraw files in [`docs/diagrams/`](docs/diagrams/); open one at [excalidraw.com](https://excalidraw.com) to edit it.
-
-**Working now**
-
-- Sign in with Google or with email and password, behind an invite waitlist. Each account gets a private workspace, and no other workspace can see its companies, documents or jobs.
-- Upload a financial-statement PDF for a company. It is stored privately and checked by a background job that survives restarts, can be retried and reports its progress live.
-- Extract the statements into versioned facts. Each fact keeps the page it was read from, its period, unit and reporting basis, and the arithmetic checks it passed or failed. This step needs a Google Cloud project.
-- The public site, the sign-in pages and the error pages, all built on the design system in [DESIGN.md](docs/DESIGN.md).
-- The portfolio overview (what is due, headline figures, holdings and allocation) as a read-only demo on a synthetic portfolio.
-- The original command-line engine, which extracts a PDF and answers questions about it.
-
-**Not yet**
-
-- No screen shows an uploaded document, its facts or its source page. Today that runs through the API and a developer upload page.
-- Companies have a name and a country only, with no exchange-listed security. A running job cannot be cancelled.
-- Extraction accuracy is not measured.
-- No calculations, Analyst, notes, holdings, ledger, market data or autonomous monitoring.
-
-**Next:** close R1 · A with the screens that complete it. Upload a filing, watch the job finish, read the company's financial table, and open the exact source page from any cell.
-
-We say this plainly because trust is the whole product.
+We say this plainly because trust is the whole product. [Building Maester](docs/ENGINEERING.md) has the full build status, with diagrams of how the system fits together.
 
 ## Join the build
 
@@ -157,7 +150,7 @@ Maester is open source because software that suggests what to do with your money
 - **Accounting and finance minds** who enjoy tearing apart return conventions, corporate-action edge cases and what counts as a meaningful change.
 - **Data partners** with permissioned sample filings and broker exports.
 
-Everything you need to get started, from setup to engineering rules, is in the **[contributing guide](CONTRIBUTING.md)**. The [documentation index](docs/README.md) covers the product and engineering specifications.
+Everything you need to get started, from where the build stands to running, changing and deploying it, is in **[Building Maester](docs/ENGINEERING.md)**.
 
 ### Talk to me
 

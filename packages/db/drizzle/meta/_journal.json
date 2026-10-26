@@ -47,8 +47,22 @@
     {
       "idx": 6,
       "version": "7",
-      "when": 1792408995483,
-      "tag": "0006_broker_holdings",
+      "when": 1792408473414,
+      "tag": "0006_job_queue",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792484082444,
+      "tag": "0007_document_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792522678139,
+      "tag": "0008_xbrl",
       "breakpoints": true
     }
   ]

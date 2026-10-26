@@ -1,5 +1,5 @@
 import { FetchStatus } from "@maester/contracts";
-import type { Classification, ClassificationSummary, Company, Document, Evidence, ExtractionCheck, ExtractionRevision, FinancialFact, Job, Workspace } from "@maester/contracts";
+import type { Classification, ClassificationSummary, Company, Document, DocumentPipeline, Evidence, ExtractionCheck, ExtractionRevision, FinancialFact, Job, Workspace } from "@maester/contracts";
 import type {
   ClassificationRow,
   CompanyRow,
@@ -40,7 +40,7 @@ export function toJob(row: JobRow): Job {
   };
 }
 
-export function toDocument(row: DocumentRow, latestJob: JobRow | null, classification: ClassificationRow | null = null): Document {
+export function toDocument(row: DocumentRow, latestJob: JobRow | null, classification: ClassificationRow | null, pipeline: DocumentPipeline): Document {
   return {
     id: row.id,
     workspaceId: row.workspaceId,
@@ -48,6 +48,7 @@ export function toDocument(row: DocumentRow, latestJob: JobRow | null, classific
     originalName: row.originalName,
     declaredSize: row.declaredSize,
     declaredMime: row.declaredMime,
+    format: row.format,
     state: row.state,
     contentSha256: row.contentSha256,
     sizeBytes: row.sizeBytes,
@@ -58,6 +59,7 @@ export function toDocument(row: DocumentRow, latestJob: JobRow | null, classific
     createdAt: row.createdAt.toISOString(),
     storedAt: iso(row.storedAt),
     latestJob: latestJob ? toJob(latestJob) : null,
+    pipeline,
   };
 }
 
@@ -70,6 +72,7 @@ export function toCompany(row: CompanyRow): Company {
     cin: row.cin,
     bseCode: row.bseCode,
     nseSymbol: row.nseSymbol,
+    isin: row.isin,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -88,6 +91,9 @@ export function toClassification(row: ClassificationRow): Classification {
     cin: row.cin,
     bseCode: row.bseCode,
     nseSymbol: row.nseSymbol,
+    isin: row.isin,
+    xbrlFormat: row.xbrlFormat,
+    basis: row.basis,
     statementsFound: row.statementsFound as Classification["statementsFound"],
     setBy: row.setBy,
     readsUnderId: row.readsUnderId,
@@ -111,7 +117,10 @@ export function toClassificationSummary(row: ClassificationRow): ClassificationS
 }
 
 export function toEvidence(row: EvidenceRow): Evidence {
-  return { field: row.field, source: row.source, ruleId: row.ruleId, pageIndex: row.pageIndex, quote: row.quote, textLayerMatch: row.textLayerMatch };
+  return {
+    field: row.field, source: row.source, ruleId: row.ruleId, pageIndex: row.pageIndex, quote: row.quote, textLayerMatch: row.textLayerMatch,
+    element: row.element, context: row.context,
+  };
 }
 
 export function toRevision(row: ExtractionRevisionRow): ExtractionRevision {
@@ -119,6 +128,7 @@ export function toRevision(row: ExtractionRevisionRow): ExtractionRevision {
     id: row.id,
     documentId: row.documentId,
     jobId: row.jobId,
+    source: row.source,
     state: row.state,
     pipelineVersion: row.pipelineVersion,
     model: row.model,
@@ -147,7 +157,15 @@ export function toCheck(row: ExtractionCheckRow): ExtractionCheck {
   };
 }
 
-export function toFact({ fact, source }: FactWithSource): FinancialFact {
+/** Where a fact was read, by the row stored with it: a page, an XBRL element, or null when neither was stored. */
+export function toFactSource({ source, xbrl }: Pick<FactWithSource, "source" | "xbrl">): FinancialFact["source"] {
+  if (xbrl) return { kind: "xbrl", documentId: xbrl.documentId, element: xbrl.element, contextId: xbrl.contextId, decimals: xbrl.decimals, nil: xbrl.nil };
+  if (source) return { kind: "page", documentId: source.documentId, pageIndex: source.pageIndex, textLayerMatch: source.textLayerMatch };
+  return null;
+}
+
+export function toFact(row: FactWithSource): FinancialFact {
+  const { fact } = row;
   return {
     id: fact.id,
     revisionId: fact.revisionId,
@@ -161,6 +179,8 @@ export function toFact({ fact, source }: FactWithSource): FinancialFact {
     componentLabels: fact.componentLabels,
     periodLabel: fact.periodLabel,
     periodEnd: fact.periodEnd,
+    periodStart: fact.periodStart,
+    span: fact.span,
     asOfDate: fact.asOfDate,
     reportedText: fact.reportedText,
     reportedValue: fact.reportedValue,
@@ -169,7 +189,7 @@ export function toFact({ fact, source }: FactWithSource): FinancialFact {
     scaleFactor: fact.scaleFactor,
     currency: fact.currency,
     normalizedValue: fact.normalizedValue,
-    source: { documentId: source.documentId, pageIndex: source.pageIndex, textLayerMatch: source.textLayerMatch },
+    source: toFactSource(row),
   };
 }
 

@@ -1,0 +1,35 @@
+{
+  "families": {
+    "in-capmkt": {
+      "namespace": "^http://www\\.sebi\\.gov\\.in/xbrl/\\d{4}-\\d{2}-\\d{2}/in-capmkt$",
+      "rounding_element": "LevelOfRounding"
+    },
+    "in-bse-fin": {
+      "namespace": "^http://www\\.bseindia\\.com/xbrl/fin/\\d{4}-\\d{2}-\\d{2}/in-bse-fin$",
+      "rounding_element": "LevelOfRoundingUsedInFinancialStatements"
+    }
+  },
+  "rules": [
+    { "kind": "banking", "any_of": ["CET1Ratio", "AdditionalTier1Ratio", "CapitalAndLiabilities"] },
+    { "kind": "nbfc", "all_of": ["InterestEarned", "FeesAndCommissionIncome"] },
+    {
+      "kind": "other_than_ind_as",
+      "any_of": ["CashFlowsFromUsedInOperatingActivitiesBeforeExtraordinaryItems", "AdjustmentsForWorkingCapital"]
+    },
+    {
+      "kind": "ind_as",
+      "all_of": ["ComprehensiveIncomeForThePeriod", "BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations"]
+    }
+  ],
+  "identity": {
+    "name": ["NameOfTheCompany", "NameOfBank"],
+    "scrip_code": "ScripCode",
+    "symbol": "Symbol",
+    "isin": "ISIN",
+    "basis": "NatureOfReportStandaloneConsolidated",
+    "audited": "WhetherResultsAreAuditedOrUnaudited",
+    "period_start": "DateOfStartOfReportingPeriod",
+    "period_end": "DateOfEndOfReportingPeriod"
+  },
+  "text_suffixes": ["TextBlock", "Explanatory"]
+}

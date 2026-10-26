@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { JobRow } from "@maester/db";
-import { CloudTasksDispatcher, LocalHttpDispatcher, type TasksClientLike } from "../src/dispatch/index.js";
+import { CloudTasksDispatcher, type TasksClientLike } from "../src/dispatch/index.js";
 import { silentLogger } from "../src/logger.js";
 import { testEnv } from "./env.js";
 
@@ -28,32 +28,6 @@ function makeJob(overrides: Partial<JobRow> = {}): JobRow {
     ...overrides,
   } as JobRow;
 }
-
-describe("LocalHttpDispatcher", () => {
-  const originalFetch = globalThis.fetch;
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-    vi.restoreAllMocks();
-  });
-
-  it("posts the job to the worker with the dispatch secret", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    const dispatcher = new LocalHttpDispatcher("http://localhost:8788", "local-dispatch-secret", silentLogger);
-    const job = makeJob({ type: "document.verify" });
-
-    await dispatcher.enqueue(job);
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://localhost:8788/tasks/document.verify");
-    expect(init.method).toBe("POST");
-    expect((init.headers as Record<string, string>)["x-dispatch-secret"]).toBe("local-dispatch-secret");
-    expect(init.body).toBe(JSON.stringify({ jobId: job.id }));
-  });
-});
 
 describe("CloudTasksDispatcher", () => {
   it("creates a task via the injected client", async () => {

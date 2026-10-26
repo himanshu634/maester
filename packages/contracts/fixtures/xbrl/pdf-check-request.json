@@ -1,0 +1,14 @@
+{
+  "scale": "100000",
+  "places": 2,
+  "statementPages": [
+    { "statement": "income_statement", "basis": "consolidated", "pages": [3, 4] },
+    { "statement": "cash_flow", "basis": "consolidated", "pages": [6] }
+  ],
+  "facts": [
+    { "factId": "0b6f1c1e-6d1a-4c52-9a53-0f3a2d1f7a01", "value": "1234500000", "perShare": false, "statement": "income_statement", "basis": "consolidated" },
+    { "factId": "0b6f1c1e-6d1a-4c52-9a53-0f3a2d1f7a02", "value": "12.34", "perShare": true, "statement": "income_statement", "basis": "consolidated" },
+    { "factId": "0b6f1c1e-6d1a-4c52-9a53-0f3a2d1f7a03", "value": null, "perShare": false, "statement": "income_statement", "basis": "consolidated" },
+    { "factId": "0b6f1c1e-6d1a-4c52-9a53-0f3a2d1f7a04", "value": "250000000", "perShare": false, "statement": "cash_flow", "basis": "consolidated" }
+  ]
+}

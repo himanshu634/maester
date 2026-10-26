@@ -1,0 +1,26 @@
+{
+  "embedding": {
+    "id": "Snowflake/snowflake-arctic-embed-l-v2.0",
+    "revision": "ac6544c8a46e00af67e330e85a9028c66b8cfd9a"
+  },
+  "candidates": [
+    {
+      "id": "Qwen/Qwen3-Embedding-0.6B",
+      "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
+    },
+    {
+      "id": "voyageai/voyage-4-nano",
+      "revision": "433ece5e27a1611e9360dd7134ecaaf79fb3681d"
+    },
+    {
+      "id": "ibm-granite/granite-embedding-english-r2",
+      "revision": "47ea694b257b703fee9253d75c2b1f2985180498"
+    }
+  ],
+  "docling": {
+    "docling-project/docling-layout-heron": "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8",
+    "docling-project/docling-layout-heron-onnx": "40bde044036bb181c130ddf6c51792187268748f",
+    "docling-project/docling-models": "fc0f2d45e2218ea24bce5045f58a389aed16dc23",
+    "RapidAI/RapidOCR": "v3.9.2"
+  }
+}

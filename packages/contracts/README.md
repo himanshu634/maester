@@ -139,12 +139,15 @@ All routes below except `/healthz` and `/api/auth/*` are under `/v1` and require
 | POST | `/v1/workspaces/{ws}/companies` | Create a company in the workspace |
 | GET | `/v1/workspaces/{ws}/companies` | List companies (cursor pagination) |
 | GET | `/v1/workspaces/{ws}/companies/{id}` | One company |
+| POST | `/v1/workspaces/{ws}/companies/confirm` | Confirm a printed identity once: every held file printing it goes to a company, new or existing (`ConfirmCompanyRequest` → `ConfirmCompanyResponse`) |
+| GET | `/v1/workspaces/{ws}/filings` | The workspace's files by company and filing, with where each statement's numbers come from (`WorkspaceFilings`) |
 | POST | `/v1/workspaces/{ws}/documents/uploads` | Create a pending document (the company is optional; it is identified from the PDF) and a signed upload URL |
 | POST | `/v1/workspaces/{ws}/documents/{id}/finalize` | Mark a document uploaded and enqueue verification |
 | GET | `/v1/workspaces/{ws}/documents` | List documents (cursor pagination) |
 | GET | `/v1/workspaces/{ws}/documents/{id}` | Document detail, including its latest job |
 | GET | `/v1/workspaces/{ws}/documents/{id}/download` | Signed, time-limited read URL |
 | POST | `/v1/workspaces/{ws}/documents/{id}/extract` | Enqueue a new extraction of a stored document |
+| POST | `/v1/workspaces/{ws}/documents/{id}/index` | Queue the text index of a stored document again (`202`, `IndexResponse`) |
 | GET | `/v1/workspaces/{ws}/documents/{id}/extraction` | The current extraction revision (the one the current answers read under) and its checks |
 | GET | `/v1/workspaces/{ws}/documents/{id}/facts` | A revision's facts with page references (the current revision by default) |
 | GET | `/v1/workspaces/{ws}/documents/{id}/classification` | The current answers about what the document is (`DocumentClassification`: kind, company, period, with the evidence for each) |
@@ -206,6 +209,7 @@ Response (`201 Created`), also the shape of `GET …/companies/{id}` and of each
   "cin": null,
   "bseCode": null,
   "nseSymbol": null,
+  "isin": null,
   "createdAt": "2026-09-10T08:14:00Z"
 }
 ```
@@ -235,6 +239,7 @@ Response (`201 Created`):
     "originalName": "fy24-annual-report.pdf",
     "declaredSize": 245678,
     "declaredMime": "application/pdf",
+    "format": "pdf",
     "state": "pending_upload",
     "contentSha256": null,
     "sizeBytes": null,
@@ -244,6 +249,12 @@ Response (`201 Created`):
     "classification": null,
     "createdAt": "2026-09-10T08:15:30Z",
     "storedAt": null,
+    "pipeline": {
+      "stored": "now",
+      "identified": "waiting",
+      "numbers": { "source": null, "state": "waiting", "coveredByXbrl": [], "waitingOn": [], "reason": "not_identified", "format": null, "partial": false, "warnings": [] },
+      "text": { "state": "waiting", "pages": 0, "pagesRead": 0, "pagesOcr": 0, "chunks": 0, "xbrlBlocks": 0, "ahead": null }
+    },
     "latestJob": null
   },
   "upload": {
@@ -269,6 +280,7 @@ No request body. Response:
     "originalName": "fy24-annual-report.pdf",
     "declaredSize": 245678,
     "declaredMime": "application/pdf",
+    "format": "pdf",
     "state": "uploaded",
     "contentSha256": null,
     "sizeBytes": null,
@@ -278,6 +290,12 @@ No request body. Response:
     "classification": null,
     "createdAt": "2026-09-10T08:15:30Z",
     "storedAt": null,
+    "pipeline": {
+      "stored": "now",
+      "identified": "waiting",
+      "numbers": { "source": null, "state": "waiting", "coveredByXbrl": [], "waitingOn": [], "reason": "not_identified", "format": null, "partial": false, "warnings": [] },
+      "text": { "state": "waiting", "pages": 0, "pagesRead": 0, "pagesOcr": 0, "chunks": 0, "xbrlBlocks": 0, "ahead": null }
+    },
     "latestJob": {
       "id": "9b2e2f0a-1d3c-4e5f-8a6b-7c8d9e0f1a2b",
       "workspaceId": "3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f",
@@ -331,6 +349,7 @@ A document once verification has finished, with its terminal job attached:
   "originalName": "fy24-annual-report.pdf",
   "declaredSize": 245678,
   "declaredMime": "application/pdf",
+  "format": "pdf",
   "state": "stored",
   "contentSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "sizeBytes": 245678,
@@ -340,6 +359,12 @@ A document once verification has finished, with its terminal job attached:
   "classification": null,
   "createdAt": "2026-09-10T08:15:30Z",
   "storedAt": "2026-09-10T08:16:05Z",
+  "pipeline": {
+    "stored": "done",
+    "identified": "now",
+    "numbers": { "source": null, "state": "waiting", "coveredByXbrl": [], "waitingOn": [], "reason": "not_identified", "format": null, "partial": false, "warnings": [] },
+    "text": { "state": "waiting", "pages": 0, "pagesRead": 0, "pagesOcr": 0, "chunks": 0, "xbrlBlocks": 0, "ahead": null }
+  },
   "latestJob": {
     "id": "9b2e2f0a-1d3c-4e5f-8a6b-7c8d9e0f1a2b",
     "workspaceId": "3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f",
@@ -361,7 +386,11 @@ A document once verification has finished, with its terminal job attached:
 }
 ```
 
-A rejected document instead carries `"state": "rejected"`, a non-null `rejectionCode` (`NOT_A_PDF`, `TOO_LARGE` or `OBJECT_MISSING`), `contentSha256: null`, `sizeBytes: null` and `storedAt: null`.
+A rejected document instead carries `"state": "rejected"`, a non-null `rejectionCode` (`UNSUPPORTED_TYPE`, `TOO_LARGE` or `OBJECT_MISSING`), `contentSha256: null`, `sizeBytes: null` and `storedAt: null`.
+
+`format` is `pdf` or `xbrl` (an XBRL instance), set at upload from the declared type: `application/pdf` is `pdf`, `application/xml` and `text/xml` are `xbrl`. The worker checks the bytes: a file that is not what its type says, or an XML file that is not an XBRL instance or has a DOCTYPE, is rejected as `UNSUPPORTED_TYPE`.
+
+`pipeline` says where the document stands on each track: `stored`, `identified`, `numbers` (which source the figures come from, and why a document has none) and `text` (how far the index is). The API works it out on each read from what is stored. A stored document that is not identified yet has `identified: "now"`. A rejected file and a duplicate have `identified: "not_needed"`, `numbers.state: "not_needed"` and `text.state: "not_needed"`, because nothing will run for them.
 
 ### `GET /v1/workspaces/{ws}/documents/{id}/download`
 
@@ -388,6 +417,7 @@ When a document is verified and extraction is enabled, the worker runs a `docume
     "id": "5d1f6a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b",
     "documentId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
     "jobId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+    "source": "pdf",
     "state": "complete",
     "pipelineVersion": "extract-1",
     "model": "gemini-2.5-pro",
@@ -416,7 +446,9 @@ When a document is verified and extraction is enabled, the worker runs a `docume
 }
 ```
 
-`GET …/facts?revisionId=` returns one revision's facts (the current revision by default). Each fact keeps the value exactly as printed (`reportedText`), its parsed decimal (`reportedValue`, `null` for a dash or unparseable text, see `valueStatus`), the unit and scale, and `normalizedValue` in actual currency units when the unit is recognised. `periodEnd` (income and cash flow) or `asOfDate` (balance sheet) is set only when the period label names an unambiguous date. `source.pageIndex` is the 0-based page of the original PDF; `source.textLayerMatch` says whether the value was found in that page's text (`null` for a scanned page). All decimals are strings.
+`revision.source` is `pdf` (read by the model) or `xbrl` (read from an XBRL instance by the parser). `checkType` is `subtotal` or `balance_identity`: `…/extraction` sends a revision's own arithmetic checks only. `xbrl_in_pdf` is a third value, for the check that looks for a fact of an XBRL instance in its results PDF; those rows arrive later, with the PDF, and `…/extraction` never sends them, so its body does not change when they arrive. Research shows their outcome on each XBRL figure (`CellSource.inPdf`).
+
+`GET …/facts?revisionId=` returns one revision's facts (the current revision by default). Each fact keeps the value exactly as printed (`reportedText`), its parsed decimal (`reportedValue`, `null` for a dash or unparseable text, see `valueStatus`), the unit and scale, and `normalizedValue` in actual currency units when the unit is recognised. `periodEnd` (income and cash flow) or `asOfDate` (balance sheet) is set only when the period label names an unambiguous date. `span` (`quarter`, `half_year`, `nine_months`, `year` or `other`) and `periodStart` are set when the filing gives the period's dates, as an XBRL instance does; a PDF fact has both null. `source` says where the fact was read, by `kind`: `page` gives `pageIndex`, the 0-based page of the original PDF, and `textLayerMatch`, whether the value was found in that page's text (`null` for a scanned page); `xbrl` gives the instance's `element`, `contextId`, `decimals` as written (`"INF"` or an integer) and `nil` (true for `xsi:nil`: the fact is `unparsed`, never zero). `source` is `null` only for a fact stored without its source. All decimals are strings.
 
 <!-- schema: DocumentFacts -->
 ```json
@@ -425,6 +457,7 @@ When a document is verified and extraction is enabled, the worker runs a `docume
     "id": "5d1f6a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b",
     "documentId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
     "jobId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+    "source": "pdf",
     "state": "complete",
     "pipelineVersion": "extract-1",
     "model": "gemini-2.5-pro",
@@ -449,6 +482,8 @@ When a document is verified and extraction is enabled, the worker runs a `docume
       "componentLabels": [],
       "periodLabel": "As at 31 March 2026",
       "periodEnd": null,
+      "periodStart": null,
+      "span": null,
       "asOfDate": "2026-03-31",
       "reportedText": "1,23,456.50",
       "reportedValue": "123456.50",
@@ -457,13 +492,46 @@ When a document is verified and extraction is enabled, the worker runs a `docume
       "scaleFactor": "10000000",
       "currency": "INR",
       "normalizedValue": "1234565000000.00",
-      "source": { "documentId": "7c9e6679-7425-40de-944b-e07fc1f90ae7", "pageIndex": 41, "textLayerMatch": true }
+      "source": { "kind": "page", "documentId": "7c9e6679-7425-40de-944b-e07fc1f90ae7", "pageIndex": 41, "textLayerMatch": true }
     }
   ]
 }
 ```
 
 A failed extract job carries a code in `lastErrorCode`: `EXTRACTOR_NOT_CONFIGURED`, `UNREADABLE_PDF`, `NO_STATEMENTS_FOUND`, `NO_STATEMENTS_EXTRACTED`, `TOO_LARGE_FOR_EXTRACTION`, `MODEL_REQUEST_REJECTED` and `MODEL_CALL_BUDGET_EXCEEDED` fail at once; `MODEL_UNAVAILABLE`, `EXTRACTION_FAILED`, `EXTRACTOR_UNAVAILABLE` and `EXTRACTOR_STREAM_INTERRUPTED` are retried first.
+
+### `GET /v1/workspaces/{ws}/filings`
+
+Answers `WorkspaceFilings`, read in a fixed number of queries whatever the number of documents:
+
+- `companies`: every company of the workspace by name, each with its `filings`, newest period end first. A filing is the files of one company, kind and period end (a kept `other` document also by its `otherType`; a file with no period end is its own filing). Its `key` is `<companyId>:<kind>:<periodEnd>`, `<companyId>:other:<otherType>:<periodEnd>`, or the document id in the period's place. `spans` are the results spans its files were classified as (`quarter`, `half_year`, `nine_months`, `full_year`); a half-year PDF and a quarter instance of one period end are one filing. `settled` is true once every file has stopped on all three tracks of its `pipeline`.
+- `files` of a filing are in the order they were added. A duplicate is not a file: its id is under the original's `duplicates`. A file's `basis` is an XBRL instance's basis, null for a PDF.
+- `sources` lists, for each basis the filing's instances state or its PDFs found statements for (`consolidated`, `standalone`, `unknown`), the three statements (`income_statement`, `balance_sheet`, `cash_flow`). A statement's `source` is `xbrl` when an instance of that basis has facts of it, `pdf` when only a PDF prints it (`reason` then says why not XBRL: `xbrl_lacks_statement`, `xbrl_format_unmapped`, `no_xbrl`, or `not_read_yet` and `read_failed` while the PDF has no numbers), and null with `not_in_filing` when neither has it. `xbrlSpans` are the spans of the XBRL facts in the order quarter, half year, nine months, year, other; a balance sheet is instants, so it has none (the screen words it from the filing's `periodEnd`). `inPdf` counts the XBRL facts found on the filing's PDF: `found`, `checked` (found or not found), `notFound` fact ids, and `notChecked`, the reason when facts were not looked for.
+- `held` groups the files that wait for a company by the identity they print (a CIN, BSE code, ISIN or NSE symbol shared by any two files joins them), largest group first; `matches` are the workspace's companies the identity could be. A file that waits for a company and prints no identifier is in `unsorted`, with every other file that has no company.
+
+<!-- schema: WorkspaceFilings -->
+```json
+{ "companies": [], "held": [], "unsorted": [] }
+```
+
+### `POST /v1/workspaces/{ws}/companies/confirm`
+
+Confirms what a group of held files print, once. `identity` names at least one printed identifier; `company` is an existing company (`{ "id": … }`) or a new one (`{ "new": … }`, which takes the identity's codes and fills the others from the request). Every held file of the workspace whose current classification has no company and prints any of the identifiers gets an investor classification with the company, and then its next step (an instance is read, a results PDF waits for the instances or is read). A company name or code already used answers `409 CONFLICT`; a company that is not in the workspace answers `400`.
+
+<!-- schema: ConfirmCompanyRequest -->
+```json
+{
+  "identity": { "bseCode": "500999" },
+  "company": { "new": { "displayName": "Synthetic Cements Limited", "country": "IN" } }
+}
+```
+
+Response, `confirmed` being how many files were released (0 when none was held):
+
+<!-- schema: ConfirmCompanyResponse -->
+```json
+{ "companyId": "c0a8012e-5b6f-4c3d-9e2a-1f0b2c3d4e5f", "confirmed": 3 }
+```
 
 ### `GET /v1/workspaces/{ws}/jobs/{id}` and `POST /v1/workspaces/{ws}/jobs/{id}/retry`
 
@@ -491,7 +559,7 @@ Both return a `Job`:
 }
 ```
 
-`lastErrorCode` on a job is one of the worker's own error codes — `HANDLER_ERROR` (the handler threw), `UNKNOWN_JOB_TYPE` (no handler registered for `job.type`) or an extraction code listed above — not to be confused with a document's `rejectionCode` (`NOT_A_PDF`, `TOO_LARGE`, `OBJECT_MISSING`), which describes why a *document* was rejected, not why a job failed; a rejected document's verify job still `succeeds`, with `result.outcome === "rejected"`.
+`lastErrorCode` on a job is one of the worker's own error codes — `HANDLER_ERROR` (the handler threw), `UNKNOWN_JOB_TYPE` (no handler registered for `job.type`) or an extraction code listed above — not to be confused with a document's `rejectionCode` (`UNSUPPORTED_TYPE`, `TOO_LARGE`, `OBJECT_MISSING`), which describes why a *document* was rejected, not why a job failed; a rejected document's verify job still `succeeds`, with `result.outcome === "rejected"`.
 
 `retry` only succeeds when the job is `failed` or a `queued` job stuck without a dispatched task; any other state returns `409 INVALID_STATE`. On success it raises `maxAttempts` by 5 (relative to the job's current `attempt`) and resets `finishedAt` and `progress` back to their initial values (`null` and `{}`).
 
@@ -499,7 +567,7 @@ Both return a `Job`:
 
 Uploading and verifying a PDF is a five-step round trip:
 
-1. **Create the upload.** `POST /v1/workspaces/{ws}/documents/uploads` with `CreateUploadRequest` (`originalName`, `size`, `mimeType: "application/pdf"`, and optionally `companyId`). An unknown `companyId` is `400 VALIDATION_FAILED` on that field. The response's `document` is `pending_upload`; `upload` carries a signed `PUT` URL, the exact headers required, and an expiry.
+1. **Create the upload.** `POST /v1/workspaces/{ws}/documents/uploads` with `CreateUploadRequest` (`originalName`, `size`, `mimeType` (`application/pdf` for a PDF, `application/xml` or `text/xml` for an XBRL instance), and optionally `companyId`). An unknown `companyId` is `400 VALIDATION_FAILED` on that field. The response's `document` is `pending_upload`; `upload` carries a signed `PUT` URL, the exact headers required, and an expiry.
 2. **PUT the bytes.** `fetch(upload.url, { method: "PUT", headers: upload.headers, body: file })` — send *exactly* the headers in `upload.headers` (`Content-Type` and `Content-Length`, in that exact casing — the API returns them as-is) and nothing else; a mismatched header invalidates the signature. Do not send the session cookie or `credentials: "include"` on this request — it goes straight to object storage, not the API.
 3. **Finalize.** `POST /v1/workspaces/{ws}/documents/{id}/finalize` with no body. This confirms the object landed, flips the document to `uploaded`, and enqueues a `document.verify` job. The response is `FinalizeResponse` (`document`, `job`).
 4. **Subscribe to progress.** Open `GET /v1/workspaces/{ws}/jobs/{job.id}/events` (see §6) to watch the job move through `queued` → `running` → `succeeded`/`failed`.
@@ -553,6 +621,7 @@ GET /v1/workspaces/3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f/documents?limit=25
       "originalName": "fy24-annual-report.pdf",
       "declaredSize": 245678,
       "declaredMime": "application/pdf",
+      "format": "pdf",
       "state": "stored",
       "contentSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "sizeBytes": 245678,
@@ -562,6 +631,12 @@ GET /v1/workspaces/3fa3c1de-8b8a-4a1a-9c8e-1a2b3c4d5e6f/documents?limit=25
       "classification": null,
       "createdAt": "2026-09-10T08:15:30Z",
       "storedAt": "2026-09-10T08:16:05Z",
+      "pipeline": {
+        "stored": "done",
+        "identified": "now",
+        "numbers": { "source": null, "state": "waiting", "coveredByXbrl": [], "waitingOn": [], "reason": "not_identified", "format": null, "partial": false, "warnings": [] },
+        "text": { "state": "waiting", "pages": 0, "pagesRead": 0, "pagesOcr": 0, "chunks": 0, "xbrlBlocks": 0, "ahead": null }
+      },
       "latestJob": null
     }
   ],

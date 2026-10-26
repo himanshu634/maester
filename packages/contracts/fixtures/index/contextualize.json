@@ -1,0 +1,23 @@
+[
+  {
+    "sectionPath": [],
+    "text": "Plain text.",
+    "expected": "Plain text."
+  },
+  {
+    "sectionPath": [
+      "Directors' report"
+    ],
+    "text": "Revenue rose.",
+    "expected": "Directors' report\nRevenue rose."
+  },
+  {
+    "sectionPath": [
+      "Directors' report",
+      "Financial results",
+      "Revenue"
+    ],
+    "text": "Revenue was ₹1,200 crore.\nUp 9%.",
+    "expected": "Directors' report\nFinancial results\nRevenue\nRevenue was ₹1,200 crore.\nUp 9%."
+  }
+]
