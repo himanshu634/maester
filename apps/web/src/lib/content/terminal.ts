@@ -96,17 +96,6 @@ export const terminalContent = {
 					dry: 'out of paint. needs another coat'
 				}
 			},
-			holdings: {
-				what: 'Every position you own, with its weight, cost and the date of its price. We’re still building it.',
-				needs: 'It opens once you can add your holdings.',
-				sketch: {
-					label:
-						'A sketch of a crane holding a block labelled Holdings over a half-built wall. Dragging the block down lowers it, but the wall is not finished.',
-					idle: 'drag the load down',
-					lower: 'a little lower…',
-					landed: 'not yet! the walls are still going up'
-				}
-			},
 			watchlist: {
 				what: 'Companies you’re watching but don’t own yet, each with the date you meant to look again and what has changed since.',
 				needs: 'It starts once you can follow a company from Research.',

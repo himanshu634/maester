@@ -1,6 +1,6 @@
 # @maester/financial-engine (TypeScript)
 
-The named, versioned rules that decide or derive what an investor sees, each a pure function with a fixture whose expected values were worked out by hand. Document extraction itself stays in Python (`packages/financial-engine`, served by `apps/extractor`), per [ADR 0004](../../docs/decisions/0004-python-extraction-sidecar.md).
+The named, versioned rules that decide or derive what an investor sees, each a pure function in `decimal.js` with a fixture whose expected values were worked out by hand. `apps/web` formats the results and never computes a figure. Document extraction itself stays in Python (`packages/financial-engine`, served by `apps/extractor`), per [ADR 0004](../../docs/decisions/0004-python-extraction-sidecar.md).
 
 ## The source rule (`src/sources.ts`, `SOURCE_RULE_VERSION = 1`)
 
@@ -15,3 +15,15 @@ The fixture is `fixtures/source-rule.json`. Its Python twin, `maester_eval.sourc
 ```sh
 pnpm --filter @maester/financial-engine test
 ```
+
+## Holdings calculations (`src/holdings.ts`)
+
+Each fixture has the working in the test's comments.
+
+| Calculation | Version | What it is |
+| --- | --- | --- |
+| `holding_quantity` | 1 | Settled plus T+1 quantity, summed over the accounts holding an ISIN |
+| `holding_cost` | 1 | Each account's quantity × its average price, summed; unknown when a broker reports an average of zero |
+| `holding_value` | 1 | Quantity × the NSE close; unknown without a close |
+| `holdings_totals` | 1 | Known value over priced rows, cost over costed rows, unrealized gain over rows with both, with counts |
+| `holding_weight` | 1 | A row's value ÷ the known value, a per cent to one decimal place, half up |

@@ -1,0 +1,58 @@
+{
+  "id": "kite",
+  "name": "Zerodha",
+  "enabled": true,
+  "hosts": ["kite.zerodha.com", "api.kite.trade"],
+  "copy": {
+    "pickerLine": "Sign in on Zerodha’s page each day. Holdings are in the free Personal plan.",
+    "lasts": "Until 6:00 the next morning",
+    "cost": "Free (Kite Connect Personal)",
+    "formLede": "Zerodha lets an app read your holdings once you create a free Kite Connect app of your own and sign in to it each day.",
+    "steps": [
+      "Sign in at developers.kite.trade and create a Personal app. It’s free and includes holdings.",
+      "Paste the redirect URL below into the app’s redirect URL.",
+      "Copy the app’s API key and secret into the fields below.",
+      "Save, then sign in on Zerodha’s page. You come back here."
+    ],
+    "saveNote": "Maester asks Zerodha only for your holdings. It never places an order.",
+    "signedOutNote": "Zerodha signs Maester out every morning at 6:00."
+  },
+  "credentials": [
+    { "key": "apiKey", "label": "API key", "hint": "From your app’s page on Kite Connect.", "secret": false, "minLength": 6, "maxLength": 64 },
+    { "key": "apiSecret", "label": "API secret", "secret": true, "minLength": 6, "maxLength": 128 }
+  ],
+  "credentialShown": "apiKey",
+  "signIn": {
+    "kind": "redirect",
+    "loginUrl": "https://kite.zerodha.com/connect/login?v=3&api_key={apiKey}&redirect_params={stateQuery}",
+    "returnParams": { "code": "request_token", "state": "state", "status": "status", "success": "success" },
+    "session": {
+      "method": "POST",
+      "url": "https://api.kite.trade/session/token",
+      "headers": { "X-Kite-Version": "3" },
+      "derive": { "checksum": { "sha256hex": ["apiKey", "code", "apiSecret"] } },
+      "form": { "api_key": "{apiKey}", "request_token": "{code}", "checksum": "{checksum}" },
+      "accessToken": "data.access_token",
+      "accountId": "data.user_id",
+      "expiry": { "kind": "daily", "at": "06:00", "timeZone": "Asia/Kolkata" }
+    }
+  },
+  "reads": {
+    "holdings": {
+      "method": "GET",
+      "url": "https://api.kite.trade/portfolio/holdings",
+      "headers": { "X-Kite-Version": "3", "Authorization": "token {apiKey}:{accessToken}" },
+      "list": "data",
+      "fields": {
+        "isin": "isin",
+        "symbol": "tradingsymbol",
+        "exchange": "exchange",
+        "quantity": "quantity",
+        "t1Quantity": "t1_quantity",
+        "averagePrice": "average_price",
+        "lastPrice": "last_price"
+      }
+    }
+  },
+  "signedOutStatuses": [403]
+}

@@ -81,6 +81,8 @@ R2 exit is an accounting gate, not a marketing date: supported history reconcile
 | F44 | Mobile optimization/PWA | Fast review/alerts/notes; offline boundaries; no stale value represented as live | R1–R3 usage evidence | M / Web |
 | F45 | Paid plans and entitlements | Visible usage, accurate metering, retries/refunds policy, billing cancellation and receipts | F15; retention/cost evidence | M / Platform |
 
+F35 started early, on 19 Oct 2026, because Maester is for personal use: read-only Zerodha (Kite Connect) holdings on the Holdings page, with brokers defined as JSON (`packages/brokers`). It is a snapshot, with no ledger, history or reconciliation, so F18 and F19 are still ahead of the rest of F35.
+
 Select no more than two large P2 initiatives at a time. Multi-currency support and a new asset class each create accounting work; they are not a display-format toggle. Broker connectivity cannot eliminate reconciliation or assume historical cash flows exist in an API.
 
 ## P3 — separate product initiatives

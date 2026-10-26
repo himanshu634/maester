@@ -5,4 +5,5 @@ export * from "./extraction.js";
 export * from "./xbrl.js";
 export * from "./waitlist.js";
 export * from "./market.js";
+export * from "./brokers.js";
 export * from "./document-index.js";

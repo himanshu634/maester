@@ -1,6 +1,7 @@
 import { DrizzleQueryError } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import type { BrokerDefinition } from "@maester/contracts";
 import type { Db, MembershipRow, WorkspaceRow } from "@maester/db";
 import type { Embedder } from "@maester/document-index";
 import type { DhanSource, FredSource } from "@maester/market";
@@ -13,6 +14,7 @@ import type { Logger } from "./logger.js";
 import { requireSession } from "./middleware/session.js";
 import { requireWorkspace } from "./middleware/workspace.js";
 import { requestId } from "./middleware/request-id.js";
+import { brokerAccountRoutes, brokerCatalogRoutes, holdingsRoutes } from "./routes/brokers.js";
 import { classificationRoutes } from "./routes/classification.js";
 import { connectionRoutes } from "./routes/connections.js";
 import { companyRoutes } from "./routes/companies.js";
@@ -48,6 +50,10 @@ export interface AppDeps {
   embedder: Embedder | null;
   /** Builds the market data clients that check a key before Settings keeps it. Defaults to the HTTP ones. */
   marketSources?: MarketSources;
+  /** The broker definitions. Defaults to the built-in ones plus BROKER_DEFINITIONS_DIR. */
+  brokerDefinitions?: Map<string, BrokerDefinition>;
+  /** The fetch broker calls go through. Defaults to the global one; tests pass a fake. */
+  brokerFetch?: typeof globalThis.fetch;
 }
 
 export interface MarketSources {
@@ -86,6 +92,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}) {
   v1.route("/market-mood", marketMoodRoutes(deps));
   v1.route("/settings/connections", connectionRoutes(deps));
   v1.route("/workspaces", workspaceRoutes(deps));
+  v1.route("/brokers", brokerCatalogRoutes(deps));
 
   const ws = new Hono<AppEnv>();
   ws.use("*", requireWorkspace(deps.db));
@@ -97,6 +104,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}) {
   ws.route("/search", searchRoutes(deps));
   ws.route("/documents", documentRoutes(deps));
   ws.route("/documents", classificationRoutes(deps));
+  ws.route("/brokers", brokerAccountRoutes(deps));
+  ws.route("/holdings", holdingsRoutes(deps));
   ws.route("/filings", filingRoutes(deps));
   v1.route("/workspaces/:ws", ws);
 

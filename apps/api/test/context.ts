@@ -9,11 +9,11 @@ import { silentLogger } from "../src/logger.js";
 import { RecordingMailer } from "../src/mail/index.js";
 import { testEnv } from "./env.js";
 
-export async function createTestContext(overrides: Partial<NodeJS.ProcessEnv> = {}, deps: Partial<Pick<AppDeps, "marketSources" | "logger" | "embedder">> = {}) {
+export async function createTestContext(overrides: Partial<NodeJS.ProcessEnv> = {}, deps: Partial<Pick<AppDeps, "marketSources" | "logger" | "brokerDefinitions" | "brokerFetch" | "embedder">> = {}) {
   const env = testEnv(overrides);
   const db = createDb(env.DATABASE_URL);
   await runMigrations(db);
-  await db.execute(sql`TRUNCATE TABLE "job", "document", "membership", "workspace", "session", "account", "verification", "user", "waitlist_entry", "rate_limit", "market_point", "market_fetch", "market_connection" CASCADE`);
+  await db.execute(sql`TRUNCATE TABLE "job", "document", "membership", "workspace", "session", "account", "verification", "user", "waitlist_entry", "rate_limit", "market_point", "market_fetch", "market_connection", "broker_connection", "broker_login_state", "holding_read", "holding_line" CASCADE`);
   const store = new MemoryObjectStore();
   const dispatcher = new RecordingDispatcher();
   const mailer = new RecordingMailer();

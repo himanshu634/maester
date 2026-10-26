@@ -32,6 +32,11 @@ export {
   upsertMarketPoints, listMarketSeries, listMarketSeriesByPrefix, listMarketValuesByPrefix, latestMarketDay, startMarketFetch, finishMarketFetch, latestMarketFetch,
   getConnection, listConnections, saveConnection, deleteConnection, markConnectionError, lastMarketReads, type SaveConnection,
 } from "./queries/market.js";
+export type { BrokerConnectionRow, BrokerLoginStateRow, HoldingReadRow, HoldingLineRow, NewHoldingLine } from "./schema/brokers.js";
+export {
+  getBrokerConnection, getBrokerConnectionById, listBrokerConnections, saveBrokerCredentials, forgetBrokerCredentials, saveBrokerSession, markBrokerError, clearBrokerError,
+  createBrokerLoginState, takeBrokerLoginState, startHoldingRead, finishHoldingRead, latestHoldings, readStartedSince, latestCloses, type LatestHoldings,
+} from "./queries/brokers.js";
 export type { IndexRevisionRow } from "./schema/document-index.js";
 export {
   startOrResumeRevision, writeRange, lastStoredPage, chunksWithoutEmbedding, insertEmbeddings, completeRevision,

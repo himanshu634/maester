@@ -79,3 +79,27 @@ words board, A · Two tracks on the slip, B · The work list, C · Filings, not 
 sent states, the batch refusal summary, two-track ladders, company-once confirmation and the
 XBRL figure panel variants. Output goes to `../canvas/ingestion/` (ignored). Run
 `node ingestion.mjs --measure`, measure, then `node ingestion.mjs ingestion-heights.json`.
+
+## Broker connections round (2026-10-19)
+
+`holdings.mjs`, `holdings-base.mjs`, `holdings-brokers.mjs`, `holdings-notes.json` and
+`holdings-heights.json` built round 1 of the "Maester Broker Connections" canvas
+(https://claude.ai/artifact/2YSB5bYQ5beYq5aanK7Sm6): Today, A · Accounts, then one table,
+B · Each account, its own ledger, C · The statement first, and the shared connect states. They add
+the shell with Holdings live, a synthetic three-broker portfolio that adds up (worked in paise),
+the accounts ledger, the broker picker and sheet, the connect form with numbered steps, per-account
+ledgers and the statement-versus-broker table. Broker facts live only in `holdings-brokers.mjs`,
+from `docs/research/2026-10-19-broker-apis.md`.
+Run `node holdings.mjs --measure`, measure, then `node holdings.mjs holdings-heights.json`.
+
+## Broker accounts round (2026-10-24)
+
+`accounts.mjs`, `accounts-base.mjs`, `accounts-brokers.mjs`, `accounts-notes.json` and
+`accounts-heights.json` built round 2 of the broker work on a new canvas, "Maester Broker
+Accounts" (https://claude.ai/artifact/3kUub9WRnmnm2neMpGkmNy), because round 1's canvas sits in
+another organisation: Today (A as built on feat/holdings-dhan), D · Household, by person,
+E · The morning round, F · Accounts as columns, and the shared add-an-account forms for the top five
+brokers. They reuse `holdings-base.mjs` (shell, pieces, closes) and add a two-person household of six
+accounts worked in paise, toggle buttons, the morning-round ink panel and the account-column table.
+Broker facts live only in `accounts-brokers.mjs`, from `docs/research/2026-10-24-broker-accounts.md`.
+Run `node accounts.mjs --measure`, measure, then `node accounts.mjs accounts-heights.json`.
