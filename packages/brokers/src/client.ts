@@ -1,23 +1,9 @@
-import { createHash } from "node:crypto";
 import { request as httpsRequest } from "node:https";
 import type { BrokerDefinition } from "@maester/contracts";
-import { sessionExpiry } from "./expiry.js";
-import { at, fill } from "./template.js";
-
-/**
- * - BROKER_UNAVAILABLE: the broker could not be reached or answered with an error of its own.
- * - BROKER_SIGNED_OUT: the broker no longer accepts the session (one of `signedOutStatuses`).
- * - BROKER_REFUSED: the broker turned down the sign-in or the saved key.
- * - BROKER_ANSWER_UNREADABLE: the answer is not the shape the definition describes.
- */
-export type BrokerErrorCode = "BROKER_UNAVAILABLE" | "BROKER_SIGNED_OUT" | "BROKER_REFUSED" | "BROKER_ANSWER_UNREADABLE";
-
-/** Its message never carries a credential, a token or the broker's own error text. */
-export class BrokerError extends Error {
-  constructor(readonly code: BrokerErrorCode, message: string) {
-    super(message);
-  }
-}
+import { BrokerError, type BrokerErrorCode } from "./errors.js";
+import { sessionExpiry } from "./kit/expiry.js";
+import { at, decimal, sha256hex, text } from "./kit/values.js";
+import { fill } from "./template.js";
 
 export type Credentials = Record<string, string>;
 export type BrokerSession = { accessToken: string; accountId: string | null; signedInAt: Date; expiresAt: Date };
@@ -32,22 +18,6 @@ export type BrokerHoldingLine = {
   averagePrice: string;
   lastPrice: string | null;
 };
-
-const DECIMAL = /^-?\d+(\.\d+)?$/;
-
-/**
- * A JSON number or string as a decimal string. A number keeps the digits JSON printed (the
- * shortest form that reads back the same); an exponent or anything else is unreadable.
- */
-function decimal(v: unknown, field: string): string {
-  const s = typeof v === "number" && Number.isFinite(v) ? String(v) : typeof v === "string" ? v.trim() : null;
-  if (s === null || !DECIMAL.test(s)) throw new BrokerError("BROKER_ANSWER_UNREADABLE", `holding field ${field} is not a decimal`);
-  return s;
-}
-function text(v: unknown, field: string): string {
-  if (typeof v !== "string" || v.trim() === "") throw new BrokerError("BROKER_ANSWER_UNREADABLE", `holding field ${field} is missing`);
-  return v.trim();
-}
 
 type RedirectSignIn = Extract<BrokerDefinition["signIn"], { kind: "redirect" }>;
 type DirectSignIn = Extract<BrokerDefinition["signIn"], { kind: "direct" }>;
@@ -180,7 +150,7 @@ export class BrokerClient {
       isoTimestamp: `${at0.toISOString().slice(0, 19)}.000Z`,
       ...values,
     };
-    const sha = (inputs: string[]) => createHash("sha256").update(inputs.map((k) => all[k] ?? "").join("")).digest("hex");
+    const sha = (inputs: string[]) => sha256hex(...inputs.map((k) => all[k] ?? ""));
     // Values that sign the body are worked out once the body is written; the rest before it.
     const derived = Object.entries(c.derive);
     for (const [name, d] of derived.filter(([, d]) => !d.sha256hex.includes("body"))) all[name] = sha(d.sha256hex);
