@@ -9,3 +9,4 @@ export { sessionExpiry } from "./kit/expiry.js";
 export type { BrokerPlugin, ReadCtx, RedirectSignIn, ReturnRead } from "./plugin.js";
 export { RegistryError, createRegistry, type BrokerRegistry } from "./registry.js";
 export { completeSignIn, loginUrlFor, readHoldings, toBrokerError } from "./host.js";
+export { defaultRegistry, plugins } from "./plugins/index.js";
