@@ -49,6 +49,7 @@ Each feature's design is a dated spec in [`superpowers/specs/`](superpowers/spec
 | [Documents by filing design](superpowers/specs/2026-10-19-documents-filings-design.md) | The Documents screen: filings, not files, with their Numbers and Text tracks | Design, frontend and backend |
 | [MCP server design](superpowers/specs/2026-10-21-mcp-server-design.md) | The read-only MCP server for agents: M1 facts and search, M2 metrics | Engineering |
 | [Broker plugins design](superpowers/specs/2026-10-27-broker-plugins-design.md) | Each broker a typed plugin with a host-locked toolkit and a conformance suite; Zerodha first; not built | Engineering |
+| [Angel One plugin design](superpowers/specs/2026-10-27-angel-one-plugin-design.md) | Angel One as the second broker plugin: publisher-login redirect, no host change, switched off until a live run; not built | Engineering |
 | [Company financials design](superpowers/specs/2026-10-13-company-financials-design.md) | The Research page: the stock summary, statement tables and figure panel | Design, frontend and backend |
 | [Market mood design](superpowers/specs/2026-10-06-market-mood-design.md) | The market mood score, its readings and the Settings connections | Design, frontend and backend |
 | [Document intake design](superpowers/specs/2026-10-05-document-intake-classification-design.md) | Working out what an uploaded PDF is and which company it belongs to | Backend and data |
