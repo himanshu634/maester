@@ -1,6 +1,8 @@
 # Broker plugins: design
 
-Status: draft for review, 27 October 2026. The decision is [ADR 0009](../../decisions/0009-broker-plugins.md). This design replaces how a broker is described, which was "a broker is one JSON definition" from the [broker connections plan](../plans/2026-10-19-broker-connections.md) and the [broker accounts plan](../plans/2026-10-24-broker-accounts.md). The Holdings screen ("D · final, one person") does not change. The broker facts are in [`docs/research/2026-10-24-broker-accounts.md`](../../research/2026-10-24-broker-accounts.md), and §12 adds Angel One's publisher sign-in.
+Status: draft for review, 27 October 2026. The decision is [ADR 0009](../../decisions/0009-broker-plugins.md).
+
+Depends on: `origin/staging` getting the migration that creates the broker tables (`broker_connection`, `broker_login_state`, `holding_read`, `holding_line`). The broker code merged in #30, but staging's migrations stop at `0008_xbrl`. The migration exists only as an untracked `0009_broker_holdings.sql` in a local checkout. It has to land on staging before this build. If it lands as `0009`, this design's "no schema change" (§11) still holds. This design replaces how a broker is described, which was "a broker is one JSON definition" from the [broker connections plan](../plans/2026-10-19-broker-connections.md) and the [broker accounts plan](../plans/2026-10-24-broker-accounts.md). The Holdings screen ("D · final, one person") does not change. The broker facts are in [`docs/research/2026-10-24-broker-accounts.md`](../../research/2026-10-24-broker-accounts.md), and §12 adds Angel One's publisher sign-in.
 
 ## 1. Goal
 
@@ -82,17 +84,22 @@ packages/brokers/
       kite/
         manifest.ts   data: name, copy, hosts, fields, sign-in kind
         plugin.ts     the sign-in and the holdings read
-        fixtures/     recorded answers (holdings, session, errors)
-        kite.test.ts
       angel/
         manifest.ts
         plugin.ts
-        fixtures/
-        angel.test.ts
   test/
     conformance.ts    the suite every plugin runs (§14.1)
     registry.test.ts
+    plugins/
+      kite/
+        fixtures/     recorded answers (holdings, session, errors)
+        kite.test.ts
+      angel/
+        fixtures/
+        angel.test.ts
 ```
+
+Tests and fixtures live under `test/`, where `vitest.config.ts` already looks (`test/**/*.test.ts`). This keeps the fixtures out of the build, and keeps the tests outside the lint rule for `src/plugins/**` (§5.5), because a test needs to stub `fetch` and read files.
 
 The following are deleted:
 
@@ -348,7 +355,8 @@ Sources:
 | Login | `https://smartapi.angelone.in/publisher-login?api_key=<apiKey>&state=<nonce>` [off: `_login_url`, and the docs' optional `state`] |
 | Return | `auth_token` and `feed_token` in the query [off: docs]. `state` [?, §12.3]. No `auth_token` is a refusal. `feed_token` is not kept |
 | Complete | `auth_token` is the session's bearer token [?]. The plugin confirms it with `GET https://apiconnect.angelone.in/rest/secure/angelbroking/user/v1/getProfile` [off: route]. A good answer gives the account, `data.clientcode` [?: field name] |
-| Headers on every call | `Authorization: Bearer <token>`, `X-PrivateKey: <apiKey>`, `X-UserType: USER`, `X-SourceID: WEB`, `Accept` and `Content-Type: application/json` [off: the SDK's `requestHeaders`]. The SDK also sends `X-ClientLocalIP`, `X-ClientPublicIP` and `X-MACAddress`, filled in from the machine it runs on. The plugin sends them too, and what Angel One does with them on a read is [?] |
+| Headers on every call | `Authorization: Bearer <token>`, `X-PrivateKey: <apiKey>`, `X-UserType: USER`, `X-SourceID: WEB`, `Accept` and `Content-Type: application/json` [off: the SDK's `requestHeaders`]. The SDK also sends `X-ClientLocalIP`, `X-ClientPublicIP` and `X-MACAddress`, filled in from the machine it runs on. The plugin leaves those three out: it cannot read the server's network details through the kit, and it should not invent them. Whether Angel One requires them on a read is [?] (§12.4). If it does, they become fixed constants in the plugin, written down with the reason |
+| App form | The SmartAPI app's redirect URL is Maester's return address, which must be public and https: the SmartAPI team says a localhost redirect or postback URL is refused with a 403 [staff, forum]. Leave the postback URL blank, because Maester takes no order updates |
 | Expiry | Daily at 00:00, Asia/Kolkata: "All users will be logged out daily at 12 midnight" [staff, forum 5352] |
 | Holdings | `GET https://apiconnect.angelone.in/rest/secure/angelbroking/portfolio/v1/getHolding` [off: route]. List `data` [?]. Fields `isin`, `tradingsymbol`, `exchange`, `quantity`, `t1quantity`, `averageprice`, `ltp` [staff: forum 4006 example response] |
 | Errors | HTTP 401 or 403 is signed out. An answer with `status: false` and `errorcode` `AG8001`, `AG8002` or `AG8003` (invalid, expired or missing token) is `BROKER_SIGNED_OUT` [?: codes]. Any other `status: false` is `BROKER_UNAVAILABLE` |
@@ -382,6 +390,8 @@ The fallback is a typed MPIN and TOTP sign-in, which would be a new strategy (§
 
 ### 12.4 To confirm on the first live run
 
+The live run needs Maester's return address on a public https host, because SmartAPI refuses a localhost redirect URL. Hosting is undecided, so the run needs either a deployment or a tunnel to a local API.
+
 1. `state` comes back unchanged on the return.
 2. The publisher login works for an app made under SmartAPI's current "New Login". One unverified reply says publisher APIs are not supported there [3p]. If it fails, record which app type works.
 3. `auth_token` works as the bearer token on `getProfile` and `getHolding` without a further exchange. One user could not turn it into a JWT with `generateToken` [3p].
@@ -390,7 +400,7 @@ The fallback is a typed MPIN and TOTP sign-in, which would be a new strategy (§
 6. Whether `quantity` already includes `t1quantity`. The plugin maps both, as Kite does, so the engine adds them. If `quantity` already includes T+1, map T+1 to `"0"`.
 7. The `-EQ` suffix on NSE symbols, and which other series suffixes appear.
 8. The error codes Angel One returns for an expired token.
-9. Whether Angel One reads the three `X-Client*` and MAC headers on a holdings call.
+9. Whether `getProfile` and `getHolding` succeed without `X-ClientLocalIP`, `X-ClientPublicIP` and `X-MACAddress`. If they are refused, add the three as fixed constants and record which values Angel One accepts.
 
 ## 13. Removed
 
@@ -453,10 +463,10 @@ The `src/plugins/**` restrictions from §5.5 have a fixture file that should fai
 The recipe the brokers README will carry:
 
 1. Read the broker's own docs and record what they say, with [off], [staff], [3p] and [?] marks, in `docs/research/`.
-2. Copy `plugins/kite/` to `plugins/<id>/`. Write `manifest.ts`: hosts, saved fields, copy (DESIGN.md §7) and `signedOutStatuses`.
+2. Copy `src/plugins/kite/` to `src/plugins/<id>/`. Write `manifest.ts`: hosts, saved fields, copy (DESIGN.md §7) and `signedOutStatuses`.
 3. Write `plugin.ts`: `loginUrl`, `readReturn`, `complete` and `reads.holdings`. Use only the kit. Return figures with `decimal()`. Compute nothing.
-4. Record the answers in `fixtures/` with every key, token and account ID replaced.
-5. Write `<id>.test.ts`: `runConformance(plugin, fixtures)` plus the broker's own cases.
+4. Record the answers in `test/plugins/<id>/fixtures/` with every key, token and account ID replaced.
+5. Write `test/plugins/<id>/<id>.test.ts`: `runConformance(plugin, fixtures)` plus the broker's own cases.
 6. Add the plugin to `plugins/index.ts`.
 7. List what a live run must confirm in the README, and keep `enabled: false` if something the host needs, such as `state`, is unknown.
 
@@ -477,6 +487,7 @@ It needs no change in `apps/api`, `apps/web`, `packages/contracts` or `packages/
 | Risk | Effect | Answer |
 | --- | --- | --- |
 | Angel One drops `state` | Angel One cannot be offered safely | §12.3: the return fails safe; switch the broker off with a reason |
+| No public https address yet | Angel One cannot be tested live, so it cannot be switched on with confidence | §12.4: a deployment or a tunnel. Kite has the same need for its redirect, so one answer covers both |
 | Publisher login retired for new apps | Angel One cannot sign in by redirect | §12.4 item 2; the fallback is a typed MPIN and TOTP strategy, a separate design |
 | A plugin sneaks around the kit | Credentials reach a host the manifest does not name | Lint ban, the conformance suite's fake `fetch`, and review. Plugins are compiled in, so a plugin is code review's job, as definitions were ("treat the definitions folder as code") |
 | Code plugins make brokers harder to add than JSON | Fewer brokers | A plugin for a Kite-like broker is about 80 lines with the kit. The recipe and the conformance suite carry the rules a reviewer would otherwise hold in their head |
