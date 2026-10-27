@@ -114,6 +114,18 @@ export const BrokerSignIn = z.discriminatedUnion("kind", [
 ]);
 export type BrokerSignIn = z.infer<typeof BrokerSignIn>;
 
+/** What the page says about signing in with a broker, how long it lasts and what it costs. */
+export const BrokerCopy = z.object({
+  pickerLine: z.string().min(1).max(160),
+  lasts: z.string().min(1).max(80),
+  cost: z.string().min(1).max(80),
+  formLede: z.string().min(1).max(400),
+  steps: z.array(z.string().min(1).max(300)).min(1).max(8),
+  saveNote: z.string().max(200).optional(),
+  signedOutNote: z.string().min(1).max(200),
+});
+export type BrokerCopy = z.infer<typeof BrokerCopy>;
+
 export const BrokerDefinition = z.object({
   id: BrokerId,
   name: z.string().min(1).max(40),
@@ -122,16 +134,7 @@ export const BrokerDefinition = z.object({
   notOfferedReason: z.string().max(200).optional(),
   /** Every host a call may reach. A URL to any other host is refused before it is sent. */
   hosts: z.array(z.string().regex(/^[a-z0-9.-]+$/)).min(1).max(8),
-  /** What the page says about signing in, how long it lasts and what it costs. */
-  copy: z.object({
-    pickerLine: z.string().min(1).max(160),
-    lasts: z.string().min(1).max(80),
-    cost: z.string().min(1).max(80),
-    formLede: z.string().min(1).max(400),
-    steps: z.array(z.string().min(1).max(300)).min(1).max(8),
-    saveNote: z.string().max(200).optional(),
-    signedOutNote: z.string().min(1).max(200),
-  }),
+  copy: BrokerCopy,
   /** What the investor types in. A broker that signs in through a Settings connection asks for nothing. */
   credentials: z.array(BrokerCredentialField).max(4),
   /** The credential whose last 4 characters name the saved key. Absent when there are no credentials. */
@@ -170,6 +173,47 @@ export const BrokerDefinition = z.object({
   signedOutStatuses: z.array(z.number().int().min(400).max(599)).default([401, 403]),
 });
 export type BrokerDefinition = z.infer<typeof BrokerDefinition>;
+
+/**
+ * A broker plugin's manifest: what the page shows and the rules the host enforces around the
+ * plugin's code. The plugin compiled into the API holds the calls; the manifest holds no call.
+ * Every URL a plugin reaches is https on one of `hosts`. A plugin signs in through the broker's
+ * own page (`redirect`) and nothing else, so a manifest with another `signIn` kind is refused.
+ */
+export const BrokerManifest = z.object({
+  id: BrokerId,
+  name: z.string().min(1).max(40),
+  /** Off: listed as not offered, with `notOfferedReason`, and nothing can be saved or signed in for it. */
+  enabled: z.boolean(),
+  notOfferedReason: z.string().max(200).optional(),
+  /** Every host a call may reach. A URL to any other host is refused before it is sent. */
+  hosts: z.array(z.string().regex(/^[a-z0-9.-]+$/)).min(1).max(8),
+  copy: BrokerCopy,
+  /** What the investor types in. */
+  credentials: z.array(BrokerCredentialField).min(1).max(4),
+  /** The credential whose last 4 characters name the saved key. */
+  credentialShown: z.string(),
+  signIn: z.discriminatedUnion("kind", [z.object({ kind: z.literal("redirect") })]),
+  /** An answer with one of these statuses means the broker signed Maester out. */
+  signedOutStatuses: z.array(z.number().int().min(400).max(599)).default([401, 403]),
+});
+export type BrokerManifest = z.infer<typeof BrokerManifest>;
+
+/**
+ * One holding as a plugin returns it: the facts the broker printed, as decimal strings exactly as
+ * sent. A plugin computes nothing; quantity plus T+1, cost, value and gain are worked out in
+ * @maester/financial-engine. `lastPrice` is null when the broker sent none.
+ */
+export const BrokerHoldingLine = z.object({
+  isin: z.string().min(1),
+  symbol: z.string().min(1),
+  exchange: z.string().min(1),
+  quantity: DecimalString,
+  t1Quantity: DecimalString,
+  averagePrice: DecimalString,
+  lastPrice: DecimalString.nullable(),
+});
+export type BrokerHoldingLine = z.infer<typeof BrokerHoldingLine>;
 
 /** What the web is sent about a broker: everything a page shows, none of the calls. */
 export const BrokerSummary = z.object({
