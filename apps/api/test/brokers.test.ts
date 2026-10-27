@@ -6,7 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { BrokerAccount, BrokerList, HoldingsSnapshot } from "@maester/contracts";
 import { createRegistry, type BrokerRegistry } from "@maester/brokers";
 import { fakePlugin } from "@maester/brokers/testing";
-import { finishHoldingRead, getBrokerConnection, saveBrokerCredentials, saveBrokerSession, startHoldingRead, upsertMarketPoints } from "@maester/db";
+import { createBrokerLoginState, finishHoldingRead, getBrokerConnection, saveBrokerCredentials, saveBrokerSession, startHoldingRead, upsertMarketPoints } from "@maester/db";
 import { decryptSecret, encryptSecret } from "@maester/market";
 import { createTestContext, type TestContext } from "./context.js";
 
@@ -446,6 +446,38 @@ describe("a plugin switched off while an account exists", () => {
     expect(calls[0]!.init.headers).toMatchObject({ Authorization: `Bearer ${TOKEN}` });
     const snap = HoldingsSnapshot.parse(await (await ctx.app.request(`${base()}/holdings`, { headers: { cookie } })).json());
     expect(snap.rows.map((r) => r.symbol)).toEqual(["HDFCBANK", "TITAN"]);
+    logsClean();
+  });
+
+  it("does not finish a sign-in started before the plugin was switched off", async () => {
+    const row = await insertAccount("fake");
+    // A state issued while the plugin was still offered.
+    await createBrokerLoginState(ctx.db, { nonce: "earlierSTATEnonce", connectionId: row.id, userId, expiresAt: new Date(Date.now() + 600_000) });
+    const res = await ctx.app.request(`/v1/brokers/fake/return?${new URLSearchParams({ token: TOKEN, state: "earlierSTATEnonce" })}`, { headers: { cookie } });
+    expect(res.headers.get("location")).toBe("http://localhost/terminal/holdings?broker=fake&error=SIGN_IN_EXPIRED");
+    expect(calls).toHaveLength(0);
+    expect((await getBrokerConnection(ctx.db, ws, "fake"))?.tokenCiphertext).toBeNull();
+    // The state is used up all the same.
+    expect((await ctx.db.execute(sql`SELECT count(*)::int AS n FROM broker_login_state`)).rows[0]).toEqual({ n: 0 });
+  });
+});
+
+describe("two plugins in one registry", () => {
+  beforeAll(() => open(createRegistry([fakePlugin(), fakePlugin({ id: "other", name: "Other" })])));
+  afterAll(() => ctx.close());
+
+  it("does not finish one broker's sign-in through another broker's return", async () => {
+    expect((await save()).status).toBe(200);
+    const state = await issuedState();
+    const res = await ctx.app.request(`/v1/brokers/other/return?${new URLSearchParams({ token: TOKEN, state })}`, { headers: { cookie } });
+    expect(res.headers.get("location")).toBe("http://localhost/terminal/holdings?broker=other&error=SIGN_IN_EXPIRED");
+    expect(calls).toHaveLength(0);
+    expect((await getBrokerConnection(ctx.db, ws, "fake"))?.tokenCiphertext).toBeNull();
+    expect(await getBrokerConnection(ctx.db, ws, "other")).toBeNull();
+    // The state was used up on the wrong return, so it does not work on the right one either.
+    const again = await ctx.app.request(`/v1/brokers/fake/return?${new URLSearchParams({ token: TOKEN, state })}`, { headers: { cookie } });
+    expect(again.headers.get("location")).toBe("http://localhost/terminal/holdings?broker=fake&error=SIGN_IN_EXPIRED");
+    expect(calls).toHaveLength(0);
     logsClean();
   });
 });

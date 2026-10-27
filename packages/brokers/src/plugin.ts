@@ -32,7 +32,8 @@ export type ReadCtx = { creds: Credentials; session: { accessToken: string; acco
 /**
  * A broker. The manifest is data the web and the host use without running the plugin; the rest is
  * behaviour. A plugin can sign in and read, and nothing else: there is no way to place an order
- * or move money. The API never calls a plugin directly, only through `host.ts`.
+ * or move money. The API calls a plugin through `host.ts`, with one exception: the return route
+ * calls `signIn.readReturn` directly, because it only reads the query and makes no network call.
  */
 export type BrokerPlugin = {
   manifest: BrokerManifest;

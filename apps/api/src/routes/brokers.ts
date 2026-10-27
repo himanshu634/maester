@@ -121,13 +121,18 @@ export function brokerCatalogRoutes(deps: AppDeps) {
     } catch (err) {
       return back({ broker: id, error: logBrokerError(deps, id, err, "sign-in") });
     }
+    // The state is taken (and so used up) before anything else is decided, so it never works twice.
     const state = ret.state ? await takeBrokerLoginState(deps.db, ret.state, new Date()) : null;
     if (!state || state.userId !== c.get("user").id) return back({ broker: id, error: "SIGN_IN_EXPIRED" });
+    // A broker is switched off when signing in to it is not safe: a sign-in started before then does not finish.
+    if (!plugin.manifest.enabled) return back({ broker: id, error: "SIGN_IN_EXPIRED" });
     if ("refused" in ret) return back({ broker: id, error: "SIGN_IN_CANCELLED" });
 
     const key = needKey(deps);
     const row = await getBrokerConnectionById(deps.db, state.connectionId);
-    if (!row?.credentialsCiphertext) return back({ broker: id, error: "SIGN_IN_EXPIRED" });
+    // The state names the account its sign-in started for. A return through another broker's address
+    // must not hand that account's key to this plugin, nor write this broker's token on that account.
+    if (!row?.credentialsCiphertext || row.broker !== id) return back({ broker: id, error: "SIGN_IN_EXPIRED" });
     const creds = credentialsOf(row.credentialsCiphertext, key);
     let session;
     try {
