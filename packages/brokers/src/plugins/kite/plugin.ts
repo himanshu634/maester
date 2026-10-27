@@ -67,9 +67,12 @@ export const kite: BrokerPlugin = {
           symbol: text(at(item, "tradingsymbol"), "tradingsymbol"),
           exchange: text(at(item, "exchange"), "exchange"),
           quantity: decimal(at(item, "quantity"), "quantity"),
-          // Kite leaves out a T+1 quantity it has none of: none pending. A missing average price is not read as 0, because a cost the broker did not give stays unknown.
+          // Kite leaves out a T+1 quantity it has none of: none pending.
           t1Quantity: decimal(at(item, "t1_quantity") ?? 0, "t1_quantity"),
-          averagePrice: decimal(at(item, "average_price"), "average_price"),
+          // An absent average price is "0", as the old client read it. The financial engine reads an average price of 0 as an
+          // unknown cost (NO_COST), so the figure shows as unknown, not as zero, and one such line does not fail the whole read
+          // and hide every holding. A price that is present but not a decimal is still unreadable.
+          averagePrice: decimal(at(item, "average_price") ?? 0, "average_price"),
           lastPrice: lastPrice == null ? null : decimal(lastPrice, "last_price"),
         };
       });

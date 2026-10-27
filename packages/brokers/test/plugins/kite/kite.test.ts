@@ -164,10 +164,23 @@ describe("the Kite plugin", () => {
       expect(lines.map((l) => [l.t1Quantity, l.lastPrice])).toEqual([["0", null], ["0", null]]);
     });
 
-    it("refuses a line with no average price, rather than reading the missing cost as 0", async () => {
+    it("takes an absent average price as 0, which the engine reads as an unknown cost, and keeps the other lines", async () => {
       for (const average_price of [undefined, null]) {
+        const body = {
+          data: [
+            { tradingsymbol: "A", exchange: "NSE", isin: "INE000000001", quantity: 1, average_price },
+            { tradingsymbol: "B", exchange: "NSE", isin: "INE000000002", quantity: 2, average_price: 20.5 },
+          ],
+        };
+        const lines = await read(vi.fn(async () => json(200, body)));
+        expect(lines.map((l) => [l.isin, l.averagePrice]), String(average_price)).toEqual([["INE000000001", "0"], ["INE000000002", "20.5"]]);
+      }
+    });
+
+    it("still refuses an average price that is present but not a decimal", async () => {
+      for (const average_price of ["ten", "1e3", "", "1,5", true, {}]) {
         const body = { data: [{ tradingsymbol: "A", exchange: "NSE", isin: "INE000000001", quantity: 1, average_price }] };
-        expect(await rejection(read(vi.fn(async () => json(200, body)))), String(average_price)).toMatchObject({ code: "BROKER_ANSWER_UNREADABLE" });
+        expect(await rejection(read(vi.fn(async () => json(200, body)))), JSON.stringify(average_price)).toMatchObject({ code: "BROKER_ANSWER_UNREADABLE" });
       }
     });
 
