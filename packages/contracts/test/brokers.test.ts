@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BrokerCopy, BrokerDefinition, BrokerHoldingLine, BrokerManifest } from "../src/index.js";
+import { BrokerCopy, BrokerDefinition, BrokerHoldingLine, BrokerManifest, BrokerSummary } from "../src/index.js";
 
 const copy = {
   pickerLine: "Zerodha, through your own Kite Connect app.",
@@ -91,5 +91,31 @@ describe("BrokerHoldingLine", () => {
     const withoutLastPrice: Partial<typeof line> = { ...line };
     delete withoutLastPrice.lastPrice;
     expect(BrokerHoldingLine.safeParse(withoutLastPrice).success).toBe(false);
+  });
+});
+
+describe("BrokerSummary", () => {
+  const summary = {
+    id: "kite",
+    name: "Zerodha",
+    enabled: true,
+    notOfferedReason: null,
+    copy,
+    credentials: [{ key: "apiKey", label: "API key", secret: false, minLength: 6, maxLength: 64 }],
+    signIn: { kind: "redirect" },
+    returnUrl: "https://maester.example/v1/brokers/kite/return",
+  };
+
+  it("parses a broker that signs in on its own page", () => {
+    expect(BrokerSummary.parse(summary).signIn).toEqual({ kind: "redirect" });
+  });
+
+  it("refuses the direct and Settings-connection sign-ins, which no plugin has", () => {
+    expect(BrokerSummary.safeParse({ ...summary, signIn: { kind: "direct" } }).success).toBe(false);
+    expect(BrokerSummary.safeParse({ ...summary, signIn: { kind: "settings-connection", provider: "dhan" } }).success).toBe(false);
+  });
+
+  it("keeps returnUrl nullable, for a later sign-in with no return", () => {
+    expect(BrokerSummary.parse({ ...summary, returnUrl: null }).returnUrl).toBeNull();
   });
 });

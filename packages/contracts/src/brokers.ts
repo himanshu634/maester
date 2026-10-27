@@ -221,16 +221,17 @@ export const BrokerSummary = z.object({
   name: z.string(),
   enabled: z.boolean(),
   notOfferedReason: z.string().nullable(),
-  copy: BrokerDefinition.shape.copy,
+  copy: BrokerCopy,
   credentials: z.array(BrokerCredentialField.omit({ minLength: true, maxLength: true }).extend({ minLength: z.number(), maxLength: z.number() })),
-  /** How the account signs in: the page shows a form and a sign-in for `redirect`, and points at Settings for `settings-connection`. */
-  signIn: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("redirect") }),
-    z.object({ kind: z.literal("settings-connection"), provider: SettingsConnectionProvider }),
-    /** Signs in from Maester itself with the saved key, once the investor has approved it on the broker's side. */
-    z.object({ kind: z.literal("direct") }),
-  ]),
-  /** The address to paste into the broker's app as its redirect URL. Null for a broker with no redirect. */
+  /**
+   * How the account signs in. One strategy today: the page shows a form for the key, then a sign-in
+   * on the broker's own page (`redirect`). A later strategy adds a member here.
+   */
+  signIn: z.discriminatedUnion("kind", [z.object({ kind: z.literal("redirect") })]),
+  /**
+   * The address to paste into the broker's app as its redirect URL. Every broker has one today; it
+   * stays nullable for a later strategy with no return.
+   */
   returnUrl: z.string().nullable(),
 });
 export type BrokerSummary = z.infer<typeof BrokerSummary>;
