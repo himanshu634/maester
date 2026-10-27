@@ -64,6 +64,13 @@
       "when": 1792522678139,
       "tag": "0008_xbrl",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793011614458,
+      "tag": "0009_broker_holdings",
+      "breakpoints": true
     }
   ]
 }
