@@ -19,9 +19,9 @@ Adding a broker meant changing code that every other broker depends on. Angel On
 
 On 27 October 2026 the user decided:
 
-- Keep only Zerodha (Kite) and Angel One.
+- Keep only Zerodha (Kite) and Angel One, and build Kite first. Angel One is worked on in another session.
 - Make each broker a plugin, so that adding one is as easy as possible and follows extension principles.
-- Angel One signs in through its publisher-login redirect.
+- Angel One will sign in through its publisher-login redirect.
 
 ## Decision
 
@@ -38,12 +38,12 @@ On 27 October 2026 the user decided:
    - The host alone holds credentials, tokens, encryption and the sign-in `state`.
    - A lint rule and a conformance suite that every plugin runs check all of this.
 3. **Sign-in strategies are a small closed set.** Today the set has one strategy, `redirect`. A broker that uses an existing strategy changes nothing outside its folder. A new strategy is a deliberate change to the host and the web.
-4. **Only Kite and Angel One remain.** Dhan, Upstox, Groww and ICICI Direct are removed as Holdings brokers, with the vocabulary that only they used. Dhan stays as the Settings market-data connection.
+4. **Kite is the one plugin for now; Angel One is the next.** Dhan, Upstox, Groww and ICICI Direct are removed as Holdings brokers, with the vocabulary that only they used. Dhan stays as the Settings market-data connection. Angel One's needs were checked against the contract, and it is added later as a second plugin.
 
 ## Consequences
 
 - **Kite-like brokers are easy to add.** A broker whose sign-in fits an existing strategy is one folder, one line and its fixtures, however odd its calls are. The shared interpreter no longer grows with each broker.
 - **Adding a broker needs a build.** An operator can no longer add or replace a broker by dropping a file into a folder. That is acceptable for a personal install. A definition already had to be treated as code, because it decided where decrypted keys were sent.
 - **Review now carries the "cannot trade" guarantee.** The lint rule and the conformance suite do much of that review's work.
-- **Angel One depends on its own sign-in page.** If its publisher login does not send `state` back, the host refuses the return and Angel One is switched off with a reason. This is the rule that kept ICICI Direct off on 24 October 2026.
+- **Angel One will depend on its own sign-in page.** If its publisher login does not send `state` back, the host refuses the return, and Angel One stays switched off with a reason. This is the rule that kept ICICI Direct off on 24 October 2026. The facts are in [`docs/research/2026-10-27-angel-one-publisher-login.md`](../research/2026-10-27-angel-one-publisher-login.md).
 - **Old accounts stay hidden.** Rows for removed brokers stay in `broker_connection`, hidden and never decrypted. There is no migration.

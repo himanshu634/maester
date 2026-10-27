@@ -2,19 +2,28 @@
 
 Status: draft for review, 27 October 2026. The decision is [ADR 0009](../../decisions/0009-broker-plugins.md).
 
-Depends on: `origin/staging` getting the migration that creates the broker tables (`broker_connection`, `broker_login_state`, `holding_read`, `holding_line`). The broker code merged in #30, but staging's migrations stop at `0008_xbrl`. The migration exists only as an untracked `0009_broker_holdings.sql` in a local checkout. It has to land on staging before this build. If it lands as `0009`, this design's "no schema change" (§11) still holds. This design replaces how a broker is described, which was "a broker is one JSON definition" from the [broker connections plan](../plans/2026-10-19-broker-connections.md) and the [broker accounts plan](../plans/2026-10-24-broker-accounts.md). The Holdings screen ("D · final, one person") does not change. The broker facts are in [`docs/research/2026-10-24-broker-accounts.md`](../../research/2026-10-24-broker-accounts.md), and §12 adds Angel One's publisher sign-in.
+This design replaces how a broker is described. Until now that was "a broker is one JSON definition", from the [broker connections plan](../plans/2026-10-19-broker-connections.md) and the [broker accounts plan](../plans/2026-10-24-broker-accounts.md). The Holdings screen ("D · final, one person") does not change. The broker facts are in [`docs/research/2026-10-24-broker-accounts.md`](../../research/2026-10-24-broker-accounts.md). Angel One's are in [`docs/research/2026-10-27-angel-one-publisher-login.md`](../../research/2026-10-27-angel-one-publisher-login.md).
+
+**Depends on** `origin/staging` getting the migration that creates the broker tables: `broker_connection`, `broker_login_state`, `holding_read` and `holding_line`.
+
+- The broker code merged in #30, but staging's migrations stop at `0008_xbrl`.
+- The migration exists only as an untracked `0009_broker_holdings.sql` in a local checkout. It has to land on staging before this build.
+- If it lands as `0009`, this design's "no schema change" (§11) still holds.
 
 ## 1. Goal
 
-Maester reads holdings from two brokers, Zerodha (Kite Connect) and Angel One (SmartAPI). Each broker is a plugin: one folder of typed code that the API loads through one registry. A new broker is one more folder and one more line in the registry. Routes, contracts, the web and the database do not change for it.
+Maester reads holdings from one broker, Zerodha (Kite Connect), through a plugin. A plugin is one folder of typed code that the API loads through one registry.
+
+A new broker is one more folder and one more line in the registry; routes, contracts, the web and the database do not change for it. Angel One is the next plugin, designed and built in a session of its own. This design checks that its known needs fit the contract (§12.2).
 
 ## 2. What is decided, and by whom
 
 The user decided these points on 27 October 2026:
 
-- Keep only Kite and Angel One. Remove Dhan, Upstox, Groww and ICICI Direct as Holdings brokers.
+- Keep Kite and Angel One, and remove Dhan, Upstox, Groww and ICICI Direct as Holdings brokers.
+- For now, support Kite only. Angel One is worked on in another session.
 - Brokers are plugins, and adding one must be as easy as possible. The design follows the open/closed principle.
-- Angel One signs in through its publisher-login redirect, the way Zerodha does. The investor does not type an MPIN and an authenticator code into Maester, and Maester does not keep a TOTP seed.
+- Angel One will sign in through its publisher-login redirect, the way Zerodha does (recorded for that session).
 - The design in this document, which was presented in chat and approved.
 
 These points are the designer's call:
@@ -23,7 +32,7 @@ These points are the designer's call:
 - The plugin contract.
 - The host toolkit.
 - The conformance suite.
-- What happens if Angel One does not send `state` back (§12.3).
+- The fake plugin that proves the routes depend on no broker (§14.3).
 
 ## 3. Goals, non-goals, anti-goals
 
@@ -32,12 +41,13 @@ These points are the designer's call:
 - A broker that uses an existing sign-in strategy is added with one folder, one registry line and recorded fixtures. It needs no change to `apps/api`, `apps/web`, `packages/contracts` or `packages/db`.
 - Every safety rule that the JSON vocabulary used to make impossible is now enforced by the host and checked by a test (§6).
 - Kite behaves exactly as it does today: same calls, same expiry, same errors.
-- Angel One can be switched on as soon as one live run confirms the items in §12.4.
+- Angel One's known needs fit the contract without a host change (§12.2), so its session adds only a plugin.
 
 **Non-goals**
 
+- No Angel One plugin here.
 - No new reads. Funds, positions, SIPs and mutual funds are not built. Read capabilities have a slot for them (§8.1).
-- No new sign-in strategy. Both brokers use `redirect`.
+- No new sign-in strategy. Kite uses `redirect`.
 - No change to the Holdings screen, its copy rules or the holdings calculations in `@maester/financial-engine`.
 - No migration. No row for a removed broker is rewritten (§11).
 
@@ -58,7 +68,7 @@ These points are the designer's call:
 | Groww | `direct` sign-in; JSON bodies; `{timestamp}`; `exchangeIs` |
 | ICICI Direct | GET with a body over `node:https`; `{isoTimestamp}`; `{body}` signing; `join` |
 
-So the interpreter was never closed to change. Each broker reopened it, and every change risked the brokers that already worked. Angel One would add two more words:
+So the interpreter was never closed to change. Each broker reopened it, and every change risked the brokers that already worked. Angel One, the next broker, would add two more words:
 
 - **A return that carries the token.** The broker sends the access token back in the query, with no code to exchange.
 - **A success status with an error inside.** Angel One answers HTTP 200 with `status: false` and an error code.
@@ -80,13 +90,10 @@ packages/brokers/
       values.ts       at(), text(), decimal(), sha256hex()
       expiry.ts       sessionExpiry() (moved from src/expiry.ts, unchanged)
     plugins/
-      index.ts        export const plugins = [kite, angel] as const;
+      index.ts        export const plugins = [kite] as const;
       kite/
         manifest.ts   data: name, copy, hosts, fields, sign-in kind
         plugin.ts     the sign-in and the holdings read
-      angel/
-        manifest.ts
-        plugin.ts
   test/
     conformance.ts    the suite every plugin runs (§14.1)
     registry.test.ts
@@ -94,9 +101,6 @@ packages/brokers/
       kite/
         fixtures/     recorded answers (holdings, session, errors)
         kite.test.ts
-      angel/
-        fixtures/
-        angel.test.ts
 ```
 
 Tests and fixtures live under `test/`, where `vitest.config.ts` already looks (`test/**/*.test.ts`). This keeps the fixtures out of the build, and keeps the tests outside the lint rule for `src/plugins/**` (§5.5), because a test needs to stub `fetch` and read files.
@@ -247,9 +251,7 @@ The flow is today's redirect flow, with the broker's part in the plugin:
 1. `POST /v1/workspaces/:ws/brokers/:broker/sign-in`. The host decrypts the saved credentials and makes a nonce, then calls `plugin.signIn.loginUrl({ creds, state, returnUrl })`. It checks that the URL is https on a manifest host and returns `{ url }`.
 2. The investor signs in on the broker's page. The broker sends them to `GET /v1/brokers/:broker/return?…`.
 3. The host calls `readReturn(query)`, then takes the nonce. It refuses the return when the state is missing, unknown, expired or another user's (`SIGN_IN_EXPIRED`). It refuses it when the plugin says the broker refused (`SIGN_IN_CANCELLED`).
-4. The host calls `complete({ creds, payload, returnUrl, http, now })`:
-   - Kite exchanges `request_token` for a session.
-   - Angel One takes `auth_token` and confirms it with one profile call.
+4. The host calls `complete({ creds, payload, returnUrl, http, now })`. Kite exchanges `request_token` for a session. A broker whose return carries the token itself, such as Angel One, would check it with one call instead. The contract allows both.
 5. The host encrypts and saves the session, reads the holdings once, and sends the browser to `/terminal/holdings?broker=…&signedIn=1`, or `&error=CODE` on failure.
 
 A new strategy, such as a prompt for an MPIN and a TOTP, would be a new member of the `signIn` union. It would need host routes, `BrokerSummary.signIn` and the web together, and a design round for its screen. That is the one change here that is not "add a folder". A strategy is shared by many brokers, so this should be rare.
@@ -309,9 +311,9 @@ These helpers are removed: `connectionOf`, `settingsConnections`, `settingsState
 - **`types.ts`:** the `direct` and `settings-connection` members go.
 - **`content/holdings.ts`:** `settings.providers` and the Groww and Dhan sentences go. The Dhan sentences that describe *closes* stay ("from your Dhan data"), because Dhan is still the Settings market-data connection.
 - **Components:** `AddBroker`, `AccountsLedger` and `HoldingsNudge` lose their Settings and direct branches.
-- **`view.test.ts`:** the Dhan and Groww fixtures go. An Angel One summary and account join the Kite ones.
+- **`view.test.ts`:** the Dhan and Groww fixtures go.
 
-Angel One signs in the way Kite does, so there is no new visible state and no mockup round. The picker lists two brokers.
+There is no new visible state and no mockup round. The picker lists one broker, and `AddBroker` already opens with the first offered broker chosen, so Kite's form shows straight away.
 
 ## 11. Database
 
@@ -321,7 +323,7 @@ A row whose broker is no longer in the registry is already left out of every lis
 
 No live broker run has happened, so no such rows are expected. Rows that do exist can be removed by hand.
 
-## 12. The two plugins
+## 12. The plugins
 
 ### 12.1 Kite (Zerodha)
 
@@ -340,67 +342,18 @@ This is a straight port of `kite.json`, with the same behaviour:
 
 The fixtures are the answers already recorded in `packages/brokers/test/brokers.test.ts`. The port is done when every Kite case there passes against the plugin.
 
-### 12.2 Angel One (SmartAPI)
+### 12.2 Angel One fits the contract
 
-Sources:
+Angel One is not built here. Its facts, its live-run checklist and the rule for a missing `state` are in [`docs/research/2026-10-27-angel-one-publisher-login.md`](../../research/2026-10-27-angel-one-publisher-login.md). The contract was checked against those facts, and each need maps onto it with no host change:
 
-- **[off]** Angel One's own SDK [`smartapi-python`](https://github.com/angel-one/smartapi-python), `SmartApi/smartConnect.py`, read 27 October 2026, and the [SmartAPI docs](https://smartapi.angelbroking.com/docs/User), which are rendered by script and were read through search snippets.
-- **[3p]** Forum posts.
-- **[?]** Not yet confirmed.
-
-| Part | Value |
+| Angel One's need | Where it goes |
 | --- | --- |
-| Hosts | `smartapi.angelone.in` (login), `apiconnect.angelone.in` (calls) [off] |
-| Saved fields | `apiKey`, the SmartAPI app's API key (shown, not secret). The publisher flow needs no secret [off: the SDK's `login_url` uses `api_key` only] |
-| Login | `https://smartapi.angelone.in/publisher-login?api_key=<apiKey>&state=<nonce>` [off: `_login_url`, and the docs' optional `state`] |
-| Return | `auth_token` and `feed_token` in the query [off: docs]. `state` [?, §12.3]. No `auth_token` is a refusal. `feed_token` is not kept |
-| Complete | `auth_token` is the session's bearer token [?]. The plugin confirms it with `GET https://apiconnect.angelone.in/rest/secure/angelbroking/user/v1/getProfile` [off: route]. A good answer gives the account, `data.clientcode` [?: field name] |
-| Headers on every call | `Authorization: Bearer <token>`, `X-PrivateKey: <apiKey>`, `X-UserType: USER`, `X-SourceID: WEB`, `Accept` and `Content-Type: application/json` [off: the SDK's `requestHeaders`]. The SDK also sends `X-ClientLocalIP`, `X-ClientPublicIP` and `X-MACAddress`, filled in from the machine it runs on. The plugin leaves those three out: it cannot read the server's network details through the kit, and it should not invent them. Whether Angel One requires them on a read is [?] (§12.4). If it does, they become fixed constants in the plugin, written down with the reason |
-| App form | The SmartAPI app's redirect URL is Maester's return address, which must be public and https: the SmartAPI team says a localhost redirect or postback URL is refused with a 403 [staff, forum]. Leave the postback URL blank, because Maester takes no order updates |
-| Expiry | Daily at 00:00, Asia/Kolkata: "All users will be logged out daily at 12 midnight" [staff, forum 5352] |
-| Holdings | `GET https://apiconnect.angelone.in/rest/secure/angelbroking/portfolio/v1/getHolding` [off: route]. List `data` [?]. Fields `isin`, `tradingsymbol`, `exchange`, `quantity`, `t1quantity`, `averageprice`, `ltp` [staff: forum 4006 example response] |
-| Errors | HTTP 401 or 403 is signed out. An answer with `status: false` and `errorcode` `AG8001`, `AG8002` or `AG8003` (invalid, expired or missing token) is `BROKER_SIGNED_OUT` [?: codes]. Any other `status: false` is `BROKER_UNAVAILABLE` |
-| Symbol | Angel One's NSE `tradingsymbol` carries the series (`SBIN-EQ`) [?]. On `NSE`, the plugin removes a trailing `-EQ` so the share matches Maester's NSE closes. Any other suffix is left alone, so that share shows "—" for its close, never another share's close |
-
-Draft copy for the manifest. It follows DESIGN.md §7 and is checked with the build:
-
-- **pickerLine:** "Sign in on Angel One’s page each day. SmartAPI is free."
-- **lasts:** "Until midnight"
-- **cost:** "Free (SmartAPI)"
-- **formLede:** "Angel One lets an app read your holdings once you create a free SmartAPI app of your own and sign in to it each day."
-- **steps:**
-  1. "Sign in at smartapi.angelone.in and create an app."
-  2. "Paste the redirect URL below into the app’s redirect URL."
-  3. "Copy the app’s API key into the field below."
-  4. "Save, then sign in on Angel One’s page. You come back here."
-- **saveNote:** "Maester asks Angel One only for your holdings. It never places an order."
-- **signedOutNote:** "Angel One signs Maester out every night at midnight."
-
-### 12.3 If Angel One does not send `state` back
-
-A forum report says the publisher login drops `state` and sends only `auth_token`. An Angel One admin replied that the issue "got resolved from our end" and was waiting to be deployed [3p, [topic 5424](https://smartapi.angelone.in/smartapi/forum/topic/5424/issue-with-customer-state-in-redirect-uri), now deleted]. Without `state`, Maester cannot tie a return to the sign-in the investor started. Someone could then sign a person into another account's token.
-
-On 24 October 2026 the user kept ICICI Direct switched off for exactly this reason. The same rule applies here:
-
-- Angel One ships with `enabled: true`.
-- The host refuses any return without a matching `state` (`SIGN_IN_EXPIRED`), so a missing state fails safe.
-- If the live run shows that `state` does not come back, set `enabled: false` with the reason "Angel One’s sign-in page doesn’t send back the check Maester needs." Record the finding in the brokers README.
-
-The fallback is a typed MPIN and TOTP sign-in, which would be a new strategy (§7). It is not designed here.
-
-### 12.4 To confirm on the first live run
-
-The live run needs Maester's return address on a public https host, because SmartAPI refuses a localhost redirect URL. Hosting is undecided, so the run needs either a deployment or a tunnel to a local API.
-
-1. `state` comes back unchanged on the return.
-2. The publisher login works for an app made under SmartAPI's current "New Login". One unverified reply says publisher APIs are not supported there [3p]. If it fails, record which app type works.
-3. `auth_token` works as the bearer token on `getProfile` and `getHolding` without a further exchange. One user could not turn it into a JWT with `generateToken` [3p].
-4. `getProfile` gives the client code at `data.clientcode`.
-5. What `getHolding` returns for an empty account. The plugin treats `status: true` with `data: null` or `[]` as no holdings, and a fixture pins this. Any other shape is `BROKER_ANSWER_UNREADABLE` (§14.1).
-6. Whether `quantity` already includes `t1quantity`. The plugin maps both, as Kite does, so the engine adds them. If `quantity` already includes T+1, map T+1 to `"0"`.
-7. The `-EQ` suffix on NSE symbols, and which other series suffixes appear.
-8. The error codes Angel One returns for an expired token.
-9. Whether `getProfile` and `getHolding` succeed without `X-ClientLocalIP`, `X-ClientPublicIP` and `X-MACAddress`. If they are refused, add the three as fixed constants and record which values Angel One accepts.
+| The publisher login, `smartapi.angelone.in/publisher-login?api_key=…&state=…` | `loginUrl()` |
+| `auth_token` comes back in the query, with no code to exchange | `readReturn()` puts it in the payload. `complete()` checks it with one `getProfile` call through `ctx.http` |
+| HTTP 200 with `status: false` and an error code | The plugin reads the parsed answer and throws `BrokerError` |
+| NSE symbols carry the series (`SBIN-EQ`) | The plugin strips `-EQ` before it returns the line |
+| A session until midnight | `sessionExpiry({ kind: "daily", at: "00:00", timeZone: "Asia/Kolkata" })` |
+| `state` may not come back | The host already refuses such a return (§6), so a missing state fails safe |
 
 ## 13. Removed
 
@@ -442,7 +395,6 @@ The live run needs Maester's return address on a public https host, because Smar
 ### 14.2 Per-plugin tests
 
 - **Kite:** every Kite case from today's `brokers.test.ts`.
-- **Angel One:** the return with and without `state`; the token in the return; the profile check; `status: false` with each error code; an empty account; the `-EQ` suffix; the fixture lines.
 
 ### 14.3 API
 
@@ -452,7 +404,7 @@ The live run needs Maester's return address on a public https host, because Smar
 - the holdings snapshot;
 - that the logger never receives a query value from the return route.
 
-One case per real plugin checks that it loads in the real registry.
+One case checks that Kite loads in the real registry. With one real broker, the fake plugin is what shows that the routes are generic: it signs in with a token in its return, as Angel One will, so a broker of that shape is already exercised.
 
 ### 14.4 Lint
 
@@ -474,10 +426,10 @@ It needs no change in `apps/api`, `apps/web`, `packages/contracts` or `packages/
 
 ## 16. Documents to change with the build
 
-- **`packages/brokers/README.md`:** rewritten. Plugins, the kit, the invariants, the recipe in §15, and the Kite and Angel One notes, including §12.4.
+- **`packages/brokers/README.md`:** rewritten. Plugins, the kit, the invariants, the recipe in §15 and the Kite notes.
 - **`docs/DESIGN.md`:**
   - §5: Accounts ledger, Holdings nudge and Add a broker lose Dhan's Settings sentences.
-  - §10 Holdings: "A broker is a JSON definition the API loads…" becomes "A broker is a plugin in `packages/brokers/src/plugins/`…". Zerodha and Angel One are the two brokers.
+  - §10 Holdings: "A broker is a JSON definition the API loads…" becomes "A broker is a plugin in `packages/brokers/src/plugins/`…". Zerodha is the one broker for now.
 - **`docs/systems/packages.md`:** the `@maester/brokers` row.
 - **`.env.example` and `docs/DEVELOPMENT.md`:** `BROKER_DEFINITIONS_DIR` goes.
 - **`docs/README.md`:** this spec and ADR 0009 are indexed (done with this spec).
@@ -486,8 +438,7 @@ It needs no change in `apps/api`, `apps/web`, `packages/contracts` or `packages/
 
 | Risk | Effect | Answer |
 | --- | --- | --- |
-| Angel One drops `state` | Angel One cannot be offered safely | §12.3: the return fails safe; switch the broker off with a reason |
-| No public https address yet | Angel One cannot be tested live, so it cannot be switched on with confidence | §12.4: a deployment or a tunnel. Kite has the same need for its redirect, so one answer covers both |
-| Publisher login retired for new apps | Angel One cannot sign in by redirect | §12.4 item 2; the fallback is a typed MPIN and TOTP strategy, a separate design |
+| One real plugin shapes the contract | The second broker needs a host change after all | The contract was checked against Angel One's known needs (§12.2), and the API tests' fake plugin signs in the way Angel One will (§14.3) |
+| No public https address yet | Kite's redirect cannot be tried live end to end | A deployment or a tunnel. Angel One has the same need, so one answer covers both |
 | A plugin sneaks around the kit | Credentials reach a host the manifest does not name | Lint ban, the conformance suite's fake `fetch`, and review. Plugins are compiled in, so a plugin is code review's job, as definitions were ("treat the definitions folder as code") |
 | Code plugins make brokers harder to add than JSON | Fewer brokers | A plugin for a Kite-like broker is about 80 lines with the kit. The recipe and the conformance suite carry the rules a reviewer would otherwise hold in their head |
