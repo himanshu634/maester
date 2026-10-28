@@ -11,7 +11,16 @@ export type BrokerHttp = {
 };
 
 /**
- * An HTTP client locked to one broker. Every URL must be https on one of `manifest.hosts` and is
+ * Whether `url` is an address a broker call or login page may use: https, on one of `hosts`, on
+ * the default port, with no user name or password in it. The host checks `loginUrl()` with it too.
+ */
+export function isBrokerAddress(url: URL, hosts: readonly string[]): boolean {
+  return url.protocol === "https:" && hosts.includes(url.hostname) && url.port === "" && url.username === "" && url.password === "";
+}
+
+/**
+ * An HTTP client locked to one broker, made by the host for each sign-in or read; a plugin is
+ * handed one as `ctx.http` and never gets this factory. Every URL must pass `isBrokerAddress` and is
  * checked before anything is sent; no redirect is followed; a call times out after `timeoutMs`
  * (20 s). It answers with the parsed JSON body of a 200 and otherwise throws a `BrokerError`
  * whose message names only the phase and the broker, never the URL, a key or what the broker said.
@@ -28,7 +37,7 @@ export function createBrokerHttp(manifest: BrokerManifest, opts: { phase: HttpPh
     } catch {
       throw new BrokerError("BROKER_UNAVAILABLE", `${phase}: ${manifest.name} was given an address that is not a URL`);
     }
-    if (target.protocol !== "https:" || !manifest.hosts.includes(target.hostname)) {
+    if (!isBrokerAddress(target, manifest.hosts)) {
       throw new BrokerError("BROKER_UNAVAILABLE", `${phase}: ${manifest.name} was given an address it does not use`);
     }
     let res: Response;

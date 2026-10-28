@@ -24,8 +24,11 @@ describe("loginUrlFor", () => {
     expect(loginUrlFor(fakePlugin(), { creds, state: "nonce1", returnUrl: "https://app.test/return" })).toBe("https://broker.test/login?key=KEY123&state=nonce1");
   });
 
-  it("refuses a plugin URL on another host, over http, or that is not a URL, without naming it", () => {
-    for (const url of ["https://evil.test/login?key=KEY123", "http://broker.test/login?key=KEY123", "https://broker.test.evil.test/login?key=KEY123", "not a url?key=KEY123"]) {
+  it("refuses a plugin URL on another host, over http, on another port, with a user name or password, or that is not a URL, without naming it", () => {
+    for (const url of [
+      "https://evil.test/login?key=KEY123", "http://broker.test/login?key=KEY123", "https://broker.test.evil.test/login?key=KEY123", "not a url?key=KEY123",
+      "https://broker.test:8443/login?key=KEY123", "https://user:pw@broker.test/login?key=KEY123", "https://KEY123@broker.test/login",
+    ]) {
       const plugin = fakePlugin();
       const bad = { ...plugin, signIn: { ...plugin.signIn, loginUrl: () => url } };
       const err = (() => {
@@ -93,6 +96,44 @@ describe("completeSignIn", () => {
       const odd = { ...plugin, signIn: { ...plugin.signIn, complete: async () => junk as never } };
       expect(await rejection(completeSignIn(odd, { creds, payload: {}, returnUrl: "", now: NOW, fetch }))).toMatchObject({ code: "BROKER_ANSWER_UNREADABLE" });
     }
+  });
+
+  it("refuses a session whose account, times or expiry are not a session's", async () => {
+    const fetch = vi.fn(async () => json(200, { data: { id: "AB1234" } }));
+    const plugin = fakePlugin();
+    const LATER = new Date(NOW.getTime() + 3_600_000);
+    const odd = (session: unknown): BrokerPlugin => ({ ...plugin, signIn: { ...plugin.signIn, complete: async () => session as never } });
+    const cases: [string, unknown][] = [
+      ["an Invalid Date expiry", { ...NOW_SESSION, expiresAt: new Date("not a date") }],
+      ["an Invalid Date sign-in", { ...NOW_SESSION, signedInAt: new Date(Number.NaN), expiresAt: LATER }],
+      ["an expiry that is a string", { ...NOW_SESSION, expiresAt: LATER.toISOString() }],
+      ["no expiry", { accessToken: "TOKEN456", accountId: "AB1234", signedInAt: NOW }],
+      ["a numeric account", { ...NOW_SESSION, accountId: 1234, expiresAt: LATER }],
+      ["an account left out", { accessToken: "TOKEN456", signedInAt: NOW, expiresAt: LATER }],
+      ["an expiry before the sign-in", { ...NOW_SESSION, expiresAt: new Date(NOW.getTime() - 1) }],
+      ["an expiry at the sign-in", { ...NOW_SESSION, expiresAt: new Date(NOW.getTime()) }],
+      ["a string", "TOKEN456"],
+    ];
+    for (const [what, session] of cases) {
+      const err = await rejection(completeSignIn(odd(session), { creds, payload: {}, returnUrl: "", now: NOW, fetch }));
+      expect(err, what).toBeInstanceOf(BrokerError);
+      expect(err, what).toMatchObject({ code: "BROKER_ANSWER_UNREADABLE" });
+      expect((err as BrokerError).message, what).not.toContain("TOKEN456");
+    }
+  });
+
+  it("gives a new session of the four fields, with nothing else the plugin returned", async () => {
+    const plugin = fakePlugin();
+    const LATER = new Date(NOW.getTime() + 3_600_000);
+    const theirs = { accessToken: "TOKEN456", accountId: null, signedInAt: NOW, expiresAt: LATER, apiSecret: "SECRET-xyz" };
+    const extra = { ...plugin, signIn: { ...plugin.signIn, complete: async () => theirs as never } };
+    const got = await completeSignIn(extra, { creds, payload: {}, returnUrl: "", now: NOW });
+    expect(got).toEqual({ accessToken: "TOKEN456", accountId: null, signedInAt: NOW, expiresAt: LATER });
+    expect(Object.keys(got).sort()).toEqual(["accessToken", "accountId", "expiresAt", "signedInAt"]);
+    expect(got).not.toBe(theirs);
+    // The times are copies too: a plugin that changes its Date afterwards changes nothing the host keeps.
+    expect(got.expiresAt).not.toBe(LATER);
+    expect(got.signedInAt).not.toBe(NOW);
   });
 
   it("keeps what the broker said out of the error, and keeps the code of one the kit threw", async () => {

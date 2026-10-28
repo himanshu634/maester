@@ -1,6 +1,7 @@
 import { BrokerManifest } from "@maester/contracts";
 import { describe, expect, it, vi } from "vitest";
-import { BrokerError, createBrokerHttp } from "../../src/kit/index.js";
+import { BrokerError } from "../../src/kit/index.js";
+import { createBrokerHttp } from "../../src/kit/http.js";
 
 const manifest = BrokerManifest.parse({
   id: "testbroker",
@@ -16,14 +17,23 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
 const rejection = async (p: Promise<unknown>) => p.then(() => null, (e: unknown) => e);
 
 describe("createBrokerHttp", () => {
-  it("refuses http and other hosts before fetch is called", async () => {
+  it("refuses http, other hosts, another port and a user name or password before fetch is called", async () => {
     const fetch = vi.fn();
     const http = createBrokerHttp(manifest, { phase: "read", fetch });
-    for (const url of ["http://broker.test/x", "https://elsewhere.test/x", "https://broker.test.evil.test/x", "not a url"]) {
+    for (const url of [
+      "http://broker.test/x", "https://elsewhere.test/x", "https://broker.test.evil.test/x", "not a url",
+      "https://broker.test:8443/x", "https://user:pw@broker.test/x", "https://user@broker.test/x",
+    ]) {
       expect(await rejection(http.get(url))).toMatchObject({ code: "BROKER_UNAVAILABLE" });
     }
     expect(await rejection(http.post("https://elsewhere.test/x", { form: { a: "b" } }))).toMatchObject({ code: "BROKER_UNAVAILABLE" });
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("takes :443, the https default, as no port", async () => {
+    const fetch = vi.fn(async () => json(200, { ok: true }));
+    expect(await createBrokerHttp(manifest, { phase: "read", fetch }).get("https://broker.test:443/x")).toEqual({ ok: true });
+    expect(fetch).toHaveBeenCalledWith("https://broker.test/x", expect.anything());
   });
 
   it("maps a signed-out status to BROKER_SIGNED_OUT on a read and BROKER_REFUSED on sign-in", async () => {
