@@ -1,5 +1,5 @@
-// The kit, which is all a plugin may import: `BrokerError`, the HTTP client (the host makes one,
-// locked to the broker), the value readers and the expiry rule.
+// The kit: `BrokerError`, the `BrokerHttp` type (the host makes the client, locked to the broker,
+// and no package export makes one), the value readers and the expiry rule.
 export * from "./kit/index.js";
 // The plugin contract, and the holding line a plugin returns (the contracts' type, under one name).
 export type { BrokerHoldingLine, BrokerPlugin, BrokerSession, Credentials, ReadCtx, RedirectSignIn, ReturnRead } from "./plugin.js";
