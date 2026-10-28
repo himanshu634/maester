@@ -356,8 +356,8 @@ describe('the nudge', () => {
 	});
 
 	it('names only brokers that are signed out and still have holdings on the page', () => {
-		const never = account({ broker: 'upstox', name: 'Upstox', state: 'saved', lastReadAt: null });
-		const failing = account({ broker: 'icici', name: 'ICICI Direct', state: 'failing' });
+		const never = account({ broker: 'groww', name: 'Groww', state: 'saved', lastReadAt: null });
+		const failing = account({ broker: 'kotak', name: 'Kotak Securities', state: 'failing' });
 		expect(
 			needsSignIn(snap([account(), angel, fyers, never, failing])).map((a) => a.broker)
 		).toEqual(['angel', 'fyers']);
