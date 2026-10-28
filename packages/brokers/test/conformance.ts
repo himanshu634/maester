@@ -120,13 +120,20 @@ export function runConformance(plugin: BrokerPlugin, f: ConformanceFixtures): vo
       }
     });
 
-    it("reads a good return into its state and a payload, and a refused return as refused", () => {
+    it("reads a good return into its state and a payload, and a refused return as refused, with its state", () => {
       const p = registered();
       const good = p.signIn.readReturn(f.goodReturn);
       expect("refused" in good).toBe(false);
       expect(good.state).toBe(f.goodReturn.state);
       expect(good).toHaveProperty("payload");
-      expect(p.signIn.readReturn(f.refusedReturn)).toMatchObject({ refused: true });
+      // A refusal still gives back the state it came with, so the host can use up that sign-in.
+      expect(p.signIn.readReturn(f.refusedReturn)).toMatchObject({ refused: true, state: f.refusedReturn.state ?? null });
+    });
+
+    it("refuses a return that has the good return's state and nothing else: no code, no token", () => {
+      const p = registered();
+      expect(f.goodReturn.state, "the good return has no state").toBeTruthy();
+      expect(p.signIn.readReturn({ state: f.goodReturn.state })).toMatchObject({ refused: true, state: f.goodReturn.state });
     });
 
     it("makes every call through ctx.http, over https, to a manifest host", async () => {
