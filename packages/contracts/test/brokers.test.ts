@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BrokerCopy, BrokerDefinition, BrokerHoldingLine, BrokerManifest, BrokerSummary } from "../src/index.js";
+import { BrokerCopy, BrokerHoldingLine, BrokerManifest, BrokerSummary } from "../src/index.js";
 
 const copy = {
   pickerLine: "Zerodha, through your own Kite Connect app.",
@@ -58,8 +58,7 @@ describe("BrokerManifest", () => {
 });
 
 describe("BrokerCopy", () => {
-  it("is the copy BrokerDefinition holds", () => {
-    expect(BrokerDefinition.shape.copy).toBe(BrokerCopy);
+  it("parses the copy a manifest holds", () => {
     expect(BrokerCopy.parse(copy)).toEqual(copy);
   });
 });
