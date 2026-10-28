@@ -481,3 +481,59 @@ describe("two plugins in one registry", () => {
     logsClean();
   });
 });
+
+/** The "broker sign-in failed" lines logged so far. */
+const signInFailures = () => logLines.map((l) => JSON.parse(l) as Record<string, unknown>).filter((l) => l.msg === "broker sign-in failed");
+
+describe("a plugin whose login address is not on its hosts", () => {
+  // The fake plugin's login page is on broker.test; this manifest lets it reach only elsewhere.test.
+  beforeAll(() => open(createRegistry([fakePlugin({ hosts: ["elsewhere.test"] })])));
+  afterAll(() => ctx.close());
+
+  it("does not start the sign-in: a 500, one log line of broker and code, and no login state", async () => {
+    expect((await save()).status).toBe(200);
+    const res = await startSignIn();
+    expect(res.status).toBe(500);
+    const body = (await clean(res, [API_KEY])) as { error: { code: string; message: string } };
+    expect(body.error).toMatchObject({ code: "INTERNAL", message: "the broker's sign-in could not start" });
+    expect((await ctx.db.execute(sql`SELECT count(*)::int AS n FROM broker_login_state`)).rows[0]).toEqual({ n: 0 });
+    const failed = signInFailures();
+    expect(failed).toHaveLength(1);
+    expect(failed[0]).toMatchObject({ broker: "fake", code: "BROKER_UNAVAILABLE" });
+    expect(Object.keys(failed[0]!).sort()).toEqual(["broker", "code", "hostname", "level", "msg", "pid", "time"]);
+    expect(calls).toHaveLength(0);
+    logsClean([API_KEY, "broker.test/login"]);
+  });
+});
+
+describe("a plugin whose readReturn throws", () => {
+  const plugin = fakePlugin();
+  const throwing = {
+    ...plugin,
+    signIn: {
+      ...plugin.signIn,
+      readReturn: (query: Record<string, string | undefined>): never => {
+        throw new Error(`could not read the return, token ${query.token}`);
+      },
+    },
+  };
+  beforeAll(() => open(createRegistry([throwing])));
+  afterAll(() => ctx.close());
+
+  it("sends the investor back with BROKER_UNAVAILABLE, logs no token, and calls the broker for nothing", async () => {
+    expect((await save()).status).toBe(200);
+    const state = await issuedState();
+    const res = await ctx.app.request(`/v1/brokers/fake/return?${new URLSearchParams({ token: TOKEN, state })}`, { headers: { cookie } });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("http://localhost/terminal/holdings?broker=fake&error=BROKER_UNAVAILABLE");
+    expect(calls).toHaveLength(0);
+    expect((await getBrokerConnection(ctx.db, ws, "fake"))?.tokenCiphertext).toBeNull();
+    const failed = signInFailures();
+    expect(failed).toHaveLength(1);
+    expect(failed[0]).toMatchObject({ broker: "fake", code: "BROKER_UNAVAILABLE" });
+    expect(Object.keys(failed[0]!).sort()).toEqual(["broker", "code", "hostname", "level", "msg", "pid", "time"]);
+    logsClean([API_KEY, TOKEN, state, "could not read the return"]);
+    // The return was never read, so its state was not taken: that sign-in stays open until its 10 minutes run out.
+    expect((await ctx.db.execute(sql`SELECT count(*)::int AS n FROM broker_login_state`)).rows[0]).toEqual({ n: 1 });
+  });
+});
