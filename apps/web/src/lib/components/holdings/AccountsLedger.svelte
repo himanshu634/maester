@@ -87,7 +87,7 @@
 		<span role="columnheader"><span class="visually-hidden">Actions</span></span>
 	</div>
 	{#each accounts as a (a.broker)}
-		{@const action = accountAction(a, brokerOf(a))}
+		{@const action = accountAction(a)}
 		<div class="row" role="row">
 			<div role="cell" class="cell">
 				<span class="strong">{a.name}</span>

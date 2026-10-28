@@ -72,11 +72,9 @@ export function readWords(a: BrokerAccount, now: Date = new Date()): string {
 /**
  * What the account's one action is: sign in on the broker's page when it has no good sign-in,
  * otherwise read again. A failing account that signed in and has not signed out still has its
- * sign-in, so it reads again. The broker is kept for a later sign-in strategy (BrokerSummary.signIn
- * is a union that grows); every broker signs in on its own page today, so it is not read.
+ * sign-in, so it reads again.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function accountAction(a: BrokerAccount, broker?: BrokerSummary): 'sign_in' | 'read' {
+export function accountAction(a: BrokerAccount): 'sign_in' | 'read' {
 	return a.state === 'signed_in' ||
 		(a.state === 'failing' && a.signedInAt !== null && a.signedOutAt === null)
 		? 'read'
@@ -91,16 +89,9 @@ export function heldAtWords(row: HoldingRow, names: Record<string, string>): str
 }
 
 /**
- * The footnote for starred parts: the oldest such read, and whose. Null when none is starred. The
- * brokers are kept for a later sign-in strategy that needs its own wording; every broker signs in
- * on its own page today, so they are not read.
+ * The footnote for starred parts: the oldest such read, and whose. Null when none is starred.
  */
-export function staleNote(
-	s: HoldingsSnapshot,
-	now: Date = new Date(),
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	brokers: BrokerSummary[] = []
-): string | null {
+export function staleNote(s: HoldingsSnapshot, now: Date = new Date()): string | null {
 	const stale = s.rows.flatMap((r) => r.parts.filter((p) => p.stale));
 	if (!stale.length) return null;
 	const oldest = stale.reduce((a, b) => (a.readAt <= b.readAt ? a : b));

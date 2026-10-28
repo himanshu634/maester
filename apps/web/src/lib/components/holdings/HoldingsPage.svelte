@@ -139,7 +139,7 @@
 				<AddBroker {api} brokers={offered} oncancel={closeAdd} />
 			{/if}
 
-			<HoldingsNudge {api} {brokers} {snapshot} onchanged={refresh} />
+			<HoldingsNudge {api} {snapshot} onchanged={refresh} />
 
 			<HoldingsStrip {snapshot} />
 
@@ -163,7 +163,7 @@
 					</div>
 				</div>
 				{#if showBy === 'company'}
-					<HoldingsLedger {snapshot} {brokers} />
+					<HoldingsLedger {snapshot} />
 				{:else}
 					<HoldingsByBroker {snapshot} />
 				{/if}

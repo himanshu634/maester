@@ -9,20 +9,18 @@
 <script lang="ts">
 	import { holdingsContent as copy } from '$lib/content/holdings';
 	import { direction, percentText, rupees, shares, signedPercent } from '$lib/holdings/format';
-	import type { BrokerSummary, HoldingsSnapshot } from '$lib/holdings/types';
+	import type { HoldingsSnapshot } from '$lib/holdings/types';
 	import { olderCloseDay, readShort, staleNote } from '$lib/holdings/view';
 
 	interface Props {
 		snapshot: HoldingsSnapshot;
-		/** The brokers' manifests (compiled-in plugins) from /v1/brokers. */
-		brokers: BrokerSummary[];
 	}
 
-	let { snapshot, brokers }: Props = $props();
+	let { snapshot }: Props = $props();
 
 	const id = $props.id();
 	const names = $derived(Object.fromEntries(snapshot.accounts.map((a) => [a.broker, a.name])));
-	const footnote = $derived(staleNote(snapshot, new Date(), brokers));
+	const footnote = $derived(staleNote(snapshot));
 	const t = $derived(snapshot.totals);
 	const cols = copy.table.columns;
 </script>

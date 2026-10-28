@@ -93,8 +93,6 @@ describe('view', () => {
 		expect(accountAction(account())).toBe('read');
 		expect(accountAction(account({ state: 'signed_out' }))).toBe('sign_in');
 		expect(accountAction(account({ state: 'saved', signedInAt: null }))).toBe('sign_in');
-		expect(accountAction(account({ state: 'signed_out' }), kite)).toBe('sign_in');
-		expect(accountAction(account(), kite)).toBe('read');
 	});
 
 	it('accountAction is read for a failing account that signed in and has not signed out', () => {

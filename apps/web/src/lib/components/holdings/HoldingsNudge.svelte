@@ -13,18 +13,17 @@
 	import { holdingsContent as copy } from '$lib/content/holdings';
 	import { ApiError } from '$lib/documents/client';
 	import type { HoldingsApi } from '$lib/holdings/client';
-	import type { BrokerAccount, BrokerSummary, HoldingsSnapshot } from '$lib/holdings/types';
+	import type { BrokerAccount, HoldingsSnapshot } from '$lib/holdings/types';
 	import { accountAction, needsSignIn, nudgeLine, stateWords } from '$lib/holdings/view';
 
 	interface Props {
 		api: HoldingsApi;
-		brokers: BrokerSummary[];
 		snapshot: HoldingsSnapshot;
 		/** After a read: read the snapshot again and say what changed. */
 		onchanged: (said: string) => Promise<void>;
 	}
 
-	let { api, brokers, snapshot, onchanged }: Props = $props();
+	let { api, snapshot, onchanged }: Props = $props();
 
 	const id = $props.id();
 	let open = $state(false);
@@ -34,12 +33,9 @@
 
 	const line = $derived(nudgeLine(snapshot));
 	const out = $derived(needsSignIn(snapshot));
-	const brokerOf = (a: BrokerAccount) => brokers.find((b) => b.id === a.broker);
 
 	function what(a: BrokerAccount): string {
-		return accountAction(a, brokerOf(a)) === 'read'
-			? copy.nudge.whatRead
-			: copy.nudge.whatRedirect(a.name);
+		return accountAction(a) === 'read' ? copy.nudge.whatRead : copy.nudge.whatRedirect(a.name);
 	}
 
 	async function signIn(a: BrokerAccount) {
@@ -106,7 +102,7 @@
 		<div id="{id}-list" class="list" hidden={!open}>
 			<ul aria-label={copy.nudge.listLabel}>
 				{#each out as a, i (a.broker)}
-					{@const action = accountAction(a, brokerOf(a))}
+					{@const action = accountAction(a)}
 					<li>
 						<div class="who">
 							<span class="strong">{a.name}</span>
