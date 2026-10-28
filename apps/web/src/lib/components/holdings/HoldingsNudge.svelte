@@ -10,7 +10,6 @@
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { resolve } from '$app/paths';
 	import { holdingsContent as copy } from '$lib/content/holdings';
 	import { ApiError } from '$lib/documents/client';
 	import type { HoldingsApi } from '$lib/holdings/client';
@@ -38,11 +37,9 @@
 	const brokerOf = (a: BrokerAccount) => brokers.find((b) => b.id === a.broker);
 
 	function what(a: BrokerAccount): string {
-		const action = accountAction(a, brokerOf(a));
-		if (action === 'settings') return copy.nudge.whatSettings;
-		if (action === 'direct') return copy.nudge.whatDirect(a.name);
-		if (action === 'read') return copy.nudge.whatRead;
-		return copy.nudge.whatRedirect(a.name);
+		return accountAction(a, brokerOf(a)) === 'read'
+			? copy.nudge.whatRead
+			: copy.nudge.whatRedirect(a.name);
 	}
 
 	async function signIn(a: BrokerAccount) {
@@ -56,11 +53,11 @@
 		}
 	}
 
-	async function read(a: BrokerAccount, direct = false) {
+	async function read(a: BrokerAccount) {
 		busy = a.broker;
 		problem = null;
 		try {
-			const next = direct ? await api.session(a.broker) : await api.read(a.broker);
+			const next = await api.read(a.broker);
 			await onchanged(
 				next.errorCode
 					? (copy.errors[next.errorCode]?.(a.name) ?? '')
@@ -115,23 +112,12 @@
 							<span class="strong">{a.name}</span>
 							<span class="muted small">{copy.nudge.why(stateWords(a), what(a))}</span>
 						</div>
-						{#if action === 'settings'}
-							<a class={['button', { outline: i > 0 }]} href={resolve('/terminal/settings')}
-								>{copy.accounts.openSettings}</a
-							>
-						{:else if action === 'sign_in'}
+						{#if action === 'sign_in'}
 							<button
 								type="button"
 								class={['button', { outline: i > 0 }]}
 								disabled={busy !== null}
 								onclick={() => signIn(a)}>{copy.accounts.signIn(a.name)}</button
-							>
-						{:else if action === 'direct'}
-							<button
-								type="button"
-								class={['button', { outline: i > 0 }]}
-								disabled={busy !== null}
-								onclick={() => read(a, true)}>{copy.accounts.readDirect(a.name)}</button
 							>
 						{:else}
 							<button

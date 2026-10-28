@@ -54,18 +54,10 @@ export function stateWords(a: BrokerAccount): string {
 	return copy.accounts.state[a.state];
 }
 
-/** The Settings connection's name ("Dhan") when the broker signs in through one, otherwise null. */
-export function settingsProvider(broker: BrokerSummary | undefined): string | null {
-	if (broker?.signIn.kind !== 'settings-connection') return null;
-	return copy.settings.providers[broker.signIn.provider] ?? broker.name;
-}
-
 /** The line under the state: what the broker said, or how long a sign-in lasts. */
 export function stateDetail(a: BrokerAccount, broker: BrokerSummary | undefined): string {
-	const provider = settingsProvider(broker);
 	if (a.errorCode && copy.errors[a.errorCode]) return copy.errors[a.errorCode]!(a.name);
 	if (a.state === 'signed_out') return broker?.copy.signedOutNote ?? '';
-	if (provider) return `${copy.settings.uses(provider)}.`;
 	if (a.state === 'signed_in')
 		return broker ? `${copy.add.lasts}: ${broker.copy.lasts.toLowerCase()}.` : '';
 	return a.keyLast4 ? copy.accounts.key(a.keyLast4) : '';
@@ -78,16 +70,13 @@ export function readWords(a: BrokerAccount, now: Date = new Date()): string {
 }
 
 /**
- * What the account's one action is: sign in when it has no good sign-in, otherwise read again.
- * An account on a Settings connection has no sign-in here: signed out, it points to Settings.
+ * What the account's one action is: sign in on the broker's page when it has no good sign-in,
+ * otherwise read again. A failing account that signed in and has not signed out still has its
+ * sign-in, so it reads again. The broker is kept for a later sign-in strategy (BrokerSummary.signIn
+ * is a union that grows); every broker signs in on its own page today, so it is not read.
  */
-export function accountAction(
-	a: BrokerAccount,
-	broker?: BrokerSummary
-): 'sign_in' | 'read' | 'settings' | 'direct' {
-	if (settingsProvider(broker)) return a.state === 'signed_out' ? 'settings' : 'read';
-	// Groww: no page to go to; once the key is approved on Groww, Maester signs in and reads.
-	if (broker?.signIn.kind === 'direct') return a.state === 'signed_in' ? 'read' : 'direct';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function accountAction(a: BrokerAccount, broker?: BrokerSummary): 'sign_in' | 'read' {
 	return a.state === 'signed_in' ||
 		(a.state === 'failing' && a.signedInAt !== null && a.signedOutAt === null)
 		? 'read'
@@ -102,20 +91,20 @@ export function heldAtWords(row: HoldingRow, names: Record<string, string>): str
 }
 
 /**
- * The footnote for starred parts: the oldest such read, and whose. Null when none is starred. A
- * broker on a Settings connection has no sign-in, so its note points to Settings.
+ * The footnote for starred parts: the oldest such read, and whose. Null when none is starred. The
+ * brokers are kept for a later sign-in strategy that needs its own wording; every broker signs in
+ * on its own page today, so they are not read.
  */
 export function staleNote(
 	s: HoldingsSnapshot,
 	now: Date = new Date(),
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	brokers: BrokerSummary[] = []
 ): string | null {
 	const stale = s.rows.flatMap((r) => r.parts.filter((p) => p.stale));
 	if (!stale.length) return null;
 	const oldest = stale.reduce((a, b) => (a.readAt <= b.readAt ? a : b));
 	const when = whenWords(oldest.readAt, now);
-	const provider = settingsProvider(brokers.find((b) => b.id === oldest.broker));
-	if (provider) return copy.table.staleSettings(when, provider);
 	const name = s.accounts.find((a) => a.broker === oldest.broker)?.name ?? oldest.broker;
 	return copy.table.stale(when, name);
 }

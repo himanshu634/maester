@@ -14,7 +14,7 @@
 
 	interface Props {
 		snapshot: HoldingsSnapshot;
-		/** The brokers' definitions, so a footnote on a Settings-connection broker points to Settings. */
+		/** The brokers' manifests (compiled-in plugins) from /v1/brokers. */
 		brokers: BrokerSummary[];
 	}
 
