@@ -4,11 +4,11 @@ Status: built (#35), 28 October 2026; no live Kite run yet. The decision is [ADR
 
 This design replaces how a broker is described. Until now that was "a broker is one JSON definition", from the [broker connections plan](../plans/2026-10-19-broker-connections.md) and the [broker accounts plan](../plans/2026-10-24-broker-accounts.md). The Holdings screen ("D · final, one person") does not change. The broker facts are in [`docs/research/2026-10-24-broker-accounts.md`](../../research/2026-10-24-broker-accounts.md). Angel One's are in [`docs/research/2026-10-27-angel-one-publisher-login.md`](../../research/2026-10-27-angel-one-publisher-login.md).
 
-**Depends on** `origin/staging` getting the migration that creates the broker tables: `broker_connection`, `broker_login_state`, `holding_read` and `holding_line`.
+**Depended on** the migration that creates the broker tables (`broker_connection`, `broker_login_state`, `holding_read` and `holding_line`), and on the lockfile, both of which #30 left off staging.
 
-- The broker code merged in #30, but staging's migrations stop at `0008_xbrl`.
-- The migration exists only as an untracked `0009_broker_holdings.sql` in a local checkout. It has to land on staging before this build.
-- If it lands as `0009`, this design's "no schema change" (§11) still holds.
+- The broker code merged in #30, but staging's migrations stopped at `0008_xbrl`.
+- `0009_broker_holdings.sql` and the lockfile landed in #34. This build is stacked on #34.
+- This build adds no migration of its own, so the design's "no schema change" (§11) holds.
 
 ## 1. Goal
 
@@ -317,7 +317,7 @@ There is no new visible state and no mockup round. The picker lists one broker, 
 
 ## 11. Database
 
-There is no schema change. `broker_connection.broker` is free text.
+There is no schema change in this build; the broker tables come from #34's `0009_broker_holdings.sql`. `broker_connection.broker` is free text.
 
 A row whose broker is no longer in the registry is already left out of every list, by the filter `defs.has(row.broker)`, which becomes `registry.has(row.broker)`. Its encrypted credentials stay where they are and are never decrypted.
 
