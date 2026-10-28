@@ -1,6 +1,6 @@
 # Broker plugins: design
 
-Status: draft for review, 27 October 2026. The decision is [ADR 0009](../../decisions/0009-broker-plugins.md).
+Status: built (#35), 28 October 2026; no live Kite run yet. The decision is [ADR 0009](../../decisions/0009-broker-plugins.md).
 
 This design replaces how a broker is described. Until now that was "a broker is one JSON definition", from the [broker connections plan](../plans/2026-10-19-broker-connections.md) and the [broker accounts plan](../plans/2026-10-24-broker-accounts.md). The Holdings screen ("D · final, one person") does not change. The broker facts are in [`docs/research/2026-10-24-broker-accounts.md`](../../research/2026-10-24-broker-accounts.md). Angel One's are in [`docs/research/2026-10-27-angel-one-publisher-login.md`](../../research/2026-10-27-angel-one-publisher-login.md).
 
@@ -238,7 +238,7 @@ The JSON format used to make these rules impossible to break. The host now enfor
 | A plugin cannot place an order or move money | The contract has only `signIn` and `reads`, and the API has no route that writes to a broker | Contract type and route list in `apps/api/test/brokers.test.ts` |
 | A plugin reaches only its own hosts, over https | `ctx.http` is the only network access it gets. ESLint bans every other way out. `loginUrl()` output is checked by the host before it is returned | Conformance: a URL on another host or over http is refused before `fetch` is called. Lint rule |
 | Credentials and tokens stay with the host | The host decrypts them and passes them in `ctx`. It encrypts and stores the session a plugin returns. A plugin never stores anything | Conformance: `fetch` sees the token only in the request the plugin builds |
-| A broker's own error text is never logged or passed on | A plugin throws `BrokerError` with a code. The host turns anything else into `BROKER_UNAVAILABLE` and logs the code and the error's class name only | Conformance: a plugin that throws an `Error` carrying a secret logs no secret |
+| A broker's own error text is never logged or passed on | A plugin throws `BrokerError` with a code. The host turns anything else into `BROKER_UNAVAILABLE` and logs the broker code only | Conformance: a plugin that throws an `Error` carrying a secret logs no secret |
 | Figures stay decimal strings, exactly as printed | The host parses every line a plugin returns with `BrokerHoldingLine` (zod, `DecimalString` for each figure). A line that fails makes the read `BROKER_ANSWER_UNREADABLE` | Conformance: a float with an exponent, or `NaN`, fails the read |
 | A plugin computes no figure | Quantity plus T+1, cost, value and gain stay in `@maester/financial-engine`. Review rule, written in the README's "Adding a broker" | Fixture tests compare a plugin's lines with the broker's printed values |
 | Every sign-in return matches a sign-in the same person started | The host makes the single-use `state` nonce (10 minutes), takes it on return and checks the user. A return with no state, or a state that does not match, is `SIGN_IN_EXPIRED` | Route test with a fake plugin whose return has no state |

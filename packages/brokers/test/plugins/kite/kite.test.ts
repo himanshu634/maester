@@ -44,7 +44,7 @@ describe("the Kite plugin", () => {
   describe("login", () => {
     it("builds the login URL with the key and the state sent back as redirect_params", () => {
       const url = loginUrlFor(kite, { creds, state: "nonce-1", returnUrl: RETURN_URL });
-      // The exact address the old definition made: the key and "state=<nonce>" are URL-encoded, nothing else is added.
+      // The exact address Kite's login expects: the key and "state=<nonce>" are URL-encoded, nothing else is added.
       expect(url).toBe("https://kite.zerodha.com/connect/login?v=3&api_key=kitekey123&redirect_params=state%3Dnonce-1");
       const parsed = new URL(url);
       expect(parsed.origin + parsed.pathname).toBe("https://kite.zerodha.com/connect/login");
