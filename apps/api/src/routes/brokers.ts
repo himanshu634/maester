@@ -38,7 +38,7 @@ function summary(deps: AppDeps, m: BrokerManifest): BrokerSummary {
   return {
     id: m.id, name: m.name, enabled: m.enabled, notOfferedReason: m.notOfferedReason ?? null, copy: m.copy,
     credentials: m.credentials.map((c) => ({ key: c.key, label: c.label, ...(c.hint ? { hint: c.hint } : {}), secret: c.secret, minLength: c.minLength, maxLength: c.maxLength })),
-    signIn: { kind: "redirect" },
+    signIn: { kind: m.signIn.kind },
     returnUrl: returnUrl(deps, m.id),
   };
 }
