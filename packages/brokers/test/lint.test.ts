@@ -37,11 +37,11 @@ describe("plugin lint guard (spec §5.5)", () => {
     expect(rulesOf(messages)).toContain("no-restricted-globals");
   });
 
-  it.each(["node:http", "node:https", "node:net", "node:tls", "node:fs", "node:child_process", "http", "https", "fs", "undici"])(
-    "bans importing %s inside a plugin",
-    async (name) => {
-      const messages = await lint(`import * as m from "${name}";\nexport const x = m;\n`, "src/plugins/x/bad.ts");
-      expect(rulesOf(messages)).toContain("no-restricted-imports");
-    },
-  );
+  it.each([
+    "node:http", "node:https", "node:net", "node:tls", "node:fs", "node:fs/promises", "node:child_process",
+    "http", "https", "net", "tls", "fs", "fs/promises", "child_process", "undici",
+  ])("bans importing %s inside a plugin", async (name) => {
+    const messages = await lint(`import * as m from "${name}";\nexport const x = m;\n`, "src/plugins/x/bad.ts");
+    expect(rulesOf(messages)).toContain("no-restricted-imports");
+  });
 });

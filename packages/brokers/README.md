@@ -1,6 +1,6 @@
 # @maester/brokers
 
-Brokers are plugins. Each one is a folder of TypeScript in `src/plugins/`, compiled into the API: a manifest (what the Holdings page says and asks for) and the code that signs in and reads holdings. A plugin can sign in and read, and nothing else. There is no way to place an order or move money.
+Brokers are plugins. Each one is a folder of TypeScript in `src/plugins/`, compiled into the API: a manifest (what the Holdings page says and asks for) and the code that signs in and reads holdings. The contract gives a plugin a sign-in and a read, and the API has no route that writes to a broker. A plugin makes no call that writes: nothing in it places an order or moves money.
 
 Design: [broker plugins](../../docs/superpowers/specs/2026-10-27-broker-plugins-design.md) and [ADR 0009](../../docs/decisions/0009-broker-plugins.md). Zerodha (Kite Connect) is the one plugin for now.
 
@@ -13,7 +13,7 @@ src/
   registry.ts       builds the registry from plugins/index.ts and checks it
   host.ts           what the API calls: loginUrlFor, completeSignIn, readHoldings, toBrokerError
   errors.ts         BrokerError and its four codes
-  kit/              the only thing a plugin may import: http.ts, values.ts, expiry.ts
+  kit/              what a plugin imports: http.ts, values.ts, expiry.ts
   plugins/
     index.ts        the list of plugins, and defaultRegistry()
     kite/           manifest.ts and plugin.ts
@@ -38,7 +38,9 @@ The registry (`createRegistry`, `defaultRegistry`) is built when the API starts.
 
 ## The kit
 
-A plugin imports only from `src/kit/`, from `@maester/contracts` (types) and from its own folder. ESLint enforces it on `src/plugins/**`: no `fetch`, `XMLHttpRequest`, `WebSocket` or `process`, and no `node:http`, `node:https`, `node:net`, `node:tls`, `node:fs`, `node:child_process`, `undici` or their short names. A test lints a fixture that must fail, so the rule cannot be dropped quietly.
+Inside `src/plugins/**`, ESLint bans the globals `fetch`, `XMLHttpRequest`, `WebSocket` and `process`, and these modules, with and without the `node:` prefix: `http`, `https`, `net`, `tls`, `fs`, `fs/promises` and `child_process` (so `node:http`, `http`, `node:fs/promises` and so on), and `undici`. The message says a plugin reaches the network only through `ctx.http`. `test/lint.test.ts` lints inline code, not a fixture file, and fails if any of those names stops being refused inside a plugin. It also checks that the same code is left alone outside `src/plugins/`.
+
+The rest is convention, held by the shape of the contract, the conformance suite and review, not by lint: a plugin imports only from `src/kit/`, from `@maester/contracts` (types) and from its own folder, and a plugin makes no call that writes. The ESLint rule is a deny-list of names, not an allow-list of imports.
 
 - **`http`:** `BrokerHttp` has `get(url, { headers })` and `post(url, { headers, form | json })`, and answers with the parsed JSON of a 200. The host makes one for each sign-in or read, bound to the manifest.
   - A URL must be https on one of `manifest.hosts`, or the call throws `BROKER_UNAVAILABLE` before anything is sent.
@@ -55,7 +57,7 @@ A GET with a body is not in the kit. A broker that needs one adds it, with its o
 
 The host holds these rules, not the plugin, and a test checks each one.
 
-- A plugin reaches only its own hosts, over https. `ctx.http` is its only way out, and the host checks the address `loginUrl()` returns before it goes to the browser.
+- A plugin reaches only its own hosts, over https. `ctx.http` checks every address it is given, ESLint bans the other ways out that it names (see The kit), and the host checks the address `loginUrl()` returns before it goes to the browser.
 - Credentials and tokens stay with the host. It decrypts them and passes them in `ctx`, and it encrypts and keeps the session a plugin returns. A plugin stores nothing.
 - A broker's own error text is never logged or passed on. Anything a plugin throws that is not a `BrokerError` becomes `BROKER_UNAVAILABLE` with a fixed message, and only the code is logged.
 - Figures stay decimal strings, exactly as printed. The host parses every line with `BrokerHoldingLine`, so a figure that is not a decimal string makes the read `BROKER_ANSWER_UNREADABLE`, and so does the same (ISIN, exchange) twice.
@@ -67,7 +69,7 @@ The host holds these rules, not the plugin, and a test checks each one.
 
 1. Read the broker's own docs and record what they say, with [off], [staff], [3p] and [?] marks, in `docs/research/`.
 2. Copy `src/plugins/kite/` to `src/plugins/<id>/`. Write `manifest.ts`: hosts, saved fields, copy (DESIGN.md §7) and `signedOutStatuses`.
-3. Write `plugin.ts`: `loginUrl`, `readReturn`, `complete` and `reads.holdings`. Use only the kit. Return figures with `decimal()`. Compute nothing.
+3. Write `plugin.ts`: `loginUrl`, `readReturn`, `complete` and `reads.holdings`. Use only the kit. Return figures with `decimal()`. Compute nothing, and make no call that writes.
 4. Record the answers in `test/plugins/<id>/fixtures/`, with every key, token and account ID replaced.
 5. Write `test/plugins/<id>/<id>.test.ts`: `runConformance(plugin, fixtures)` plus the broker's own cases.
 6. Add the plugin to `src/plugins/index.ts`.
@@ -84,5 +86,5 @@ Hosts: `kite.zerodha.com` and `api.kite.trade`. The investor saves the Kite Conn
 - **Session:** `POST https://api.kite.trade/session/token`, header `X-Kite-Version: 3`, form `api_key`, `request_token` and `checksum`, which is `sha256hex(apiKey, request_token, apiSecret)`. The secret is hashed and never sent. The token is `data.access_token` and the account is `data.user_id`.
 - **Holdings:** `GET https://api.kite.trade/portfolio/holdings`, headers `X-Kite-Version: 3` and `Authorization: token <apiKey>:<accessToken>`. The list is `data`; each item gives `isin`, `tradingsymbol`, `exchange`, `quantity`, `t1_quantity`, `average_price` and `last_price`.
 - **Expiry:** a session stops at 06:00 Asia/Kolkata each day, so "signed out" is an ordinary state. A 403 means Zerodha signed Maester out (`signedOutStatuses` is `[403]`).
-- **Absent figures:** an absent `t1_quantity` is `"0"` (none pending). An absent `average_price` is `"0"`, which the engine reads as an unknown cost (`NO_COST`), so it shows as unknown, not zero, and one such line does not fail the whole read. A present figure that is not a decimal still fails it. An absent `last_price` is null.
+- **Absent figures:** an absent or null `t1_quantity` is `"0"` (none pending). An absent or null `average_price` is `"0"`, which the engine reads as an unknown cost (`NO_COST`), so it shows as unknown, not zero, and one such line does not fail the whole read. A present figure that is not a decimal still fails it. An absent or null `last_price` is null.
 - **Not yet confirmed on a live run:** no live run has happened. The first one should compare quantity, T+1 and average price on the Holdings page with Zerodha's own app, and confirm that a good return arrives with the shape the fixtures record.

@@ -10,10 +10,15 @@ const bannedModules = [
   "node:net",
   "node:tls",
   "node:fs",
+  "node:fs/promises",
   "node:child_process",
   "http",
   "https",
+  "net",
+  "tls",
   "fs",
+  "fs/promises",
+  "child_process",
   "undici",
 ];
 
