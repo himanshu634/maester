@@ -13,7 +13,8 @@ src/
   registry.ts       builds the registry from plugins/index.ts and checks it
   host.ts           what the API calls: loginUrlFor, completeSignIn, readHoldings, toBrokerError
   errors.ts         BrokerError and its four codes
-  kit/              what a plugin imports: http.ts, values.ts, expiry.ts
+  kit/              what a plugin imports, through kit/index.ts: BrokerError, the BrokerHttp type, values.ts, expiry.ts
+    http.ts         the host-locked client; the host makes one, and a plugin gets it only as ctx.http
   plugins/
     index.ts        the list of plugins, and defaultRegistry()
     kite/           manifest.ts and plugin.ts
@@ -38,9 +39,19 @@ The registry (`createRegistry`, `defaultRegistry`) is built when the API starts.
 
 ## The kit
 
-Inside `src/plugins/**`, ESLint bans the globals `fetch`, `XMLHttpRequest`, `WebSocket` and `process`, and these modules, with and without the `node:` prefix: `http`, `https`, `net`, `tls`, `fs`, `fs/promises` and `child_process` (so `node:http`, `http`, `node:fs/promises` and so on), and `undici`. The message says a plugin reaches the network only through `ctx.http`. `test/lint.test.ts` lints inline code, not a fixture file, and fails if any of those names stops being refused inside a plugin. It also checks that the same code is left alone outside `src/plugins/`.
+A plugin is handed `ctx.http`, a client the host makes for each sign-in or read, locked to the plugin's manifest. `kit/index.ts` exports the `BrokerHttp` type and never `createBrokerHttp`, the factory that makes a client for whatever hosts it is given, and neither does the package (`test/exports.test.ts`).
 
-The rest is convention, held by the shape of the contract, the conformance suite and review, not by lint: a plugin imports only from `src/kit/`, from `@maester/contracts` (types) and from its own folder, and a plugin makes no call that writes. The ESLint rule is a deny-list of names, not an allow-list of imports.
+Inside `src/plugins/**`, ESLint refuses the following, each with the message that a plugin reaches the network only through `ctx.http`. It matches an import path as written and does not resolve it, so a path written to get round a rule is for review to catch.
+
+- **Imports are an allow-list.** A plugin imports relative modules and `@maester/contracts`, and nothing else: every other package and every Node module is refused, with or without the `node:` prefix, whether or not it is named (`node:http2`, `dns` and `worker_threads` as much as `node:https`). `http`, `https`, `net`, `tls`, `fs`, `fs/promises`, `child_process` (each with and without `node:`) and `undici` are also named, for a clearer message.
+- **Three relative imports are refused.** `kit/http`, where the factory lives; `host`; and an `index` reached by `..` (the package's own, or the plugin list). The host's functions make a client from whatever manifest they are handed, and the package's index exports them.
+- **The factory by name.** Importing `createBrokerHttp` is refused from any module.
+- **Globals.** `fetch`, `XMLHttpRequest`, `WebSocket`, `process`, `globalThis` and `global`.
+- **Syntax.** A dynamic `import()`, a call to `require`, and any member of `globalThis` (`globalThis.fetch`, `globalThis["process"]`).
+
+`test/lint.test.ts` lints inline code, not a fixture file, and fails if any of these stops being refused inside a plugin. It also lints the real plugins and expects nothing, and checks that the same code is left alone outside `src/plugins/`.
+
+The rest is convention, held by the shape of the contract, the conformance suite and review, not by lint: among relative imports, a plugin imports only from `src/kit/index.ts`, from `src/plugin.ts` (the contract's types) and from its own folder; and a plugin makes no call that writes.
 
 - **`http`:** `BrokerHttp` has `get(url, { headers })` and `post(url, { headers, form | json })`, and answers with the parsed JSON of a 200. The host makes one for each sign-in or read, bound to the manifest.
   - A URL must be https on one of `manifest.hosts`, or the call throws `BROKER_UNAVAILABLE` before anything is sent.
@@ -57,9 +68,9 @@ A GET with a body is not in the kit. A broker that needs one adds it, with its o
 
 The host holds these rules, not the plugin, and a test checks each one.
 
-- A plugin reaches only its own hosts, over https. `ctx.http` checks every address it is given, ESLint bans the other ways out that it names (see The kit), and the host checks the address `loginUrl()` returns before it goes to the browser.
-- Credentials and tokens stay with the host. It decrypts them and passes them in `ctx`, and it encrypts and keeps the session a plugin returns. A plugin stores nothing.
-- A broker's own error text is never logged or passed on. Anything a plugin throws that is not a `BrokerError` becomes `BROKER_UNAVAILABLE` with a fixed message, and only the code is logged.
+- A plugin reaches only its own hosts, over https, on the default port, with no user name or password in the address. `ctx.http` checks every address it is given (`isBrokerAddress`), a plugin is never given the factory that makes a client, ESLint holds the imports, globals and syntax listed under The kit, and the host checks the address `loginUrl()` returns the same way before it goes to the browser.
+- Credentials and tokens stay with the host. It decrypts them and passes them in `ctx`, and it encrypts and keeps the session a plugin returns, once it has checked it: a non-empty token, an account that is text or null, a sign-in time and an expiry that are real times, and an expiry after the sign-in. Anything else is `BROKER_ANSWER_UNREADABLE`, and the host keeps those four fields and nothing else. A plugin stores nothing.
+- A broker's own error text is never logged or passed on. Anything a plugin throws that is not a `BrokerError` becomes `BROKER_UNAVAILABLE` with a fixed message, and the API logs the broker id and the error code only.
 - Figures stay decimal strings, exactly as printed. The host parses every line with `BrokerHoldingLine`, so a figure that is not a decimal string makes the read `BROKER_ANSWER_UNREADABLE`, and so does the same (ISIN, exchange) twice.
 - A plugin computes no figure. Quantity plus T+1, cost, value and gain stay in `@maester/financial-engine`. This one is a review rule: a plugin returns what the broker printed.
 - Every sign-in return matches a sign-in the same person started. The host makes the single-use `state` (10 minutes) and takes it on return, so a return with no state, an unknown one or another person's is refused.
@@ -86,5 +97,5 @@ Hosts: `kite.zerodha.com` and `api.kite.trade`. The investor saves the Kite Conn
 - **Session:** `POST https://api.kite.trade/session/token`, header `X-Kite-Version: 3`, form `api_key`, `request_token` and `checksum`, which is `sha256hex(apiKey, request_token, apiSecret)`. The secret is hashed and never sent. The token is `data.access_token` and the account is `data.user_id`.
 - **Holdings:** `GET https://api.kite.trade/portfolio/holdings`, headers `X-Kite-Version: 3` and `Authorization: token <apiKey>:<accessToken>`. The list is `data`; each item gives `isin`, `tradingsymbol`, `exchange`, `quantity`, `t1_quantity`, `average_price` and `last_price`.
 - **Expiry:** a session stops at 06:00 Asia/Kolkata each day, so "signed out" is an ordinary state. A 403 means Zerodha signed Maester out (`signedOutStatuses` is `[403]`).
-- **Absent figures:** an absent or null `t1_quantity` is `"0"` (none pending). An absent or null `average_price` is `"0"`, which the engine reads as an unknown cost (`NO_COST`), so it shows as unknown, not zero, and one such line does not fail the whole read. A present figure that is not a decimal still fails it. An absent or null `last_price` is null.
+- **Absent figures:** an absent or null `t1_quantity` is `"0"` (none pending). An absent or null `average_price` is `"0"`, so one such line does not fail the whole read. The engine reads an average of `"0"` as an unknown cost (`NO_COST`): the holding's invested, P&L and P&L % show "—", while its value (quantity × the close) still shows. The broker line's average-cost column still shows "₹0.00" today, a known follow-up. A present figure that is not a decimal still fails it. An absent or null `last_price` is null.
 - **Not yet confirmed on a live run:** no live run has happened. The first one should compare quantity, T+1 and average price on the Holdings page with Zerodha's own app, and confirm that a good return arrives with the shape the fixtures record.

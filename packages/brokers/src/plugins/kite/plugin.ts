@@ -69,9 +69,10 @@ export const kite: BrokerPlugin = {
           quantity: decimal(at(item, "quantity"), "quantity"),
           // Kite leaves out a T+1 quantity it has none of: none pending.
           t1Quantity: decimal(at(item, "t1_quantity") ?? 0, "t1_quantity"),
-          // An absent average price is "0", as the old client read it. The financial engine reads an average price of 0 as an
-          // unknown cost (NO_COST), so the figure shows as unknown, not as zero, and one such line does not fail the whole read
-          // and hide every holding. A price that is present but not a decimal is still unreadable.
+          // An absent average price is "0", as the old client read it, so one such line does not fail the whole read and hide
+          // every holding. The financial engine reads an average price of 0 as an unknown cost (NO_COST): invested, P&L and
+          // P&L % show "—", while the value (quantity × close) still shows. The broker line's average-cost column still prints
+          // ₹0.00 for now, a known follow-up. A price that is present but not a decimal is still unreadable.
           averagePrice: decimal(at(item, "average_price") ?? 0, "average_price"),
           lastPrice: lastPrice == null ? null : decimal(lastPrice, "last_price"),
         };

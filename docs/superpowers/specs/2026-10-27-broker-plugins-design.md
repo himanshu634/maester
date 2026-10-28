@@ -85,8 +85,8 @@ packages/brokers/
     index.ts          exports the registry, the contract types and BrokerError
     plugin.ts         the BrokerPlugin contract (§5.3)
     registry.ts       builds the registry from plugins/index.ts and checks it (§5.4)
-    kit/              what a plugin may import (§5.5)
-      http.ts         the host-locked HTTP client
+    kit/              what a plugin may import, through kit/index.ts (§5.5)
+      http.ts         the host-locked HTTP client; the host makes it, a plugin gets ctx.http
       values.ts       at(), text(), decimal(), sha256hex()
       expiry.ts       sessionExpiry() (moved from src/expiry.ts, unchanged)
     plugins/
@@ -193,11 +193,13 @@ A failure stops the API with the plugin's id and the reason, as a bad definition
 
 ### 5.5 The kit
 
-A plugin may import only from `./kit`, from `@maester/contracts` (types) and from its own folder. ESLint enforces this with `no-restricted-imports` and `no-restricted-globals` on `src/plugins/**`. It forbids:
+A plugin may import only from `./kit` (through `kit/index.ts`, which exports the `BrokerHttp` type and never `createBrokerHttp`, the factory), from `plugin.ts` (the contract's types), from `@maester/contracts` and from its own folder. ESLint holds part of this on `src/plugins/**`, matching each import path as written, with the message that a plugin reaches the network only through `ctx.http`:
 
-- the global `fetch`, `XMLHttpRequest` and `WebSocket`;
-- `node:http`, `node:https`, `node:net`, `node:tls`, `node:fs`, `node:child_process` and `undici`;
-- `process.env`.
+- `no-restricted-imports` is an allow-list: relative imports and `@maester/contracts`, and no other package or Node module, named or not (`node:http2`, `dns`, `worker_threads`). `node:http`, `node:https`, `node:net`, `node:tls`, `node:fs`, `node:child_process`, `undici` and their unprefixed names are also listed, for a clearer message. Among relative imports it refuses `kit/http`, `host` and an `index` reached by `..`, because the host's functions make a client from whatever manifest they are handed;
+- `no-restricted-syntax` refuses a dynamic `import()`, a call to `require`, any member of `globalThis`, and importing `createBrokerHttp` by name from any module;
+- `no-restricted-globals` refuses `fetch`, `XMLHttpRequest`, `WebSocket`, `process` (so `process.env`), `globalThis` and `global`.
+
+Which relative modules a plugin imports beyond those, and that it makes no call that writes, are review rules.
 
 **`BrokerHttp`** (`kit/http.ts`). The host makes one for each sign-in or read, bound to the plugin's manifest:
 
@@ -236,9 +238,9 @@ The JSON format used to make these rules impossible to break. The host now enfor
 | Invariant | How it is enforced | Test |
 | --- | --- | --- |
 | A plugin cannot place an order or move money | The contract has only `signIn` and `reads`, and the API has no route that writes to a broker | Contract type and route list in `apps/api/test/brokers.test.ts` |
-| A plugin reaches only its own hosts, over https | `ctx.http` is the only network access it gets. ESLint bans every other way out. `loginUrl()` output is checked by the host before it is returned | Conformance: a URL on another host or over http is refused before `fetch` is called. Lint rule |
+| A plugin reaches only its own hosts, over https | `ctx.http` is the only network access it gets: no export of the kit or the package makes a client. ESLint on `src/plugins/**` allows only relative imports and `@maester/contracts`, refuses `kit/http`, `host` and the package index, and bans `fetch`, `process`, `globalThis`, `import()` and `require` (§5.5). Every address `ctx.http` is given, and the `loginUrl()` output before it is returned, must be https on a manifest host, on the default port, with no user name or password | Conformance: every call a plugin makes goes through `ctx.http`, over https, to a manifest host, and the global `fetch` is never used. `test/kit/http.test.ts` and `test/host.test.ts`: another host, http, another port, or a user name or password is refused before `fetch` is called. `test/lint.test.ts`; `test/exports.test.ts` |
 | Credentials and tokens stay with the host | The host decrypts them and passes them in `ctx`. It encrypts and stores the session a plugin returns. A plugin never stores anything | Conformance: `fetch` sees the token only in the request the plugin builds |
-| A broker's own error text is never logged or passed on | A plugin throws `BrokerError` with a code. The host turns anything else into `BROKER_UNAVAILABLE` and logs the broker code only | Conformance: a plugin that throws an `Error` carrying a secret logs no secret |
+| A broker's own error text is never logged or passed on | A plugin throws `BrokerError` with a code. The host turns anything else into `BROKER_UNAVAILABLE` with a fixed message, and the API logs the broker id and the error code only | `apps/api/test/brokers.test.ts`: the "broker sign-in failed" and "broker read failed" lines hold only `broker` and `code`, and no token, key or query value ("logs no query value from the return route", "a plugin whose readReturn throws", "a plugin whose login address is not on its hosts"). Conformance and `test/host.test.ts` check that no error message carries a secret or the broker's text |
 | Figures stay decimal strings, exactly as printed | The host parses every line a plugin returns with `BrokerHoldingLine` (zod, `DecimalString` for each figure). A line that fails makes the read `BROKER_ANSWER_UNREADABLE` | Conformance: a float with an exponent, or `NaN`, fails the read |
 | A plugin computes no figure | Quantity plus T+1, cost, value and gain stay in `@maester/financial-engine`. Review rule, written in the README's "Adding a broker" | Fixture tests compare a plugin's lines with the broker's printed values |
 | Every sign-in return matches a sign-in the same person started | The host makes the single-use `state` nonce (10 minutes), takes it on return and checks the user. A return with no state, or a state that does not match, is `SIGN_IN_EXPIRED` | Route test with a fake plugin whose return has no state |
@@ -408,7 +410,7 @@ One case checks that Kite loads in the real registry. With one real broker, the 
 
 ### 14.4 Lint
 
-The `src/plugins/**` restrictions from §5.5 have a fixture file that should fail lint, so the rule cannot be dropped quietly.
+`test/lint.test.ts` lints inline code that each of the §5.5 restrictions must refuse inside `src/plugins/**`, so a rule cannot be dropped quietly, and lints the real plugins, which must pass.
 
 ## 15. Adding a broker
 
