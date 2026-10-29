@@ -1,4 +1,4 @@
-import { BrokerError, at, sessionExpiry, text } from "../../kit/index.js";
+import { BrokerError, at, decimal, sessionExpiry, text } from "../../kit/index.js";
 import type { BrokerPlugin } from "../../plugin.js";
 import { answer } from "./answer.js";
 import { manifest } from "./manifest.js";
@@ -28,6 +28,16 @@ export function angelHeaders(apiKey: string, accessToken: string): Record<string
     Accept: "application/json",
     "Content-Type": "application/json",
   };
+}
+
+/**
+ * The symbol Maester looks a close up by. Angel One prints an NSE share as `SBIN-EQ`; the NSE
+ * symbol is `SBIN`. Only the trailing `-EQ` goes, and only on NSE. Any other suffix (`-BE`, `-SM`)
+ * stays, so that share finds no NSE close and shows "—", never another share's close. BSE symbols
+ * are used as they are.
+ */
+export function symbolOf(raw: string, exchange: string): string {
+  return exchange === "NSE" && raw.endsWith("-EQ") ? raw.slice(0, -"-EQ".length) : raw;
 }
 
 /**
@@ -63,9 +73,30 @@ export const angel: BrokerPlugin = {
     },
   },
   reads: {
-    // Task 2 reads the holdings.
-    async holdings() {
-      throw new BrokerError("BROKER_UNAVAILABLE", "read: not built yet");
+    async holdings({ creds, session, http }) {
+      const data = answer(await http.get(HOLDINGS_URL, { headers: angelHeaders(required(creds, "apiKey"), session.accessToken) }), "read");
+      // `[]` is an account with no holdings. Anything else, `null` included, is not a list: "no holdings" is a figure, so it is
+      // said only for the shape known to mean it.
+      if (!Array.isArray(data)) throw new BrokerError("BROKER_ANSWER_UNREADABLE", "the holdings answer has no list");
+      // Every figure is the string Angel One printed. Nothing is worked out here, and two lines for one share are not added
+      // together: the host refuses a read that lists the same ISIN on the same exchange twice.
+      return data.map((item: unknown) => {
+        const exchange = text(at(item, "exchange"), "exchange");
+        const lastPrice = at(item, "ltp");
+        return {
+          isin: text(at(item, "isin"), "isin"),
+          exchange,
+          // Angel One's own spelling varies (`tradingsymbol`, `tradingSymbol`), and the value can be `null`: one such line fails the read.
+          symbol: symbolOf(text(at(item, "tradingsymbol") ?? at(item, "tradingSymbol"), "tradingsymbol"), exchange),
+          quantity: decimal(at(item, "quantity"), "quantity"),
+          // Kept apart from `quantity` (a share bought today is quantity 0, t1quantity 5): the engine adds them.
+          t1Quantity: decimal(at(item, "t1quantity") ?? 0, "t1quantity"),
+          // An absent average price is "0", which the financial engine reads as an unknown cost, so one such line does not
+          // fail the whole read. A price that is present but not a decimal is still unreadable.
+          averagePrice: decimal(at(item, "averageprice") ?? 0, "averageprice"),
+          lastPrice: lastPrice == null ? null : decimal(lastPrice, "ltp"),
+        };
+      });
     },
   },
 };
