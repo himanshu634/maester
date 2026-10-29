@@ -4,8 +4,8 @@ Status: built 29 October 2026, switched off until a live run. This is an addendu
 
 **Depends on:**
 
-- [PR #32](https://github.com/himanshu634/maester/pull/32) (the plugins spec, ADR 0009 and the research note), which is not merged yet;
-- the Kite plugin build on `staging`: `packages/brokers/src/plugins/`, `registry.ts`, the kit and `test/conformance.ts`. On 27 October 2026 none of these are on `staging`, so the build waits.
+- [PR #32](https://github.com/himanshu634/maester/pull/32) (the plugins spec, ADR 0009 and the research note), PR #34 (the broker tables migration) and PR #35 (the Kite plugin build), all merged into `staging` on 29 October 2026 as `a8c6a15`;
+- the Kite plugin build on `staging`: `packages/brokers/src/plugins/`, `registry.ts`, the kit and `test/conformance.ts`. This plugin was built on it.
 
 ## 1. Goal
 
