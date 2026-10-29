@@ -1,4 +1,9 @@
-export { BrokerClient, BrokerError, type BrokerErrorCode, type BrokerHoldingLine, type BrokerSession, type Credentials, type ReadSession } from "./client.js";
-export { builtInDefinitions } from "./built-in.js";
-export { DefinitionError, checkDefinition, loadDefinitions, parseDefinition } from "./definitions.js";
-export { sessionExpiry } from "./expiry.js";
+// The kit: `BrokerError`, the `BrokerHttp` type (the host makes the client, locked to the broker,
+// and no package export makes one), the value readers and the expiry rule.
+export * from "./kit/index.js";
+// The plugin contract, and the holding line a plugin returns (the contracts' type, under one name).
+export type { BrokerHoldingLine, BrokerPlugin, BrokerSession, Credentials, ReadCtx, RedirectSignIn, ReturnRead } from "./plugin.js";
+export { RegistryError, createRegistry, type BrokerRegistry } from "./registry.js";
+// What the API calls: it never calls a plugin's own methods except `signIn.readReturn`.
+export { completeSignIn, loginUrlFor, readHoldings, toBrokerError } from "./host.js";
+export { defaultRegistry, plugins } from "./plugins/index.js";

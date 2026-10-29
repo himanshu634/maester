@@ -2,20 +2,16 @@
 	Add a broker (A2): the brokers on the left, grouped into offered and not offered, and the
 	chosen one's form on the right from 1024px (below it on smaller screens). Everything the form
 	asks for, its numbered steps, how long a sign-in lasts and what it costs come from the broker's
-	JSON definition. "Save and sign in with <broker>" keeps the key, then sends the browser to the
-	broker's own login page; the broker sends it back to Holdings. A broker that signs in with a
-	connection saved in Settings (Dhan) asks for nothing: "Add <broker>" adds it and reads at once,
-	and if Settings has no connection for it the form says so, with a link there.
+	manifest (a compiled-in plugin, served at /v1/brokers). "Save and sign in with <broker>" keeps
+	the key, then sends the browser to the broker's own login page; the broker sends it back to
+	Holdings.
 -->
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
-	import { resolve } from '$app/paths';
 	import { holdingsContent as copy } from '$lib/content/holdings';
 	import { ApiError } from '$lib/documents/client';
 	import type { HoldingsApi } from '$lib/holdings/client';
 	import type { BrokerSummary } from '$lib/holdings/types';
-	import { settingsProvider } from '$lib/holdings/view';
-	import Notice from '$lib/components/auth/Notice.svelte';
 	import PasswordField from '$lib/components/auth/PasswordField.svelte';
 	import TextField from '$lib/components/auth/TextField.svelte';
 	import Ruler from '$lib/components/loading/Ruler.svelte';
@@ -26,21 +22,15 @@
 		/** The page is empty: this is the first broker, so there is nothing to cancel back to. */
 		first?: boolean;
 		oncancel: () => void;
-		/** After a broker on a Settings connection is added and read: read the snapshot again and say so. */
-		onadded: (said: string) => Promise<void>;
 	}
 
-	let { api, brokers, first = false, oncancel, onadded }: Props = $props();
+	let { api, brokers, first = false, oncancel }: Props = $props();
 
 	const id = $props.id();
 	const offered = $derived(brokers.filter((b) => b.enabled));
 	const notOffered = $derived(brokers.filter((b) => !b.enabled));
 	let chosenId = $state(untrack(() => brokers.find((b) => b.enabled)?.id ?? null));
 	const chosen = $derived(offered.find((b) => b.id === chosenId) ?? null);
-	/** "Dhan" when the chosen broker signs in with a Settings connection. */
-	const provider = $derived(settingsProvider(chosen ?? undefined));
-	/** Settings has no connection for the chosen broker yet. */
-	let notConnected = $state(false);
 	let values = $state<Record<string, string>>({});
 	let errors = $state<Record<string, string | undefined>>({});
 	let formError = $state<string | null>(null);
@@ -53,7 +43,6 @@
 		values = {};
 		errors = {};
 		formError = null;
-		notConnected = false;
 		await tick();
 		inputs[b.credentials[0]?.key ?? '']?.focus();
 	}
@@ -67,27 +56,10 @@
 		}
 	}
 
-	/** A broker on a Settings connection: add it, which reads it at once. */
-	async function add(b: BrokerSummary) {
-		busy = true;
-		formError = null;
-		notConnected = false;
-		try {
-			const account = await api.save(b.id, {});
-			await onadded(copy.settings.added(b.name, account.lastReadCount));
-		} catch (err) {
-			if (err instanceof ApiError && err.code === 'INVALID_STATE') notConnected = true;
-			else formError = copy.errors.BROKER_UNAVAILABLE!('Maester');
-		} finally {
-			busy = false;
-		}
-	}
-
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
 		const b = chosen;
 		if (!b) return;
-		if (provider) return add(b);
 		const missing = b.credentials.filter((f) => !values[f.key]?.trim());
 		errors = Object.fromEntries(missing.map((f) => [f.key, copy.add.enter(f.label)]));
 		formError = null;
@@ -102,16 +74,6 @@
 				Object.fromEntries(b.credentials.map((f) => [f.key, values[f.key]!.trim()]))
 			);
 			values = {};
-			if (b.signIn.kind === 'direct') {
-				// The investor approved the key on the broker's side (its steps say so): sign in and read now.
-				const account = await api.session(b.id);
-				await onadded(
-					account.errorCode
-						? (copy.errors[account.errorCode]?.(b.name) ?? copy.settings.added(b.name, null))
-						: copy.settings.added(b.name, account.lastReadCount)
-				);
-				return;
-			}
 			window.location.assign(await api.signInUrl(b.id));
 		} catch (err) {
 			busy = false;
@@ -172,9 +134,7 @@
 					{/each}
 				</ol>
 
-				{#if provider}
-					<p class="uses">{copy.settings.uses(provider)}.</p>
-				{:else if chosen.returnUrl}
+				{#if chosen.returnUrl}
 					<div class="field">
 						<label for="{id}-return">{copy.add.returnUrl}</label>
 						<p class="hint" id="{id}-return-hint">{copy.add.returnUrlHint}</p>
@@ -238,11 +198,7 @@
 						disabled={busy}
 						aria-describedby={busy ? `${id}-saving` : `${id}-note`}
 					>
-						{provider
-							? copy.settings.add(chosen.name)
-							: chosen.signIn.kind === 'direct'
-								? copy.add.saveDirect(chosen.name)
-								: copy.add.save(chosen.name)}
+						{copy.add.save(chosen.name)}
 					</button>
 					{#if !first}
 						<button type="button" class="button outline" onclick={oncancel}
@@ -252,17 +208,11 @@
 				</div>
 				{#if busy}
 					<div class="saving" id="{id}-saving">
-						<p>{provider ? copy.settings.adding(chosen.name) : copy.add.saving}</p>
+						<p>{copy.add.saving}</p>
 						<Ruler />
 					</div>
 				{:else if chosen.copy.saveNote}
 					<p class="muted note" id="{id}-note">{chosen.copy.saveNote}</p>
-				{/if}
-				{#if notConnected && provider}
-					<Notice title={copy.settings.notConnected(provider)}>
-						<p>{copy.settings.notConnectedDetail(provider)}</p>
-						<p><a href={resolve('/terminal/settings')}>{copy.accounts.openSettings}</a></p>
-					</Notice>
 				{/if}
 				{#if formError}<p class="form-error" role="alert">{formError}</p>{/if}
 			</form>
@@ -376,10 +326,6 @@
 
 	.lede {
 		max-width: var(--measure);
-	}
-
-	.uses {
-		font-weight: 700;
 	}
 
 	.steps {

@@ -2,7 +2,7 @@
 	Holdings (canvas "Maester Broker Connections", A · Accounts, then one table). The accounts
 	ledger first, with each broker's state in words and its one action; then the figure strip and
 	one table of what is held across the accounts. Brokers, their fields and their steps come from
-	their JSON definitions through /v1/brokers. A trip to the broker's login page comes back here
+	their manifests (compiled-in plugins) through /v1/brokers. A trip to the broker's login page comes back here
 	with ?broker=…&signedIn=1 or &error=CODE, said once and then taken out of the address.
 -->
 <script lang="ts">
@@ -73,12 +73,6 @@
 		message = null;
 	}
 
-	/** A broker on a Settings connection was added and read: show it, and say so. */
-	async function added(said: string) {
-		await refresh(said);
-		await closeAdd();
-	}
-
 	async function closeAdd() {
 		adding = false;
 		await tick();
@@ -139,13 +133,13 @@
 		{/if}
 
 		{#if empty}
-			<AddBroker {api} {brokers} first oncancel={closeAdd} onadded={added} />
+			<AddBroker {api} {brokers} first oncancel={closeAdd} />
 		{:else}
 			{#if adding}
-				<AddBroker {api} brokers={offered} oncancel={closeAdd} onadded={added} />
+				<AddBroker {api} brokers={offered} oncancel={closeAdd} />
 			{/if}
 
-			<HoldingsNudge {api} {brokers} {snapshot} onchanged={refresh} />
+			<HoldingsNudge {api} {snapshot} onchanged={refresh} />
 
 			<HoldingsStrip {snapshot} />
 
@@ -169,7 +163,7 @@
 					</div>
 				</div>
 				{#if showBy === 'company'}
-					<HoldingsLedger {snapshot} {brokers} />
+					<HoldingsLedger {snapshot} />
 				{:else}
 					<HoldingsByBroker {snapshot} />
 				{/if}
