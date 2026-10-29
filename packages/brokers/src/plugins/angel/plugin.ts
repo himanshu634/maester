@@ -1,6 +1,6 @@
 import { BrokerError, at, decimal, sessionExpiry, text } from "../../kit/index.js";
 import type { BrokerPlugin } from "../../plugin.js";
-import { answer } from "./answer.js";
+import { answer, carriesErrorCode } from "./answer.js";
 import { manifest } from "./manifest.js";
 
 const LOGIN = "https://smartapi.angelone.in/publisher-login";
@@ -74,10 +74,14 @@ export const angel: BrokerPlugin = {
   },
   reads: {
     async holdings({ creds, session, http }) {
-      const data = answer(await http.get(HOLDINGS_URL, { headers: angelHeaders(required(creds, "apiKey"), session.accessToken) }), "read");
+      const body = await http.get(HOLDINGS_URL, { headers: angelHeaders(required(creds, "apiKey"), session.accessToken) });
+      const data = answer(body, "read");
       // `[]` is an account with no holdings. Anything else, `null` included, is not a list: "no holdings" is a figure, so it is
       // said only for the shape known to mean it.
       if (!Array.isArray(data)) throw new BrokerError("BROKER_ANSWER_UNREADABLE", "the holdings answer has no list");
+      // An empty list beside an error code is not that shape: the answer says it worked and also that something went wrong,
+      // and "no holdings" must not be said over that. The code itself is not repeated.
+      if (data.length === 0 && carriesErrorCode(body)) throw new BrokerError("BROKER_ANSWER_UNREADABLE", "the holdings answer is an empty list that carries an error code");
       // Every figure is the string Angel One printed. Nothing is worked out here, and two lines for one share are not added
       // together: the host refuses a read that lists the same ISIN on the same exchange twice.
       return data.map((item: unknown) => {

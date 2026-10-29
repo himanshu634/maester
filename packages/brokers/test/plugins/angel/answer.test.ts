@@ -44,6 +44,28 @@ describe("the Angel One answer reader", () => {
     }
   });
 
+  it("reads the code from whichever key holds a non-empty one", () => {
+    // An empty `errorcode` beside a real `errorCode` is the real code: `??` would have stopped at "".
+    for (const body of [
+      { success: false, errorcode: "", errorCode: "AG8001" },
+      { status: false, errorcode: "AG8001", errorCode: "" },
+      { status: false, errorcode: null, errorCode: "AG8001" },
+      { status: false, errorcode: 8001, errorCode: "AG8001" },
+    ]) {
+      expect(thrown(body, "read")?.code, JSON.stringify(body)).toBe("BROKER_SIGNED_OUT");
+      expect(thrown(body, "sign-in")?.code, JSON.stringify(body)).toBe("BROKER_REFUSED");
+      expect(thrown(body, "read")?.message, JSON.stringify(body)).toBe("read: Angel One answered AG8001");
+    }
+    // Both keys empty is no code at all.
+    expect(thrown({ success: false, errorcode: "", errorCode: "" }, "read")?.message).toBe("read: Angel One answered an error");
+  });
+
+  it("a false flag is a failure even when the other flag says true", () => {
+    expect(thrown({ status: true, success: false }, "read")?.code).toBe("BROKER_UNAVAILABLE");
+    expect(thrown({ status: false, success: true }, "read")?.code).toBe("BROKER_UNAVAILABLE");
+    expect(thrown({ status: true, success: false, errorCode: "AG8001" }, "read")?.code).toBe("BROKER_SIGNED_OUT");
+  });
+
   it("a body with neither flag is unreadable", () => {
     for (const body of [{}, null, "text", { status: "true" }, { success: "true" }, [], 7, { data: [1] }]) {
       const err = thrown(body, "read");

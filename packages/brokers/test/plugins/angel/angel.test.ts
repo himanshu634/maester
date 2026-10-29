@@ -84,7 +84,7 @@ describe("the Angel One holdings read", () => {
     expect(calls[0]?.headers).toEqual(angelHeaders("angelkey1", "jwt-abc"));
     for (const name of ["X-ClientLocalIP", "X-ClientPublicIP", "X-MACAddress"]) expect(Object.keys(calls[0]?.headers ?? {})).not.toContain(name);
 
-    // Review Focus 5: a key with reserved characters is encoded in the login URL, never in the header.
+    // A key with reserved characters goes into the header exactly as saved (the login URL is where it is encoded).
     const odd = read(holdings, { creds: { apiKey: "ab+c&d" } });
     await odd.lines;
     expect(odd.calls[0]?.headers["X-PrivateKey"]).toBe("ab+c&d");
@@ -92,12 +92,29 @@ describe("the Angel One holdings read", () => {
   });
 
   it("keeps a holding bought today", async () => {
-    // Review Focus 1: no shares settled yet, five due tomorrow. It is a line, with the two quantities apart.
+    // No shares have settled yet and five are due tomorrow. That is still a holding, with the two quantities kept apart.
     expect(await read(listOf(line({ quantity: 0, t1quantity: 5 }))).lines).toEqual([{ ...SBIN_NSE, quantity: "0", t1Quantity: "5" }]);
   });
 
   it("an empty account is no lines", async () => {
     expect(await read(holdingsEmpty).lines).toEqual([]);
+  });
+
+  it("an empty list is no holdings only when the answer carries no error code", async () => {
+    // Silent on the code, or an empty one in either spelling: an account with nothing in it.
+    for (const codes of [{}, { errorcode: "" }, { errorCode: "" }, { errorcode: "", errorCode: "" }, { errorcode: null }]) {
+      expect(await read({ status: true, message: "SUCCESS", ...codes, data: [] }).lines, JSON.stringify(codes)).toEqual([]);
+    }
+    // A code beside the empty list says something went wrong, so "no holdings" is not said.
+    for (const codes of [{ errorcode: "AB1004" }, { errorCode: "AB1004" }, { errorcode: "", errorCode: "AB1004" }, { errorcode: "AB1004", errorCode: "" }]) {
+      for (const flag of [{ status: true }, { success: true }]) {
+        const body = { ...flag, message: "SUCCESS", ...codes, data: [] };
+        const err = await rejection(read(body).lines);
+        expect(err, JSON.stringify(body)).toBeInstanceOf(BrokerError);
+        expect(err, JSON.stringify(body)).toMatchObject({ code: "BROKER_ANSWER_UNREADABLE" });
+        expect((err as BrokerError).message, JSON.stringify(body)).not.toContain("AB1004");
+      }
+    }
   });
 
   it("data null or an object is unreadable", async () => {
@@ -133,12 +150,13 @@ describe("the Angel One holdings read", () => {
       const err = await rejection(read(listOf(line(), line({ tradingsymbol, isin: "INE000Z01011" }))).lines);
       expect(err, String(tradingsymbol)).toMatchObject({ code: "BROKER_ANSWER_UNREADABLE" });
     }
-    // The camel-case spelling of the same field is read when the other is empty.
+    // The camel-case spelling of the same field is read when `tradingsymbol` is null or absent. An empty string is not
+    // skipped: it is a symbol that is missing, and fails the read (the list above).
     expect(await read(listOf(line({ tradingsymbol: null, tradingSymbol: "SBIN-EQ" }))).lines).toEqual([SBIN_NSE]);
   });
 
   it("a line with no isin fails the read", async () => {
-    // Review Focus 3: the whole read, never a dropped line.
+    // A line with no ISIN fails the whole read; it is never dropped quietly.
     for (const isin of [undefined, null, "", "  ", 4]) {
       const err = await rejection(read(listOf(line(), line({ isin, tradingsymbol: "ABC-BE" }))).lines);
       expect(err, String(isin)).toMatchObject({ code: "BROKER_ANSWER_UNREADABLE" });
@@ -157,8 +175,8 @@ describe("the Angel One holdings read", () => {
   });
 
   it("the same isin and exchange twice fails the read", async () => {
-    // Review Focus 2: two lines for one share (a split by product, say). The plugin does not add them
-    // together, because adding is arithmetic; the host refuses the read.
+    // Two lines for one share (a split by product, say). The plugin does not add them together, because adding
+    // is arithmetic; the host refuses the read.
     const err = await rejection(read(listOf(line({ product: "DELIVERY" }), line({ product: "MTF", quantity: 3 }))).lines);
     expect(err).toBeInstanceOf(BrokerError);
     expect(err).toMatchObject({ code: "BROKER_ANSWER_UNREADABLE" });
