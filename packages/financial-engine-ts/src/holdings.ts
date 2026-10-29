@@ -8,24 +8,28 @@ import Decimal from "decimal.js";
  */
 export const HOLDINGS_CALCULATIONS = [
   { id: "holding_quantity", version: 1, description: "Settled quantity plus T+1 quantity, summed over the accounts holding the ISIN." },
-  { id: "holding_cost", version: 1, description: "Each account's quantity × its average price, summed over the accounts." },
+  { id: "holding_cost", version: 1, description: "Each account's quantity × its average price, summed over the accounts. Unknown when any average price is unknown or zero." },
   { id: "holding_value", version: 1, description: "Quantity × the NSE close. Unknown without a close." },
   { id: "holdings_totals", version: 1, description: "Known value over priced rows, cost over costed rows, unrealized gain over rows with both." },
   { id: "holding_weight", version: 1, description: "A row's value ÷ the known value, as a per cent to one decimal place." },
   { id: "holding_gain", version: 1, description: "Value less cost, for a row or one account's part of it. Unknown without both." },
   { id: "holding_gain_percent", version: 1, description: "Gain ÷ the cost it was worked from, as a per cent to one decimal place. Unknown without a gain or with a cost of zero." },
-  { id: "holding_average_price", version: 1, description: "An account's cost ÷ its quantity, to the paisa, when it holds one ISIN on more than one exchange; otherwise the broker's own average price." },
+  { id: "holding_average_price", version: 2, description: "An account's cost ÷ its quantity, to the paisa, when it holds one ISIN on more than one exchange; otherwise the broker's own average price. Unknown when the account's cost is unknown." },
   { id: "holdings_by_account", version: 1, description: "Each account's known value, cost and gain over its parts, with how many parts each covers." },
 ] as const;
 
-/** One account's line for an ISIN. `account` keys the part's result; parts with the same key are merged. */
-export type HoldingPartInput = { account?: string; quantity: string; t1Quantity: string; averagePrice: string };
+/**
+ * One account's line for an ISIN. `account` keys the part's result; parts with the same key are merged.
+ * `averagePrice` is null when the broker gave none.
+ */
+export type HoldingPartInput = { account?: string; quantity: string; t1Quantity: string; averagePrice: string | null };
 export type HoldingInput = { isin: string; parts: HoldingPartInput[]; close: string | null };
 export type HoldingUnknown = "NO_CLOSE" | "NO_COST";
 export type HoldingPartResult = {
   account: string | null;
   quantity: string;
-  averagePrice: string;
+  /** Null when the cost is unknown (NO_COST), never "0". */
+  averagePrice: string | null;
   cost: string | null;
   value: string | null;
   gain: string | null;
@@ -73,10 +77,14 @@ export function holdingQuantity(parts: HoldingPartInput[]): Decimal {
   return parts.reduce((s, p) => s.plus(p.quantity).plus(p.t1Quantity), new Decimal(0));
 }
 
-/** holding_cost v1. An average price of zero is a broker that does not know the cost, so the cost is unknown. */
+/**
+ * holding_cost v1. An average price the broker did not give, or gave as zero, is a broker that does
+ * not know the cost, so the cost is unknown.
+ */
 export function holdingCost(parts: HoldingPartInput[]): Decimal | null {
   let sum = new Decimal(0);
   for (const p of parts) {
+    if (p.averagePrice === null) return null;
     const avg = new Decimal(p.averagePrice);
     if (avg.isZero()) return null;
     sum = sum.plus(new Decimal(p.quantity).plus(p.t1Quantity).times(avg));
@@ -115,10 +123,15 @@ function partsOf(h: HoldingInput): Part[] {
   });
 }
 
-/** holding_average_price v1: the broker's own figure for one line; for merged lines, cost ÷ quantity. */
-function averagePrice(p: Part): string {
+/**
+ * holding_average_price v2: the broker's own figure for one line; for merged lines, cost ÷ quantity.
+ * Unknown (null) whenever the part's cost is unknown, so an average the broker gave as zero or not
+ * at all never reaches the page as ₹0.00. v1 returned "0" there.
+ */
+function averagePrice(p: Part): string | null {
+  if (p.cost === null) return null;
   if (p.lines.length === 1) return p.lines[0]!.averagePrice;
-  if (p.cost === null || p.quantity.isZero()) return "0";
+  if (p.quantity.isZero()) return null;
   return money(p.cost.div(p.quantity));
 }
 

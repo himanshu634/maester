@@ -65,7 +65,7 @@ export function fakePlugin(over: Partial<BrokerManifest> = {}): BrokerPlugin {
           exchange: text(at(item, "exchange"), "exchange"),
           quantity: decimal(at(item, "quantity"), "quantity"),
           t1Quantity: decimal(at(item, "t1Quantity"), "t1Quantity"),
-          averagePrice: decimal(at(item, "averagePrice"), "averagePrice"),
+          averagePrice: at(item, "averagePrice") == null ? null : decimal(at(item, "averagePrice"), "averagePrice"),
           lastPrice: at(item, "lastPrice") == null ? null : decimal(at(item, "lastPrice"), "lastPrice"),
         }));
       },

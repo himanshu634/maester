@@ -364,6 +364,25 @@ describe("Kite through the default registry", () => {
     expect(((await res.json()) as { error: { fields: { path: string }[] } }).error.fields.map((f) => f.path)).toEqual(["credentials.apiSecret"]);
   });
 
+  it("keeps an average price Kite did not give unknown on Holdings, never 0", async () => {
+    kiteHoldings = { status: 200, body: { status: "success", data: [
+      { tradingsymbol: "HDFCBANK", exchange: "NSE", isin: "INE040A01034", quantity: 120, t1_quantity: 0, last_price: 1745 },
+    ] } };
+    await upsertMarketPoints(ctx.db, [{ series: "eq:HDFCBANK", day: "2026-10-16", value: 1742.6, source: "Dhan · NSE close" }]);
+    await saveKite();
+    const start = (await (await ctx.app.request(`${base()}/brokers/kite/sign-in`, { method: "POST", headers: headers() })).json()) as { url: string };
+    const state = new URLSearchParams(new URL(start.url).searchParams.get("redirect_params")!).get("state")!;
+    await ctx.app.request(`/v1/brokers/kite/return?${new URLSearchParams({ request_token: "rt-1", action: "login", status: "success", state })}`, { headers: { cookie } });
+
+    const snap = HoldingsSnapshot.parse(await clean(await ctx.app.request(`${base()}/holdings`, { headers: { cookie } }), [KITE_SECRET, KITE_TOKEN]));
+    // 120 × 1742.60 = 209,112.00. No average price, so no cost, gain or per cent; the row says NO_COST.
+    expect(snap.rows[0]).toMatchObject({ symbol: "HDFCBANK", cost: null, value: "209112.00", gain: null, gainPercent: null, unknown: ["NO_COST"] });
+    expect(snap.rows[0]?.parts).toEqual([
+      { broker: "kite", accountId: "ZK0001", quantity: "120", averagePrice: null, cost: null, value: "209112.00", gain: null, gainPercent: null, readAt: expect.any(String), stale: false },
+    ]);
+    expect(snap.calculations).toContainEqual({ id: "holding_average_price", version: 2 });
+  });
+
   it("Kite through the default registry: save, sign in, return and read", async () => {
     const saved = await saveKite();
     expect(BrokerAccount.parse(await clean(saved, [KITE_SECRET]))).toMatchObject({ broker: "kite", name: "Zerodha", state: "saved", keyLast4: KITE_KEY.slice(-4) });

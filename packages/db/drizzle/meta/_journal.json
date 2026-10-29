@@ -71,6 +71,13 @@
       "when": 1793011614458,
       "tag": "0009_broker_holdings",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793255572965,
+      "tag": "0010_holding_line_average_unknown",
+      "breakpoints": true
     }
   ]
 }

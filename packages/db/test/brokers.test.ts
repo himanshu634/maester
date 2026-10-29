@@ -65,6 +65,14 @@ describe("broker connections", () => {
     expect(latest?.lastOk).toMatchObject({ id: good, lineCount: 1 });
     expect(latest?.lines[0]).toMatchObject({ quantity: "120", averagePrice: "1512.4", lastPrice: "1742.6" });
   });
+
+  it("stores an average price the broker did not give as null, not 0", async () => {
+    const row = await save();
+    const read = await startHoldingRead(db, row.id);
+    await finishHoldingRead(db, read, { ok: true, lines: [{ ...line, averagePrice: null, lastPrice: null }] });
+    const [latest] = await latestHoldings(db, [row.id]);
+    expect(latest?.lines[0]).toMatchObject({ quantity: "120", averagePrice: null, lastPrice: null });
+  });
 });
 
 describe("latestCloses", () => {

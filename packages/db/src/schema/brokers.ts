@@ -59,7 +59,8 @@ export const holdingLine = pgTable("holding_line", {
   symbol: text("symbol").notNull(),
   quantity: numeric("quantity").notNull(),
   t1Quantity: numeric("t1_quantity").notNull(),
-  averagePrice: numeric("average_price").notNull(),
+  /** Null when the broker gave no average price; never stored as 0. */
+  averagePrice: numeric("average_price"),
   lastPrice: numeric("last_price"),
 }, (t) => [primaryKey({ name: "holding_line_pk", columns: [t.readId, t.isin, t.exchange] })]);
 export type HoldingLineRow = typeof holdingLine.$inferSelect;

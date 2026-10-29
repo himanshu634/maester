@@ -78,7 +78,51 @@ describe("holdingsSnapshot", () => {
   it("has no known value, gain or per cent when nothing is priced or costed", () => {
     const r = holdingsSnapshot([{ isin: "X", close: null, parts: [{ quantity: "1", t1Quantity: "0", averagePrice: "0" }] }]);
     expect(r.rows[0]?.unknown).toEqual(["NO_CLOSE", "NO_COST"]);
+    expect(r.rows[0]?.parts[0]?.averagePrice).toBeNull();
     expect(r.totals).toMatchObject({ knownValue: null, cost: null, unrealizedGain: null, gainPercent: null, priced: 0, costed: 0 });
     expect(r.accounts).toEqual([]);
+  });
+
+  it("leaves an average the broker did not give, or gave as zero, unknown, never 0 (holding_average_price v2)", () => {
+    // A: kite 4 @ no average, close 250: value 4 × 250 = 1,000.00; cost, gain and per cent unknown.
+    // B: kite 10 + 2 on T+1 @ 0 (printed), close 80: quantity 12, value 12 × 80 = 960.00; cost unknown.
+    // Known value 1,000 + 960 = 1,960.00; weights 1,000 / 1,960 = 0.510204 → 51.0 and 960 / 1,960 = 0.489796 → 49.0.
+    // No row has a cost, so cost, gain and per cent are unknown in the totals and for kite.
+    const r = holdingsSnapshot([
+      { isin: "A", close: "250", parts: [{ account: "kite", quantity: "4", t1Quantity: "0", averagePrice: null }] },
+      { isin: "B", close: "80", parts: [{ account: "kite", quantity: "10", t1Quantity: "2", averagePrice: "0" }] },
+    ]);
+    expect(r.rows[0]).toEqual({
+      isin: "A", quantity: "4", cost: null, value: "1000.00", weight: "51.0", gain: null, gainPercent: null, unknown: ["NO_COST"],
+      parts: [{ account: "kite", quantity: "4", averagePrice: null, cost: null, value: "1000.00", gain: null, gainPercent: null }],
+    });
+    expect(r.rows[1]).toEqual({
+      isin: "B", quantity: "12", cost: null, value: "960.00", weight: "49.0", gain: null, gainPercent: null, unknown: ["NO_COST"],
+      parts: [{ account: "kite", quantity: "12", averagePrice: null, cost: null, value: "960.00", gain: null, gainPercent: null }],
+    });
+    expect(r.totals).toEqual({ knownValue: "1960.00", priced: 2, count: 2, cost: null, costed: 0, unrealizedGain: null, gainCovers: 0, gainPercent: null });
+    expect(r.accounts).toEqual([{ account: "kite", knownValue: "1960.00", priced: 2, count: 2, cost: null, costed: 0, gain: null, gainCovers: 0, gainPercent: null }]);
+  });
+
+  it("leaves a merged part's average unknown when one of its lines has none", () => {
+    // kite holds X on NSE (10 @ 100) and BSE (5 @ no average): quantity 15, cost unknown, so no average;
+    // close 120: value 15 × 120 = 1,800.00. dhan 3 @ 90: cost 270.00, value 360.00, gain 90.00,
+    // 90 / 270 = 0.333333 → 33.3. Row: quantity 18, value 18 × 120 = 2,160.00, cost unknown (kite's is).
+    const r = holdingsSnapshot([{
+      isin: "X", close: "120", parts: [
+        { account: "kite", quantity: "10", t1Quantity: "0", averagePrice: "100" },
+        { account: "kite", quantity: "5", t1Quantity: "0", averagePrice: null },
+        { account: "dhan", quantity: "3", t1Quantity: "0", averagePrice: "90" },
+      ],
+    }]);
+    expect(r.rows[0]).toMatchObject({ quantity: "18", cost: null, value: "2160.00", gain: null, gainPercent: null, unknown: ["NO_COST"] });
+    expect(r.rows[0]!.parts).toEqual([
+      { account: "kite", quantity: "15", averagePrice: null, cost: null, value: "1800.00", gain: null, gainPercent: null },
+      { account: "dhan", quantity: "3", averagePrice: "90", cost: "270.00", value: "360.00", gain: "90.00", gainPercent: "33.3" },
+    ]);
+    expect(r.accounts).toEqual([
+      { account: "kite", knownValue: "1800.00", priced: 1, count: 1, cost: null, costed: 0, gain: null, gainCovers: 0, gainPercent: null },
+      { account: "dhan", knownValue: "360.00", priced: 1, count: 1, cost: "270.00", costed: 1, gain: "90.00", gainCovers: 1, gainPercent: "33.3" },
+    ]);
   });
 });
