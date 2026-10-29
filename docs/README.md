@@ -36,7 +36,7 @@ Maester's product plan connects portfolio tracking with company research and ver
 | [Sign-in decision](decisions/0005-sign-in-google-email-waitlist.md) | Better Auth with Google and email, a waitlist gate, Resend and the web-origin proxy | Engineering and product |
 | [Financial data layer decision](decisions/0006-concepts-calculations-agent-access.md) | Concepts over as-printed facts, two readers, calculations in TypeScript, a read-only MCP server, evaluation before change | Engineering and data |
 | [Ingestion pipeline decision](decisions/0007-ingestion-pipeline.md) | XBRL alone for a filing's numbers, a local text index, and a bounded job runner | Engineering and data |
-| [Broker plugins decision](decisions/0009-broker-plugins.md) | Brokers as compiled-in code plugins with host-enforced safety; Zerodha now, Angel One next | Engineering |
+| [Broker plugins decision](decisions/0009-broker-plugins.md) | Brokers as compiled-in code plugins with host-enforced safety; Zerodha now, Angel One built and switched off until a live run | Engineering |
 
 ## Designs, research and reports
 

@@ -56,7 +56,7 @@ A seventh TypeScript package, `packages/financial-engine-ts`, holds the source r
 | `@maester/db` | `packages/db` | Gives the database schema, the migrations, a PostgreSQL client and the query functions. |
 | `@maester/jobs` | `packages/jobs` | Creates jobs, sends tasks and calculates the next intake state of a document. |
 | `@maester/storage` | `packages/storage` | Gives the `ObjectStore` interface and three object stores. |
-| `@maester/brokers` | `packages/brokers` | Broker plugins (Kite) behind a host-locked kit and a registry; read-only. |
+| `@maester/brokers` | `packages/brokers` | Broker plugins (Kite, and Angel One, which is switched off until a live run) behind a host-locked kit and a registry; read-only. |
 | `@maester/market` | `packages/market` | Gets daily market data from Dhan and FRED. Encrypts and decrypts the secrets of market connections. |
 | `@maester/document-index` | `packages/document-index` | Names the embedding models, calls the embedder and searches the chunks. |
 | `maester-financial-engine` | `packages/financial-engine` | A Python library with the import name `pdf_financial_qa`. It classifies PDF filings and extracts facts from them. It also reads XBRL instances, with element maps. |

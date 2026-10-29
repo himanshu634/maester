@@ -73,7 +73,7 @@ Marks are those of the research note: [off] Angel One's code or docs, [staff], [
 One function, `answer(body, phase)`, reads every SmartAPI answer that came back with HTTP 200:
 
 1. Not an object: `BROKER_ANSWER_UNREADABLE`.
-2. `status === false` or `success === false`: the code is `errorcode ?? errorCode`.
+2. `status === false` or `success === false`: the code is the first non-empty string of `errorcode` and `errorCode`.
    - `AG8001`, `AG8002` or `AG8003`: `BROKER_SIGNED_OUT` while reading, `BROKER_REFUSED` while signing in.
    - Any other code, or none: `BROKER_UNAVAILABLE`.
 3. Neither `status === true` nor `success === true`: `BROKER_ANSWER_UNREADABLE`.
@@ -85,7 +85,7 @@ Angel One's `message` is never put in an error. The kit already turns HTTP 401 a
 
 `GET https://apiconnect.angelone.in/rest/secure/angelbroking/portfolio/v1/getHolding`, headers as in §3.5, checked by `answer(body, "read")`.
 
-- `data` is an array: one line per item. `[]` is an account with no holdings.
+- `data` is an array: one line per item. `[]` is an account with no holdings, but only when the answer carries no error code (`errorcode` and `errorCode` both absent or empty). An empty list beside a code is `BROKER_ANSWER_UNREADABLE`.
 - Anything else, `null` included, is `BROKER_ANSWER_UNREADABLE`. "No holdings" is a figure, so it is said only for the shape we know means it. The live run (§5, item 5) decides whether `null` joins `[]`.
 
 Each line, using only the kit:
@@ -138,19 +138,20 @@ Fixtures, with every key, token, account ID and name replaced:
 6. **`status: false` while signing in:** `AG8001` in either envelope is `BROKER_REFUSED`; `AB1004` is `BROKER_UNAVAILABLE`; a `data` without `clientcode` is unreadable.
 7. **`status: false` while reading:** `AG8001`, `AG8002`, `AG8003` in either envelope are `BROKER_SIGNED_OUT`; `AB1004` is `BROKER_UNAVAILABLE`. No error message carries Angel One's text.
 8. **Figures:** the number and the string fixtures give the same decimal strings as printed; a missing `averageprice` is `"0"`; a missing `ltp` is `null`.
-9. **Empty account:** `data: []` is no lines; `data: null` and `data: {}` are unreadable.
+9. **Empty account:** `data: []` is no lines; `data: []` beside an error code, `data: null` and `data: {}` are unreadable.
 10. **Symbols:** NSE `SBIN-EQ` is `SBIN`; NSE `ABC-BE` is unchanged; BSE `SBIN` is unchanged; `tradingSymbol` is read when `tradingsymbol` is absent; a `null` symbol fails the read.
 
 ## 5. Switched off until the live run
 
-The spec's recipe (§15, step 7) keeps a plugin off while something the host needs is unknown. Two such things are unknown here:
+The spec's recipe (§15, step 7) keeps a plugin off while something the host needs is unknown. Three such things are unknown here:
 
 - whether `state` comes back, which is the safety check;
-- whether `quantity` already includes `t1quantity`. If it does, adding them double-counts a holding just after a purchase.
+- whether `quantity` already includes `t1quantity`. If it does, adding them double-counts a holding just after a purchase;
+- whether one ISIN comes back on both NSE and BSE with the same quantity. The holdings route groups lines by ISIN and the engine adds one broker's NSE and BSE lines, so a repeated quantity would count that holding twice.
 
 So Angel One ships with `enabled: false`. `enabled: false` also blocks saving a key, so the live run starts by switching it on in a local build. Its outcome is one of:
 
-- **Everything holds:** `enabled: true`, `notOfferedReason` removed, and the research note's [?] marks updated.
+- **Everything holds:** `enabled: true`, `notOfferedReason` removed, the research note's [?] marks updated, and the ₹0.00 average-cost follow-up fixed (the broker line's "Avg cost" column shows "₹0.00" for an average price of 0, as it does for Kite). Angel One answers `averageprice: 0.0` in real answers, so it would show here often.
 - **`state` does not come back:** `enabled` stays `false` with the reason "Angel One’s sign-in page doesn’t send back the check Maester needs" (research note §2). A typed MPIN and TOTP sign-in would be a new strategy with its own design.
 - **Anything else differs:** fix the plugin and its fixtures, then decide.
 
@@ -171,6 +172,7 @@ Checklist, to be copied into `packages/brokers/README.md` as owed:
 10. The `exp` inside the `auth_token` JWT: if it is earlier than midnight, the session ends at the earlier of the two.
 11. Whether any holding still comes back with a `null` `tradingsymbol`.
 12. After the run: the tunnel's request log holds the return URL, and with it a token that can trade until midnight. Clear the log, or sign out of SmartAPI.
+13. Whether one ISIN can come back on both NSE and BSE, and if so whether the two quantities split the holding or repeat it. If they repeat, fix the read before switching Angel One on.
 
 ## 6. Host changes: none
 
@@ -194,6 +196,7 @@ Each need was checked against the host as the spec describes it:
 | The return carries a token that can trade until midnight. Kite's return carries only a code that needs the secret | It never reaches Maester's logs (§6). It stays in the investor's own browser history until midnight, which a personal install accepts. A tunnel's log is the one place it leaks; the checklist's item 12 deals with it |
 | One bad line (a `null` symbol) hides every Angel One holding | Safer than a silently missing holding. Item 11 shows whether it still happens |
 | `quantity` includes `t1quantity` | Off until item 6 is answered |
+| One holding is listed on both NSE and BSE with the same quantity, so it is counted twice | Off until item 13 is answered |
 | The JWT expires before midnight | A read then fails with `AG8001` and the account shows as signed out, which is true. Item 10 makes the expiry exact |
 
 ## Sources
