@@ -1,4 +1,8 @@
-import type { BrokerSessionExpiry } from "@maester/contracts";
+/**
+ * When a sign-in stops working. `daily`: at a fixed local time each day (Zerodha: 06:00 in
+ * Asia/Kolkata). `hours`: a fixed number of hours after sign-in.
+ */
+export type BrokerSessionExpiry = { kind: "daily"; at: string; timeZone: string } | { kind: "hours"; hours: number };
 
 /** Minutes the zone is ahead of UTC at `instant`. */
 function offsetMinutes(instant: Date, timeZone: string): number {
@@ -25,7 +29,7 @@ function zoned(y: number, m: number, d: number, hh: number, mm: number, timeZone
   return new Date(guess.getTime() - offsetMinutes(first, timeZone) * 60_000);
 }
 
-/** When a sign-in made at `signedInAt` stops working, by the definition's rule. */
+/** When a sign-in made at `signedInAt` stops working, by the plugin's rule. */
 export function sessionExpiry(rule: BrokerSessionExpiry, signedInAt: Date): Date {
   if (rule.kind === "hours") return new Date(signedInAt.getTime() + rule.hours * 3_600_000);
   const [hh, mm] = rule.at.split(":").map(Number) as [number, number];

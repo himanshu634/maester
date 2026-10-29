@@ -9,7 +9,7 @@ import { silentLogger } from "../src/logger.js";
 import { RecordingMailer } from "../src/mail/index.js";
 import { testEnv } from "./env.js";
 
-export async function createTestContext(overrides: Partial<NodeJS.ProcessEnv> = {}, deps: Partial<Pick<AppDeps, "marketSources" | "logger" | "brokerDefinitions" | "brokerFetch" | "embedder">> = {}) {
+export async function createTestContext(overrides: Partial<NodeJS.ProcessEnv> = {}, deps: Partial<Pick<AppDeps, "marketSources" | "logger" | "brokerRegistry" | "brokerFetch" | "embedder">> = {}) {
   const env = testEnv(overrides);
   const db = createDb(env.DATABASE_URL);
   await runMigrations(db);

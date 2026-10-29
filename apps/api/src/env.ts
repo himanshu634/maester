@@ -50,8 +50,6 @@ const EnvSchema = z.object({
     .optional()
     .transform((v) => v || undefined)
     .refine((v) => v === undefined || (/^[A-Za-z0-9+/]+={0,2}$/.test(v) && Buffer.from(v, "base64").length === 32), "CONNECTIONS_KEY must be 32 bytes, base64"),
-  // A folder of broker definitions (*.json) loaded over the built-in ones; a file with a built-in id replaces it.
-  BROKER_DEFINITIONS_DIR: z.string().optional().transform((v) => v || undefined),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

@@ -8,7 +8,7 @@
 	interface Props {
 		open: boolean;
 		name: string;
-		/** What disconnecting forgets: the key and secret, or (for a Settings connection) only the account here. */
+		/** What disconnecting forgets: the broker's saved key and secret, and its holdings on this page. */
 		detail: string;
 		busy?: boolean;
 		onconfirm: () => void;

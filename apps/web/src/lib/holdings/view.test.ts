@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { direction, groupIndian, percentText, rupees, shares, signedPercent } from './format';
+import { holdingsContent } from '$lib/content/holdings';
 import type { BrokerAccount, BrokerSummary, HoldingsSnapshot } from './types';
 import {
 	accountAction,
@@ -52,28 +53,6 @@ const kite = {
 	signIn: { kind: 'redirect' },
 	returnUrl: ''
 } satisfies BrokerSummary;
-const dhan = {
-	...kite,
-	id: 'dhan',
-	name: 'Dhan',
-	copy: {
-		...kite.copy,
-		lasts: 'As long as your Dhan connection in Settings',
-		signedOutNote:
-			'Dhan’s token in Settings has expired or was refused. Save a new one in Settings.'
-	},
-	signIn: { kind: 'settings-connection', provider: 'dhan' },
-	returnUrl: null
-} satisfies BrokerSummary;
-const dhanAccount = (over: Partial<BrokerAccount> = {}) =>
-	account({
-		broker: 'dhan',
-		name: 'Dhan',
-		accountId: '1100012345',
-		keyLast4: null,
-		signedInAt: null,
-		...over
-	});
 
 describe('format', () => {
 	it('groups digits the Indian way', () => {
@@ -110,33 +89,51 @@ describe('view', () => {
 		expect(stateWords(account({ state: 'saved' }))).toBe('Not signed in yet');
 	});
 
-	it('picks the one action an account needs', () => {
+	it('accountAction is sign_in for a saved, signed-out or never-signed-in account, and read when signed in', () => {
 		expect(accountAction(account())).toBe('read');
 		expect(accountAction(account({ state: 'signed_out' }))).toBe('sign_in');
 		expect(accountAction(account({ state: 'saved', signedInAt: null }))).toBe('sign_in');
-		// Groww signs in from Maester: no page to go to, only "Read Groww" once its key is approved.
-		const groww = { ...kite, id: 'groww', name: 'Groww', signIn: { kind: 'direct' as const } };
-		expect(accountAction(account({ broker: 'groww', state: 'signed_out' }), groww)).toBe('direct');
-		expect(accountAction(account({ broker: 'groww' }), groww)).toBe('read');
+	});
+
+	it('accountAction is read for a failing account that signed in and has not signed out', () => {
 		expect(accountAction(account({ state: 'failing', errorCode: 'BROKER_UNAVAILABLE' }))).toBe(
 			'read'
 		);
-	});
-
-	it('never asks a Settings-connection account to sign in here', () => {
-		expect(accountAction(dhanAccount(), dhan)).toBe('read');
+		// A failing account that was never signed in, or that was signed out, has to sign in again.
 		expect(
-			accountAction(dhanAccount({ state: 'failing', errorCode: 'BROKER_UNAVAILABLE' }), dhan)
-		).toBe('read');
-		expect(accountAction(dhanAccount({ state: 'signed_out' }), dhan)).toBe('settings');
+			accountAction(account({ state: 'failing', signedInAt: null, errorCode: 'BROKER_REFUSED' }))
+		).toBe('sign_in');
+		expect(
+			accountAction(
+				account({
+					state: 'failing',
+					signedOutAt: '2026-10-19T00:30:00Z',
+					errorCode: 'BROKER_SIGNED_OUT'
+				})
+			)
+		).toBe('sign_in');
 	});
 
-	it('says a Settings-connection account uses Settings, and points there when signed out', () => {
-		expect(stateDetail(dhanAccount(), dhan)).toBe('Uses your Dhan connection from Settings.');
-		expect(stateDetail(dhanAccount({ state: 'signed_out' }), dhan)).toBe(
-			'Dhan’s token in Settings has expired or was refused. Save a new one in Settings.'
-		);
+	it('says what an account’s state means: the broker’s error, its sign-out note, or how long a sign-in lasts', () => {
 		expect(stateDetail(account(), kite)).toBe('A sign-in lasts: until 6:00 the next morning.');
+		expect(stateDetail(account({ state: 'signed_out' }), kite)).toBe(kite.copy.signedOutNote);
+		expect(stateDetail(account({ state: 'saved', signedInAt: null }), kite)).toBe(
+			'Key ending x123'
+		);
+		expect(stateDetail(account({ state: 'failing', errorCode: 'BROKER_UNAVAILABLE' }), kite)).toBe(
+			'Zerodha didn’t answer. Try again in a minute.'
+		);
+	});
+
+	it('has no wording for a Settings connection or a direct sign-in: every broker signs in on its own page', () => {
+		expect(holdingsContent).not.toHaveProperty('settings');
+		expect(holdingsContent.add).not.toHaveProperty('saveDirect');
+		expect(holdingsContent.accounts).not.toHaveProperty('readDirect');
+		expect(holdingsContent.accounts).not.toHaveProperty('openSettings');
+		expect(holdingsContent.nudge).not.toHaveProperty('whatDirect');
+		expect(holdingsContent.nudge).not.toHaveProperty('whatSettings');
+		expect(holdingsContent.table).not.toHaveProperty('staleSettings');
+		expect(holdingsContent.dialog).not.toHaveProperty('settingsDetail');
 	});
 
 	it('says what was read and when', () => {
@@ -144,15 +141,30 @@ describe('view', () => {
 		expect(readWords(account({ lastReadAt: null }), NOW)).toBe('Not read yet');
 	});
 
-	it('stars a part read before the sign-out and footnotes the oldest', () => {
+	it('staleNote names the broker and the oldest read', () => {
+		const part = (broker: string, readAt: string) => ({
+			broker,
+			accountId: 'AB1234',
+			quantity: '120',
+			averagePrice: '1512.4',
+			cost: null,
+			value: null,
+			gain: null,
+			gainPercent: null,
+			readAt,
+			stale: true
+		});
 		const snap = {
-			accounts: [account({ state: 'signed_out' })],
+			accounts: [
+				account({ state: 'signed_out' }),
+				account({ broker: 'angel', name: 'Angel One', state: 'signed_out' })
+			],
 			rows: [
 				{
 					isin: 'I',
 					symbol: 'HDFCBANK',
 					exchange: 'NSE',
-					quantity: '120',
+					quantity: '240',
 					cost: null,
 					close: null,
 					value: null,
@@ -161,18 +173,9 @@ describe('view', () => {
 					gainPercent: null,
 					unknown: [],
 					parts: [
-						{
-							broker: 'kite',
-							accountId: 'AB1234',
-							quantity: '120',
-							averagePrice: '1512.4',
-							cost: null,
-							value: null,
-							gain: null,
-							gainPercent: null,
-							readAt: '2026-10-18T10:12:00Z',
-							stale: true
-						}
+						part('kite', '2026-10-18T10:12:00Z'),
+						part('angel', '2026-10-17T10:00:00Z'),
+						{ ...part('kite', '2026-10-19T03:00:00Z'), stale: false }
 					]
 				}
 			],
@@ -190,10 +193,21 @@ describe('view', () => {
 			calculations: [],
 			accountTotals: []
 		} satisfies HoldingsSnapshot;
-		expect(heldAtWords(snap.rows[0]!, { kite: 'Zerodha' })).toBe('Zerodha 120*');
-		expect(staleNote(snap, NOW)).toBe(
-			'* Read Sun 18 Oct, 15:42, before Zerodha signed Maester out. Quantities change only when you trade; sign in to check.'
+		expect(heldAtWords(snap.rows[0]!, { kite: 'Zerodha', angel: 'Angel One' })).toBe(
+			'Zerodha 120* · Angel One 120* · Zerodha 120'
 		);
+		// The oldest starred read is Angel One's, on Saturday; the footnote names it, not Zerodha.
+		expect(staleNote(snap, NOW)).toBe(
+			'* Read Sat 17 Oct, 15:30, before Angel One signed Maester out. Quantities change only when you trade; sign in to check.'
+		);
+		// With nothing starred there is no footnote.
+		const fresh = {
+			...snap,
+			rows: [
+				{ ...snap.rows[0]!, parts: [{ ...part('kite', '2026-10-19T03:00:00Z'), stale: false }] }
+			]
+		};
+		expect(staleNote(fresh, NOW)).toBeNull();
 	});
 
 	it('says where a holding is held, account by account', () => {
@@ -223,8 +237,8 @@ describe('view', () => {
 					stale: false
 				},
 				{
-					broker: 'dhan',
-					accountId: '1100012345',
+					broker: 'angel',
+					accountId: 'A123456',
 					quantity: '30',
 					averagePrice: '1498.25',
 					cost: null,
@@ -236,56 +250,8 @@ describe('view', () => {
 				}
 			]
 		} satisfies HoldingsSnapshot['rows'][number];
-		expect(heldAtWords(row, { kite: 'Zerodha', dhan: 'Dhan' })).toBe('Zerodha 120 · Dhan 30');
-	});
-
-	it('points a stale part on a Settings connection to Settings, not a sign-in', () => {
-		const part = {
-			broker: 'dhan',
-			accountId: '1100012345',
-			quantity: '30',
-			averagePrice: '1498.25',
-			cost: null,
-			value: null,
-			gain: null,
-			gainPercent: null,
-			readAt: '2026-10-18T10:12:00Z',
-			stale: true
-		};
-		const snap = {
-			accounts: [dhanAccount({ state: 'signed_out' })],
-			rows: [
-				{
-					isin: 'I',
-					symbol: 'HDFCBANK',
-					exchange: 'NSE',
-					quantity: '30',
-					cost: null,
-					close: null,
-					value: null,
-					weight: null,
-					gain: null,
-					gainPercent: null,
-					unknown: [],
-					parts: [part]
-				}
-			],
-			totals: {
-				knownValue: null,
-				priced: 0,
-				count: 1,
-				cost: null,
-				costed: 0,
-				unrealizedGain: null,
-				gainCovers: 0,
-				gainPercent: null
-			},
-			closeDay: null,
-			calculations: [],
-			accountTotals: []
-		} satisfies HoldingsSnapshot;
-		expect(staleNote(snap, NOW, [kite, dhan])).toBe(
-			'* Read Sun 18 Oct, 15:42, before the Dhan token in Settings stopped working. Quantities change only when you trade; save a new token in Settings to check.'
+		expect(heldAtWords(row, { kite: 'Zerodha', angel: 'Angel One' })).toBe(
+			'Zerodha 120 · Angel One 30'
 		);
 	});
 
@@ -375,9 +341,9 @@ describe('the nudge', () => {
 		state: 'signed_out',
 		lastReadAt: friday
 	});
-	const groww = account({
-		broker: 'groww',
-		name: 'Groww',
+	const fyers = account({
+		broker: 'fyers',
+		name: 'Fyers',
 		state: 'signed_out',
 		lastReadAt: '2026-10-17T10:00:00Z'
 	});
@@ -390,15 +356,15 @@ describe('the nudge', () => {
 	});
 
 	it('names only brokers that are signed out and still have holdings on the page', () => {
-		const never = account({ broker: 'upstox', name: 'Upstox', state: 'saved', lastReadAt: null });
-		const failing = account({ broker: 'icici', name: 'ICICI Direct', state: 'failing' });
+		const never = account({ broker: 'groww', name: 'Groww', state: 'saved', lastReadAt: null });
+		const failing = account({ broker: 'kotak', name: 'Kotak Securities', state: 'failing' });
 		expect(
-			needsSignIn(snap([account(), angel, groww, never, failing])).map((a) => a.broker)
-		).toEqual(['angel', 'groww']);
+			needsSignIn(snap([account(), angel, fyers, never, failing])).map((a) => a.broker)
+		).toEqual(['angel', 'fyers']);
 	});
 
 	it('is one line, and nothing when every broker is signed in', () => {
-		expect(nudgeLine(snap([account(), angel, groww]), NOW)).toEqual({
+		expect(nudgeLine(snap([account(), angel, fyers]), NOW)).toEqual({
 			lead: 'Some holdings are from Friday.',
 			rest: '2 of 3 brokers signed Maester out; sign in to see today’s.',
 			button: 'Update 2 brokers'

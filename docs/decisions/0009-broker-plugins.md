@@ -1,6 +1,6 @@
 # ADR 0009: Brokers are compiled-in plugins
 
-Status: proposed 27 Oct 2026. It replaces the "brokers are data" rule from the [broker connections plan](../superpowers/plans/2026-10-19-broker-connections.md), which is written into `packages/brokers/README.md`, `packages/contracts/src/brokers.ts` and DESIGN.md §10. The design is [`docs/superpowers/specs/2026-10-27-broker-plugins-design.md`](../superpowers/specs/2026-10-27-broker-plugins-design.md).
+Status: accepted 28 Oct 2026, built by #35. It replaces the "brokers are data" rule from the [broker connections plan](../superpowers/plans/2026-10-19-broker-connections.md), which is written into `packages/brokers/README.md`, `packages/contracts/src/brokers.ts` and DESIGN.md §10. The design is [`docs/superpowers/specs/2026-10-27-broker-plugins-design.md`](../superpowers/specs/2026-10-27-broker-plugins-design.md).
 
 ## Context
 

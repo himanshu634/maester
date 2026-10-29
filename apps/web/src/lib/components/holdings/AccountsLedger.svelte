@@ -2,23 +2,15 @@
 	The brokers ledger ("Your brokers", at the foot of Holdings in D · final): each connected broker,
 	where it stands in words, when its holdings were last read, and its one action, always outline:
 	the nudge at the top holds the page's filled sign-in. A broker with no good sign-in has "Sign in
-	to <broker>"; one that is signed in has "Read again". An account on
-	a Settings connection (Dhan) never signs in here: it says so, and when Settings' token has
-	expired its action is "Open Settings". Disconnect asks first. Below 768px each account stacks.
+	to <broker>" (on the broker's own page); one that is signed in has "Read again". Disconnect
+	asks first. Below 768px each account stacks.
 -->
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import { holdingsContent as copy } from '$lib/content/holdings';
 	import { ApiError } from '$lib/documents/client';
 	import type { HoldingsApi } from '$lib/holdings/client';
 	import type { BrokerAccount, BrokerSummary } from '$lib/holdings/types';
-	import {
-		accountAction,
-		readWords,
-		settingsProvider,
-		stateDetail,
-		stateWords
-	} from '$lib/holdings/view';
+	import { accountAction, readWords, stateDetail, stateWords } from '$lib/holdings/view';
 	import Ruler from '$lib/components/loading/Ruler.svelte';
 	import BrokerDisconnectDialog from './BrokerDisconnectDialog.svelte';
 
@@ -38,7 +30,6 @@
 	let confirming = $state<BrokerAccount | null>(null);
 
 	const brokerOf = (a: BrokerAccount) => brokers.find((b) => b.id === a.broker);
-	const confirmingProvider = $derived(confirming ? settingsProvider(brokerOf(confirming)) : null);
 
 	async function signIn(a: BrokerAccount) {
 		busy[a.broker] = 'sign-in';
@@ -51,12 +42,11 @@
 		}
 	}
 
-	/** Read again, or for a direct sign-in (Groww) sign in with the approved key and read. */
-	async function read(a: BrokerAccount, direct = false) {
+	async function read(a: BrokerAccount) {
 		busy[a.broker] = 'read';
 		problem[a.broker] = undefined;
 		try {
-			const next = direct ? await api.session(a.broker) : await api.read(a.broker);
+			const next = await api.read(a.broker);
 			await onchanged(
 				next.errorCode
 					? (copy.errors[next.errorCode]?.(a.name) ?? '')
@@ -97,7 +87,7 @@
 		<span role="columnheader"><span class="visually-hidden">Actions</span></span>
 	</div>
 	{#each accounts as a (a.broker)}
-		{@const action = accountAction(a, brokerOf(a))}
+		{@const action = accountAction(a)}
 		<div class="row" role="row">
 			<div role="cell" class="cell">
 				<span class="strong">{a.name}</span>
@@ -109,24 +99,12 @@
 			</div>
 			<div role="cell" class="cell num">{readWords(a)}</div>
 			<div role="cell" class="cell actions">
-				{#if action === 'settings'}
-					<a class="button outline" href={resolve('/terminal/settings')}
-						>{copy.accounts.openSettings}</a
-					>
-				{:else if action === 'sign_in'}
+				{#if action === 'sign_in'}
 					<button
 						type="button"
 						class="button outline"
 						disabled={busy[a.broker] !== undefined}
 						onclick={() => signIn(a)}>{copy.accounts.signIn(a.name)}</button
-					>
-				{:else if action === 'direct'}
-					<button
-						type="button"
-						class="button outline"
-						disabled={busy[a.broker] !== undefined}
-						aria-describedby={busy[a.broker] === 'read' ? `${id}-${a.broker}-reading` : undefined}
-						onclick={() => read(a, true)}>{copy.accounts.readDirect(a.name)}</button
 					>
 				{:else}
 					<button
@@ -160,7 +138,7 @@
 <BrokerDisconnectDialog
 	open={confirming !== null}
 	name={confirming?.name ?? ''}
-	detail={confirmingProvider ? copy.dialog.settingsDetail(confirmingProvider) : copy.dialog.detail}
+	detail={copy.dialog.detail}
 	busy={confirming ? busy[confirming.broker] === 'remove' : false}
 	onconfirm={remove}
 	onclose={() => (confirming = null)}
