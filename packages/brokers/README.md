@@ -2,7 +2,7 @@
 
 Brokers are plugins. Each one is a folder of TypeScript in `src/plugins/`, compiled into the API: a manifest (what the Holdings page says and asks for) and the code that signs in and reads holdings. The contract gives a plugin a sign-in and a read, and the API has no route that writes to a broker. A plugin makes no call that writes: nothing in it places an order or moves money.
 
-Design: [broker plugins](../../docs/superpowers/specs/2026-10-27-broker-plugins-design.md) and [ADR 0009](../../docs/decisions/0009-broker-plugins.md). Zerodha (Kite Connect) is the one plugin for now.
+Design: [broker plugins](../../docs/superpowers/specs/2026-10-27-broker-plugins-design.md) and [ADR 0009](../../docs/decisions/0009-broker-plugins.md). Zerodha (Kite Connect) is the one broker offered. Angel One (SmartAPI) is a plugin too, but it is switched off until a live run (see below).
 
 ## Layout
 
@@ -18,11 +18,13 @@ src/
   plugins/
     index.ts        the list of plugins, and defaultRegistry()
     kite/           manifest.ts and plugin.ts
+    angel/          manifest.ts, answer.ts and plugin.ts
 test/
   conformance.ts    runConformance(plugin, fixtures), the suite every plugin runs
   fake-plugin.ts    a test-only broker on broker.test, exported as @maester/brokers/testing
   kit/              tests of the kit
   plugins/kite/     kite.test.ts and fixtures/, the recorded answers
+  plugins/angel/    angel.test.ts, answer.test.ts, sign-in.test.ts and fixtures/, the recorded answers
 ```
 
 Tests and fixtures sit under `test/`, so they stay out of the build and outside the lint rule that applies to `src/plugins/`.
@@ -99,3 +101,48 @@ Hosts: `kite.zerodha.com` and `api.kite.trade`. The investor saves the Kite Conn
 - **Expiry:** a session stops at 06:00 Asia/Kolkata each day, so "signed out" is an ordinary state. A 403 means Zerodha signed Maester out (`signedOutStatuses` is `[403]`).
 - **Absent figures:** an absent or null `t1_quantity` is `"0"` (none pending). An absent or null `average_price` is `"0"`, so one such line does not fail the whole read. The engine reads an average of `"0"` as an unknown cost (`NO_COST`): the holding's invested, P&L and P&L % show "—", while its value (quantity × the close) still shows. The broker line's average-cost column still shows "₹0.00" today, a known follow-up. A present figure that is not a decimal still fails it. An absent or null `last_price` is null.
 - **Not yet confirmed on a live run:** no live run has happened. The first one should compare quantity, T+1 and average price on the Holdings page with Zerodha's own app, and confirm that a good return arrives with the shape the fixtures record.
+
+## Angel One (SmartAPI)
+
+Hosts: `smartapi.angelone.in` and `apiconnect.angelone.in`. The investor saves the SmartAPI app's `apiKey` (shown by its last 4 characters). There is no secret key: the publisher login needs only the key. Design: [Angel One plugin design](../../docs/superpowers/specs/2026-10-27-angel-one-plugin-design.md).
+
+- **Login:** `https://smartapi.angelone.in/publisher-login?api_key=<apiKey>&state=<nonce>`, each value URL-encoded. The return address is not sent. The investor pastes it into the SmartAPI app's redirect URL, as with Kite. The investor types no MPIN or TOTP, and Maester keeps no TOTP seed.
+- **Return:** `state` is the query's `state`, or `null` when it is missing or empty, and the host refuses a return with no `state`. A non-empty `auth_token` is a good return. Anything else is a refusal. `feed_token` and `refresh_token` are not read: Maester streams nothing and does not renew a session.
+- **Session:** one `GET https://apiconnect.angelone.in/rest/secure/angelbroking/user/v1/getProfile` checks the token. The account is `data.clientcode`. The token is the `auth_token` as it came back. No exchange step is made.
+- **Holdings:** `GET https://apiconnect.angelone.in/rest/secure/angelbroking/portfolio/v1/getHolding`. The list is `data`; each item gives `isin`, `exchange`, `tradingsymbol` (else `tradingSymbol`), `quantity`, `t1quantity`, `averageprice` and `ltp`. Nothing else is read, and nothing is worked out. `getAllHolding` is not called.
+- **Answers:** SmartAPI can answer HTTP 200 with a failure inside, in one of two envelopes. A good answer is `{ status, message, errorcode, data }`. The token error is `{ success: false, message, errorCode, data }`. `answer()` (`answer.ts`) checks both flags and both spellings of the code, for every call.
+  - `status` or `success` is `false` with `AG8001`, `AG8002` or `AG8003`: `BROKER_SIGNED_OUT` while reading, `BROKER_REFUSED` while signing in.
+  - Any other code, or none: `BROKER_UNAVAILABLE`.
+  - Neither flag is `true`, or the answer is not an object: `BROKER_ANSWER_UNREADABLE`.
+  - Angel One's own `message` is never put in an error, and a code is repeated only if it looks like one (two capitals and four digits).
+  - HTTP 401 and 403 are `signedOutStatuses` (`[401, 403]`), so the kit turns them into the same two errors.
+- **Expiry:** Angel One signs Maester out every night at midnight. A session stops at 00:00 Asia/Kolkata, and a sign-in just after midnight lasts until the next one.
+- **Symbols:** Angel One prints an NSE share as `SBIN-EQ`. Maester looks closes up by NSE symbol, so on `NSE` a trailing `-EQ` is removed. Any other suffix (`-BE`, `-SM`) stays, so that share finds no NSE close and shows "—", never another share's close. On `BSE` nothing changes.
+- **Headers:** every call sends `Authorization: Bearer <accessToken>`, `X-PrivateKey` (the API key), `X-UserType: USER`, `X-SourceID: WEB`, `Accept` and `Content-Type: application/json`. `X-ClientLocalIP`, `X-ClientPublicIP` and `X-MACAddress` are left out: Maester cannot know the server's addresses through the kit and does not make them up. Angel One's own Python SDK sends the same two fixed addresses for every user, so if a live run is refused without the headers, the fallback is to send those fixed values (and a fixed MAC) as named constants, with this reason beside them.
+- **Absent figures:** an absent or null `t1quantity` is `"0"`. An absent or null `averageprice` is `"0"`, which the engine reads as an unknown cost (`NO_COST`), as for Kite. An absent or null `ltp` is null. Figures can arrive as JSON numbers or as strings, and both are read. A `null` symbol, or a `quantity` or other figure that is present but not a decimal, fails the whole read.
+- **No holdings:** `data: []` is an account with no holdings. Any other shape, `null` included, is `BROKER_ANSWER_UNREADABLE`, because "no holdings" is a figure and is said only for the shape known to mean it.
+- **Switched off:** `enabled` is `false`, with the reason "Not offered until Maester has tried a live Angel One sign-in." The Holdings page lists Angel One as not offered, and nothing can be saved or signed in for it. Two things the host needs are unknown: whether `state` comes back, which is the safety check, and whether `quantity` already includes `t1quantity`, because if it does, adding them counts a holding twice just after a purchase.
+
+### Live run owed
+
+No live run has happened. It needs Maester's return address on a public https host, because SmartAPI refuses a localhost redirect URL. `enabled: false` also blocks saving a key, so the run starts by switching it on in a local build.
+
+0. Switch `enabled` to `true` in a local build only.
+1. `state` comes back unchanged.
+2. A SmartAPI app made under the current "New Login" can use the publisher login (a third-party post says it cannot). If not, record which app type works.
+3. `auth_token` works as the bearer token on `getProfile` and `getHolding` with no exchange, and has no `Bearer ` prefix of its own.
+4. `getProfile` gives the client code at `data.clientcode`.
+5. What `getHolding` returns for an account with no holdings (`[]`, `null`, or an error).
+6. Whether `quantity` already includes `t1quantity`. If it does, `t1Quantity` becomes `"0"`.
+7. The `-EQ` suffix, and which other series suffixes appear on NSE.
+8. An expired token: its HTTP status, its envelope (`status` or `success`) and its code.
+9. `getProfile` and `getHolding` work without the three `X-Client*` headers.
+10. The `exp` inside the `auth_token` JWT: if it is earlier than midnight, the session ends at the earlier of the two.
+11. Whether any holding still comes back with a `null` `tradingsymbol`.
+12. After the run: the tunnel's request log holds the return URL, and with it a token that can trade until midnight. Clear the log, or sign out of SmartAPI.
+
+The outcome is one of three:
+
+- **Everything holds:** `enabled: true`, `notOfferedReason` removed, and the research note's [?] marks updated.
+- **`state` does not come back:** `enabled` stays `false` with the reason "Angel One’s sign-in page doesn’t send back the check Maester needs" (research note §2). A typed MPIN and TOTP sign-in would be a new strategy with its own design.
+- **Anything else differs:** fix the plugin and its fixtures, then decide.

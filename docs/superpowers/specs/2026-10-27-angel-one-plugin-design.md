@@ -1,6 +1,6 @@
 # Angel One broker plugin: design addendum
 
-Status: draft for review, 27 October 2026. This is an addendum to the [broker plugins design](2026-10-27-broker-plugins-design.md) (§12.2 and §15) and [ADR 0009](../../decisions/0009-broker-plugins.md). The facts it builds on are in [`docs/research/2026-10-27-angel-one-publisher-login.md`](../../research/2026-10-27-angel-one-publisher-login.md). §2 below corrects some of them against Angel One's own SDKs.
+Status: built 29 October 2026, switched off until a live run. This is an addendum to the [broker plugins design](2026-10-27-broker-plugins-design.md) (§12.2 and §15) and [ADR 0009](../../decisions/0009-broker-plugins.md). The facts it builds on are in [`docs/research/2026-10-27-angel-one-publisher-login.md`](../../research/2026-10-27-angel-one-publisher-login.md). §2 below corrects some of them against Angel One's own SDKs.
 
 **Depends on:**
 
