@@ -18,7 +18,7 @@
 - Branch `feat/angel-one-plugin` from `origin/staging`, and open the PR into `staging`. Run `gh-help` first. Push with `gh-git push`.
 
 **Scope**
-- No edits to `apps/api`, `apps/web`, `packages/contracts` or `packages/db`. If a test there fails because Angel One is now in the real registry, stop and tell the user; do not edit it.
+- No edits to `apps/api`, `apps/web`, `packages/contracts` or `packages/db`, except the one `apps/api` test line in "Adjustments" below. If any other test there fails because Angel One is now in the real registry, stop and tell the user; do not edit it.
 - No change to the kit, the host functions, the registry or the conformance suite.
 - Plugin code imports only from `../../kit` (or the kit's index), `@maester/contracts` types and its own folder. The lint rule for `src/plugins/**` must pass.
 
@@ -55,6 +55,20 @@
 | `copy.steps` | 1. Sign in at smartapi.angelone.in and create an app. 2. Paste the redirect URL below into the app’s redirect URL. 3. Copy the app’s API key into the field below. 4. Save, then sign in on Angel One’s page. You come back here. |
 | `copy.saveNote` | Maester asks Angel One only for your holdings. It never places an order. |
 | `copy.signedOutNote` | Angel One signs Maester out every night at midnight. |
+
+## Adjustments for the code on staging (29 October 2026)
+
+The Kite build merged as `a8c6a15` (#32, #34, #35). Where it differs from the Kite plan, these lines win over the tasks below:
+
+- **Branch.** `feat/angel-one-plugin` is cut from `docs/angel-one-plugin` (PR #33, which is `staging` plus this plan and the addendum), so Task 3 can edit them. Its PR goes into `staging`, stacked on #33.
+- **Imports.** A plugin imports the kit as `../../kit/index.js`, as `src/plugins/kite/plugin.ts` does. The kit exports `BrokerError`, `at`, `text`, `decimal`, `sessionExpiry` and the types `BrokerHttp` and `HttpPhase`, but not `createBrokerHttp`. Lint allows only relative imports and `@maester/contracts`, and refuses `host`, `kit/http` and any `../index`. A plugin does not import another plugin.
+- **Saved fields.** Read `apiKey` with a local `required(creds, "apiKey")`, a copy of Kite's helper: a missing value is `BROKER_UNAVAILABLE`, and the message names the key, never the value.
+- **Session check.** `completeSignIn` refuses an empty token, an `accountId` that is neither text nor `null`, invalid dates, and an `expiresAt` that is not after `signedInAt`.
+- **Tests.** They import `completeSignIn`, `loginUrlFor` and `readHoldings` from `../../../src/host.js`, `runConformance` from `../../conformance.js`, and their JSON fixtures directly, as `test/plugins/kite/kite.test.ts` does. The suite now also checks that a return carrying only `state` is refused, and that a refusal keeps its state.
+- **Two tests that name the registry's brokers** change in Task 2. The user agreed to the `apps/api` one on 29 October 2026:
+  - In `packages/brokers/test/plugins/kite/kite.test.ts`, "is the one plugin the default registry holds" becomes "is in the default registry". It checks `plugins` contains `kite` and `defaultRegistry().get("kite")` is Kite, with the manifest checks unchanged.
+  - In `apps/api/test/brokers.test.ts`, "GET /v1/brokers lists the default registry's brokers" compares the ids with `[...defaultRegistry().keys()]`, imported from `@maester/brokers`, in place of `["kite"]`. That is the only edit allowed in `apps`.
+- **API tests** need their own pgvector container: `docker run --rm -d --name maester-pg-angel -p 55434:5432 -e POSTGRES_USER=maester -e POSTGRES_PASSWORD=maester -e POSTGRES_DB=maester_test_api pgvector/pgvector:pg16`, then `DATABASE_URL_TEST_API=postgres://maester:maester@localhost:55434/maester_test_api`. Stop it with `docker stop maester-pg-angel`.
 
 ## Review Focus
 
@@ -165,5 +179,5 @@ Fixtures (synthetic figures, envelope `{ "status": true, "message": "SUCCESS", "
 
 - [ ] **Step 1:** Write the three edits.
 - [ ] **Step 2:** Run `uv run --locked python scripts/check_workspace.py` from the repo root, and `pnpm --filter @maester/brokers test`. Expected: `Workspace OK`, and PASS.
-- [ ] **Step 3:** Run `git diff --stat origin/staging...HEAD -- apps packages/contracts packages/db`. Expected: no output.
+- [ ] **Step 3:** Run `git diff --stat origin/staging...HEAD -- apps packages/contracts packages/db`. Expected: only `apps/api/test/brokers.test.ts`, one line.
 - [ ] **Step 4:** Commit with `docs(brokers): Angel One notes and the live run owed`, then `gh-git push -u origin feat/angel-one-plugin` and `gh pr create --base staging`. The PR body lists as owed: the live run (needs a public https return URL), and switching `enabled` on or recording why not.
