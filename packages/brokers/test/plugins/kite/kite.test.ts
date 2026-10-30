@@ -34,9 +34,9 @@ runConformance(kite, {
 });
 
 describe("the Kite plugin", () => {
-  it("is the one plugin the default registry holds", () => {
-    expect(plugins).toEqual([kite]);
-    expect([...defaultRegistry().keys()]).toEqual(["kite"]);
+  it("is in the default registry", () => {
+    expect(plugins).toContain(kite);
+    expect(defaultRegistry().get("kite")).toBeDefined();
     expect(defaultRegistry().get("kite")?.manifest).toMatchObject({ name: "Zerodha", enabled: true, hosts: ["kite.zerodha.com", "api.kite.trade"], signedOutStatuses: [403], credentialShown: "apiKey" });
     expect(defaultRegistry().get("kite")?.manifest.credentials.map((c) => [c.key, c.secret])).toEqual([["apiKey", false], ["apiSecret", true]]);
   });

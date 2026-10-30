@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import pino from "pino";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { BrokerAccount, BrokerList, HoldingsSnapshot } from "@maester/contracts";
-import { createRegistry, type BrokerRegistry } from "@maester/brokers";
+import { createRegistry, defaultRegistry, type BrokerRegistry } from "@maester/brokers";
 import { fakePlugin } from "@maester/brokers/testing";
 import { createBrokerLoginState, finishHoldingRead, getBrokerConnection, saveBrokerCredentials, saveBrokerSession, startHoldingRead, upsertMarketPoints } from "@maester/db";
 import { decryptSecret, encryptSecret } from "@maester/market";
@@ -346,7 +346,7 @@ describe("Kite through the default registry", () => {
     const res = await ctx.app.request("/v1/brokers", { headers: { cookie } });
     const text = await res.text();
     const body = BrokerList.parse(JSON.parse(text));
-    expect(body.items.map((b) => b.id)).toEqual(["kite"]);
+    expect(body.items.map((b) => b.id)).toEqual([...defaultRegistry().keys()]);
     expect(body.items[0]).toMatchObject({
       name: "Zerodha", enabled: true, notOfferedReason: null, signIn: { kind: "redirect" }, returnUrl: "http://localhost/v1/brokers/kite/return",
       credentials: [{ key: "apiKey", label: "API key", secret: false, minLength: 6, maxLength: 64 }, { key: "apiSecret", label: "API secret", secret: true, minLength: 6, maxLength: 128 }],

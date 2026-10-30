@@ -1,0 +1,24 @@
+{
+  "status": true,
+  "message": "SUCCESS",
+  "errorcode": "",
+  "data": [
+    {
+      "tradingSymbol": "RELIANCE-EQ",
+      "exchange": "NSE",
+      "isin": "INE002A01018",
+      "t1quantity": "0",
+      "realisedquantity": "4",
+      "quantity": "4",
+      "authorisedquantity": "0",
+      "product": "DELIVERY",
+      "haircut": "0",
+      "averageprice": "2450.10",
+      "ltp": "2511.00",
+      "symboltoken": "2885",
+      "close": "2505.50",
+      "profitandloss": "244",
+      "pnlpercentage": "2.49"
+    }
+  ]
+}
