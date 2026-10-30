@@ -82,14 +82,14 @@ describe("BrokerHoldingLine", () => {
     }
   });
 
-  it("accepts lastPrice null", () => {
-    expect(BrokerHoldingLine.parse({ ...line, lastPrice: null }).lastPrice).toBeNull();
+  it.each(["averagePrice", "lastPrice"] as const)("accepts %s null", (field) => {
+    expect(BrokerHoldingLine.parse({ ...line, [field]: null })[field]).toBeNull();
   });
 
-  it("refuses a missing lastPrice: null says the broker sent none, absent says nothing was read", () => {
-    const withoutLastPrice: Partial<typeof line> = { ...line };
-    delete withoutLastPrice.lastPrice;
-    expect(BrokerHoldingLine.safeParse(withoutLastPrice).success).toBe(false);
+  it.each(["averagePrice", "lastPrice"] as const)("refuses a missing %s: null says the broker sent none, absent says nothing was read", (field) => {
+    const without: Partial<typeof line> = { ...line };
+    delete without[field];
+    expect(BrokerHoldingLine.safeParse(without).success).toBe(false);
   });
 });
 

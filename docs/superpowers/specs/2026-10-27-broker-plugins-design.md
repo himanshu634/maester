@@ -129,7 +129,7 @@ apps/api routes ──► registry ──► plugin.signIn / plugin.reads
 /** What a plugin returns for one holding. Every figure is a decimal string exactly as the broker printed it. */
 type BrokerHoldingLine = {
   isin: string; symbol: string; exchange: string;
-  quantity: string; t1Quantity: string; averagePrice: string; lastPrice: string | null;
+  quantity: string; t1Quantity: string; averagePrice: string | null; lastPrice: string | null;  // null: the broker sent none
 };
 
 type Credentials = Record<string, string>;                        // the saved fields, by manifest key

@@ -62,7 +62,8 @@ export type BrokerManifest = z.infer<typeof BrokerManifest>;
 /**
  * One holding as a plugin returns it: the facts the broker printed, as decimal strings exactly as
  * sent. A plugin computes nothing; quantity plus T+1, cost, value and gain are worked out in
- * @maester/financial-engine. `lastPrice` is null when the broker sent none.
+ * @maester/financial-engine. `averagePrice` and `lastPrice` are null when the broker sent none,
+ * never "0".
  */
 export const BrokerHoldingLine = z.object({
   isin: z.string().min(1),
@@ -70,7 +71,7 @@ export const BrokerHoldingLine = z.object({
   exchange: z.string().min(1),
   quantity: DecimalString,
   t1Quantity: DecimalString,
-  averagePrice: DecimalString,
+  averagePrice: DecimalString.nullable(),
   lastPrice: DecimalString.nullable(),
 });
 export type BrokerHoldingLine = z.infer<typeof BrokerHoldingLine>;
@@ -139,13 +140,14 @@ export type HoldingUnknown = z.infer<typeof HoldingUnknown>;
  * One account's part of a row: the facts read from the broker, with when they were read, and its
  * cost, value and gain from @maester/financial-engine (holding_cost, holding_value, holding_gain,
  * holding_gain_percent). `averagePrice` is the broker's own, or holding_average_price when the
- * account holds the ISIN on more than one exchange.
+ * account holds the ISIN on more than one exchange; null, with the row's NO_COST, when the cost is
+ * unknown (the broker gave no average, or gave it as zero).
  */
 export const HoldingPart = z.object({
   broker: BrokerId,
   accountId: z.string().nullable(),
   quantity: DecimalString,
-  averagePrice: DecimalString,
+  averagePrice: DecimalString.nullable(),
   cost: DecimalString.nullable(),
   value: DecimalString.nullable(),
   gain: DecimalString.nullable(),

@@ -1,0 +1,1 @@
+ALTER TABLE "holding_line" ALTER COLUMN "average_price" DROP NOT NULL;

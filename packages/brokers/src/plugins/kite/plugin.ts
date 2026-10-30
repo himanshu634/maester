@@ -61,6 +61,7 @@ export const kite: BrokerPlugin = {
       if (!Array.isArray(list)) throw new BrokerError("BROKER_ANSWER_UNREADABLE", "the holdings answer has no list");
       // Every figure is the string Kite printed. Nothing is worked out here.
       return list.map((item: unknown) => {
+        const averagePrice = at(item, "average_price");
         const lastPrice = at(item, "last_price");
         return {
           isin: text(at(item, "isin"), "isin"),
@@ -69,11 +70,11 @@ export const kite: BrokerPlugin = {
           quantity: decimal(at(item, "quantity"), "quantity"),
           // Kite leaves out a T+1 quantity it has none of: none pending.
           t1Quantity: decimal(at(item, "t1_quantity") ?? 0, "t1_quantity"),
-          // An absent average price is "0", as the old client read it, so one such line does not fail the whole read and hide
-          // every holding. The financial engine reads an average price of 0 as an unknown cost (NO_COST): invested, P&L and
-          // P&L % show "—", while the value (quantity × close) still shows. The broker line's average-cost column still prints
-          // ₹0.00 for now, a known follow-up. A price that is present but not a decimal is still unreadable.
-          averagePrice: decimal(at(item, "average_price") ?? 0, "average_price"),
+          // An absent or null average price is null, not "0", so one such line does not fail the whole read and hide every
+          // holding. The financial engine reads it as an unknown cost (NO_COST): the average cost, invested, P&L and P&L % show
+          // "—", while the value (quantity × close) still shows. A printed 0 stays "0", as printed; the engine reads that as
+          // unknown too. A price that is present but not a decimal is still unreadable.
+          averagePrice: averagePrice == null ? null : decimal(averagePrice, "average_price"),
           lastPrice: lastPrice == null ? null : decimal(lastPrice, "last_price"),
         };
       });

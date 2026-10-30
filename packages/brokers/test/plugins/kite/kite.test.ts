@@ -164,7 +164,7 @@ describe("the Kite plugin", () => {
       expect(lines.map((l) => [l.t1Quantity, l.lastPrice])).toEqual([["0", null], ["0", null]]);
     });
 
-    it("takes an absent average price as 0, which the engine reads as an unknown cost, and keeps the other lines", async () => {
+    it("takes an absent or null average price as none, never 0, and keeps the other lines", async () => {
       for (const average_price of [undefined, null]) {
         const body = {
           data: [
@@ -173,7 +173,15 @@ describe("the Kite plugin", () => {
           ],
         };
         const lines = await read(vi.fn(async () => json(200, body)));
-        expect(lines.map((l) => [l.isin, l.averagePrice]), String(average_price)).toEqual([["INE000000001", "0"], ["INE000000002", "20.5"]]);
+        expect(lines.map((l) => [l.isin, l.averagePrice]), String(average_price)).toEqual([["INE000000001", null], ["INE000000002", "20.5"]]);
+      }
+    });
+
+    it("keeps an average price printed as 0 as \"0\", as printed", async () => {
+      for (const average_price of [0, "0", "0.00"]) {
+        const body = { data: [{ tradingsymbol: "A", exchange: "NSE", isin: "INE000000001", quantity: 1, average_price }] };
+        const [line] = await read(vi.fn(async () => json(200, body)));
+        expect(line?.averagePrice, JSON.stringify(average_price)).toBe(String(average_price));
       }
     });
 

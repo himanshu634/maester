@@ -101,7 +101,11 @@
 								>
 							</th>
 							<td class="r num">{shares(part.quantity)}</td>
-							<td class="r num">{rupees(part.averagePrice)}</td>
+							<td class="r num"
+								>{#if part.averagePrice}{rupees(part.averagePrice)}{:else}{@render unknown(
+										copy.table.noCost
+									)}{/if}</td
+							>
 							<td class="r num"
 								>{#if part.cost}{rupees(part.cost)}{:else}{@render unknown(
 										copy.table.noCost

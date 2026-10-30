@@ -61,7 +61,8 @@ export interface HoldingPart {
 	broker: string;
 	accountId: string | null;
 	quantity: string;
-	averagePrice: string;
+	/** Null when the cost is unknown: the broker gave no average, or gave it as 0 (the row says NO_COST). */
+	averagePrice: string | null;
 	cost: string | null;
 	value: string | null;
 	gain: string | null;
