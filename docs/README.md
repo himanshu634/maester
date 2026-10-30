@@ -36,6 +36,7 @@ Maester's product plan connects portfolio tracking with company research and ver
 | [Sign-in decision](decisions/0005-sign-in-google-email-waitlist.md) | Better Auth with Google and email, a waitlist gate, Resend and the web-origin proxy | Engineering and product |
 | [Financial data layer decision](decisions/0006-concepts-calculations-agent-access.md) | Concepts over as-printed facts, two readers, calculations in TypeScript, a read-only MCP server, evaluation before change | Engineering and data |
 | [Ingestion pipeline decision](decisions/0007-ingestion-pipeline.md) | XBRL alone for a filing's numbers, a local text index, and a bounded job runner | Engineering and data |
+| [Gain, loss and highlight decision](decisions/0008-gain-loss-and-highlight-colours.md) | Two signal colours for P&L and one highlighter fill, each with one job | Design and frontend |
 | [Broker plugins decision](decisions/0009-broker-plugins.md) | Brokers as compiled-in code plugins with host-enforced safety; Zerodha now, Angel One built and switched off until a live run | Engineering |
 
 ## Designs, research and reports
@@ -53,8 +54,10 @@ Each feature's design is a dated spec in [`superpowers/specs/`](superpowers/spec
 | [Company financials design](superpowers/specs/2026-10-13-company-financials-design.md) | The Research page: the stock summary, statement tables and figure panel | Design, frontend and backend |
 | [Market mood design](superpowers/specs/2026-10-06-market-mood-design.md) | The market mood score, its readings and the Settings connections | Design, frontend and backend |
 | [Document intake design](superpowers/specs/2026-10-05-document-intake-classification-design.md) | Working out what an uploaded PDF is and which company it belongs to | Backend and data |
+| [Broker connections plan](superpowers/plans/2026-10-19-broker-connections.md) | Holdings read from brokers defined in JSON: Zerodha first, then Dhan | Engineering |
+| [Broker accounts plan](superpowers/plans/2026-10-24-broker-accounts.md) | The top five brokers, one account each, P&L by broker and the signed-out nudge | Design, frontend and backend |
 | [Maester for macOS design](superpowers/specs/2026-10-13-macos-desktop-app-design.md) | A desktop app for the terminal; approved for planning, not built | Engineering |
-| [Research notes](research/) | Market mood measurement, market data vendors, the Dhan and FRED APIs, broker APIs (Angel One's publisher login), and the ingestion research | Product and engineering |
+| [Research notes](research/) | Market mood measurement, market data vendors, the Dhan and FRED APIs, broker APIs for reading holdings (Angel One's publisher login), the ingestion research and the P&L colours | Product and engineering |
 | [Evaluation reports](eval/) | Reports from the evaluation harness, starting with the XBRL element maps over 807 filings | Engineering and data |
 | [Brand guide](brand/LOGO.md) | The wordmark, the mark and how to use them | Design |
 | [Diagrams](diagrams/) | How the codebase fits together and how a filing moves through it, as Excalidraw files | Engineering |

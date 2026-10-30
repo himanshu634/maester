@@ -1,6 +1,6 @@
 # The top five brokers on Holdings: implementation plan
 
-Status: draft, 24 Oct 2026. D is picked, redrawn as "D · final, one person" on the "Maester Broker Accounts" canvas (<https://claude.ai/artifact/3kUub9WRnmnm2neMpGkmNy>). The build waits for the user's go-ahead. The broker facts are in [`docs/research/2026-10-24-broker-accounts.md`](../../research/2026-10-24-broker-accounts.md); the colours are in [`docs/research/2026-10-24-pnl-and-highlight-colours.md`](../../research/2026-10-24-pnl-and-highlight-colours.md).
+Status: built (#30), 25 Oct 2026; no live broker run yet. D is picked, redrawn as "D · final, one person" on the "Maester Broker Accounts" canvas (<https://claude.ai/artifact/3kUub9WRnmnm2neMpGkmNy>). The broker facts are in [`docs/research/2026-10-24-broker-accounts.md`](../../research/2026-10-24-broker-accounts.md); the colours are in [`docs/research/2026-10-24-pnl-and-highlight-colours.md`](../../research/2026-10-24-pnl-and-highlight-colours.md).
 
 This plan builds on `feat/holdings-dhan` (A · Accounts, then one table, built for Zerodha and Dhan, not merged). It lands after that branch.
 
