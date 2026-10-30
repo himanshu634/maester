@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { ESLint } from "eslint";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const MESSAGE = "Plugins reach the network only through ctx.http (spec §5.5)";
@@ -14,6 +14,12 @@ const rulesOf = (messages: { ruleId: string | null }[]) => messages.map((m) => m
 
 describe("plugin lint guard (spec §5.5)", () => {
   const bad = `import https from "node:https";\nexport const get = () => fetch("https://x");\nexport const ref = () => https;\n`;
+
+  // The first lint loads ESLint, the config and typescript-eslint, which can take over vitest's 5s
+  // default on a busy CI runner; pay it once here so no test's own timeout carries it.
+  beforeAll(async () => {
+    await lint(bad, "src/plugins/x/bad.ts");
+  }, 60_000);
 
   it("bans fetch and node:https inside a plugin", async () => {
     const messages = await lint(bad, "src/plugins/x/bad.ts");
