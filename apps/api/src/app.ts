@@ -1,7 +1,7 @@
 import { DrizzleQueryError } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import type { BrokerDefinition } from "@maester/contracts";
+import type { BrokerRegistry } from "@maester/brokers";
 import type { Db, MembershipRow, WorkspaceRow } from "@maester/db";
 import type { Embedder } from "@maester/document-index";
 import type { DhanSource, FredSource } from "@maester/market";
@@ -50,8 +50,8 @@ export interface AppDeps {
   embedder: Embedder | null;
   /** Builds the market data clients that check a key before Settings keeps it. Defaults to the HTTP ones. */
   marketSources?: MarketSources;
-  /** The broker definitions. Defaults to the built-in ones plus BROKER_DEFINITIONS_DIR. */
-  brokerDefinitions?: Map<string, BrokerDefinition>;
+  /** The broker plugins. Defaults to every plugin compiled in (`defaultRegistry()`); tests pass a fake one. */
+  brokerRegistry?: BrokerRegistry;
   /** The fetch broker calls go through. Defaults to the global one; tests pass a fake. */
   brokerFetch?: typeof globalThis.fetch;
 }

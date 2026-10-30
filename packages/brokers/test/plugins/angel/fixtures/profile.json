@@ -1,0 +1,15 @@
+{
+  "status": true,
+  "message": "SUCCESS",
+  "errorcode": "",
+  "data": {
+    "clientcode": "A1234567",
+    "name": "TEST USER",
+    "email": "",
+    "mobileno": "",
+    "exchanges": ["NSE", "BSE"],
+    "products": ["DELIVERY"],
+    "lastlogintime": "",
+    "brokerid": "B2C"
+  }
+}

@@ -2,7 +2,8 @@
  * Copy for Holdings (/terminal/holdings), from canvas "Maester Broker Accounts", D · final, one
  * person: the holdings first, signed-out brokers as one nudge, each share broken down by broker
  * with its P&L, the brokers at the foot. What a broker asks for, its steps and how long a sign-in
- * lasts come from the broker's JSON definition (BrokerSummary.copy), not from here.
+ * lasts come from the broker's manifest, a compiled-in plugin served at /v1/brokers
+ * (BrokerSummary.copy), not from here.
  */
 
 export const holdingsContent = {
@@ -36,14 +37,12 @@ export const holdingsContent = {
 		key: (last4: string) => `Key ending ${last4}`,
 		signIn: (name: string) => `Sign in to ${name}`,
 		readAgain: 'Read again',
-		readDirect: (name: string) => `Read ${name}`,
 		reading: (name: string) => `Reading your ${name} holdings…`,
 		disconnect: 'Disconnect',
 		notRead: 'Not read yet',
 		read: (when: string, count: number) =>
 			`${when} · ${count === 1 ? '1 holding' : `${count} holdings`}`,
 		tooSoon: 'It read a moment ago. Try again in a few seconds.',
-		openSettings: 'Open Settings',
 		readFailed: (name: string) => `${name} didn’t answer. Nothing read was lost.`
 	},
 
@@ -73,21 +72,6 @@ export const holdingsContent = {
 		BROKER_ANSWER_UNREADABLE: (name: string) => `${name}’s answer wasn’t one Maester could read.`
 	} as Record<string, ((name: string) => string) | undefined>,
 
-	/** A broker that signs in with a connection saved in Settings (Dhan): nothing to type or sign in to here. */
-	settings: {
-		providers: { dhan: 'Dhan' } as Record<string, string | undefined>,
-		uses: (provider: string) => `Uses your ${provider} connection from Settings`,
-		add: (name: string) => `Add ${name}`,
-		adding: (name: string) => `Reading your ${name} holdings…`,
-		notConnected: (provider: string) => `${provider} isn’t connected in Settings yet.`,
-		notConnectedDetail: (provider: string) =>
-			`Save your ${provider} client ID and access token in Settings, then come back and add it here.`,
-		added: (name: string, count: number | null) =>
-			count === null
-				? `${name} added.`
-				: `${name} added. ${count === 1 ? '1 holding' : `${count} holdings`} read.`
-	},
-
 	add: {
 		heading: 'Add a broker',
 		which: 'Which broker?',
@@ -98,7 +82,6 @@ export const holdingsContent = {
 		copy: 'Copy',
 		copied: 'Copied.',
 		save: (name: string) => `Save and sign in with ${name}`,
-		saveDirect: (name: string) => `Save and read ${name}`,
 		saving: 'Saving the key…',
 		cancel: 'Cancel',
 		lasts: 'A sign-in lasts',
@@ -136,8 +119,6 @@ export const holdingsContent = {
 		listLabel: 'Brokers to sign in to',
 		why: (state: string, what: string) => `${state} · ${what}`,
 		whatRedirect: (name: string) => `Sign in on ${name}’s page`,
-		whatSettings: 'Save a new token in Settings',
-		whatDirect: (name: string) => `Approve the key on ${name}, then read`,
 		whatRead: 'Read again',
 		back: 'Each broker sends you back here. What was read last stays on the page until then.'
 	},
@@ -177,16 +158,12 @@ export const holdingsContent = {
 		noGain: 'Unknown without both an NSE close and what was paid.',
 		stale: (when: string, name: string) =>
 			`* Read ${when}, before ${name} signed Maester out. Quantities change only when you trade; sign in to check.`,
-		staleSettings: (when: string, provider: string) =>
-			`* Read ${when}, before the ${provider} token in Settings stopped working. Quantities change only when you trade; save a new token in Settings to check.`,
 		empty: 'Nothing held in the connected accounts.'
 	},
 
 	dialog: {
 		title: (name: string) => `Disconnect ${name}?`,
 		detail: 'Maester forgets the key and the secret, and these holdings leave this page.',
-		settingsDetail: (provider: string) =>
-			`Maester stops reading these holdings, and they leave this page. ${provider} stays connected in Settings.`,
 		confirm: 'Disconnect',
 		keep: 'Keep it'
 	},

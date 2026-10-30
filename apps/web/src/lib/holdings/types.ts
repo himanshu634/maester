@@ -14,7 +14,7 @@ export interface BrokerCredentialField {
 	maxLength: number;
 }
 
-/** A broker as its JSON definition describes it to the page. */
+/** A broker as its manifest (a compiled-in plugin) describes it to the page, from /v1/brokers. */
 export interface BrokerSummary {
 	id: string;
 	name: string;
@@ -31,15 +31,11 @@ export interface BrokerSummary {
 	};
 	credentials: BrokerCredentialField[];
 	/**
-	 * How the account signs in: on the broker's own page (`redirect`), or with the connection the
-	 * investor saved in Settings (`settings-connection`), which asks for nothing here.
+	 * How the account signs in. One strategy today: the form for the key, then a sign-in on the
+	 * broker's own page (`redirect`). A later strategy adds a member here.
 	 */
-	signIn:
-		| { kind: 'redirect' }
-		| { kind: 'settings-connection'; provider: string }
-		/** Maester signs in itself with the saved key, once the investor approved it on the broker's side (Groww). */
-		| { kind: 'direct' };
-	/** What to paste into the broker's app as its redirect URL. Null when there is no redirect. */
+	signIn: { kind: 'redirect' };
+	/** What to paste into the broker's app as its redirect URL. Null when there is no redirect (none today). */
 	returnUrl: string | null;
 }
 
@@ -65,7 +61,8 @@ export interface HoldingPart {
 	broker: string;
 	accountId: string | null;
 	quantity: string;
-	averagePrice: string;
+	/** Null when the cost is unknown: the broker gave no average, or gave it as 0 (the row says NO_COST). */
+	averagePrice: string | null;
 	cost: string | null;
 	value: string | null;
 	gain: string | null;

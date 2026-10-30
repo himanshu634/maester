@@ -1,0 +1,5 @@
+{
+  "data": [
+    { "tradingsymbol": "X", "exchange": "NSE", "isin": "INE1", "quantity": "ten", "average_price": 1 }
+  ]
+}

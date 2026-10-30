@@ -2,7 +2,8 @@
 	Holdings shown by broker (D · final, "Show by: Broker"): one ledger per broker, its holdings with
 	the broker's average cost and each part's P&L, closed by the broker's totals, which come from the
 	engine (holdings_by_account). A broker whose quantities were read before it signed Maester out
-	says so under its ledger. P&L carries its sign; gain or loss colour repeats it.
+	says so under its ledger. P&L carries its sign; gain or loss colour repeats it. A figure Maester
+	does not have, an average cost the broker did not give among them, is "—" with the reason read out.
 -->
 <script lang="ts">
 	import { holdingsContent as copy } from '$lib/content/holdings';
@@ -78,7 +79,11 @@
 							<tr>
 								<th scope="row" class="strong">{row.symbol}</th>
 								<td class="r num">{shares(part.quantity)}</td>
-								<td class="r num">{rupees(part.averagePrice)}</td>
+								<td class="r num"
+									>{#if part.averagePrice}{rupees(part.averagePrice)}{:else}{@render unknown(
+											copy.table.noCost
+										)}{/if}</td
+								>
 								<td class="r num"
 									>{#if part.cost}{rupees(part.cost)}{:else}{@render unknown(
 											copy.table.noCost

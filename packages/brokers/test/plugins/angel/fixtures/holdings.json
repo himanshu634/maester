@@ -1,0 +1,44 @@
+{
+  "status": true,
+  "message": "SUCCESS",
+  "errorcode": "",
+  "data": [
+    {
+      "tradingsymbol": "SBIN-EQ",
+      "exchange": "NSE",
+      "isin": "INE062A01020",
+      "t1quantity": 0,
+      "realisedquantity": 10,
+      "quantity": 10,
+      "authorisedquantity": 0,
+      "product": "DELIVERY",
+      "collateralquantity": null,
+      "collateraltype": null,
+      "haircut": 0,
+      "averageprice": 512.35,
+      "ltp": 801.4,
+      "symboltoken": "3045",
+      "close": 799.9,
+      "profitandloss": 2890,
+      "pnlpercentage": 56.41
+    },
+    {
+      "tradingsymbol": "ABC-BE",
+      "exchange": "NSE",
+      "isin": "INE000Z01011",
+      "t1quantity": 5,
+      "quantity": 20,
+      "averageprice": 0.0,
+      "ltp": 41.05
+    },
+    {
+      "tradingsymbol": "SBIN",
+      "exchange": "BSE",
+      "isin": "INE062A01020",
+      "t1quantity": 0,
+      "quantity": 2,
+      "averageprice": 600,
+      "ltp": 801.25
+    }
+  ]
+}

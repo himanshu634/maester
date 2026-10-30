@@ -4,8 +4,8 @@ import { user } from "./auth.js";
 import { ts, workspace } from "./platform.js";
 
 /**
- * One broker account in a workspace (Holdings). `broker` is a broker definition's id. The
- * credentials (a JSON object of the definition's credential keys) and the day's access token are
+ * One broker account in a workspace (Holdings). `broker` is a broker plugin's id. The
+ * credentials (a JSON object of the plugin's credential keys) and the day's access token are
  * kept only as AES-256-GCM ciphertext under CONNECTIONS_KEY. Disconnecting clears both and keeps
  * the row, so the holdings it read stay, with their dates.
  */
@@ -59,7 +59,8 @@ export const holdingLine = pgTable("holding_line", {
   symbol: text("symbol").notNull(),
   quantity: numeric("quantity").notNull(),
   t1Quantity: numeric("t1_quantity").notNull(),
-  averagePrice: numeric("average_price").notNull(),
+  /** Null when the broker gave no average price; never stored as 0. */
+  averagePrice: numeric("average_price"),
   lastPrice: numeric("last_price"),
 }, (t) => [primaryKey({ name: "holding_line_pk", columns: [t.readId, t.isin, t.exchange] })]);
 export type HoldingLineRow = typeof holdingLine.$inferSelect;
