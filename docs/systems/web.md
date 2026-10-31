@@ -134,10 +134,10 @@ The web app has public pages, sign-in pages, one error page and the terminal. In
 ### Terminal shell and pages
 
 1. `TerminalShell` reads `pagesIn('portfolio')`, `pagesIn('research')` and `pagesIn('foot')` from `pages.ts`. It shows the pages in these three groups. Market mood is in the `portfolio` group, after Holdings.
-2. A page with `soon: true` shows "Soon" after its label. In `pages.ts`, `market-mood`, `research`, `documents` and `settings` have `soon: false`.
+2. A page with `soon: true` shows "Soon" after its label. In `pages.ts`, `holdings`, `market-mood`, `research`, `documents` and `settings` have `soon: false`.
 3. Under a session, the account block shows the email and a Sign out button. `endSession` calls `signOut()`.
 4. If `signOut()` succeeds, the page goes to `/`. If it fails, the shell shows a failure line, and the session stays.
-5. The five coming-soon routes put `ComingSoon` and one sketch in `SignedInPage`.
+5. The four coming-soon routes put `ComingSoon` and one sketch in `SignedInPage`.
 6. The demo routes do not use `SignedInPage`. They show `Overview` with `demo` or `quietDemo` from `fixture.ts`.
 7. In the demo, the code disables the three write buttons. Each button points to the read-only note with `aria-describedby`.
 8. `dueItems` in `due.ts` puts the due items in this order: review, position limit, price that Maester does not know. In each kind, the larger portfolio weight comes first.
@@ -591,11 +591,11 @@ WARNING: Send the Dhan access token and the FRED API key only in the body of a `
 
 WARNING: Do not remove the `safeNext` check from a page that reads `next`. Without this check, a link from a different person can send the investor to a different site after sign-in.
 
-CAUTION: When a type in `packages/contracts` changes, change its copy in the web app too. The copies are `src/lib/documents/types.ts`, `src/lib/market-mood/types.ts`, `src/lib/research/types.ts` and `src/lib/settings/types.ts`. The web app cannot import `@maester/contracts`, and no test compares the files.
+CAUTION: When a type in `packages/contracts` changes, change its copy in the web app too. The copies are `src/lib/documents/types.ts`, `src/lib/holdings/types.ts`, `src/lib/market-mood/types.ts`, `src/lib/research/types.ts` and `src/lib/settings/types.ts`. The web app cannot import `@maester/contracts`, and no test compares the files.
 
 ## Limits
 
-- Only the Documents, Research, Market mood and Settings pages use real data. Each other terminal page is a coming-soon page: overview, holdings, watchlist, analyst and activity.
+- Only the Documents, Research, Holdings, Market mood and Settings pages use real data. Each other terminal page is a coming-soon page: overview, watchlist, analyst and activity.
 - After a failed poll, the Market mood page does not poll again until the person hides the tab and shows it again. The page shows no message for a failed poll.
 - The screen shows "Not checked" for the check of the XBRL figures against the PDF (`IN_PDF_RESULT_SHOWN` in `src/lib/documents/in-pdf.ts`). The check is too weak to show as a result. The report `docs/eval/2026-10-21-xbrl-map-v1.md` gives the reason. The check does not find 46.7 percent of the facts that it checks. It passes a figure that is one unit wrong 16 to 23 percent of the time.
 - To show the result again, set `IN_PDF_RESULT_SHOWN` to `true`. Do this only when a version of the check has a decoy pass rate under the gate of the report.

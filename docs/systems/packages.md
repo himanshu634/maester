@@ -56,7 +56,7 @@ A seventh TypeScript package, `packages/financial-engine-ts`, holds the source r
 | `@maester/db` | `packages/db` | Gives the database schema, the migrations, a PostgreSQL client and the query functions. |
 | `@maester/jobs` | `packages/jobs` | Creates jobs, sends tasks and calculates the next intake state of a document. |
 | `@maester/storage` | `packages/storage` | Gives the `ObjectStore` interface and three object stores. |
-| `@maester/brokers` | `packages/brokers` | Broker plugins (Kite, and Angel One, which is switched off until a live run) behind a host-locked kit and a registry; read-only. |
+| `@maester/brokers` | `packages/brokers` | Broker plugins (Kite, and Angel One, which is switched off until a live run) behind a host-locked kit and a registry. It only reads. |
 | `@maester/market` | `packages/market` | Gets daily market data from Dhan and FRED. Encrypts and decrypts the secrets of market connections. |
 | `@maester/document-index` | `packages/document-index` | Names the embedding models, calls the embedder and searches the chunks. |
 | `maester-financial-engine` | `packages/financial-engine` | A Python library with the import name `pdf_financial_qa`. It classifies PDF filings and extracts facts from them. It also reads XBRL instances, with element maps. |
@@ -703,7 +703,9 @@ CAUTION: Do not change a migration that a database already applied. Add a new mi
 - The extraction workflow does not extract a statement on more than 6 pages.
 - The first extraction path refuses a PDF of more than 15 MB.
 - No foreign key deletes rows in other tables, except the keys from `session` and `account` to `user`. The key from `market_connection` to `user` sets `saved_by_user_id` to `null`.
-- The database has no tables for portfolios, holdings, transactions, prices of holdings or notes. `docs/DATA_MODEL.md` describes them as the target design. The `market_point` table keeps only the market series for the Market mood page.
+- The database has no tables for portfolios, transactions or notes. `docs/DATA_MODEL.md` describes them as the target design.
+- The `holding_read` and `holding_line` tables keep the reads of the holdings from the brokers. They are not a ledger of transactions.
+- The `market_point` table keeps the market series for the Market mood page and the daily closes of the Nifty 500 shares.
 - The comments in `dhan.ts` and `instruments.ts` say that the Dhan endpoints, headers, IDs and error codes come from the Dhan documentation, not from live calls.
 - The Dhan documentation does not give the response of `/RenewToken`. `renewToken` reads an expiry only if the response has one that it can parse.
 - `renewToken` operates only for a token from the Dhan website.

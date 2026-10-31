@@ -39,6 +39,9 @@ This document gives the system level of Maester. Each app and each shared packag
 | API key | The secret that FRED gives for a market connection. |
 | reading | One of the 10 daily market values that the Market mood page shows, for example India VIX. The API uses 7 of them to calculate the market mood. |
 | market mood | A score from 0 to 100. The API calculates it from 7 of the readings when the web client asks for it. |
+| broker plugin | The code for one broker in `packages/brokers/src/plugins`. It has a manifest, a sign-in method and the reads of the holdings. |
+| broker connection | A row in the `broker_connection` table. It holds the encrypted secrets of one broker for one workspace. |
+| holding read | A row in the `holding_read` table. It records one read of the holdings from one broker connection. |
 
 ## Function
 
@@ -46,13 +49,17 @@ Maester reads financial filings for an investor. The investor signs in to the we
 
 If an XBRL instance covers the statements of a results PDF, Maester does not read that PDF with a model. The numbers come from the instance.
 
-Maester also shows a market mood. It calculates the market mood from daily market data that the investor's own Dhan and FRED accounts give. The repository holds nine apps, nine shared packages and the deployment scripts.
+Maester also shows a market mood. It calculates the market mood from daily market data that the investor's own Dhan and FRED accounts give.
+
+Maester also reads the holdings of the investor at a broker, through a broker plugin. It gives each holding a value from the NSE closes that it keeps. It does not place orders.
+
+The repository holds nine apps, ten shared packages and the deployment scripts.
 
 ## Parts
 
 | Part | Location | Function |
 | --- | --- | --- |
-| [API](api.md) | `apps/api` | TypeScript HTTP service (Hono). It serves sign-in at `/api/auth/*` through Better Auth and the routes for workspaces, companies, documents and jobs at `/v1`. It writes documents and jobs and dispatches jobs. It also serves the market mood at `/v1/market-mood`, the market connections at `/v1/settings/connections` and the statements and prices of a company for Research. |
+| [API](api.md) | `apps/api` | TypeScript HTTP service (Hono). It serves sign-in at `/api/auth/*` through Better Auth and the routes for workspaces, companies, documents and jobs at `/v1`. It writes documents and jobs and dispatches jobs. It also serves the market mood at `/v1/market-mood`, the market connections at `/v1/settings/connections` and the statements and prices of a company for Research. It serves the brokers at `/v1/brokers`, and the broker connections and holdings of a workspace. |
 | [Worker](worker.md) | `apps/worker` | TypeScript HTTP service (Hono). In the `queue` mode, it claims each job from the database. In the `cloud-tasks` mode, it receives a dispatch at `POST /tasks/:type`. It takes a lease and runs `document.verify`, `document.classify`, `document.extract`, `document.index`, `document.xbrl` or `document.xbrl_check`. If `CONNECTIONS_KEY` has a value, it also runs the market refresh on a timer. |
 | [Extractor](extractor.md) | `apps/extractor` | Python HTTP service (FastAPI). It answers `POST /v1/classify` and `POST /v1/extract` for the worker and calls Claude through the Anthropic API. It also answers `POST /v1/xbrl` and `POST /v1/xbrl/pdf-check`, which call no model. It does not write data. |
 | [Indexer](indexer.md) | `apps/indexer` | Python HTTP service. It answers `POST /v1/index`, `POST /v1/chunk` and `POST /v1/chunk-text` for the worker. It reads the pages of a PDF with Docling and cuts them into chunks. It does not write data. |
@@ -65,8 +72,10 @@ Maester also shows a market mood. It calculates the market mood from daily marke
 | [Jobs package](packages.md) | `packages/jobs` | Job creation, the dispatchers and the intake decision. The API and the worker use it. |
 | [Storage package](packages.md) | `packages/storage` | The `ObjectStore` interface and its drivers. |
 | [Market package](packages.md) | `packages/market` | The clients for Dhan and FRED, and the encryption of the secrets of market connections. The API and the worker use it. |
+| [Brokers package](packages.md) | `packages/brokers` | The broker plugins and their registry. The Kite plugin is on. The Angel One plugin is off. The API uses it. |
+| [Document index package](packages.md) | `packages/document-index` | The names of the embedding models, the calls to the embedder and the search of the chunks. |
 | [Financial engine](packages.md) | `packages/financial-engine` | Python engine with the namespace `pdf_financial_qa`. The extractor, the CLI and the evaluation harness use it. |
-| [TypeScript engine](packages.md) | `packages/financial-engine-ts` | The source rule. |
+| [TypeScript engine](packages.md) | `packages/financial-engine-ts` | The source rule, and the values and the P&L of the holdings (`holdings.ts`). |
 | [Import command](packages.md) | `apps/import` | The command `pnpm --filter @maester/import run import <folder>`. It sends the PDFs and XBRL instances of a folder through the API. |
 | [Shared configuration](packages.md) | `packages/config` | The base TypeScript and ESLint configuration. |
 | Infrastructure | `infra` | Bash scripts that prepare a Google Cloud project and deploy the API, the worker and the web client to Cloud Run. |
@@ -241,7 +250,7 @@ The worker and the API do not wait for the indexer or the embedder. Until they a
 
 ### Database
 
-Postgres 16 holds one database, `maester`. The schema is in `packages/db/src/schema`. The migrations are in `packages/db/drizzle`. Of the six apps, only the API and the worker connect to the database.
+Postgres 16 holds one database, `maester`. The schema is in `packages/db/src/schema`. The migrations are in `packages/db/drizzle`. Only the API, the worker and the MCP server connect to the database. The MCP server only reads.
 
 | Group | Tables |
 | --- | --- |
@@ -249,7 +258,9 @@ Postgres 16 holds one database, `maester`. The schema is in `packages/db/src/sch
 | Platform | `workspace`, `membership`, `company`, `document`, `job` |
 | Classification | `document_classification`, `classification_evidence` |
 | Extraction | `extraction_revision`, `financial_fact`, `source_reference`, `extraction_check`, `xbrl_source` |
+| Text index | `document_index_revision`, `document_page`, `document_chunk`, `chunk_embedding`, `page_read` |
 | Market | `market_point`, `market_fetch`, `market_connection` |
+| Brokers | `broker_connection`, `broker_login_state`, `holding_read`, `holding_line` |
 
 The market tables have no workspace column. The market points and the market connections belong to the installation, not to a user or a workspace.
 
@@ -276,6 +287,7 @@ Maester has no separate queue in the local stack. The `job` table holds the stat
 | Cloud Run, Cloud SQL, Secret Manager, Artifact Registry | `infra` scripts | Deployment of the API, the worker and the web client. |
 | Dhan Data API | API, worker | The check of a saved access token. The daily market data of India: Nifty 50, India VIX, MCX gold, the option chain and the Nifty 500 closes. |
 | FRED | API, worker | The check of a saved API key. US VIX and the rupee per US dollar. |
+| Zerodha Kite Connect | API, through the Kite plugin | The sign-in of the investor at Zerodha and the read of the holdings. Maester only reads. |
 
 ## Procedures
 
@@ -516,11 +528,12 @@ CAUTION: `pnpm stack:reset` deletes the `pgdata` and `blobs` volumes. Use `pnpm 
 - The deployed worker also has no `GOOGLE_CLOUD_PROJECT` and no `WORKER_INVOKER_SA` (`infra/deploy.sh:60`). Thus its dispatcher cannot send a `document.classify` job (`apps/worker/src/dispatch.ts:8-13`).
 - Each user has one personal workspace. The Documents page uses only the first workspace.
 - Approval of an email is a script. There is no screen for it.
-- Maester has no portfolio or holdings yet. In the terminal, Documents, Research, Market mood and Settings work. The other pages tell what they will do.
+- Maester has no portfolio ledger. The Holdings page shows the last holding read from each broker connection, with no transactions. In the terminal, Documents, Research, Holdings, Market mood and Settings work. The other pages tell what they will do.
+- Only the Kite plugin is on. The Angel One plugin is in the registry, but it stays off until a person tries a live sign-in.
 - Each signed-in user reads and changes the same two market connections. The market data has no owner.
 - `infra/deploy.sh` does not set `CONNECTIONS_KEY`. Thus, the deployed API refuses the routes for market connections, and the deployed worker does not run the market refresh.
 - The CLI does not share data with the API, the worker or the database.
-- `packages/financial-engine-ts` holds only the source rule.
+- `packages/financial-engine-ts` holds the source rule and the values of the holdings. It has no named calculations.
 - Only two XBRL formats have an element map: Ind AS in the `in-capmkt` family and Ind AS in the `in-bse-fin` family. Other formats are read and write no fact.
 - The `xbrl_in_pdf` check compares absolute values and counts a match anywhere on a statement page. The first evaluation report measures how often a number is found by chance.
 - A text or chunker version change does not rebuild the index of an XBRL document through the backfill.
@@ -543,6 +556,7 @@ CAUTION: `pnpm stack:reset` deletes the `pgdata` and `blobs` volumes. Use `pnpm 
 - [`apps/web/src/lib/market-mood/client.ts`](../../apps/web/src/lib/market-mood/client.ts), [`apps/web/src/lib/market-mood/view.ts`](../../apps/web/src/lib/market-mood/view.ts), [`apps/web/src/lib/components/market-mood/MarketMoodPage.svelte`](../../apps/web/src/lib/components/market-mood/MarketMoodPage.svelte), [`apps/web/src/lib/settings/client.ts`](../../apps/web/src/lib/settings/client.ts), [`apps/web/src/lib/content/settings.ts`](../../apps/web/src/lib/content/settings.ts)
 - [`apps/web/src/lib/documents/client.ts`](../../apps/web/src/lib/documents/client.ts), [`apps/web/src/lib/documents/intake.ts`](../../apps/web/src/lib/documents/intake.ts), [`apps/web/src/lib/components/documents/DocumentsPage.svelte`](../../apps/web/src/lib/components/documents/DocumentsPage.svelte), [`apps/web/src/lib/terminal/pages.ts`](../../apps/web/src/lib/terminal/pages.ts)
 - [`apps/cli/src/maester_cli/cli.py`](../../apps/cli/src/maester_cli/cli.py), [`packages/financial-engine/src/pdf_financial_qa/config.py`](../../packages/financial-engine/src/pdf_financial_qa/config.py), [`apps/eval/src/maester_eval/cli.py`](../../apps/eval/src/maester_eval/cli.py)
+- [`packages/brokers/src/plugins/index.ts`](../../packages/brokers/src/plugins/index.ts), [`apps/api/src/routes/brokers.ts`](../../apps/api/src/routes/brokers.ts), [`packages/db/src/schema/brokers.ts`](../../packages/db/src/schema/brokers.ts), [`packages/financial-engine-ts/src/holdings.ts`](../../packages/financial-engine-ts/src/holdings.ts), [`packages/db/src/schema/document-index.ts`](../../packages/db/src/schema/document-index.ts)
 - [`packages/jobs/src/create.ts`](../../packages/jobs/src/create.ts), [`packages/jobs/src/dispatch.ts`](../../packages/jobs/src/dispatch.ts), [`packages/jobs/src/intake.ts`](../../packages/jobs/src/intake.ts)
 - [`packages/db/src/schema`](../../packages/db/src/schema), [`packages/db/src/queries/waitlist.ts`](../../packages/db/src/queries/waitlist.ts), [`packages/db/package.json`](../../packages/db/package.json), [`packages/db/src/migrate-cli.ts`](../../packages/db/src/migrate-cli.ts)
 - [`packages/storage/src/index.ts`](../../packages/storage/src/index.ts), [`packages/storage/src/gcs.ts`](../../packages/storage/src/gcs.ts), [`packages/storage/src/disk.ts`](../../packages/storage/src/disk.ts), [`packages/financial-engine-ts/src/index.ts`](../../packages/financial-engine-ts/src/index.ts)

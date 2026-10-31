@@ -60,7 +60,7 @@ Each feature's design is a dated spec in [`superpowers/specs/`](superpowers/spec
 | [Research notes](research/) | Market mood measurement, market data vendors, the Dhan and FRED APIs, broker APIs for reading holdings (Angel One's publisher login), the ingestion research and the P&L colours | Product and engineering |
 | [Evaluation reports](eval/) | Reports from the evaluation harness, starting with the XBRL element maps over 807 filings | Engineering and data |
 | [Brand guide](brand/LOGO.md) | The wordmark, the mark and how to use them | Design |
-| [Diagrams](diagrams/) | How the codebase fits together and how a filing moves through it, as Excalidraw files | Engineering |
+| [Diagrams](diagrams/) | How the services fit together, how a filing moves through them and where a statement's numbers come from, as SVG files drawn on 30 Oct 2026; the Excalidraw drawings are the 15 Oct snapshot | Engineering |
 
 ## Document status
 

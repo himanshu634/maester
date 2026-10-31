@@ -29,11 +29,14 @@ Working now:
 - Serve the public pages, the sign-in pages and the error pages, which carry the design system in [DESIGN.md](docs/DESIGN.md), and the portfolio overview as a read-only demo on a synthetic portfolio at `/terminal/demo`.
 - See how cautious or eager the market is, from your own Dhan and FRED data (Market mood), and save, replace or remove those two keys in Settings.
 - See a company's statements year by year from its read annual reports, each figure with the page it came from and a link that opens the PDF there, with a summary of the stock from the investor's Dhan data.
+- Drop an XBRL results file, or a whole folder of them, and read its figures with no model through reviewed element maps (Ind AS and banking formats); a results PDF that XBRL covers is not sent to the model.
+- Index every page of every filing, scanned pages by OCR, for hybrid search on your own machine, and let an agent read filings, facts and search results through the read-only MCP server (`apps/mcp`).
+- Sign in to Zerodha from Holdings and see what you hold there, by company and by broker, valued at Maester's stored NSE closes, with P&L. Brokers are plugins in `packages/brokers`; Angel One is written and switched off.
 - An evaluation harness, `maester-eval` (`apps/eval`), that runs the extraction workflow over public filings in `data/eval/corpus` and scores it against a hand-checked gold set.
 
-The whole hosted stack runs locally in Docker with no Google Cloud account, apart from fact extraction itself; see [setup](#setup).
+The whole hosted stack runs locally in Docker with no Google Cloud account; reading PDFs needs an Anthropic API key. See [setup](#setup).
 
-Not yet implemented: fact review and correction, verified citations, a deterministic calculation engine, a ledger, a deployed extractor, or web screens for holdings. Extraction accuracy is not measured. See [known limitations](docs/DEVELOPMENT.md).
+Not yet implemented: fact review and correction, verified citations, a deterministic calculation engine, a ledger or transaction history, or a deployed extractor. Extraction accuracy is not measured. See [known limitations](docs/DEVELOPMENT.md).
 
 ## Prerequisites
 

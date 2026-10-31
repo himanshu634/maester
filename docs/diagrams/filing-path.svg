@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 574" width="1280" height="574" role="img" aria-labelledby="title desc">
+<title id="title">How a filing moves through Maester</title>
+<desc id="desc">A file is uploaded and finalized, then document.verify either rejects it, marks it a duplicate, or stores it. document.classify works out kind, company and period. decideIntake then sends it to document.extract for a PDF or document.xbrl for XBRL, or stops it in needs_kind or needs_company, kept, or waiting_for_xbrl. Both reads end in read with facts saved; document.xbrl_check then looks for each XBRL value in the paired PDF. In parallel, document.index sends pages to the indexer and chunks to the embedder for hybrid search.</desc>
+<style>
+  text { font-family: Archivo, "Helvetica Neue", Arial, sans-serif; }
+  .bg { fill: #EDEDE8; }
+  .t { font-size: 14px; font-weight: 700; fill: #000000; }
+  .s { font-size: 12px; fill: #5F5F5B; }
+  .lbl { font-size: 11.5px; fill: #5F5F5B; }
+  .tt { font-size: 12.5px; font-weight: 700; fill: #000000; }
+  .box { fill: #EDEDE8; stroke: #000000; stroke-width: 2; }
+  .tag { fill: #EDEDE8; stroke: #000000; stroke-width: 1.25; }
+  .ext { fill: #EDEDE8; stroke: #5F5F5B; stroke-width: 1; }
+  .pend { fill: #EDEDE8; stroke: #5F5F5B; stroke-width: 2; stroke-dasharray: 6 5; }
+  .inv { fill: #000000; stroke: #000000; stroke-width: 2; }
+  .invt { fill: #EDEDE8; }
+  .ln { stroke: #000000; stroke-width: 1.5; fill: none; }
+  .lnm { stroke: #5F5F5B; stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+  .arrowhead { fill: #000000; }
+  .arrowhead-m { fill: #5F5F5B; }
+</style>
+<rect class="bg" x="0" y="0" width="1280" height="574"/>
+<text class="tt" x="20" y="30" style="font-size:16px">How a filing moves through Maester</text>
+<text class="lbl" x="1260" y="30" text-anchor="end">Staging, 30 October 2026</text>
+<g transform="translate(20,54)">
+        <defs>
+          <marker id="f-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <!-- main row -->
+        <rect class="box" x="20" y="140" width="130" height="60"/>
+        <text class="t" x="85" y="166" text-anchor="middle">You add a file</text>
+        <text class="s" x="85" y="184" text-anchor="middle">PDF or XBRL</text>
+        <rect class="box" x="200" y="140" width="150" height="60"/>
+        <text class="t" x="275" y="166" text-anchor="middle">document.verify</text>
+        <text class="s" x="275" y="184" text-anchor="middle">type, size, SHA-256</text>
+        <rect class="box" x="410" y="140" width="170" height="60"/>
+        <text class="t" x="495" y="166" text-anchor="middle">document.classify</text>
+        <text class="s" x="495" y="184" text-anchor="middle">kind, company, period</text>
+        <rect class="inv" x="640" y="140" width="160" height="60"/>
+        <text class="t invt" x="720" y="166" text-anchor="middle">decideIntake</text>
+        <text class="s invt" x="720" y="184" text-anchor="middle">picks the next state</text>
+
+        <line class="ln" x1="150" y1="170" x2="198" y2="170" marker-end="url(#f-a)"/>
+        <text class="lbl" x="174" y="162" text-anchor="middle">finalize</text>
+        <line class="ln" x1="350" y1="170" x2="408" y2="170" marker-end="url(#f-a)"/>
+        <text class="lbl" x="379" y="162" text-anchor="middle">stored</text>
+        <line class="ln" x1="580" y1="170" x2="638" y2="170" marker-end="url(#f-a)"/>
+        <text class="lbl" x="609" y="162" text-anchor="middle">answers</text>
+
+        <!-- verify outcomes -->
+        <rect class="tag" x="180" y="50" width="92" height="40"/>
+        <text class="tt" x="226" y="66" text-anchor="middle">rejected</text>
+        <text class="lbl" x="226" y="82" text-anchor="middle">bad type, size</text>
+        <rect class="tag" x="280" y="50" width="92" height="40"/>
+        <text class="tt" x="326" y="66" text-anchor="middle">duplicate</text>
+        <text class="lbl" x="326" y="82" text-anchor="middle">same SHA-256</text>
+        <line class="ln" x1="226" y1="140" x2="226" y2="92" marker-end="url(#f-a)"/>
+        <line class="ln" x1="326" y1="140" x2="326" y2="92" marker-end="url(#f-a)"/>
+
+        <!-- decide outcomes -->
+        <line class="ln" x1="670" y1="200" x2="670" y2="345"/>
+        <line class="ln" x1="670" y1="235" x2="688" y2="235" marker-end="url(#f-a)"/>
+        <line class="ln" x1="670" y1="290" x2="688" y2="290" marker-end="url(#f-a)"/>
+        <line class="ln" x1="670" y1="345" x2="688" y2="345" marker-end="url(#f-a)"/>
+        <rect class="tag" x="690" y="215" width="200" height="40"/>
+        <text class="tt" x="702" y="231">needs_kind · needs_company</text>
+        <text class="lbl" x="702" y="247">you answer, it decides again</text>
+        <rect class="tag" x="690" y="270" width="200" height="40"/>
+        <text class="tt" x="702" y="286">kept</text>
+        <text class="lbl" x="702" y="302">other kinds; text indexed</text>
+        <rect class="tag" x="690" y="325" width="200" height="40"/>
+        <text class="tt" x="702" y="341">waiting_for_xbrl</text>
+        <text class="lbl" x="702" y="357">results PDF waits for XBRL</text>
+
+        <!-- reading fork -->
+        <polyline class="ln" points="800,170 900,170"/>
+        <text class="lbl" x="850" y="162" text-anchor="middle">reading</text>
+        <polyline class="ln" points="900,170 900,70 928,70" marker-end="url(#f-a)"/>
+        <polyline class="ln" points="900,170 900,270 928,270" marker-end="url(#f-a)"/>
+        <rect class="box" x="930" y="40" width="170" height="60"/>
+        <text class="t" x="1015" y="66" text-anchor="middle">document.extract</text>
+        <text class="s" x="1015" y="84" text-anchor="middle">PDF, read by Claude</text>
+        <rect class="box" x="930" y="240" width="170" height="60"/>
+        <text class="t" x="1015" y="266" text-anchor="middle">document.xbrl</text>
+        <text class="s" x="1015" y="284" text-anchor="middle">parser + element map</text>
+
+        <rect class="tag" x="1140" y="140" width="90" height="60"/>
+        <text class="tt" x="1185" y="166" text-anchor="middle">read</text>
+        <text class="lbl" x="1185" y="182" text-anchor="middle">facts saved</text>
+        <polyline class="ln" points="1100,70 1185,70 1185,138" marker-end="url(#f-a)"/>
+        <text class="lbl" x="1142" y="62" text-anchor="middle">facts, checks</text>
+        <polyline class="ln" points="1100,270 1185,270 1185,202" marker-end="url(#f-a)"/>
+        <text class="lbl" x="1142" y="288" text-anchor="middle">facts, sums</text>
+
+        <line class="ln" x1="1015" y1="300" x2="1015" y2="328" marker-end="url(#f-a)"/>
+        <rect class="box" x="930" y="330" width="170" height="50"/>
+        <text class="t" x="1015" y="352" text-anchor="middle">document.xbrl_check</text>
+        <text class="s" x="1015" y="369" text-anchor="middle">value on the PDF page?</text>
+        <text class="lbl" x="1112" y="350">screen says</text>
+        <text class="lbl" x="1112" y="366">“Not checked”</text>
+
+        <!-- index row -->
+        <line class="ln" x1="275" y1="200" x2="275" y2="418" marker-end="url(#f-a)"/>
+        <text class="lbl" x="265" y="318" text-anchor="end">in parallel</text>
+        <rect class="box" x="200" y="420" width="150" height="50"/>
+        <text class="t" x="275" y="442" text-anchor="middle">document.index</text>
+        <text class="s" x="275" y="459" text-anchor="middle">all but duplicates</text>
+        <rect class="box" x="410" y="420" width="170" height="50"/>
+        <text class="t" x="495" y="442" text-anchor="middle">indexer</text>
+        <text class="s" x="495" y="459" text-anchor="middle">pages, OCR, chunks</text>
+        <rect class="box" x="640" y="420" width="160" height="50"/>
+        <text class="t" x="720" y="442" text-anchor="middle">embedder</text>
+        <text class="s" x="720" y="459" text-anchor="middle">a vector per chunk</text>
+        <rect class="box" x="930" y="420" width="170" height="50"/>
+        <text class="t" x="1015" y="442" text-anchor="middle">hybrid search</text>
+        <text class="s" x="1015" y="459" text-anchor="middle">agents only, no screen</text>
+        <line class="ln" x1="350" y1="445" x2="408" y2="445" marker-end="url(#f-a)"/>
+        <text class="lbl" x="379" y="437" text-anchor="middle">pages</text>
+        <line class="ln" x1="580" y1="445" x2="638" y2="445" marker-end="url(#f-a)"/>
+        <text class="lbl" x="609" y="437" text-anchor="middle">chunks</text>
+        <line class="ln" x1="800" y1="445" x2="928" y2="445" marker-end="url(#f-a)"/>
+        <text class="lbl" x="864" y="437" text-anchor="middle">pgvector + full text</text>
+      </g>
+</svg>
