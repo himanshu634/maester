@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on 15 October 2026. Extends [ADR 0004](0004-python-extraction-sidecar.md): extraction stays in Python; the figures it produces get a meaning layer, a second reader, a calculation service and an agent interface. The design is [financial data layer](../superpowers/specs/2026-10-15-financial-data-layer-design.md). Amended by [ADR 0007](0007-ingestion-pipeline.md): for a filing with XBRL, the reader is XBRL alone.
+Accepted on 15 October 2026. Extends [ADR 0004](0004-python-extraction-sidecar.md): extraction stays in Python; the figures it produces get a meaning layer, a second reader, a calculation service and an agent interface. The design is [financial data layer](../superpowers/specs/2026-10-15-financial-data-layer-design.md). Amended by [ADR 0007](0007-ingestion-pipeline.md): for a filing with XBRL, the reader is XBRL alone. Since 23 October 2026 reader A is Claude, not Gemini (see ADR 0004's amendment). As of 30 October the read-only MCP server is built; the concept mapping and overrides, reader B and the calculation registry are not.
 
 ## Context
 

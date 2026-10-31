@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 714" width="1100" height="714" role="img" aria-labelledby="title desc">
+<title id="title">How Maester fits together</title>
+<desc id="desc">The browser reaches the API through nginx. The API reads and writes Postgres, issues signed upload URLs to the object store and calls Google, Resend, Zerodha, Dhan and FRED. The worker claims jobs from Postgres, reads files from the object store, and calls the extractor (which calls Claude), the indexer and the embedder; it also refreshes market data every 30 minutes. An agent reads Postgres through the read-only MCP server.</desc>
+<style>
+  text { font-family: Archivo, "Helvetica Neue", Arial, sans-serif; }
+  .bg { fill: #EDEDE8; }
+  .t { font-size: 14px; font-weight: 700; fill: #000000; }
+  .s { font-size: 12px; fill: #5F5F5B; }
+  .lbl { font-size: 11.5px; fill: #5F5F5B; }
+  .tt { font-size: 12.5px; font-weight: 700; fill: #000000; }
+  .box { fill: #EDEDE8; stroke: #000000; stroke-width: 2; }
+  .tag { fill: #EDEDE8; stroke: #000000; stroke-width: 1.25; }
+  .ext { fill: #EDEDE8; stroke: #5F5F5B; stroke-width: 1; }
+  .pend { fill: #EDEDE8; stroke: #5F5F5B; stroke-width: 2; stroke-dasharray: 6 5; }
+  .inv { fill: #000000; stroke: #000000; stroke-width: 2; }
+  .invt { fill: #EDEDE8; }
+  .ln { stroke: #000000; stroke-width: 1.5; fill: none; }
+  .lnm { stroke: #5F5F5B; stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+  .arrowhead { fill: #000000; }
+  .arrowhead-m { fill: #5F5F5B; }
+</style>
+<rect class="bg" x="0" y="0" width="1100" height="714"/>
+<text class="tt" x="20" y="30" style="font-size:16px">How Maester fits together</text>
+<text class="lbl" x="1080" y="30" text-anchor="end">Staging, 30 October 2026</text>
+<g transform="translate(20,54)">
+        <defs>
+          <marker id="t-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <!-- row 1 -->
+        <rect class="box" x="20" y="40" width="150" height="60"/>
+        <text class="t" x="95" y="66" text-anchor="middle">Browser</text>
+        <text class="s" x="95" y="84" text-anchor="middle">the investor</text>
+        <rect class="box" x="230" y="40" width="170" height="60"/>
+        <text class="t" x="315" y="66" text-anchor="middle">web</text>
+        <text class="s" x="315" y="84" text-anchor="middle">SvelteKit static · nginx</text>
+        <rect class="box" x="490" y="40" width="190" height="60"/>
+        <text class="t" x="585" y="66" text-anchor="middle">API</text>
+        <text class="s" x="585" y="84" text-anchor="middle">Hono · Better Auth</text>
+        <rect class="ext" x="780" y="30" width="260" height="86"/>
+        <text class="tt" x="796" y="52">Outside services</text>
+        <text class="s" x="796" y="70">Google sign-in · Resend mail</text>
+        <text class="s" x="796" y="86">Zerodha Kite holdings</text>
+        <text class="s" x="796" y="102">Dhan and FRED key checks</text>
+
+        <line class="ln" x1="170" y1="70" x2="228" y2="70" marker-end="url(#t-a)"/>
+        <text class="lbl" x="199" y="62" text-anchor="middle">pages</text>
+        <line class="ln" x1="400" y1="70" x2="488" y2="70" marker-end="url(#t-a)"/>
+        <text class="lbl" x="444" y="62" text-anchor="middle">proxies</text>
+        <text class="lbl" x="444" y="88" text-anchor="middle">/v1, /api/auth</text>
+        <line class="ln" x1="680" y1="70" x2="778" y2="70" marker-end="url(#t-a)"/>
+        <text class="lbl" x="729" y="62" text-anchor="middle">sign-in, mail,</text>
+        <text class="lbl" x="729" y="88" text-anchor="middle">broker reads</text>
+
+        <!-- row 2 -->
+        <rect class="box" x="20" y="270" width="150" height="60"/>
+        <text class="t" x="95" y="296" text-anchor="middle">AI agent</text>
+        <text class="s" x="95" y="314" text-anchor="middle">e.g. Claude Code</text>
+        <rect class="box" x="230" y="270" width="170" height="60"/>
+        <text class="t" x="315" y="296" text-anchor="middle">MCP server</text>
+        <text class="s" x="315" y="314" text-anchor="middle">stdio · 7 read tools</text>
+        <rect class="inv" x="490" y="255" width="190" height="90"/>
+        <text class="t invt" x="585" y="285" text-anchor="middle">Postgres 16</text>
+        <text class="s invt" x="585" y="304" text-anchor="middle">+ pgvector</text>
+        <text class="s invt" x="585" y="322" text-anchor="middle">jobs · facts · chunks</text>
+        <rect class="box" x="800" y="270" width="200" height="60"/>
+        <text class="t" x="900" y="296" text-anchor="middle">Object store</text>
+        <text class="s" x="900" y="314" text-anchor="middle">disk or GCS · PDF, XML</text>
+
+        <line class="ln" x1="170" y1="300" x2="228" y2="300" marker-end="url(#t-a)"/>
+        <text class="lbl" x="199" y="292" text-anchor="middle">tools</text>
+        <line class="ln" x1="400" y1="300" x2="488" y2="300" marker-end="url(#t-a)"/>
+        <text class="lbl" x="444" y="292" text-anchor="middle">read-only role</text>
+        <line class="ln" x1="585" y1="100" x2="585" y2="253" marker-end="url(#t-a)"/>
+        <text class="lbl" x="595" y="168">reads, writes,</text>
+        <text class="lbl" x="595" y="184">creates jobs</text>
+        <line class="ln" x1="680" y1="96" x2="852" y2="268" marker-end="url(#t-a)"/>
+        <text class="lbl" x="784" y="176">checks the upload</text>
+
+        <!-- row 3 -->
+        <rect class="box" x="20" y="420" width="170" height="60"/>
+        <text class="t" x="105" y="446" text-anchor="middle">CLI · eval harness</text>
+        <text class="s" x="105" y="464" text-anchor="middle">Python, offline, files only</text>
+        <rect class="box" x="490" y="420" width="190" height="60"/>
+        <text class="t" x="585" y="446" text-anchor="middle">Worker</text>
+        <text class="s" x="585" y="464" text-anchor="middle">Hono · leased jobs</text>
+        <rect class="ext" x="800" y="420" width="200" height="60"/>
+        <text class="tt" x="900" y="446" text-anchor="middle">Dhan · FRED</text>
+        <text class="s" x="900" y="464" text-anchor="middle">daily market data</text>
+
+        <line class="ln" x1="585" y1="418" x2="585" y2="348" marker-start="url(#t-a)" marker-end="url(#t-a)"/>
+        <text class="lbl" x="575" y="372" text-anchor="end">claims jobs:</text>
+        <text class="lbl" x="575" y="388" text-anchor="end">NOTIFY + SKIP LOCKED;</text>
+        <text class="lbl" x="575" y="404" text-anchor="end">writes results</text>
+        <line class="ln" x1="680" y1="430" x2="880" y2="333" marker-end="url(#t-a)"/>
+        <text class="lbl" x="828" y="372">reads the file</text>
+        <line class="ln" x1="680" y1="452" x2="798" y2="452" marker-end="url(#t-a)"/>
+        <text class="lbl" x="739" y="444" text-anchor="middle">every 30 min</text>
+
+        <!-- row 4 -->
+        <rect class="ext" x="20" y="550" width="150" height="60"/>
+        <text class="tt" x="95" y="576" text-anchor="middle">Anthropic API</text>
+        <text class="s" x="95" y="594" text-anchor="middle">Claude</text>
+        <rect class="box" x="230" y="550" width="190" height="60"/>
+        <text class="t" x="325" y="576" text-anchor="middle">Extractor</text>
+        <text class="s" x="325" y="594" text-anchor="middle">FastAPI · LangGraph</text>
+        <rect class="box" x="490" y="550" width="190" height="60"/>
+        <text class="t" x="585" y="576" text-anchor="middle">Indexer</text>
+        <text class="s" x="585" y="594" text-anchor="middle">Docling + RapidOCR</text>
+        <rect class="box" x="750" y="550" width="190" height="60"/>
+        <text class="t" x="845" y="576" text-anchor="middle">Embedder</text>
+        <text class="s" x="845" y="594" text-anchor="middle">text-embeddings-inference</text>
+
+        <line class="ln" x1="530" y1="480" x2="362" y2="548" marker-end="url(#t-a)"/>
+        <text class="lbl" x="452" y="508" text-anchor="end">streams PDF, XML</text>
+        <line class="ln" x1="585" y1="480" x2="585" y2="548" marker-end="url(#t-a)"/>
+        <text class="lbl" x="595" y="520">page ranges</text>
+        <line class="ln" x1="640" y1="480" x2="818" y2="548" marker-end="url(#t-a)"/>
+        <text class="lbl" x="728" y="508">chunks</text>
+        <line class="ln" x1="230" y1="580" x2="172" y2="580" marker-end="url(#t-a)"/>
+        <text class="lbl" x="201" y="572" text-anchor="middle">calls</text>
+      </g>
+</svg>

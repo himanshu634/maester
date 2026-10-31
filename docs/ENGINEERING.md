@@ -6,15 +6,19 @@ The [README](../README.md) says what Maester does for an investor. This page is 
 
 Maester is pre-alpha, part-way through **R1 · A**. Nothing is hosted for investors yet; everything below runs on your own machine, as the [contributing guide](../CONTRIBUTING.md) explains.
 
-How the codebase fits together, with what is built and what is still pending:
+How the services fit together. Everything meets in Postgres; the API writes jobs and the worker claims them; the Python services are stateless and only the worker writes their results:
 
-![How the Maester codebase fits together: the web app, API, worker and Python extractor are built over Postgres, a job queue and an object store, calling Google sign-in, Resend, Dhan, FRED and Gemini; the agent tools, the evaluation app, the calculation package, several terminal pages and hosting are pending](diagrams/codebase.png)
+![How Maester fits together: the browser reaches the API through nginx; the API reads and writes Postgres and calls Google, Resend, Zerodha, Dhan and FRED; the worker claims jobs from Postgres and calls the extractor (which calls Claude), the indexer and the embedder, and refreshes market data every 30 minutes; an agent reads Postgres through the read-only MCP server](diagrams/system.svg)
 
-How a company filing moves through it:
+How a filing moves through it. Each step is a worker job, and every pause is a named state:
 
-![How Maester processes a company filing: intake, worker jobs, the extractor, Postgres and Research are built; automatic filing fetch, quarterly results, review, accuracy measurement, calculations, the Analyst, alerts and hosting are pending](diagrams/filing-pipeline.png)
+![How a filing moves through Maester: verify rejects, marks a duplicate or stores the file; classify works out kind, company and period; decideIntake sends it to extract (PDF, read by Claude) or xbrl (parser and element map), or holds it as needs_kind or needs_company, kept or waiting_for_xbrl; both reads end in read, and xbrl_check then looks for each XBRL value in the paired PDF; in parallel, index sends pages to the indexer and chunks to the embedder for hybrid search](diagrams/filing-path.svg)
 
-Both diagrams are Excalidraw files in [`diagrams/`](diagrams/); open one at [excalidraw.com](https://excalidraw.com) to edit it. They were drawn on 15 October 2026, before the XBRL reader, search, the agent tools and the evaluation app landed, and before Claude replaced Gemini as the PDF reader; the lists below are current.
+Where a results PDF's numbers come from (`planPdfNumbers` in `packages/financial-engine-ts/src/sources.ts`). An annual report, or a PDF whose period is unknown, is always read:
+
+![Where a statement's numbers come from: first, if XBRL for the same company and period end can still settle, the PDF waits; second, if settled XBRL covers every statement and basis the PDF prints, the numbers come from XBRL and Claude is never called; otherwise Claude reads the PDF in four steps, locate, read, check sums and the balance identity, and re-read a failing part at most twice](diagrams/source-rule.svg)
+
+These three are SVG files in [`diagrams/`](diagrams/), drawn from the code on staging on 30 October 2026. The two Excalidraw drawings beside them (`codebase`, `filing-pipeline`) are the snapshot of 15 October, before the XBRL reader, search, the agent tools, Holdings and the switch from Gemini to Claude.
 
 **Working now**
 
@@ -23,11 +27,12 @@ Both diagrams are Excalidraw files in [`diagrams/`](diagrams/); open one at [exc
 - **Numbers from the filing.** Figures come from XBRL when the filing has it and are read from the PDF by Claude otherwise (this needs an Anthropic API key). Each fact is versioned and keeps its source page or XBRL element, its period, unit and reporting basis, and the arithmetic checks it passed or failed. Unknown stays unknown, never zero.
 - **Research.** A company page with its NSE, BSE and CIN codes, a stock summary (last close, 52-week range, price to earnings, latest revenue and profit), and the profit and loss, balance sheet and cash flow year by year, consolidated and standalone kept apart. Any figure opens a panel saying where it came from, whether it adds up and whether it was restated, with a link to the PDF at that page.
 - **Search.** Every page of every filing is read, scanned pages by OCR, and indexed on your own machine. An agent can search it today; there is no search screen yet.
+- **Holdings.** Sign in to Zerodha from Holdings and Maester reads what you hold there, by company and by broker, valued at its own NSE close with P&L. It only reads: it cannot place an order or move money. Brokers are TypeScript plugins compiled into the API ([ADR 0009](decisions/0009-broker-plugins.md)); Angel One is written and switched off until a live sign-in has been tried.
 - **Market mood.** How cautious or eager the market is, on a 0 to 100 scale built from 10 readings, with each reading's history. It uses your own Dhan and FRED keys, which you save in Settings and which are stored encrypted.
 - **Agent access.** A read-only MCP server lets an agent such as Claude read your filings. Every figure it returns carries its fact id and source.
 - **Measurement.** An evaluation harness for extraction and retrieval. The first report, on the XBRL element maps over 807 filings, is in [`eval/`](eval/).
 - The public site, the sign-in pages and the error pages, all built on the design system in [DESIGN.md](DESIGN.md).
-- The portfolio overview (what is due, headline figures, holdings and allocation) as a read-only demo on a synthetic portfolio. Holdings, Watchlist, Analyst and Activity are coming-soon pages in the terminal.
+- The portfolio overview (what is due, headline figures, holdings and allocation) as a read-only demo on a synthetic portfolio. Watchlist, Analyst and Activity are coming-soon pages in the terminal.
 - The original command-line engine, which extracts a PDF and answers questions about it.
 
 **Not yet**
@@ -36,7 +41,7 @@ Both diagrams are Excalidraw files in [`diagrams/`](diagrams/); open one at [exc
 - Quarterly and half-year results are read but not shown in the statement tables yet.
 - Accuracy of figures read from PDFs is not measured; the baseline run is owed. The check that looks for each XBRL figure in its PDF is too weak to trust, so the screens say "Not checked" for now.
 - Filings are added by hand; nothing fetches them automatically.
-- No calculations, Analyst, notes, holdings, ledger or autonomous monitoring. Broker connections for holdings are on branches that are not merged.
+- No calculations, Analyst, notes, ledger or autonomous monitoring. Holdings is a snapshot of each broker's last read, with no transactions or reconciliation.
 
 **Next:** close R1 · A with figure review and correction, then start R1 · B with named, versioned calculations, so that a growth rate or a margin is a calculation you can inspect, never a model's arithmetic.
 

@@ -51,6 +51,7 @@ These work now, run on your own machine.
 - **An annual report lands for a company you own.** Drop the PDF, or the XBRL file filed with it, into Documents; a whole folder works too. Maester works out which company and period it covers, keeps a filing's PDF and XBRL together and reads its statements. A company it has not seen waits until you confirm it, once.
 - **You want to know where a number came from.** Open the company in Research and choose any figure. It says which filing and page it came from, whether the lines add up and whether a later report restated it, with a link to the PDF at that page.
 - **You want to see how the business has moved.** Profit and loss, balance sheet and cash flow, year by year, with consolidated and standalone kept apart, beside the share's last year of closes, its 52-week range and its price to earnings.
+- **You hold shares at a broker.** Sign in to Zerodha from Holdings and Maester reads what you hold there, by company and by broker, valued at its own closing prices, with your gain or loss on each. It only reads: it cannot place an order or move money.
 - **The market feels frothy, or frightened.** Market mood puts how cautious or eager the market is on a 0 to 100 scale built from 10 readings, each with its own history, from your own market data connections. It is context for keeping to your own allocation, never advice.
 - **You would rather ask than click.** Point an AI assistant at your filings. It reads them, and every figure it quotes carries the fact and the source behind it.
 - **A figure is missing.** It shows as unknown, with the reason, never as zero.
@@ -122,7 +123,7 @@ Maester ships one complete investor journey at a time, ordered by investor value
 | **R1 gate** (P0) | Know the evidence is right before anyone relies on it | Not started |
 | **R2** (P1) | Know what the portfolio actually earned, kept current without manual entry | Planned |
 | **R3** (P1) | Autonomous monitoring and suggested actions | Planned |
-| **R4** (P2) | Broader decision support: rebalancing, valuation scenarios, peer comparison, broker connections, more markets | Planned |
+| **R4** (P2) | Broader decision support: rebalancing, valuation scenarios, peer comparison, broker connections, more markets | Planned; read-only Zerodha holdings started early |
 | **P3** | Specialist operating models | Not scheduled |
 
 What each step contains is in [Building Maester](docs/ENGINEERING.md#what-each-roadmap-step-contains), and the [feature roadmap](docs/FEATURE_ROADMAP.md) lists every feature with acceptance criteria and dependencies.
@@ -135,7 +136,7 @@ Maester is pre-alpha, part-way through **R1 · A**. Nothing is hosted for invest
 - Quarterly and half-year results are read but not shown in the statement tables yet.
 - The accuracy of figures read from PDFs is not measured yet, and the check of XBRL figures against their PDF is too weak to trust, so the screens say "Not checked" for now.
 - Filings are added by hand; nothing fetches them automatically.
-- No calculations, Analyst, notes, holdings, ledger or autonomous monitoring.
+- No calculations, Analyst, notes, ledger or autonomous monitoring. Holdings shows each broker's last read, with no transaction history.
 
 **Next:** close R1 · A with figure review and correction, then start R1 · B with named, versioned calculations, so that a growth rate or a margin is a calculation you can inspect, never a model's arithmetic.
 

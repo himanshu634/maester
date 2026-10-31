@@ -4,6 +4,8 @@
 
 Accepted on 1 October 2026. Partially supersedes [ADR 0003](0003-typescript-backend.md): the Python engine is no longer frozen for retirement.
 
+Amended on 23 October 2026 by [#24](https://github.com/himanshu634/maester/pull/24): the extractor calls Claude through the Anthropic SDK in place of Gemini on Vertex AI, so it needs `ANTHROPIC_API_KEY` rather than Vertex AI credentials, and `langchain-google-genai` is gone. LangGraph, the stateless sidecar, the NDJSON stream and the wire format stay as decided below. Where the text below says Gemini, read the model the extractor calls.
+
 ## Context
 
 ADR 0003 froze the Python engine as reference behaviour, to be retired once a TypeScript pipeline reproduced it, and allowed a Python sidecar behind HTTP for heavy document work. F05 needs a multi-step, self-correcting extraction workflow: locate statements, extract each from its own pages, check the arithmetic, and re-read only what failed. The Python ecosystem has the stronger PDF tooling (pypdf) and agent-workflow tooling (LangChain and LangGraph), and the existing engine already talks to Gemini on Vertex AI.
