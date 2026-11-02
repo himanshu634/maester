@@ -133,8 +133,8 @@ Expected: matches only in "never … trim".
 - Modify: `docs/DESIGN.md` §7, after its first paragraph
 - Modify: `docs/research/2026-11-01-business-analysis.md` (the status line; §9's D1, D2 and D5 rows)
 
-- [ ] **Step 1: PRD.** Add "**Audience and stage.**" to §1: Maester is personal and self-hosted first; a hosted product is gated ([ADR 0010](decisions/0010-personal-first-audience-and-review-wording.md)); Maester prompts a review and never advises a trade. In §9, add: "These targets bind once Maester is hosted. Until then the [business analysis](research/2026-11-01-business-analysis.md) §6.2 lists the ones that bind."
-- [ ] **Step 2: DESIGN §7.** Add the sentence: "Maester never tells the investor to buy, sell, trim or add: what it raises on its own says what changed, the evidence and which review is due, and silence is "Nothing to review" ([ADR 0010](decisions/0010-personal-first-audience-and-review-wording.md))."
+- [ ] **Step 1: PRD.** Add "**Audience and stage.**" to §1: Maester is personal and self-hosted first; a hosted product is gated (a link to [ADR 0010](../../decisions/0010-personal-first-audience-and-review-wording.md)); Maester prompts a review and never advises a trade. In §9, add: "These targets bind once Maester is hosted. Until then the [business analysis](../../research/2026-11-01-business-analysis.md) (linked) §6.2 lists the ones that bind."
+- [ ] **Step 2: DESIGN §7.** Add the sentence: "Maester never tells the investor to buy, sell, trim or add: what it raises on its own says what changed, the evidence and which review is due, and silence is "Nothing to review" (a link to [ADR 0010](../../decisions/0010-personal-first-audience-and-review-wording.md))."
 - [ ] **Step 3: Business analysis.** The status line notes that D1, D2 and D5 were decided by ADR 0010. In those three rows of the §9 table, the "Options" cell keeps its text and adds "Decided 1 Nov 2026: …" with the choice taken.
 - [ ] **Step 4: Commit:** `git commit -m "docs: PRD, DESIGN and analysis point to ADR 0010"`
 
