@@ -137,7 +137,7 @@ export const quietDemo: Demo = {
 		{
 			title: 'Harbour Cements · FY2025 annual report',
 			when: '30 Sep',
-			body: 'Reviewed by you on 1 Oct. You held and revised the thesis; next review 14 Jan.'
+			body: 'Reviewed by you on 1 Oct. You reviewed and revised the thesis; next review 14 Jan.'
 		},
 		research[1],
 		research[2]
@@ -153,7 +153,7 @@ export const dueDetail = {
 	trigger:
 		'Operating cash flow fell 18% year on year. Your thesis note says the case rests on cash generation.',
 	evidence: 'Cash flow statement, page 96.',
-	call: 'Hold, trim or revise the thesis. Maester records what you decide and why. It never trades.'
+	call: 'Keep the thesis, revise it or look again later. Maester records what you decide and why. It never trades.'
 } as const;
 
 /** What was looked at, shown when nothing is due. Silence is a checked answer. */
