@@ -192,19 +192,19 @@ export const content = {
 	how: {
 		heading: 'How it works for you',
 		intro:
-			'Five steps. The first two are yours, once. The steps after them are planned: they will happen every day without you.',
+			'Five steps. Step one works today. Steps two to five are planned: you write your thesis once, then Maester will watch and prompt you every day without you.',
 		columns: ['Step', 'What happens', 'What you get'],
 		rows: [
 			{
 				title: 'Bring in what you own',
 				first:
-					'Import your holdings once from a broker export or type them in. Maester keeps them reconciled from then on.',
-				second: 'One place that knows your whole portfolio, across brokers.'
+					'Connect Zerodha from Holdings and Maester reads what you hold there. It only reads: it cannot place an order or move money. More brokers are planned.',
+				second: 'Your holdings in one place, valued at the NSE close, with the figures behind them.'
 			},
 			{
-				title: 'Say why you own it',
+				title: 'Say why you own it (planned)',
 				first:
-					'Write the thesis behind each holding, the concentration you accept and when you want to revisit it.',
+					'You will write the thesis behind each holding, the concentration you accept and when you want to revisit it.',
 				second: 'Review prompts that are about your reasons, not a generic model portfolio.'
 			},
 			{
