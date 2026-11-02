@@ -1,6 +1,6 @@
 # Business analysis: core features and requirements
 
-Status: analysis, 1 November 2026. Recommendations only; the [PRD](../PRD.md), [feature roadmap](../FEATURE_ROADMAP.md) and [delivery plan](../DELIVERY_PLAN.md) stay the product direction until the decisions in section 9 are taken.
+Status: analysis, 1 November 2026. Decisions D1, D2 and D5 were decided by [ADR 0010](decisions/0010-personal-first-audience-and-review-wording.md) on 1 November 2026. Recommendations only; the [PRD](../PRD.md), [feature roadmap](../FEATURE_ROADMAP.md) and [delivery plan](../DELIVERY_PLAN.md) stay the product direction until the decisions in section 9 are taken.
 
 This is not another PRD. The PRD (9 September 2026) already sets the users, journeys, requirement families and release targets, and the roadmap lists F00–F52 with acceptance criteria. This document reconciles that plan with what was built in the eight weeks since, names the core features that carry the product, states the functional and non-functional requirements they still need, and says which decisions block the rest.
 
@@ -285,11 +285,11 @@ Metrics while personal: the author's own use is the only signal, so track behavi
 
 | Decision | Options | Needed before | Owner |
 | --- | --- | --- | --- |
-| D1 Audience | Personal and self-hosted; hosted product; both, gated | Next roadmap re-rank | Product owner |
-| D2 Public positioning | Autonomous adviser (README today); evidence-backed research workspace (PRD) | README update | Product owner |
+| D1 Audience | Personal and self-hosted; hosted product; both, gated. Decided 1 Nov 2026: personal and self-hosted first; a hosted product is gated by entry criteria (ADR 0010) | Next roadmap re-rank | Product owner |
+| D2 Public positioning | Autonomous adviser (README today); evidence-backed research workspace (PRD). Decided 1 Nov 2026: lead with the research workspace; autonomous monitoring is marked planned (ADR 0010) | README update | Product owner |
 | D3 Filing source for auto-fetch | Exchange announcements and XBRL; a licensed provider; manual only | C6 | Product + Data |
 | D4 Holdings route | Per-broker plugins; CAS import; Account Aggregator | Second broker or hosting | Product + Data |
-| D5 Suggestion wording | Information only ("evidence changed"); actions ("review", "trim") | C7–C8 copy | Product, with legal advice |
+| D5 Suggestion wording | Information only ("evidence changed"); actions ("review", "trim"). Decided 1 Nov 2026: prompt a review and never tell the investor to trade, until a legal opinion says which wording is allowed (ADR 0010) | C7–C8 copy | Product, with legal advice |
 | D6 Roadmap entries for built features | Adopt F53–F57 as proposed; amend | Next roadmap edit | Product |
 
 ## Sources

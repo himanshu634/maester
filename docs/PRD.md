@@ -8,6 +8,8 @@ The near-term advantage is a dependable evidence workflow: financial values with
 
 The commercial hypothesis is that investors will pay for reduced manual reconciliation and repeated research effort. It is unvalidated. Product success is measured by useful research and portfolio-review behavior, not by investment returns or the volume of generated text. The [research report](RESEARCH.md) supports the opportunity and records its limitations.
 
+**Audience and stage.** Maester is personal and self-hosted first: it is built for its author, and other technical investors can run their own copy with their own keys. A hosted product is an option, gated by entry criteria ([ADR 0010](decisions/0010-personal-first-audience-and-review-wording.md)). Maester prompts a review and never advises a trade.
+
 ## 2. Users and jobs
 
 | Persona | Situation | Job to complete | Evidence of value |
@@ -108,7 +110,7 @@ R1 navigation contains Overview, Holdings, Research, Watchlist, Documents and An
 
 ## 9. Nonfunctional requirements
 
-These are proposed release targets, not current measurements. Measure under the envelope in [QUALITY.md](QUALITY.md).
+These are proposed release targets, not current measurements. Measure under the envelope in [QUALITY.md](QUALITY.md). These targets bind once Maester is hosted. Until then the [business analysis](research/2026-11-01-business-analysis.md) §6.2 lists the ones that bind.
 
 | Area | R1/R2 acceptance target |
 | --- | --- |

@@ -141,7 +141,7 @@ One non-user-triggered moment per page at most. On the index page the evidence t
 
 ## 7. Copy
 
-Market the product, not the technology. Public pages describe what Maester does for an investor and the time it gives back; they never mention model names, frameworks, commands, file paths or internal feature IDs. Technical detail belongs in the documentation, not on the page.
+Market the product, not the technology. Public pages describe what Maester does for an investor and the time it gives back; they never mention model names, frameworks, commands, file paths or internal feature IDs. Technical detail belongs in the documentation, not on the page. Maester never tells the investor to buy, sell, trim or add: what it raises on its own says what changed, the evidence and which review is due, and silence is "Nothing to review" ([ADR 0010](decisions/0010-personal-first-audience-and-review-wording.md)).
 
 Sentence case, plain verbs, written from the investor's point of view. A button says what happens: "See how it works", "Enter the terminal", "Sign in". Maester is a working name. Every mock financial figure carries the label "Synthetic example" or equivalent. Never write "high confidence", a percentage accuracy, or a verified badge that no verification record backs. Say what runs today before what is planned. Unknown is shown as unknown, never as zero. Do not show a link or menu item whose destination does not exist. The one exception: a terminal page planned for the first release may appear in the rail, marked "Soon", and open a coming-soon page that says what it will do (`ComingSoon`).
 
