@@ -6,7 +6,7 @@ export const authContent = {
 	login: {
 		title: 'Sign in. Maester',
 		heading: 'Sign in to the terminal',
-		lede: 'The terminal is where your holdings, your thesis and your suggestions live.',
+		lede: 'The terminal is where your filings, your holdings and the evidence behind every figure live.',
 		google: 'Continue with Google',
 		googleBusy: 'Opening Google…',
 		googleStatus: 'Taking you to Google to sign in.',

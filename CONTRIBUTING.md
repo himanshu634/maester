@@ -1,6 +1,6 @@
 # Contributing to Maester
 
-Thank you for helping build an open-source portfolio management platform that tracks portfolios autonomously and suggests evidence-backed actions. This guide covers everything technical: setup, running the CLI, repository layout, development commands, and the rules that keep the codebase trustworthy.
+Thank you for helping build an open-source research workspace that shows the source of every figure and is being built to tell investors when their thesis needs a review. This guide covers everything technical: setup, running the CLI, repository layout, development commands, and the rules that keep the codebase trustworthy.
 
 For the product vision, read the [README](README.md). For product and engineering specifications, start at the [documentation index](docs/README.md).
 
