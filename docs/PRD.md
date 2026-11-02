@@ -139,6 +139,6 @@ Pilot access is invite-only with visible document limits and export capability. 
 
 ## 12. Dependencies and open decisions
 
-Audience, launch geography and asset scope need product-owner confirmation. Historical data procurement, permitted display/export uses, statement samples, corporate-action coverage and return conventions precede R2. Identity provider, hosting region and retention policy precede the first hosted release. Adviser services, tax outputs and execution require separate requirements when selected; this PRD does not establish that operating model.
+[ADR 0010](decisions/0010-personal-first-audience-and-review-wording.md) decided the audience (personal first, hosted as an option). Launch geography and asset scope need product-owner confirmation. Historical data procurement, permitted display/export uses, statement samples, corporate-action coverage and return conventions precede R2. Identity provider, hosting region and retention policy precede the first hosted release. Adviser services, tax outputs and execution require separate requirements when selected; this PRD does not establish that operating model.
 
 Each release closes the checklist in [DELIVERY_PLAN.md](DELIVERY_PLAN.md). A feature is complete when its UI, data semantics, failure states, instrumentation and tests satisfy its outcome.

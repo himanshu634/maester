@@ -41,7 +41,7 @@ The analysis found that this choice of audience changes the requirements more th
    - The boundaries a hosted product would need stay in the code, because they are already there and cost little: workspace ownership, decimal money, provenance, no model arithmetic.
 
 3. **Positioning leads with what runs.**
-   - Every public surface (the README, CONTRIBUTING and the public index page) leads with the evidence-backed research workspace: every figure with the filing and page it came from, and holdings beside the research.
+   - Every public surface (the README, CONTRIBUTING and the public index page) leads with the evidence-backed research workspace: every figure with the filing it came from (the page for a PDF, the tag for an XBRL file), and holdings beside the research.
    - Autonomous monitoring stays the stated direction. It is marked planned wherever it appears and is never described in the present tense.
 
 4. **Maester prompts a review; it never tells the investor to trade.**
@@ -60,7 +60,9 @@ The analysis found that this choice of audience changes the requirements more th
 - **Aligned in the pull request that adds this record:**
   - the README;
   - CONTRIBUTING;
-  - the public index page's copy (`content/index.ts`) and its meta description (`routes/+page.svelte`);
+  - the public index page's copy (`content/index.ts`), including its trust section, and its meta description (`routes/+page.svelte`);
+  - the login lede (`lib/content/auth.ts`);
+  - the README's comparison table;
   - the synthetic overview's due item (`lib/terminal/fixture.ts`, whose "Your call" says "Hold, trim or revise the thesis");
   - a short "Audience and stage" note in the PRD;
   - DESIGN.md §7, so the wording rule reaches every session.
