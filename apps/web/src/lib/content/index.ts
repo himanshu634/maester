@@ -99,8 +99,8 @@ export const content = {
 		]
 	},
 	hero: {
-		title: 'Every figure, with the page it came from.',
-		lede: 'Maester reads the filings of the companies you own, shows the page behind every number and keeps your holdings beside them. Next, it will watch them for you and tell you when your thesis needs a look. You decide.',
+		title: 'Every figure, with the filing it came from.',
+		lede: 'Maester reads the filings of the companies you own, shows the filing and the page or tag behind every number and keeps your holdings beside them. Later, it will watch them for you and tell you when your thesis needs a look. You decide.',
 		primary: { label: 'Enter the terminal', href: '/terminal' },
 		secondary: { label: 'See what it will watch', href: '/#features' }
 	},
@@ -263,11 +263,11 @@ export const content = {
 	trust: {
 		heading: 'Why you can check it',
 		intro:
-			'A figure or a review prompt is only useful if you can check it in a minute. Every one is built to be checked.',
+			'A figure or a review prompt is only useful if you can check it in a minute. Every one is built to be checked. Export, notes, recorded decisions and calculated figures are planned; what is described here as running today is the reading of filings and the source behind each number.',
 		principles: [
 			{
 				term: 'It shows its source.',
-				body: 'Every number links to the page of the filing it came from, not to a summary of it.'
+				body: 'Every number points to the filing it came from, and to the page or the tag behind it, not to a summary of it.'
 			},
 			{
 				term: 'It says when it does not know.',
@@ -275,7 +275,7 @@ export const content = {
 			},
 			{
 				term: 'It tells you what was checked.',
-				body: 'Whether a number was read from the filing, calculated, or reviewed by you is always shown separately. No single confidence score.'
+				body: 'Whether a number was read from the filing’s own tags, read from the PDF by a model, or reviewed by you is always shown separately. No single confidence score.'
 			},
 			{
 				term: 'It never trades.',
@@ -287,7 +287,7 @@ export const content = {
 			},
 			{
 				term: 'Your data stays yours.',
-				body: 'Export everything at any time: holdings, extracted numbers, notes and every decision you recorded. Open source and self-hostable.'
+				body: 'Open source and self-hostable, so your holdings and the numbers read from your filings stay on your machine. Export, notes and a record of your decisions are planned.'
 			}
 		],
 		measured:
@@ -296,7 +296,7 @@ export const content = {
 	status: {
 		heading: 'Where we are',
 		paragraphs: [
-			'Maester is early and built in the open. Today it reads filings and shows the page behind each figure, builds research tables, reads your Zerodha holdings and tracks market mood. It runs on your own machine. The watching loop comes next, starting with Indian markets and long-term equity investors.',
+			'Maester is early and built in the open. Today it reads filings and shows the page behind each figure, builds research tables, reads your Zerodha holdings and tracks market mood. It runs on your own machine. Figure review and calculations come next; the watching loop after them. It starts with Indian markets and long-term equity investors.',
 			'We would rather tell you what works than what we hope will. Nothing on this page is a promise of a date.'
 		],
 		cta: { label: 'Enter the terminal', href: '/terminal' },
@@ -305,7 +305,7 @@ export const content = {
 	footer: {
 		note: 'Maester is a working name. Every company, figure and event on this page is synthetic. Maester is free and open source under the GNU Affero General Public License, version 3 or later. Built in public by Himanshu Mendapara.',
 		links: [
-			{ label: 'GitHub', href: 'https://github.com/himanshu634' },
+			{ label: 'GitHub', href: 'https://github.com/himanshu634/maester' },
 			{ label: 'X', href: 'https://x.com/himanshu_btw' },
 			{ label: 'Email', href: 'mailto:himanshumendapra@gmail.com' }
 		]

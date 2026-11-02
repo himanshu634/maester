@@ -17,7 +17,7 @@
 	<title>Maester</title>
 	<meta
 		name="description"
-		content="Maester reads the filings of the companies you own and shows the page behind every number, with your holdings beside them. It is being built to tell you when your thesis needs a look."
+		content="Maester reads the filings of the companies you own and shows the filing and the page or tag behind every number, with your holdings beside them. It is being built to tell you when your thesis needs a look."
 	/>
 </svelte:head>
 

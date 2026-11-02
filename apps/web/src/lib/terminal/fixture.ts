@@ -137,7 +137,7 @@ export const quietDemo: Demo = {
 		{
 			title: 'Harbour Cements · FY2025 annual report',
 			when: '30 Sep',
-			body: 'Reviewed by you on 1 Oct. You held and revised the thesis; next review 14 Jan.'
+			body: 'Reviewed by you on 1 Oct. You reviewed and revised the thesis; next review 14 Jan.'
 		},
 		research[1],
 		research[2]

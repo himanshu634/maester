@@ -9,7 +9,7 @@
 
 **The open-source research workspace that shows where every figure came from, keeps your holdings beside it, and is being built to tell you when your thesis needs a look.**
 
-Maester runs on your own machine, with your own keys. Today it reads the filings of the companies you own, shows the page behind every number and keeps your holdings beside them. Next, it will watch the filings, the prices and your own thesis, and hand you a review prompt with the evidence behind it. When nothing needs a review, it will say so. You decide.
+Maester runs on your own machine, with your own keys. Today it reads the filings of the companies you own, shows the filing and the page or XBRL tag behind every number and keeps your holdings beside them. Later, it will watch the filings, the prices and your own thesis, and hand you a review prompt with the evidence behind it. When nothing needs a review, it will say so. You decide.
 
 [![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange.svg)](#where-we-are-today)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0--or--later-brightgreen.svg)](LICENSE)
@@ -103,14 +103,14 @@ Every review prompt is traceable: from the prompt, to the trigger, to the financ
 | Most tools | Maester |
 | --- | --- |
 | Show a dashboard and wait | Is being built to watch continuously and tell you which review is due |
-| Generic model portfolios | Review prompts grounded in your own holdings, thesis and risk tolerance |
-| AI chat that summarizes | An Analyst that can only cite stored evidence and explain deterministic calculations. It abstains when the evidence is missing |
-| A number on a screen | The number, the page it came from, the unit, the period and the reporting basis |
+| Generic model portfolios | Is being built to give review prompts grounded in your own holdings, thesis and risk tolerance |
+| AI chat that summarizes | Will offer an Analyst that can only cite stored evidence and explain deterministic calculations. It abstains when the evidence is missing |
+| A number on a screen | The number, the filing and the page or XBRL tag it came from, the unit, the period and the reporting basis |
 | Treat missing data as zero | Treats unknown as unknown. Coverage shrinks; risk and value are never silently understated |
 | Infer performance from today's holdings | Refuses to fabricate return history. Snapshot mode and ledger mode are separate, labelled inputs |
-| One blended return figure | Time-weighted and money-weighted returns with the method, interval and cash-flow boundary disclosed |
+| One blended return figure | Is being built to give time-weighted and money-weighted returns with the method, interval and cash-flow boundary disclosed |
 | Black-box automation that trades | Shows, explains and records. Never executes |
-| Lock your data in | Exports raw inputs, extracted values, notes, methods and every review prompt with full precision |
+| Lock your data in | Is being built to export raw inputs, extracted values, notes, methods and every review prompt with full precision |
 | Closed SaaS | Open source, self-hostable, built in public |
 
 These are design principles, not marketing lines. The [product requirements](docs/PRD.md) spell out the full list.
@@ -176,7 +176,7 @@ Contributions are accepted under the [Contributor Licence Agreement](CLA.md). If
 
 <div align="center">
 
-**Every figure backed by its page. Every decision still yours.**
+**Every figure backed by its source. Every decision still yours.**
 
 Star the repo to follow along. Open an issue to tell us where we are wrong.
 
