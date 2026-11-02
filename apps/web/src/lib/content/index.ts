@@ -143,7 +143,7 @@ export const content = {
 	features: {
 		heading: 'What Maester will watch',
 		intro:
-			'This is planned. Today you add the filings yourself and Maester reads them. Next, you set the scope once and Maester runs the loop every day: watch, spot a meaningful change, check it against the evidence, and hand you a review prompt with the reasons attached.',
+			'This is planned. Today you add the filings yourself and Maester reads them. Later, you will set the scope once and Maester will run the loop every day: watch, spot a meaningful change, check it against the evidence, and hand you a review prompt with the reasons attached.',
 		columns: ['Signal', 'What it will watch', 'What you get'],
 		rows: [
 			{
@@ -296,7 +296,7 @@ export const content = {
 	status: {
 		heading: 'Where we are',
 		paragraphs: [
-			'Maester is early and built in the open. Today it reads filings and shows the page behind each figure, builds research tables, reads your Zerodha holdings and tracks market mood. It runs on your own machine. Figure review and calculations come next; the watching loop after them. It starts with Indian markets and long-term equity investors.',
+			'Maester is early and built in the open. Today it reads filings and shows the filing and the page or tag behind each figure, builds research tables, reads your Zerodha holdings and tracks market mood. It runs on your own machine. Figure review and calculations come next; the watching loop after them. It starts with Indian markets and long-term equity investors.',
 			'We would rather tell you what works than what we hope will. Nothing on this page is a promise of a date.'
 		],
 		cta: { label: 'Enter the terminal', href: '/terminal' },
