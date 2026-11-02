@@ -153,7 +153,7 @@ export const dueDetail = {
 	trigger:
 		'Operating cash flow fell 18% year on year. Your thesis note says the case rests on cash generation.',
 	evidence: 'Cash flow statement, page 96.',
-	call: 'Hold, trim or revise the thesis. Maester records what you decide and why. It never trades.'
+	call: 'Keep the thesis, revise it or look again later. Maester records what you decide and why. It never trades.'
 } as const;
 
 /** What was looked at, shown when nothing is due. Silence is a checked answer. */
