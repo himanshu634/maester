@@ -8,6 +8,8 @@ The near-term advantage is a dependable evidence workflow: financial values with
 
 The commercial hypothesis is that investors will pay for reduced manual reconciliation and repeated research effort. It is unvalidated. Product success is measured by useful research and portfolio-review behavior, not by investment returns or the volume of generated text. The [research report](RESEARCH.md) supports the opportunity and records its limitations.
 
+**Audience and stage.** Maester is personal and self-hosted first: it is built for its author, and other technical investors can run their own copy with their own keys. A hosted product is an option, gated by entry criteria ([ADR 0010](decisions/0010-personal-first-audience-and-review-wording.md)). Maester prompts a review and never advises a trade.
+
 ## 2. Users and jobs
 
 | Persona | Situation | Job to complete | Evidence of value |
@@ -108,7 +110,7 @@ R1 navigation contains Overview, Holdings, Research, Watchlist, Documents and An
 
 ## 9. Nonfunctional requirements
 
-These are proposed release targets, not current measurements. Measure under the envelope in [QUALITY.md](QUALITY.md).
+These are proposed release targets, not current measurements. Measure under the envelope in [QUALITY.md](QUALITY.md). These targets bind once Maester is hosted. Until then the [business analysis](research/2026-11-01-business-analysis.md) §6.2 lists the ones that bind.
 
 | Area | R1/R2 acceptance target |
 | --- | --- |
@@ -137,6 +139,6 @@ Pilot access is invite-only with visible document limits and export capability. 
 
 ## 12. Dependencies and open decisions
 
-Audience, launch geography and asset scope need product-owner confirmation. Historical data procurement, permitted display/export uses, statement samples, corporate-action coverage and return conventions precede R2. Identity provider, hosting region and retention policy precede the first hosted release. Adviser services, tax outputs and execution require separate requirements when selected; this PRD does not establish that operating model.
+[ADR 0010](decisions/0010-personal-first-audience-and-review-wording.md) decided the audience (personal first, hosted as an option). Launch geography and asset scope need product-owner confirmation. Historical data procurement, permitted display/export uses, statement samples, corporate-action coverage and return conventions precede R2. Identity provider, hosting region and retention policy precede the first hosted release. Adviser services, tax outputs and execution require separate requirements when selected; this PRD does not establish that operating model.
 
 Each release closes the checklist in [DELIVERY_PLAN.md](DELIVERY_PLAN.md). A feature is complete when its UI, data semantics, failure states, instrumentation and tests satisfy its outcome.

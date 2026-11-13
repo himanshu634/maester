@@ -17,7 +17,7 @@
 	<title>Maester</title>
 	<meta
 		name="description"
-		content="Maester watches the filings, prices, dividends and policy changes behind every company you own, and tells you when a decision is due. Every suggestion comes with its evidence."
+		content="Maester reads the filings of the companies you own and shows the filing and the page or tag behind every number, with your holdings beside them. It is being built to tell you when your thesis needs a look."
 	/>
 </svelte:head>
 
@@ -41,7 +41,7 @@
 		<Problem headingId="problem-heading" {...content.problem} />
 	</Register>
 
-	<Register id="features" label="What it watches" headingId="features-heading">
+	<Register id="features" label="What it will watch" headingId="features-heading">
 		<Ledger headingId="features-heading" {...content.features} />
 	</Register>
 
