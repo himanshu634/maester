@@ -16,7 +16,14 @@ class Settled extends Error {}
 export function sniffXbrl(head: Uint8Array): XbrlSniff {
   let start = 0;
   if (head[0] === 0xef && head[1] === 0xbb && head[2] === 0xbf) start = 3;
-  while (start < head.length && (head[start] === 0x20 || head[start] === 0x09 || head[start] === 0x0a || head[start] === 0x0d)) start++;
+  while (
+    start < head.length &&
+    (head[start] === 0x20 ||
+      head[start] === 0x09 ||
+      head[start] === 0x0a ||
+      head[start] === 0x0d)
+  )
+    start++;
   if (start >= head.length) return "not_xbrl";
 
   let answer: XbrlSniff = "not_xbrl";
@@ -27,9 +34,19 @@ export function sniffXbrl(head: Uint8Array): XbrlSniff {
   const parser = new SaxesParser({ xmlns: true });
   parser.on("error", () => settle("not_xbrl"));
   parser.on("doctype", () => settle("doctype"));
-  parser.on("opentag", (tag) => settle(tag.local === "xbrl" && tag.uri === XBRL_INSTANCE_URI ? "xbrl" : "not_xbrl"));
+  parser.on("opentag", (tag) =>
+    settle(
+      tag.local === "xbrl" && tag.uri === XBRL_INSTANCE_URI
+        ? "xbrl"
+        : "not_xbrl",
+    ),
+  );
   try {
-    parser.write(new TextDecoder("utf-8", { fatal: false }).decode(head.subarray(start), { stream: true }));
+    parser.write(
+      new TextDecoder("utf-8", { fatal: false }).decode(head.subarray(start), {
+        stream: true,
+      }),
+    );
   } catch (err) {
     if (!(err instanceof Settled)) return "not_xbrl";
   }
