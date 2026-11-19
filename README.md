@@ -7,18 +7,31 @@
   </picture>
 </h1>
 
-**The open-source portfolio management platform that tracks your portfolio autonomously and tells you what to do next.**
+**The open-source research platform for long-term investors in Indian equities, where every figure links back to the filing it came from.**
 
-Connect your holdings. Let Maester watch the filings, the prices, the dividends, the global cues and your own thesis. When something needs your attention, it hands you a suggested action with the evidence behind it. When nothing does, it tells you to stay put.
+Today, on your own machine: drop in a company's annual report or XBRL filing and read its statements year by year. Choose any figure and see where it came from: the page of the annual report, with a link that opens the PDF there, or the element of the XBRL file. Read your Zerodha holdings, read-only. Point an AI assistant at your filings through Maester's MCP server and every figure it quotes carries its source. A missing figure shows as unknown, never as zero.
+
+Where it is going: a layer that watches your holdings, the filings and the prices, and tells you which decision is due, with the evidence behind it. That autonomous mode is planned, not built ([roadmap](#roadmap), R3). Maester never gives advice and never places a trade.
 
 [![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange.svg)](#where-we-are-today)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0--or--later-brightgreen.svg)](LICENSE)
 [![Contributing guide](https://img.shields.io/badge/contributing-guide-blue.svg)](CONTRIBUTING.md)
 [![X](https://img.shields.io/badge/X-@himanshu__btw-black.svg)](https://x.com/himanshu_btw)
 
-[The opportunity](#the-opportunity) · [What Maester does for you](#what-maester-does-for-you) · [How Maester is different](#how-maester-is-different) · [Roadmap](#roadmap) · [Join the build](#join-the-build) · [Talk to me](#talk-to-me)
+[What works today](#today) · [The opportunity](#the-opportunity) · [How Maester is different](#how-maester-is-different) · [Roadmap](#roadmap) · [Join the build](#join-the-build) · [Talk to me](#talk-to-me)
 
 </div>
+
+<!--
+  TODO(launch): screenshot goes here. Capture /terminal/research/company?id=… at 1440px wide with a
+  statement table on screen and one figure selected, so the figure panel shows "From … Page N of M"
+  and "Open the PDF at page N". Crop out the rail's "Signed in as" block. Save it as
+  docs/brand/readme-statement.png and replace this comment with:
+
+  <p align="center"><img alt="A company's profit and loss in Maester, one figure selected, showing the annual-report page it came from and a link to open the PDF at that page" src="docs/brand/readme-statement.png" width="900" /></p>
+
+  It must be a real capture from a real filing, never a mock-up.
+-->
 
 ---
 
@@ -97,18 +110,18 @@ Every suggestion is traceable: from the action, to the trigger, to the financial
 
 | Most tools | Maester |
 | --- | --- |
-| Show a dashboard and wait | Watches continuously and tells you which decision is due |
-| Generic model portfolios | Suggestions grounded in your own holdings, thesis and risk tolerance |
-| AI chat that summarizes | An Analyst that can only cite stored evidence and explain deterministic calculations. It abstains when the evidence is missing |
+| Show a dashboard and wait | Watches continuously and tells you which decision is due (planned, R3) |
+| Generic model portfolios | Suggestions grounded in your own holdings, thesis and risk tolerance (planned, R3) |
+| AI chat that summarizes | An Analyst that can only cite stored evidence and explain deterministic calculations, and abstains when the evidence is missing (planned; today an assistant reads your filings through the MCP server, with every figure's source) |
 | A number on a screen | The number, the page it came from, the unit, the period and the reporting basis |
 | Treat missing data as zero | Treats unknown as unknown. Coverage shrinks; risk and value are never silently understated |
-| Infer performance from today's holdings | Refuses to fabricate return history. Snapshot mode and ledger mode are separate, labelled inputs |
-| One blended return figure | Time-weighted and money-weighted returns with the method, interval and cash-flow boundary disclosed |
-| Black-box automation that trades | Suggests, explains, and records. Never executes |
-| Lock your data in | Exports raw inputs, extracted values, notes, methods and every suggestion with full precision |
+| Infer performance from today's holdings | Refuses to fabricate return history. Snapshot mode and ledger mode (planned, R2) are separate, labelled inputs |
+| One blended return figure | Time-weighted and money-weighted returns with the method, interval and cash-flow boundary disclosed (planned, R2) |
+| Black-box automation that trades | Suggests, explains, and records (planned, R3). Never executes |
+| Lock your data in | Exports raw inputs, extracted values, notes, methods and every suggestion with full precision (planned) |
 | Closed SaaS | Open source, self-hostable, built in public |
 
-These are design principles, not marketing lines. The [product requirements](docs/PRD.md) spell out the full list.
+These are design principles, not marketing lines; rows marked planned are not built yet. The [product requirements](docs/PRD.md) spell out the full list.
 
 ## Roadmap
 
@@ -147,11 +160,21 @@ We say this plainly because trust is the whole product. [Building Maester](docs/
 Maester is open source because software that suggests what to do with your money should be inspectable, and because the best investors are also the best product critics. There is real, well-specified work at every level.
 
 - **Builders** who want to ship the first loop: import holdings, read a filing, detect a change, suggest a review with the page attached.
-- **Investors** who keep a spreadsheet, hold a research subscription, or use more than one broker. Your last unexplained portfolio difference is the research we need.
+- **Investors** who keep a spreadsheet, hold a research subscription, or use more than one broker. Your last unexplained portfolio difference is the research we need: [20 minutes with an investor](#20-minutes-with-an-investor).
 - **Accounting and finance minds** who enjoy tearing apart return conventions, corporate-action edge cases and what counts as a meaningful change.
 - **Data partners** with permissioned sample filings and broker exports.
 
-Everything you need to get started, from where the build stands to running, changing and deploying it, is in **[Building Maester](docs/ENGINEERING.md)**.
+Everything you need to get started, from where the build stands to running, changing and deploying it, is in **[Building Maester](docs/ENGINEERING.md)**. Issues labelled [`good first issue`](https://github.com/himanshu634/maester/labels/good%20first%20issue) are small and come with the files to start from.
+
+### 20 minutes with an investor
+
+If you invest in Indian equities and keep track of your portfolio yourself, I would like 20 minutes of your time. Two questions, nothing to install and nothing to buy:
+
+1. Walk me through the last time you reviewed a company's results. What did you open, what did you check, and what took longest?
+2. When did your portfolio numbers last not add up: a missing dividend, a duplicate trade, a holding that did not match your broker? How did you find it?
+
+<!-- TODO(launch): add the call-booking link (Cal.com or similar) here, e.g. "[Book a 20-minute call](https://cal.com/…)", and keep the email as the fallback. -->
+Email [himanshumendapra@gmail.com](mailto:himanshumendapra@gmail.com?subject=Maester%20investor%20call) with a time that suits you.
 
 ### Talk to me
 
@@ -171,7 +194,7 @@ Contributions are accepted under the [Contributor Licence Agreement](CLA.md). If
 
 <div align="center">
 
-**Your portfolio, watched around the clock. Every suggestion backed by evidence. Every decision still yours.**
+**Every figure linked to its page. Unknown never shown as zero. Every decision still yours.**
 
 Star the repo to follow along. Open an issue to tell us where we are wrong.
 
